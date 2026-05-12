@@ -27,6 +27,13 @@ namespace InterviewProject.Controllers
         [HttpPost]
         public IActionResult Create(string roomName)
         {
+            Console.WriteLine($"roomName = {roomName}");
+
+            if (string.IsNullOrWhiteSpace(roomName))
+            {
+                return Content("RoomName 是空的");
+            }
+
             var room = new Room
             {
                 RoomName = roomName,
