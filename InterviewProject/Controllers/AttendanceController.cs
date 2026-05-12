@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using 面試.Data;
+using InterviewProject.Data;
 
-namespace 面試.Controllers
+namespace InterviewProject.Controllers
 {
     public class AttendanceController : Controller
     {

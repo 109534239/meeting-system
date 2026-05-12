@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using 面試.Data;
-using 面試.Hubs;
+using InterviewProject.Data;
+using InterviewProject.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 

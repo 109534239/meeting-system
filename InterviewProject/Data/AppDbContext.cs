@@ -1,7 +1,7 @@
-﻿namespace 面試.Data
+﻿namespace InterviewProject.Data
 {
     using Microsoft.EntityFrameworkCore;
-    using 面試.Models;
+    using InterviewProject.Models;
 
     public class AppDbContext : DbContext
     {

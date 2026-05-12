@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using 面試.Models;
+using InterviewProject.Models;
 
-namespace 面試.Controllers
+namespace InterviewProject.Controllers
 {
     public class HomeController : Controller
     {

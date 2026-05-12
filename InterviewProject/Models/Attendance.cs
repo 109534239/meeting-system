@@ -1,4 +1,4 @@
-﻿namespace 面試.Models
+﻿namespace InterviewProject.Models
 {
     public class Attendance
     {

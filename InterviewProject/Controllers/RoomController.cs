@@ -1,8 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using 面試.Data;
-using 面試.Models;
+using InterviewProject.Data;
+using InterviewProject.Models;
 
-namespace 面試.Controllers
+namespace InterviewProject.Controllers
 {
     public class RoomController : Controller
     {

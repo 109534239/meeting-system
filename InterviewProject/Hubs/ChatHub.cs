@@ -1,9 +1,9 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using 面試.Data;
-using 面試.Models;
+using InterviewProject.Data;
+using InterviewProject.Models;
 
-namespace 面試.Hubs
+namespace InterviewProject.Hubs
 {
     public class ChatHub : Hub
     {

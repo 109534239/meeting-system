@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using 面試.Data;
+using InterviewProject.Data;
 
 #nullable disable
 
-namespace 面試.Migrations
+namespace InterviewProject.Migrations
 {
     [DbContext(typeof(AppDbContext))]
     [Migration("20260512054334_Init")]
@@ -20,7 +20,7 @@ namespace 面試.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.7");
 
-            modelBuilder.Entity("面試.Models.Attendance", b =>
+            modelBuilder.Entity("InterviewProject.Models.Attendance", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -44,7 +44,7 @@ namespace 面試.Migrations
                     b.ToTable("Attendances");
                 });
 
-            modelBuilder.Entity("面試.Models.Room", b =>
+            modelBuilder.Entity("InterviewProject.Models.Room", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -62,7 +62,7 @@ namespace 面試.Migrations
                     b.ToTable("Rooms");
                 });
 
-            modelBuilder.Entity("面試.Models.RoomMember", b =>
+            modelBuilder.Entity("InterviewProject.Models.RoomMember", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -79,7 +79,7 @@ namespace 面試.Migrations
                     b.ToTable("RoomMembers");
                 });
 
-            modelBuilder.Entity("面試.Models.User", b =>
+            modelBuilder.Entity("InterviewProject.Models.User", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()

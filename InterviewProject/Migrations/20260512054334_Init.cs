@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace 面試.Migrations
+namespace InterviewProject.Migrations
 {
     /// <inheritdoc />
     public partial class Init : Migration
