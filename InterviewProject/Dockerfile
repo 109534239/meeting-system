@@ -2,7 +2,7 @@
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 USER $APP_UID
 WORKDIR /app
-# 設定 Render 要求的 Port
+# 讓 Render 外部可以連進來
 ENV ASPNETCORE_URLS=http://+:10000
 EXPOSE 10000
 
@@ -10,7 +10,7 @@ EXPOSE 10000
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-# 這裡已經換成英文路徑
+# 這裡必須與您 GitHub 上的英文資料夾名稱一致
 COPY ["InterviewProject/InterviewProject.csproj", "InterviewProject/"]
 RUN dotnet restore "./InterviewProject/InterviewProject.csproj"
 COPY . .
@@ -26,5 +26,5 @@ RUN dotnet publish "./InterviewProject.csproj" -c $BUILD_CONFIGURATION -o /app/p
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-# 執行檔名稱也換成英文了
+# 執行檔名稱也必須是英文
 ENTRYPOINT ["dotnet", "InterviewProject.dll"]
