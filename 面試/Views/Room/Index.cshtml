@@ -1,0 +1,13 @@
+﻿<h2>房間列表</h2>
+
+<a href="/Room/Create">建立房間</a>
+
+<ul>
+    @foreach (var item in Model)
+    {
+        <li>
+            @item.RoomName
+            <a href="/Room/Join/@item.Id">加入</a>
+        </li>
+    }
+</ul>
