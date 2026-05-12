@@ -27,23 +27,16 @@ namespace InterviewProject.Controllers
         [HttpPost]
         public IActionResult Create(string roomName)
         {
-            try
+            var room = new Room
             {
-                var room = new Room
-                {
-                    RoomName = roomName,
-                    CreatedTime = DateTime.Now
-                };
+                RoomName = roomName,
+                CreatedTime = DateTime.UtcNow
+            };
 
-                _context.Rooms.Add(room);
-                _context.SaveChanges();
+            _context.Rooms.Add(room);
+            _context.SaveChanges();
 
-                return RedirectToAction("Index");
-            }
-            catch (Exception ex)
-            {
-                return Content(ex.ToString()); // 👈 直接把真正錯誤吐出來
-            }
+            return RedirectToAction("Index");
         }
 
         public IActionResult Join(int id)
