@@ -30,7 +30,7 @@ namespace InterviewProject.Controllers
             var room = new Room
             {
                 RoomName = roomName,
-                CreatedTime = DateTime.UtcNow
+                CreatedTime = DateTime.UtcNow.AddHours(8)
             };
 
             _context.Rooms.Add(room);
