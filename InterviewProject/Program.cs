@@ -1,7 +1,8 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using InterviewProject.Data;
 using InterviewProject.Hubs;
+using InterviewProject.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,18 +24,36 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 var app = builder.Build();
 
-// 1. 設定副檔名對照表
-var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
-provider.Mappings[".json"] = "application/json";
-// 雖然你檔案沒點，但保險起見還是留著
-provider.Mappings[".shard1"] = "application/octet-stream"; 
+// --- 關鍵：自動初始化資料庫 (不寫死所有帳號) ---
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<AppDbContext>();
+        // 1. 如果資料庫檔案不存在或表沒蓋好，這行會自動搞定
+        context.Database.EnsureCreated();
 
-// 2. 套用設定
+        // 2. 只在完全沒人時才塞一個 admin，方便你進去操作
+        if (!context.Users.Any())
+        {
+            context.Users.Add(new User { Account = "admin", Password = "123" });
+            context.SaveChanges();
+            Console.WriteLine("資料庫已初始化，預設管理員 admin 已建立。");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("初始化資料庫失敗: " + ex.Message);
+    }
+}
+
+// 設定副檔名對照表與靜態檔案 (保持你原本的)
+var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 app.UseStaticFiles(new StaticFileOptions
 {
     ContentTypeProvider = provider,
-    // --- 關鍵：加入下面這行，允許下載沒有副檔名的檔案 ---
-    ServeUnknownFileTypes = true, 
+    ServeUnknownFileTypes = true,
     DefaultContentType = "application/octet-stream"
 });
 
