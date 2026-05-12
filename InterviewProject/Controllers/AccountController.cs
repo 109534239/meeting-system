@@ -22,6 +22,10 @@ namespace InterviewProject.Controllers
         [HttpPost]
         public IActionResult Login(string account, string password)
         {
+            // 加入這行來抓兇手
+            var allUsers = _context.Users.Select(u => u.Account).ToList();
+            Console.WriteLine("目前資料庫裡的使用者有: " + string.Join(", ", allUsers));
+
             var user = _context.Users
                 .FirstOrDefault(x => x.Account == account && x.Password == password);
 
