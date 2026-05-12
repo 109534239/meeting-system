@@ -16,7 +16,9 @@ builder.Services.AddSession();
 
 // DB Context
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=app.db"));
+     options.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection")));
+    //options.UseSqlite("Data Source=app.db"));
     //options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
