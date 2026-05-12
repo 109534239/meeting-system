@@ -22,22 +22,16 @@ namespace InterviewProject.Controllers
         [HttpPost]
         public IActionResult Login(string account, string password)
         {
-            // 在 Log 噴出收到的帳密，確認網頁有沒有傳過來
-            Console.WriteLine($"登入嘗試: 帳號={account}, 密碼={password}");
-
             var user = _context.Users
                 .FirstOrDefault(x => x.Account == account && x.Password == password);
 
             if (user == null)
             {
-                // 如果失敗，噴出目前資料庫到底有誰
-                var existingUsers = _context.Users.Select(u => u.Account).ToList();
-                Console.WriteLine("登入失敗。目前資料庫的人員有: " + string.Join(", ", existingUsers));
-
                 ViewBag.Error = "帳號或密碼錯誤";
                 return View();
             }
 
+            // 存 Session
             HttpContext.Session.SetInt32("UserId", user.Id);
             HttpContext.Session.SetString("UserName", user.Account);
 
