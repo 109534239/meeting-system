@@ -27,23 +27,23 @@ namespace InterviewProject.Controllers
         [HttpPost]
         public IActionResult Create(string roomName)
         {
-            Console.WriteLine($"roomName = {roomName}");
-
-            if (string.IsNullOrWhiteSpace(roomName))
+            try
             {
-                return Content("RoomName 是空的");
+                var room = new Room
+                {
+                    RoomName = roomName,
+                    CreatedTime = DateTime.Now
+                };
+
+                _context.Rooms.Add(room);
+                _context.SaveChanges();
+
+                return RedirectToAction("Index");
             }
-
-            var room = new Room
+            catch (Exception ex)
             {
-                RoomName = roomName,
-                CreatedTime = DateTime.Now
-            };
-
-            _context.Rooms.Add(room);
-            _context.SaveChanges();
-
-            return RedirectToAction("Index");
+                return Content(ex.ToString()); // 👈 直接把真正錯誤吐出來
+            }
         }
 
         public IActionResult Join(int id)
