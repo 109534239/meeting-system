@@ -68,6 +68,8 @@ namespace InterviewProject.Hubs
         //記錄加入時間
         public async Task JoinRoom(string user, int roomId)
         {
+            Console.WriteLine("🔥 JoinRoom 有進來");
+
             var attendance = new Attendance
             {
                 UserName = user,
@@ -77,12 +79,11 @@ namespace InterviewProject.Hubs
             };
 
             _context.Attendances.Add(attendance);
-
             _context.SaveChanges();
 
-            await Clients.All.SendAsync(
-                "UserJoinedMessage",
-                $"{user} 加入了會議");
+            Console.WriteLine("🔥 已寫入 DB");
+
+            await Clients.All.SendAsync("UserJoinedMessage", $"{user} 加入了會議");
         }        
     }
 }
