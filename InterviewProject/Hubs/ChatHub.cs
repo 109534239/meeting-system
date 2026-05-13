@@ -33,21 +33,17 @@ namespace InterviewProject.Hubs
         {
             OnlineCount--;
 
-            var latestAttendance = _context.Attendances
-                .Where(x => x.LeaveTime == null)
-                .OrderByDescending(x => x.JoinTime)
-                .FirstOrDefault();
+            var attendance = _context.Attendances
+                .FirstOrDefault(x => x.ConnectionId == Context.ConnectionId
+                                  && x.LeaveTime == null);
 
-            if (latestAttendance != null)
+            if (attendance != null)
             {
-                latestAttendance.LeaveTime = DateTime.Now;
-
+                attendance.LeaveTime = DateTime.Now;
                 _context.SaveChanges();
             }
 
-            await Clients.All.SendAsync(
-                "UpdateOnlineCount",
-                OnlineCount);
+            await Clients.All.SendAsync("UpdateOnlineCount", OnlineCount);
 
             await base.OnDisconnectedAsync(exception);
         }
@@ -76,7 +72,8 @@ namespace InterviewProject.Hubs
             {
                 UserName = user,
                 RoomId = roomId,
-                JoinTime = DateTime.Now
+                JoinTime = DateTime.Now,
+                ConnectionId = Context.ConnectionId
             };
 
             _context.Attendances.Add(attendance);

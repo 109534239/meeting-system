@@ -11,5 +11,7 @@
         public DateTime JoinTime { get; set; }
 
         public DateTime? LeaveTime { get; set; }
+
+        public string ConnectionId { get; set; }
     }
 }
