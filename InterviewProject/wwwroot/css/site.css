@@ -13,10 +13,84 @@ html {
 }
 
 html {
-  position: relative;
-  min-height: 100%;
+    height: 100%; /* 固定高度為 100% */
+    margin: 0;
+    padding: 0;
 }
 
 body {
-  margin-bottom: 60px;
+    min-height: 100vh; /* 確保 body 至少跟螢幕一樣高 */
+    font-family: 'Noto Sans TC', sans-serif;
+    background: var(--gray);
+    color: var(--text-main);
+    display: flex; /* 使用 Flexbox 佈局 */
+    flex-direction: column; /* 讓 Header, Container, Footer 垂直排列 */
 }
+
+/* 確保中間的容器佔滿剩餘空間 */
+.container {
+    flex: 1 0 auto; /* 讓內容區自動佔滿剩餘空間，且不壓縮 */
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: none;
+    padding: 0; /* 移除預設間距避免重複縮排 */
+}
+
+:root {
+    --primary: #206c8b;
+    --primary-dark: #174f67;
+    --primary-light: #c2dfe9;
+    --bg-page: #efefef;
+    --bg-nav: #206c8b;
+    --bg-card: #efefef;
+    --text-main: #1a1a1a;
+    --text-muted: #555;
+    --white: #ffffff;
+    --gray: #efefef;
+    --radius-pill: 999px;
+    --radius-card: 18px;
+}
+
+.nav-btn {
+    padding: 9px 22px;
+    border-radius: var(--radius-pill);
+    border: 2px solid transparent;
+    background: transparent;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--white);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+    .nav-btn:hover {
+        background: rgba(255,255,255,0.15);
+    }
+
+    .nav-btn.active {
+        background: var(--white);
+        color: var(--primary);
+        border-color: var(--white);
+        font-weight: 700;
+    }
+
+.nav-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+    .nav-avatar:hover {
+        background: rgba(255,255,255,0.35);
+    }

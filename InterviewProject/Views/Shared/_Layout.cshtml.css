@@ -1,48 +1,164 @@
 ﻿/* Please see documentation at https://learn.microsoft.com/aspnet/core/client-side/bundling-and-minification
 for details on configuring this project to bundle and minify static web assets. */
 
-a.navbar-brand {
-  white-space: normal;
-  text-align: center;
-  word-break: break-all;
+/* ── NAVBAR ── */
+.navbar {
+    background: var(--primary);
+    height: 72px;
+    border-bottom: 2px solid var(--primary-dark);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    justify-content: center;
 }
 
-a {
-  color: #0077cc;
+.nav-container {
+    width: 100%;
+    max-width: 1200px; /* 與 .main 的 max-width 一致 */
+    padding: 0 40px; /* 與 .main 的 padding (0 40px) 一致 */
+    display: flex;
+    align-items: center;
 }
 
-.btn-primary {
-  color: #fff;
-  background-color: #1b6ec2;
-  border-color: #1861ac;
+.nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    margin-right: auto;
 }
 
-.nav-pills .nav-link.active, .nav-pills .show > .nav-link {
-  color: #fff;
-  background-color: #1b6ec2;
-  border-color: #1861ac;
+.logo-circle {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: var(--white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
 }
 
-.border-top {
-  border-top: 1px solid #e5e5e5;
-}
-.border-bottom {
-  border-bottom: 1px solid #e5e5e5;
-}
-
-.box-shadow {
-  box-shadow: 0 .25rem .75rem rgba(0, 0, 0, .05);
+.brand-name {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--white);
+    letter-spacing: 1px;
 }
 
-button.accept-policy {
-  font-size: 1rem;
-  line-height: inherit;
+.nav-links {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-right: 20px; /* 給登入按鈕留一點間距 */
 }
 
+.nav-user {
+    padding: 10px 28px;
+    border-radius: 8px;
+    background: #c2dfe9;
+    color: #174f67;
+    font-size: 15px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s;
+    height: 42px;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+}
+
+    .nav-user:hover {
+        background: var(--primary-dark);
+        color: #fff;
+    }
+
+/* ── USER DROPDOWN（登入後）── */
+.nav-user-logged {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 52px;
+    right: 0;
+    background: var(--white);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    border: 1px solid #e8e8e8;
+    min-width: 140px;
+    overflow: hidden;
+    z-index: 200;
+}
+
+    .dropdown-menu.show {
+        display: block;
+    }
+
+.dropdown-item {
+    display: block;
+    padding: 13px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-main);
+    text-decoration: none;
+    transition: background 0.15s;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+    background: none;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+}
+
+    .dropdown-item:last-child {
+        border-bottom: none;
+    }
+
+    .dropdown-item:hover {
+        background: var(--gray);
+        color: var(--primary);
+    }
+
+    .dropdown-item.logout {
+        color: #c94040;
+    }
+
+        .dropdown-item.logout:hover {
+            background: #fff0f0;
+        }
+
+/* ── FOOTER ── */
 .footer {
-  position: absolute;
-  bottom: 0;
-  width: 100%;
-  white-space: nowrap;
-  line-height: 60px;
+    background: var(--primary);
+    /*    position: absolute;
+    bottom: 0;*/
+    width: 100%;
+    white-space: nowrap;
+    line-height: 30px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.8); /* 設定文字為半透明白色，接近圖片的灰色感 */
+    flex-shrink: 0; /* 確保在 Flex 佈局下不會被壓縮 */
 }
+
+    /* 新增以下這段來控制超連結顏色 */
+    .footer a {
+        color: rgba(255, 255, 255, 0.8); /* 讓超連結文字顏色與一般文字一致 */
+        text-decoration: none; /* 移除底線 */
+    }
+
+        .footer a:hover {
+            color: var(--white); /* 滑鼠移上去時變亮白色 */
+        }

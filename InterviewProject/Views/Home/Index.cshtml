@@ -1,8 +1,102 @@
 ﻿@{
-    ViewData["Title"] = "Home Page";
+    ViewData["Title"] = "首頁";
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<div class="index-scroll-container">
+    <!-- HERO -->
+    <section class="hero">
+        <h1>加入我們，共創未來</h1>
+        <p>探索 XXX 公司最新職缺，找到最適合你的舞台</p>
+        <div class="hero-btn-group">
+            <a href="#" class="hero-btn">填履歷表</a>
+            <a href="job_search.html" class="hero-btn">查詢職缺</a>
+        </div>
+    </section>
+
+    <!-- MAIN -->
+    <main class="main">
+
+        <!-- 公告 -->
+        <section>
+            <div class="section-label">最新公告</div>
+            <div class="announce-card">
+                <ul class="announce-list">
+                    <li class="announce-item">
+                        <span class="announce-date">2026-05-01</span>
+                        <span class="announce-badge">最新</span>
+                        <span class="announce-title">2026 校園徵才活動開始報名，歡迎應屆畢業生踴躍參加</span>
+                    </li>
+                    <li class="announce-item">
+                        <span class="announce-date">2026-04-20</span>
+                        <span class="announce-badge">公告</span>
+                        <span class="announce-title">系統維護通知：5/5 凌晨 2:00–4:00 暫停服務</span>
+                    </li>
+                    <li class="announce-item">
+                        <span class="announce-date">2026-04-10</span>
+                        <span class="announce-badge">公告</span>
+                        <span class="announce-title">面試流程更新說明，請應徵者務必詳閱</span>
+                    </li>
+                    <li class="announce-item">
+                        <span class="announce-date">2026-03-28</span>
+                        <span class="announce-badge">活動</span>
+                        <span class="announce-title">2026 年度職涯講座報名連結開放，名額有限請盡速報名</span>
+                    </li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 熱門職缺 -->
+        <section>
+            <div class="section-label">熱門職缺</div>
+
+            <div class="job-grid">
+
+                <!-- 1 -->
+                <a href="#" class="job-card">
+                    <div class="job-dept">資訊技術</div>
+                    <div class="job-title">前端工程師_260502002</div>
+                    <div class="job-tags">
+                        <span class="tag">台北內湖</span>
+                        <span class="tag">全職</span>
+                        <span class="tag">3年以上</span>
+                    </div>
+                </a>
+
+                <!-- 2 -->
+                <a href="job_detail.html" class="job-card">
+                    <div class="job-dept">專案管理</div>
+                    <div class="job-title">NB產品經理_260502001</div>
+                    <div class="job-tags">
+                        <span class="tag">新北汐止</span>
+                        <span class="tag">全職</span>
+                        <span class="tag">3年以上</span>
+                    </div>
+                </a>
+
+                <!-- 3 -->
+                <a href="#" class="job-card">
+                    <div class="job-dept">人力資源</div>
+                    <div class="job-title">HR 招募專員_260502003</div>
+                    <div class="job-tags">
+                        <span class="tag">新竹竹北</span>
+                        <span class="tag">全職</span>
+                        <span class="tag">1年以上</span>
+                    </div>
+                </a>
+
+                <!-- 4 -->
+                <a href="#" class="job-card">
+                    <div class="job-dept">行銷企劃</div>
+                    <div class="job-title">數位行銷專員_260502004</div>
+                    <div class="job-tags">
+                        <span class="tag">新北汐止</span>
+                        <span class="tag">全職</span>
+                        <span class="tag">2年以上</span>
+                    </div>
+                </a>
+
+            </div>
+        </section>
+
+    </main>
 </div>
