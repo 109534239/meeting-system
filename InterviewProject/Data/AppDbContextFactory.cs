@@ -10,7 +10,7 @@ namespace InterviewProject.Data
             var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
 
             optionsBuilder.UseNpgsql(
-                "Host=dpg-d81pedg3kofs73cuuqjg-a.singapore-postgres.render.com;Port=5432;Database=interviewdb_3gme;Username=interviewuser;Password=ZSxnwDVUOfM6w7h0d0Tvm8FvXdk0Z6Rs;SSL Mode=Require;Trust Server Certificate=true");
+                "Host=dpg-d81qu5f7f7vs73edko5g-a.singapore-postgres.render.com;Port=5432;Database=interviewdb_wrny;Username=interviewuser;Password=XO2vvyQaHNWrV5lYmHbN0SQOitHeizff;SSL Mode=Require;Trust Server Certificate=true");
 
             return new AppDbContext(optionsBuilder.Options);
         }
