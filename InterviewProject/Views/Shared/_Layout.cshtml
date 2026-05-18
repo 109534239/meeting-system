@@ -59,5 +59,31 @@
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
+
+    <script>
+        const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+
+        if (isLoggedIn) {
+            document.getElementById('btn-login').style.display = 'none';
+            document.getElementById('user-logged').style.display = 'block';
+        }
+
+        function toggleDropdown() {
+            document.getElementById('dropdown-menu').classList.toggle('show');
+        }
+
+        document.addEventListener('click', function (e) {
+            const userLogged = document.getElementById('user-logged');
+            if (userLogged && !userLogged.contains(e.target)) {
+                document.getElementById('dropdown-menu').classList.remove('show');
+            }
+        });
+
+        function logout() {
+            localStorage.removeItem('isLoggedIn');
+            localStorage.removeItem('role');
+            window.location.href = '/Login';
+        }
+    </script>
 </body>
 </html>
