@@ -1,10 +1,10 @@
 ﻿.index-scroll-container {
     /* 計算高度：100vh 扣除導覽列高度 (假設導覽列約 70px) */
     /* 如果你的導覽列高度不同，請調整 70px 這個數值 */
-    flex: 1;
+    /* flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    scroll-behavior: smooth;
+    scroll-behavior: smooth; */
     width: 100%; /* 確保容器寬度 100% */
 }
 
@@ -59,7 +59,7 @@
 
 .hero-btn:hover {
     background: var(--primary-dark);
-    transform: translate(-2px);
+    transform: translateY(-2px);
     box-shadow: 0 10px 25px rgba(0,0,0,0.25);
 }
 
@@ -77,11 +77,11 @@
     display: flex;
     flex-direction: column;
     gap: 28px;
-    /*    max-width: 1200px;
-    margin: 0 auto;*/
+    max-width: 1200px;
+    margin: 0 auto;
     background: var(--gray);
-    width: 100%; /* 確保撐滿 */
-    box-sizing: border-box; /* 確保 padding 不會撐破寬度 */
+    /* width: 100%;  /*確保撐滿
+    box-sizing: border-box; 確保 padding 不會撐破寬度 */
 }
 
 /* 公告 */
