@@ -1,0 +1,279 @@
+/* ── HERO ── */
+.intro-hero {
+    background: url('../img/introduction-1.jpg') center 30% / cover no-repeat;
+    position: relative;
+    color: var(--white);
+    padding: 72px 40px;
+    text-align: center;
+}
+.intro-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+}
+.hero-inner {
+    max-width: 800px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+}
+.hero-label {
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    opacity: 0.75;
+    margin-bottom: 16px;
+}
+.intro-hero h1 {
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+    line-height: 1.2;
+}
+.intro-hero p {
+    font-size: 16px;
+    opacity: 0.85;
+    line-height: 1.8;
+}
+
+/* ── MAIN ── */
+.intro-main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 48px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 48px;
+}
+
+/* ── SECTION HEADER ── */
+.section-header {
+    text-align: center;
+    margin-bottom: 32px;
+}
+.section-header h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 8px;
+}
+.section-header p {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+.section-divider {
+    width: 48px;
+    height: 3px;
+    background: var(--primary);
+    border-radius: 2px;
+    margin: 12px auto 0;
+}
+
+/* ── 公司簡介 ── */
+.about-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    align-items: center;
+}
+.about-text h3 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 16px;
+}
+.about-text p {
+    font-size: 15px;
+    line-height: 1.9;
+    color: var(--text-main);
+    margin-bottom: 14px;
+}
+.about-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+.stat-card {
+    background: var(--white);
+    border-radius: var(--radius-card);
+    padding: 24px;
+    text-align: center;
+    border: 1px solid #e8e8e8;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.stat-number {
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1;
+    margin-bottom: 6px;
+}
+.stat-label {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* ── 核心價值 ── */
+.values-section {
+    background: var(--white);
+    border-radius: 20px;
+    padding: 48px 40px;
+    border: 1px solid #e8e8e8;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.values-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+}
+.value-card {
+    text-align: center;
+    padding: 28px 16px;
+    border-radius: var(--radius-card);
+    background: var(--gray);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.value-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(32,108,139,0.12);
+}
+.value-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 24px;
+}
+.value-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 10px;
+}
+.value-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.7;
+}
+
+/* ── 福利制度 ── */
+.benefits-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+.benefit-card {
+    background: var(--white);
+    border-radius: var(--radius-card);
+    padding: 28px 24px;
+    border: 1px solid #e8e8e8;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.benefit-icon-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.benefit-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--primary-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+.benefit-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-main);
+}
+.benefit-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.benefit-list li {
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    line-height: 1.5;
+}
+.benefit-list li::before {
+    content: '·';
+    color: var(--primary);
+    font-size: 18px;
+    line-height: 1.1;
+    flex-shrink: 0;
+}
+
+/* ── CTA ── */
+.cta-section {
+    background: url('../img/introduction-2.jpg') center 60% / cover no-repeat;
+    position: relative;
+    border-radius: 20px;
+    overflow: hidden;
+    padding: 48px 40px;
+    text-align: center;
+    color: var(--white);
+}
+.cta-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 20px;
+}
+.cta-inner {
+    position: relative;
+    z-index: 1;
+}
+.cta-section h2 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+.cta-section p {
+    font-size: 15px;
+    opacity: 0.85;
+    margin-bottom: 28px;
+}
+.cta-btn {
+    display: inline-block;
+    padding: 13px 40px;
+    background: var(--primary-light);
+    color: #174f67;
+    font-size: 16px;
+    font-weight: 700;
+    border: none;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s, color 0.2s;
+    text-decoration: none;
+}
+.cta-btn:hover {
+    background: var(--primary-dark);
+    color: var(--white);
+}
+
+/* ── RWD ── */
+@media (max-width: 900px) {
+    .about-grid { grid-template-columns: 1fr; }
+    .values-grid { grid-template-columns: repeat(2, 1fr); }
+    .benefits-grid { grid-template-columns: 1fr; }
+}

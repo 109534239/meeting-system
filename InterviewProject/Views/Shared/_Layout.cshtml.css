@@ -58,6 +58,32 @@ for details on configuring this project to bundle and minify static web assets. 
     margin-right: 20px; /* 給登入按鈕留一點間距 */
 }
 
+.nav-btn {
+    padding: 9px 22px;
+    border-radius: var(--radius-pill);
+    border: 2px solid transparent;
+    background: transparent;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--white);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+    .nav-btn:hover {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .nav-btn.active {
+      background: var(--white);
+      color: var(--primary);
+      border-color: var(--white);
+      font-weight: 700;
+    }
+
 .nav-user {
     padding: 10px 28px;
     border-radius: 8px;

@@ -1,16 +1,6 @@
-﻿.index-scroll-container {
-    /* 計算高度：100vh 扣除導覽列高度 (假設導覽列約 70px) */
-    /* 如果你的導覽列高度不同，請調整 70px 這個數值 */
-    /* flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    scroll-behavior: smooth; */
-    width: 100%; /* 確保容器寬度 100% */
-}
-
-/* ── HERO BANNER ── */
+﻿/* ── HERO BANNER ── */
 .hero {
-    background: url('img/hero-banner.jpg') center 20% / cover no-repeat;
+    background: url('../img/hero-banner.jpg') center 20% / cover no-repeat;
     position: relative;
     text-align: center;
     padding: 100px 32px 64px 32px;
@@ -72,16 +62,19 @@
 
 
 /* ── MAIN CONTENT ── */
-.main {
-    padding: 36px 40px;
+.home-main {
+    background: var(--gray);
+    width: 100%;
+    padding: 36px 0;
+}
+
+.home-main-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 40px;
     display: flex;
     flex-direction: column;
     gap: 28px;
-    max-width: 1200px;
-    margin: 0 auto;
-    background: var(--gray);
-    /* width: 100%;  /*確保撐滿
-    box-sizing: border-box; 確保 padding 不會撐破寬度 */
 }
 
 /* 公告 */
