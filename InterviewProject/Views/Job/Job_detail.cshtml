@@ -1,0 +1,215 @@
+@{
+    ViewData["Title"] = "詳細職缺";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/Job_detail.css" asp-append-version="true" />
+}
+
+<style>
+    .job-header-title {
+        font-size: 26px !important;
+        font-weight: 1000 !important;
+        color: var(--primary) !important;
+        letter-spacing: 0.5px !important;
+        line-height: 1.3 !important;
+    }
+</style>
+
+<!-- BREADCRUMB -->
+<div class="custom-breadcrumb">
+    <div class="breadcrumb-inner">
+        <a asp-controller="Home" asp-action="Index" 
+           style="color: #999; text-decoration: none;">首頁</a>
+        <span class="breadcrumb-sep">›</span>
+        <a asp-controller="Job" asp-action="Job_search" 
+           style="color: #999; text-decoration: none;">職缺搜尋</a>
+        <span class="breadcrumb-sep">›</span>
+        <span>NB產品經理_260502001</span>
+    </div>
+</div>
+
+<!-- JOB HEADER -->
+<div class="job-header">
+    <div class="job-header-inner">
+    <div class="job-header-top">
+        <div>
+        <div class="job-badge-row">
+            <span class="badge badge-full">全職</span>
+        </div>
+        <div class="job-header-title">NB產品經理_260502001</div>
+        <div class="job-header-dept">專案管理</div>
+        <div class="job-header-meta">
+            <div class="meta-item">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" stroke="#206c8b" stroke-width="2" fill="none"/>
+                <circle cx="12" cy="9" r="2.5" stroke="#206c8b" stroke-width="2" fill="none"/>
+            </svg>
+            新北市汐止
+            </div>
+            <span class="meta-sep">|</span>
+            <div class="meta-item">3年以上</div>
+            <span class="meta-sep">|</span>
+            <div class="meta-item">大學以上</div>
+        </div>
+        </div>
+        <div class="job-header-actions">
+        <button class="btn-apply-lg"> 立即應徵 </button>
+        <button class="btn-icon-lg" title="收藏" onclick="checkLogin('NB產品經理_260502001')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
+            </svg>
+            </svg>
+        </button>
+        </button>
+        </div>
+    </div>
+    </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<main class="main">
+
+    <!-- 左側：詳細內容 -->
+    <div class="content-left">
+
+    <div class="content-card">
+        <div class="section-title">工作內容</div>
+        <ul class="desc-list">
+        <li>規畫及監督產品開發的進度：負責與研發團隊合作，推動NB產品的開發與改進，確保產品的品質和功能符合客戶以及市場需求。</li>
+        <li>與內外部利益相關者溝通：與銷售、營銷、供應鏈等部門合作，收集並回應客戶需求，並與ODM合作夥伴協調產品製造。</li>
+        <li>專案管理：負責NB產品專案的規劃、執行和控制，確保專案進度和成本控制。</li>
+        <li>理解跨部門運作，與需求單位確保產品功能有達到商業目標與需求。</li>
+        </ul>
+    </div>
+
+    <div class="content-card">
+        <div class="section-title">條件要求</div>
+        <div class="condition-table">
+        <div class="condition-row">
+            <span class="condition-label">工作經歷</span>
+            <span class="condition-value">3 年以上相關工作經驗</span>
+        </div>
+        <div class="condition-row">
+            <span class="condition-label">產業經歷</span>
+            <span class="condition-value">電腦及其週邊設備業、半導體業、電子零組件製造業</span>
+        </div>
+        <div class="condition-row">
+            <span class="condition-label">學歷需求</span>
+            <span class="condition-value">大學以上</span>
+        </div>
+        <div class="condition-row">
+            <span class="condition-label">科系需求</span>
+            <span class="condition-value">資訊工程、電機、工業工程或商管相關科系尤佳</span>
+        </div>
+        <div class="condition-row">
+            <span class="condition-label">語文條件</span>
+            <span class="condition-value">英文 — 中等（能撰寫英文技術文件及與外籍廠商溝通）</span>
+        </div>
+        <div class="condition-row">
+            <span class="condition-label">知識技能</span>
+            <span class="condition-value">熟悉產品開發流程（PDR、DVT、PVT、MP）、MS Project 或同類專案管理工具、跨部門協調能力</span>
+        </div>
+        <div class="condition-row">
+            <span class="condition-label">必要證照</span>
+            <span class="condition-value">無特定要求</span>
+        </div>
+        <div class="condition-row">
+            <span class="condition-label">其他條件</span>
+            <span class="condition-value">主動積極，能在高壓環境下有效處理多項任務；具備良好的溝通協調能力</span>
+        </div>
+        </div>
+    </div>
+
+    </div>
+
+    <!-- 右側：職缺資訊 -->
+    <div class="content-right">
+
+    <div class="sidebar-card">
+        <div class="sidebar-title">職缺資訊</div>
+        <div class="info-row">
+        <div class="info-item">
+            <span class="info-label">職缺類型</span>
+            <span class="info-value">專案管理</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">工作性質</span>
+            <span class="info-value">全職</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">工作地點</span>
+            <span class="info-value">新北市汐止</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">經歷要求</span>
+            <span class="info-value">3年以上</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">學歷要求</span>
+            <span class="info-value">大學以上</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">上班時段</span>
+            <span class="info-value">日班</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">休假制度</span>
+            <span class="info-value">週休二日</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">需求人數</span>
+            <span class="info-value">1 ～ 3 人</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">刊登日期</span>
+            <span class="info-value">2026-05-02</span>
+        </div>
+        </div>
+    </div>
+
+    <div class="sidebar-card">
+        <div class="sidebar-title">技能標籤</div>
+        <div class="tag-list">
+        <span class="tag">產品管理</span>
+        <span class="tag">專案規劃</span>
+        <span class="tag">NB產品</span>
+        <span class="tag">跨部門協作</span>
+        <span class="tag">MS Project</span>
+        <span class="tag">英文溝通</span>
+        </div>
+    </div>
+
+    <button class="btn-apply-full">立即應徵 ▸</button>
+
+    </div>
+
+</main>
+
+@section Scripts {
+  <script>
+    function checkLogin(jobTitle) {
+      const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+      if (!isLoggedIn) {
+        const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
+        if (go) window.location.href = 'login.html';
+      } else {
+        // 讀取現有收藏清單
+        const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+        // 避免重複收藏
+        if (favorites.includes(jobTitle)) {
+          alert('此職缺已在收藏清單中！');
+        } else {
+          favorites.push(jobTitle);
+          localStorage.setItem('favorites', JSON.stringify(favorites));
+          alert('已加入收藏！');
+        }
+      }
+    }
+
+    function setActive(btn) {
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+  </script>
+}

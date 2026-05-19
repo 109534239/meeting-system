@@ -1,0 +1,188 @@
+@{
+    ViewData["Title"] = "求職問題";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/Faq.css" asp-append-version="true" />
+}
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+<div class="page-header-label">FAQ</div>
+<h1>求職 Q&amp;A</h1>
+<p>求職過程中有任何疑問，歡迎參考以下常見問題</p>
+</div>
+
+<main class="main">
+
+<!-- FAQ -->
+<section>
+    <div class="section-header">
+    <h2>常見問題</h2>
+    <p>Frequently Asked Questions</p>
+    <div class="section-divider"></div>
+    </div>
+
+    <div class="faq-list">
+
+    <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+        <span class="faq-q-text">
+            <span class="faq-q-num">1</span>
+            如何投遞履歷？投遞後多久會收到回覆？
+        </span>
+        <span class="faq-arrow">&#8964;</span>
+        </button>
+        <div class="faq-answer">
+        <div class="faq-answer-inner">
+            您可以在職缺搜尋頁面找到有興趣的職缺，點擊「立即應徵」後填寫基本資料並上傳履歷即可完成投遞。通常在收到履歷後 5 至 7 個工作天內，人資團隊會以電子信箱或電話與您聯繫。若您未收到回覆，歡迎透過本頁下方的聯絡表單再次確認。
+        </div>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+        <span class="faq-q-text">
+            <span class="faq-q-num">2</span>
+            面試流程大概是什麼？需要幾關？
+        </span>
+        <span class="faq-arrow">&#8964;</span>
+        </button>
+        <div class="faq-answer">
+        <div class="faq-answer-inner">
+            本公司面試流程通常分為兩至三個階段：第一關為人資初面（約 30 分鐘），主要了解您的背景與動機；第二關為用人主管面試（約 60 分鐘），針對專業能力與工作經歷深入討論；部分職缺視需求會安排第三關主管或跨部門面試。整體流程約 2 至 3 週完成。
+        </div>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+        <span class="faq-q-text">
+            <span class="faq-q-num">3</span>
+            公司是否提供實習機會？實習生有薪資嗎？
+        </span>
+        <span class="faq-arrow">&#8964;</span>
+        </button>
+        <div class="faq-answer">
+        <div class="faq-answer-inner">
+            是的，本公司提供暑期實習與學期實習機會，歡迎大學部及研究所在學生踴躍申請。實習期間每月依工作時數給予固定薪資，且提供導師制度全程陪伴。表現優異的實習生畢業後有機會直接轉換為正職員工。詳細職缺請至職缺搜尋頁面以「實習」篩選查詢。
+        </div>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+        <span class="faq-q-text">
+            <span class="faq-q-num">4</span>
+            薪資如何談定？有無調薪制度？
+        </span>
+        <span class="faq-arrow">&#8964;</span>
+        </button>
+        <div class="faq-answer">
+        <div class="faq-answer-inner">
+            薪資會依照應徵者的學歷、年資與面試表現綜合評估，並參考市場行情給予具競爭力的待遇。錄取後人資將與您進行薪資面談，歡迎您提出期望薪資以供參考。此外，本公司每年定期進行績效評核，表現優良者將獲得調薪與獎金，讓您的付出得到對等的回報。
+        </div>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+        <span class="faq-q-text">
+            <span class="faq-q-num">5</span>
+            是否支援遠端工作或彈性上班？
+        </span>
+        <span class="faq-arrow">&#8964;</span>
+        </button>
+        <div class="faq-answer">
+        <div class="faq-answer-inner">
+            本公司部分職位支援彈性上下班時間，員工可在核心工時（10:00–16:00）之外自由調配上下班時間。遠端工作政策依部門與職位性質而異，歡迎在面試時向招募人員詢問特定職位的工作型態安排。
+        </div>
+        </div>
+    </div>
+
+    </div>
+</section>
+
+<!-- CONTACT FORM -->
+<section class="contact-section">
+    <div class="contact-intro">
+    <div class="section-header">
+        <h2>找不到答案？</h2>
+        <p>歡迎填寫以下表單，我們將盡快與您聯繫</p>
+        <div class="section-divider"></div>
+    </div>
+    </div>
+
+    <!-- 姓名 -->
+    <div class="form-group">
+    <label>姓名 <span class="required">*</span></label>
+    <input type="text" class="form-control" placeholder="請填入您的姓名" />
+    </div>
+
+    <!-- 手機 / 電子信箱 -->
+    <div class="form-group">
+    <label>手機／電子信箱（擇一填寫）<span class="required">*</span></label>
+    <div class="form-row-3">
+        <select class="form-control">
+        <option value="+886">+886</option>
+        <option value="+1">+1</option>
+        <option value="+81">+81</option>
+        <option value="+86">+86</option>
+        </select>
+        <input type="tel" class="form-control" placeholder="請輸入手機號碼" />
+        <input type="email" class="form-control" placeholder="請輸入電子信箱" />
+    </div>
+    </div>
+
+    <!-- 問題類別 / 信件主旨 -->
+    <div class="form-group">
+    <div class="form-row">
+        <div>
+        <label style="margin-bottom:6px; display:block;">問題類別 <span class="required">*</span></label>
+        <select class="form-control">
+            <option value="">請選擇</option>
+            <option>投遞履歷相關</option>
+            <option>面試流程相關</option>
+            <option>薪資福利相關</option>
+            <option>實習機會相關</option>
+            <option>其他問題</option>
+        </select>
+        </div>
+        <div>
+        <label style="margin-bottom:6px; display:block;">信件主旨 <span class="required">*</span></label>
+        <input type="text" class="form-control" placeholder="請輸入主旨" />
+        </div>
+    </div>
+    </div>
+
+    <!-- 信件內容 -->
+    <div class="form-group">
+    <label>信件內容 <span class="required">*</span></label>
+    <textarea class="form-control" placeholder="請描述您想反應的內容"></textarea>
+    </div>
+
+    <!-- 同意條款 -->
+    <div class="checkbox-row">
+    <input type="checkbox" id="agree" />
+    <label for="agree">我同意 <a href="#">個人資料保護法定應告知事項</a></label>
+    </div>
+
+    <!-- 送出 -->
+    <div class="submit-wrap">
+    <button class="btn-submit">送出</button>
+    </div>
+
+</section>
+
+</main>
+
+@section Scripts {
+  <script>
+    function toggleFaq(btn) {
+      const item = btn.closest('.faq-item');
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+      if (!isOpen) item.classList.add('open');
+    }
+  </script>
+}

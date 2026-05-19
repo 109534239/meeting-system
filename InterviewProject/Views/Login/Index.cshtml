@@ -2,51 +2,54 @@
     ViewData["Title"] = "登入";
 }
 
-<div class="index-scroll-container">
-     <!-- LOGIN -->
-    <div class="login-page">
-        <div class="login-card">
+@section Styles {
+    <link rel="stylesheet" href="~/css/Login.css" asp-append-version="true" />
+}
 
-        <div class="login-title">
-            <h1>登入頁面</h1>
-            <p>請選擇身分</p>
-        </div>
+  <!-- LOGIN -->
+<div class="login-page">
+    <div class="login-card">
 
-        <!-- 身分切換 -->
-        <div class="role-tabs">
-            <button class="role-tab active" onclick="switchTab(this, 'jobseeker')">求職者</button>
-            <button class="role-tab" onclick="switchTab(this, 'employee')">員工</button>
-        </div>
+    <div class="login-title">
+        <h1>登入頁面</h1>
+        <p>請選擇身分</p>
+    </div>
 
-        <!-- 求職者登入 -->
-        <div id="panel-jobseeker">
-            <div class="form-group">
-            <input type="text" class="form-control" placeholder="輸入身分證字號或 Email" />
-            </div>
-            <div class="form-group">
-            <input type="password" class="form-control" placeholder="輸入密碼" />
-            </div>
-            <button class="btn-login" onclick="doLogin('jobseeker')">登入</button>
-            <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
-            <hr class="register-divider" />
-            <a href="register.html" class="btn-register">註冊</a>
-        </div>
+    <!-- 身分切換 -->
+    <div class="role-tabs">
+        <button class="role-tab active" onclick="switchTab(this, 'jobseeker')">求職者</button>
+        <button class="role-tab" onclick="switchTab(this, 'employee')">員工</button>
+    </div>
 
-        <!-- 員工登入 -->
-        <div id="panel-employee" style="display:none">
-            <div class="form-group">
-            <input type="text" class="form-control" placeholder="輸入員工編號或 Email" />
-            </div>
-            <div class="form-group">
-            <input type="password" class="form-control" placeholder="輸入密碼" />
-            </div>
-            <button class="btn-login employee" onclick="doLogin('employee')">登入</button>
-            <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
+    <!-- 求職者登入 -->
+    <div id="panel-jobseeker">
+        <div class="form-group">
+        <input type="text" class="form-control" placeholder="輸入身分證字號或 Email" />
         </div>
+        <div class="form-group">
+        <input type="password" class="form-control" placeholder="輸入密碼" />
+        </div>
+        <button class="btn-login" onclick="doLogin('jobseeker')">登入</button>
+        <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
+        <hr class="register-divider" />
+        <a href="register.html" class="btn-register">註冊</a>
+    </div>
 
+    <!-- 員工登入 -->
+    <div id="panel-employee" style="display:none">
+        <div class="form-group">
+        <input type="text" class="form-control" placeholder="輸入員工編號或 Email" />
         </div>
+        <div class="form-group">
+        <input type="password" class="form-control" placeholder="輸入密碼" />
+        </div>
+        <button class="btn-login employee" onclick="doLogin('employee')">登入</button>
+        <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
+    </div>
+
     </div>
 </div>
+
 
 @section Scripts {
   <script>

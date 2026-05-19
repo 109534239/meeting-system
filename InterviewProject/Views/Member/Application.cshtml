@@ -1,0 +1,91 @@
+@{
+    ViewData["Title"] = "應徵管理";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Application.css" asp-append-version="true" />
+}
+
+<div class="app-wrapper">
+
+    <!-- PAGE HEADER -->
+    <div class="page-header">
+        <div class="page-header-inner">
+            <h1>應徵管理</h1>
+            <p>Application Management</p>
+        </div>
+    </div>
+
+    <!-- FILTER BAR -->
+    <div class="search-bar">
+        <div class="search-inner">
+            <div class="search-field">
+                <label>投遞時間</label>
+                <select id="sel-date">
+                    <option value="">請選擇</option>
+                    <option value="2024-04">2026/04</option>
+                    <option value="2026-04">2026/03</option>
+                </select>
+            </div>
+            <div class="search-field">
+                <label>職缺類型</label>
+                <select id="sel-type">
+                    <option value="">請選擇</option>
+                    <option value="pm">專案管理</option>
+                    <option value="it">資訊技術</option>
+                </select>
+            </div>
+            <button class="search-btn" onclick="doFilter()">篩選</button>
+        </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="app-page">
+        <!-- TABLE HEADER -->
+        <div class="app-table-head">
+            <div>投遞時間</div>
+            <div>職缺名稱</div>
+            <div>履歷</div>
+            <div>面試</div>
+            <div>錄取/未錄取</div>
+            <div>查看詳細</div>
+        </div>
+
+        <!-- ROWS -->
+        <div class="app-list">
+            <div class="app-row">
+                <div>2024/04/10</div>
+                <div>NB產品經理_260502001</div>
+                <div class="status-review">審核中</div>
+                <div></div>
+                <div></div>
+                <div></div>
+            </div>
+            <div class="app-row">
+                <div>2024/04/15</div>
+                <div>前端工程師_260502002</div>
+                <div class="status-fail">未通過</div>
+                <div></div>
+                <div></div>
+                <div></div>
+            </div>
+            <div class="app-row">
+                <div>2026/04/30</div>
+                <div>NB產品經理_260502001</div>
+                <div class="status-pass">通過</div>
+                <div class="status-waiting">待面試</div>
+                <div></div>
+                <div><button class="btn-view">查看</button></div>
+            </div>
+            <div class="app-row">
+                <div>2026/04/30</div>
+                <div>NB產品經理_260502001</div>
+                <div class="status-pass">通過</div>
+                <div class="status-pass">通過</div>
+                <div class="status-hired">錄取</div>
+                <div><button class="btn-view">查看</button></div>
+            </div>
+        </div>
+    </div>
+</div>

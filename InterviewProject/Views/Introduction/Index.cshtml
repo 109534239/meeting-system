@@ -1,0 +1,180 @@
+@{
+    ViewData["Title"] = "公司介紹";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/Introduction.css" asp-append-version="true" />
+}
+
+<!-- HERO -->
+<section class="intro-hero">
+    <div class="hero-inner">
+        <div class="hero-label">About Us</div>
+        <h1>關於 XXX 公司</h1>
+        <p>我們是一支小而精實的團隊，專注於科技產品的研發與製造，<br>用熱情與專業，打造每一個值得信賴的產品。</p>
+    </div>
+</section>
+
+<main class="intro-main">
+
+    <!-- 公司簡介 -->
+    <section>
+        <div class="section-header">
+            <h2>公司簡介</h2>
+            <p>Company Overview</p>
+            <div class="section-divider"></div>
+        </div>
+        <div class="about-grid">
+            <div class="about-text">
+                <h3>小團隊，大熱情</h3>
+                <p>XXX 公司成立於 2018 年，是一家位於台灣新竹的新創科技公司。我們專注於電子零組件與嵌入式系統的設計開發，服務對象涵蓋國內中小型製造業客戶。</p>
+                <p>雖然團隊規模不大，但每位成員都身兼多職、能力全面。我們相信扁平化的組織結構能讓每個人的想法被聽見，讓每一份努力都直接反映在產品上。</p>
+                <p>我們正在持續成長，期待找到志同道合的夥伴，一起把公司做大、做好。</p>
+            </div>
+            <div class="about-stats">
+                <div class="stat-card">
+                    <div class="stat-number">7+</div>
+                    <div class="stat-label">年產業經驗</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">20+</div>
+                    <div class="stat-label">合作客戶數</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">15</div>
+                    <div class="stat-label">核心團隊人數</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">30+</div>
+                    <div class="stat-label">完成專案數</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 核心價值 -->
+    <section>
+        <div class="section-header">
+            <h2>核心價值</h2>
+            <p>Core Values</p>
+            <div class="section-divider"></div>
+        </div>
+        <div class="values-section">
+            <div class="values-grid">
+                <div class="value-card">
+                    <div class="value-icon">💡</div>
+                    <div class="value-title">創新</div>
+                    <div class="value-desc">持續探索新技術與解決方案，推動產品與流程的突破性進步</div>
+                </div>
+                <div class="value-card">
+                    <div class="value-icon">🤝</div>
+                    <div class="value-title">協作</div>
+                    <div class="value-desc">跨部門合作，尊重每位夥伴的專業，共同達成團隊目標</div>
+                </div>
+                <div class="value-card">
+                    <div class="value-icon">✅</div>
+                    <div class="value-title">誠信</div>
+                    <div class="value-desc">以誠信為本，對客戶、夥伴與員工保持透明與負責的態度</div>
+                </div>
+                <div class="value-card">
+                    <div class="value-icon">🌱</div>
+                    <div class="value-title">永續</div>
+                    <div class="value-desc">重視環境責任與社會影響，致力於永續經營與綠色製造</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 福利制度 -->
+    <section>
+        <div class="section-header">
+            <h2>福利制度</h2>
+            <p>Employee Benefits</p>
+            <div class="section-divider"></div>
+        </div>
+        <div class="benefits-grid">
+            <div class="benefit-card">
+                <div class="benefit-icon-row">
+                    <div class="benefit-icon">💰</div>
+                    <div class="benefit-title">薪酬與獎金</div>
+                </div>
+                <ul class="benefit-list">
+                    <li>具市場競爭力之薪資結構</li>
+                    <li>年終獎金依績效核發</li>
+                    <li>員工分紅入股計畫</li>
+                    <li>介紹獎金制度</li>
+                </ul>
+            </div>
+            <div class="benefit-card">
+                <div class="benefit-icon-row">
+                    <div class="benefit-icon">🏥</div>
+                    <div class="benefit-title">健康與保障</div>
+                </div>
+                <ul class="benefit-list">
+                    <li>勞健保及團體意外險</li>
+                    <li>年度健康檢查補助</li>
+                    <li>員工眷屬醫療補助</li>
+                    <li>心理健康諮詢資源</li>
+                </ul>
+            </div>
+            <div class="benefit-card">
+                <div class="benefit-icon-row">
+                    <div class="benefit-icon">📚</div>
+                    <div class="benefit-title">學習與成長</div>
+                </div>
+                <ul class="benefit-list">
+                    <li>內部培訓課程與工作坊</li>
+                    <li>外部進修補助</li>
+                    <li>導師制度一對一指導</li>
+                    <li>跨部門輪調機會</li>
+                </ul>
+            </div>
+            <div class="benefit-card">
+                <div class="benefit-icon-row">
+                    <div class="benefit-icon">🏖️</div>
+                    <div class="benefit-title">休假制度</div>
+                </div>
+                <ul class="benefit-list">
+                    <li>週休二日、彈性上下班</li>
+                    <li>到職即享有特休假</li>
+                    <li>生理假、陪產假、育嬰留停</li>
+                    <li>家庭照顧假</li>
+                </ul>
+            </div>
+            <div class="benefit-card">
+                <div class="benefit-icon-row">
+                    <div class="benefit-icon">🍱</div>
+                    <div class="benefit-title">生活補助</div>
+                </div>
+                <ul class="benefit-list">
+                    <li>員工餐廳與餐飲補助</li>
+                    <li>交通接駁車服務</li>
+                    <li>停車位優惠</li>
+                    <li>員工購買產品優惠價</li>
+                </ul>
+            </div>
+            <div class="benefit-card">
+                <div class="benefit-icon-row">
+                    <div class="benefit-icon">🎉</div>
+                    <div class="benefit-title">員工活動</div>
+                </div>
+                <ul class="benefit-list">
+                    <li>年度員工旅遊</li>
+                    <li>社團活動與補助</li>
+                    <li>節慶禮品與聚餐</li>
+                    <li>運動設施與健身補助</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section">
+        <div class="cta-inner">
+            <h2>準備好加入我們了嗎？</h2>
+            <p>探索最新職缺，找到屬於你的舞台，與我們共創科技未來</p>
+            <a class="cta-btn" asp-controller="Job" asp-action="Job_search">立即探索職缺</a>
+        </div>
+    </section>
+
+</main>

@@ -2,20 +2,23 @@
     ViewData["Title"] = "首頁";
 }
 
-<div class="index-scroll-container">
-    <!-- HERO -->
-    <section class="hero">
-        <h1>加入我們，共創未來</h1>
-        <p>探索 XXX 公司最新職缺，找到最適合你的舞台</p>
-        <div class="hero-btn-group">
-            <a href="#" class="hero-btn">填履歷表</a>
-            <a href="job_search.html" class="hero-btn">查詢職缺</a>
-        </div>
-    </section>
+@section Styles {
+    <link rel="stylesheet" href="~/css/Home.css" asp-append-version="true" />
+}
 
-    <!-- MAIN -->
-    <main class="main">
+<!-- HERO -->
+<section class="hero">
+    <h1>加入我們，共創未來</h1>
+    <p>探索 XXX 公司最新職缺，找到最適合你的舞台</p>
+    <div class="hero-btn-group">
+        <a href="#" class="hero-btn">填履歷表</a>
+        <a href="job_search.html" class="hero-btn">查詢職缺</a>
+    </div>
+</section>
 
+<!-- MAIN -->
+<main class="home-main">
+    <div class="home-main-inner">
         <!-- 公告 -->
         <section>
             <div class="section-label">最新公告</div>
@@ -97,6 +100,5 @@
 
             </div>
         </section>
-
-    </main>
-</div>
+    </div>
+</main>

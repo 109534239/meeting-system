@@ -1,0 +1,331 @@
+@{
+    ViewData["Title"] = "職缺搜尋";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+}
+
+<!-- PAGE HEADER -->
+<div class="page-wrapper">
+    <div class="page-header">
+        <div class="page-header-inner">
+        <h1>搜尋條件</h1>
+        <p>Search Conditions</p>
+        </div>
+    </div>
+
+    <!-- SEARCH BAR -->
+    <div class="search-bar">
+        <div class="search-inner">
+        <div class="search-field">
+            <label>職缺類別</label>
+            <select id="sel-category">
+            <option value="">全部類別</option>
+            <option value="pm">專案管理</option>
+            <option value="it">資訊技術</option>
+            <option value="hr">人力資源</option>
+            <option value="mkt">行銷企劃</option>
+            <option value="fin">財務會計</option>
+            <option value="sales">業務銷售</option>
+            </select>
+        </div>
+        <div class="search-field">
+            <label>工作地址</label>
+            <select id="sel-location">
+            <option value="">全部地址</option>
+            <option value="taipei">台北內湖</option>
+            <option value="xinbei">新北汐止</option>
+            <option value="hsinchu1">新竹竹北</option>
+            <option value="hsinchu2">新竹湖口</option>
+            </select>
+        </div>
+        <div class="search-field">
+            <label>工作性質</label>
+            <select id="sel-type">
+            <option value="">全部性質</option>
+            <option value="full">全職</option>
+            <option value="part">兼職</option>
+            <option value="intern">實習</option>
+            </select>
+        </div>
+        <div class="search-field keyword">
+            <label>關鍵字搜尋</label>
+            <input type="text" id="kw-input" placeholder="輸入職缺、技能、證照等關鍵字" />
+        </div>
+        <button class="search-btn" onclick="doSearch()">搜尋</button>
+        <button class="reset-btn" onclick="resetSearch()">重置</button>
+        </div>
+    </div>
+
+    <!-- MAIN -->
+    <main class="main">
+
+        <!-- RESULT META -->
+        <div class="result-meta">
+        <div class="result-count">共 <span id="result-num">7</span> 筆職缺</div>
+        <div class="filter-tag" id="active-filter" style="display:none">
+            專案管理 <button onclick="removeFilter()">×</button>
+        </div>
+        </div>
+
+        <!-- TABLE HEADER -->
+        <div class="job-table-head">
+        <div>職缺類型</div>
+        <div>職缺名稱</div>
+        <div>工作地點</div>
+        <div class="sortable">經歷</div>
+        <div class="sortable">學歷</div>
+        <div></div>
+        <div></div>
+        </div>
+
+        <!-- JOB LIST -->
+        <div class="job-list" id="job-list">
+
+            <div class="job-row">
+                <div class="job-type-text">專案管理</div>
+                <div class="job-name-cell">
+                    <span class="job-fulltime">全職</span>
+                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">NB產品經理_260502001</a>
+                </div>
+                <div class="job-cell">新北汐止</div>
+                <div class="job-cell">3年以上</div>
+                <div class="job-cell">大學以上</div>
+                <div class="job-actions">
+                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
+                </div> 
+                <div class="job-actions">
+                    <button class="btn-icon" title="收藏" onclick="checkLogin('NB產品經理_260502001', this)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="job-row">
+                <div class="job-type-text">資訊技術</div>
+                <div class="job-name-cell">
+                    <span class="job-fulltime">全職</span>
+                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">前端工程師_260502002</a>
+                </div>
+                <div class="job-cell">台北內湖</div>
+                <div class="job-cell">3年以上</div>
+                <div class="job-cell">大學以上</div>
+                <div class="job-actions">
+                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
+                </div>  
+                <div class="job-actions"> 
+                    <button class="btn-icon" title="收藏" onclick="checkLogin('前端工程師_260502002', this)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="job-row">
+                <div class="job-type-text">人力資源</div>
+                <div class="job-name-cell">
+                    <span class="job-fulltime">全職</span>
+                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">HR 招募專員_260502003</a>
+                </div>
+                <div class="job-cell">新竹竹北</div>
+                <div class="job-cell">1年以上</div>
+                <div class="job-cell">大學以上</div>
+                <div class="job-actions">
+                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
+                </div>  
+                <div class="job-actions"> 
+                    <button class="btn-icon" title="收藏" onclick="checkLogin('HR 招募專員_260502003', this)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="job-row">
+                <div class="job-type-text">行銷企劃</div>
+                <div class="job-name-cell">
+                    <span class="job-fulltime">全職</span>
+                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">數位行銷專員_260502004</a>
+                </div>
+                <div class="job-cell">新北汐止</div>
+                <div class="job-cell">2年以上</div>
+                <div class="job-cell">大學以上</div>
+                <div class="job-actions">
+                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
+                </div>  
+                <div class="job-actions">  
+                    <button class="btn-icon" title="收藏" onclick="checkLogin('數位行銷專員_260502004', this)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="job-row">
+                <div class="job-type-text">財務會計</div>
+                <div class="job-name-cell">
+                    <span class="job-fulltime">全職</span>
+                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">財務分析師_260502005</a>
+                </div>
+                <div class="job-cell">新竹湖口</div>
+                <div class="job-cell">3年以上</div>
+                <div class="job-cell">大學以上</div>
+                <div class="job-actions">
+                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
+                </div>  
+                <div class="job-actions">  
+                    <button class="btn-icon" title="收藏" onclick="checkLogin('財務分析師_260502005', this)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="job-row">
+                <div class="job-type-text">業務銷售</div>
+                <div class="job-name-cell">
+                    <span class="job-fulltime">全職</span>
+                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">業務開發專員_260502006</a>
+                </div>
+                <div class="job-cell">台北內湖</div>
+                <div class="job-cell">2年以上</div>
+                <div class="job-cell">大學以上</div>
+                <div class="job-actions">
+                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
+                </div>  
+                <div class="job-actions">     
+                    <button class="btn-icon" title="收藏" onclick="checkLogin('業務開發專員_260502006', this)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="job-row">
+                <div class="job-type-text">行政管理</div>
+                <div class="job-name-cell">
+                    <span class="job-fulltime">全職</span>
+                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">行政助理_260502007</a>
+                </div>
+                <div class="job-cell">新竹竹北</div>
+                <div class="job-cell">不限</div>
+                <div class="job-cell">大學以上</div>
+                <div class="job-actions">
+                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
+                </div>  
+                <div class="job-actions">     
+                    <button class="btn-icon" title="收藏" onclick="checkLogin('行政助理_260502007', this)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+
+        <!-- PAGINATION -->
+        <div class="pagination" id="pagination"></div>
+    </main>
+</div>
+
+
+
+
+@section Scripts {
+  <script>
+    const PAGE_SIZE = 20;
+    let currentPage = 1;
+
+    function checkLogin(jobTitle, btn) {
+      const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+      if (!isLoggedIn) {
+        const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
+        if (go) window.location.href = '/Login';
+        return;
+      }
+
+      // 已登入 → 切換收藏狀態
+      const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+      const index = favorites.indexOf(jobTitle);
+
+      if (index === -1) {
+        // 尚未收藏 → 加入，按鈕變淺藍
+        favorites.push(jobTitle);
+        btn.style.background = 'var(--primary-light)';
+      } else {
+        // 已收藏 → 取消，按鈕還原灰色
+        favorites.splice(index, 1);
+        btn.style.background = 'var(--gray)';
+      }
+
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+    }
+
+    function getTotalRows() {
+      return document.querySelectorAll('#job-list .job-row').length;
+    }
+
+    function renderPagination() {
+      const total = getTotalRows();
+      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      const pg = document.getElementById('pagination');
+      pg.innerHTML = '';
+
+      const prev = document.createElement('button');
+      prev.className = 'page-arrow';
+      prev.innerHTML = '&#8249;';
+      prev.onclick = () => { if (currentPage > 1) goPage(currentPage - 1); };
+      pg.appendChild(prev);
+
+      for (let i = 1; i <= totalPages; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'page-num' + (i === currentPage ? ' active' : '');
+        btn.textContent = i;
+        btn.onclick = () => goPage(i);
+        pg.appendChild(btn);
+      }
+
+      const next = document.createElement('button');
+      next.className = 'page-arrow';
+      next.innerHTML = '&#8250;';
+      next.onclick = () => { if (currentPage < totalPages) goPage(currentPage + 1); };
+      pg.appendChild(next);
+    }
+
+    function goPage(page) {
+      currentPage = page;
+      renderPagination();
+    }
+
+    function setActive(btn) {
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    function removeFilter() {
+      document.getElementById('active-filter').style.display = 'none';
+    }
+
+    function doSearch() {
+      const kw = document.getElementById('kw-input').value;
+      if (kw) alert('搜尋關鍵字：' + kw + '\n（此為示範，實際串接後端後會過濾結果）');
+    }
+
+    function resetSearch() {
+      document.getElementById('sel-category').value = '';
+      document.getElementById('sel-location').value = '';
+      document.getElementById('sel-type').value = '';
+      document.getElementById('kw-input').value = '';
+    }
+  </script>
+}
