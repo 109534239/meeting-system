@@ -184,6 +184,8 @@
 .form-control:focus {
     border-color: var(--primary);
     background: var(--white);
+    outline: none;
+    box-shadow: none;
 }
 .form-control::placeholder { color: #bbb; }
 

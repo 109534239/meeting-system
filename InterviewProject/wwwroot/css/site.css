@@ -20,11 +20,17 @@ html {
 
 body {
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     font-family: 'Noto Sans TC', sans-serif;
     background: var(--gray);
     color: var(--text-main);
-    display: flex;
-    flex-direction: column;
+}
+
+.page-wrapper {
+    background: var(--gray);
+    width: 100%;
+    flex: 1;
 }
 
 .page-container {

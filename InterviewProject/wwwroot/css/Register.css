@@ -1,0 +1,103 @@
+/* ── REGISTER PAGE ── */
+.register-page {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 20px;
+}
+
+.register-card {
+    background: var(--white);
+    border-radius: 20px;
+    padding: 48px 56px;
+    width: 100%;
+    max-width: 560px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    border: 1px solid #e8e8e8;
+}
+
+.register-title {
+    text-align: center;
+    margin-bottom: 32px;
+}
+.register-title h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 4px;
+}
+.register-title p {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+.form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    padding-left: 0;
+}
+.form-control {
+    width: 100%;
+    padding: 14px 20px;
+    border: 1.5px solid #ddd;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--text-main);
+    background: var(--gray);
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+    text-align: left;
+}
+
+.form-control:focus {
+    border-color: var(--primary);
+    background: var(--white);
+    outline: none;
+    box-shadow: none;
+}
+.form-control::placeholder { color: #bbb; }
+
+.btn-submit {
+    width: 30%;
+    display: block;
+    margin-top: 28px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 14px;
+    background: var(--primary);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s;
+}
+.btn-submit:hover { background: var(--primary-dark); }
+
+.back-login {
+    text-align: center;
+    margin-top: 28px;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+.back-login a {
+    color: var(--primary);
+    font-weight: 700;
+    text-decoration: none;
+}
+.back-login a:hover { text-decoration: underline; }
+
+.required {
+    color: #c94040;
+    margin-left: 2px;
+}

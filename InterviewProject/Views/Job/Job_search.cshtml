@@ -270,6 +270,15 @@
 
       localStorage.setItem('favorites', JSON.stringify(favorites));
     }
+    window.addEventListener('load', function() {
+        const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+        document.querySelectorAll('.btn-icon').forEach(btn => {
+            const jobTitle = btn.getAttribute('onclick').match(/'([^']+)'/)?.[1];
+            if (jobTitle && favorites.includes(jobTitle)) {
+                btn.style.background = 'var(--primary-light)';
+            }
+        });
+    });
 
     function getTotalRows() {
       return document.querySelectorAll('#job-list .job-row').length;

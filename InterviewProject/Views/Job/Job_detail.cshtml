@@ -37,7 +37,7 @@
         <div class="job-badge-row">
             <span class="badge badge-full">全職</span>
         </div>
-        <div class="job-header-title">NB產品經理_260502001</div>
+        <div class="job-header-title" id="job-title">NB產品經理_260502001</div>
         <div class="job-header-dept">專案管理</div>
         <div class="job-header-meta">
             <div class="meta-item">
@@ -54,11 +54,10 @@
         </div>
         </div>
         <div class="job-header-actions">
-        <button class="btn-apply-lg"> 立即應徵 </button>
-        <button class="btn-icon-lg" title="收藏" onclick="checkLogin('NB產品經理_260502001')">
+        <button class="btn-apply-lg" onclick="openModal()">立即應徵</button>
+        <button class="btn-icon-lg" title="收藏" onclick="checkLogin('NB產品經理_260502001', this)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
-            </svg>
+                <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
             </svg>
         </button>
         </button>
@@ -180,36 +179,99 @@
         </div>
     </div>
 
-    <button class="btn-apply-full">立即應徵 ▸</button>
+    <button class="btn-apply-full" onclick="openModal()">立即應徵</button>
+
 
     </div>
 
 </main>
 
-@section Scripts {
-  <script>
-    function checkLogin(jobTitle) {
-      const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-      if (!isLoggedIn) {
-        const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
-        if (go) window.location.href = 'login.html';
-      } else {
-        // 讀取現有收藏清單
-        const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-        // 避免重複收藏
-        if (favorites.includes(jobTitle)) {
-          alert('此職缺已在收藏清單中！');
-        } else {
-          favorites.push(jobTitle);
-          localStorage.setItem('favorites', JSON.stringify(favorites));
-          alert('已加入收藏！');
-        }
-      }
-    }
+<!-- 應徵 MODAL -->
+<div class="modal-overlay" id="apply-modal">
+    <div class="modal-card">
 
-    function setActive(btn) {
-      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    }
-  </script>
+        <div class="modal-header">
+            <div class="modal-title">立即應徵</div>
+            <div class="modal-job-name">應徵職位：<span id="modal-job-title"></span></div>
+        </div>
+
+        <div class="modal-body">
+            <button class="modal-btn" onclick="goNewResume()">建立全新履歷</button>
+            <button class="modal-btn" onclick="goExistingResume()">套用現有履歷</button>
+        </div>
+
+        <div class="modal-footer">
+            <button class="modal-btn-back" onclick="closeModal()">返回</button>
+        </div>
+
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function checkLogin(jobTitle, btn) {
+            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            if (!isLoggedIn) {
+                const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
+                if (go) window.location.href = '/Login';
+                return;
+            }
+
+            // 已登入 → 切換收藏狀態
+            const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+            const index = favorites.indexOf(jobTitle);
+
+            if (index === -1) {
+                favorites.push(jobTitle);
+                btn.style.background = 'var(--primary-light)';
+            } else {
+                favorites.splice(index, 1);
+                btn.style.background = 'var(--gray)';
+            }
+
+            localStorage.setItem('favorites', JSON.stringify(favorites));
+        }
+
+        // 頁面載入時檢查是否已收藏
+        window.addEventListener('load', function() {
+            const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+            const btn = document.querySelector('.btn-icon-lg');
+            if (btn && favorites.includes('NB產品經理_260502001')) {
+                btn.style.background = 'var(--primary-light)';
+            }
+        });
+
+        function openModal() {
+            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            if (!isLoggedIn) {
+                const go = confirm('需要登入才能應徵職缺\n\n是否前往登入頁面？');
+                if (go) window.location.href = '/Login';
+                return;
+            }
+
+            // 👈 抓取職位名稱填入 modal
+            const jobTitle = document.getElementById('job-title').textContent.trim();
+            document.getElementById('modal-job-title').textContent = jobTitle;
+
+            document.getElementById('apply-modal').classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal() {
+            document.getElementById('apply-modal').classList.remove('show');
+            document.body.style.overflow = '';
+        }
+
+        function goNewResume() {
+            window.location.href = '/Member/Resume';
+        }
+
+        function goExistingResume() {
+            alert('套用現有履歷（待串接後端）');
+        }
+
+        document.getElementById('apply-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+    </script>
 }

@@ -7,8 +7,8 @@
 .custom-breadcrumb .breadcrumb-inner {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 24px 40px 20px;
-    font-size: 15px;
+    padding: 20px 40px 20px;
+    font-size: 13px;
     font-weight: 400;
     color: #999;
 }
@@ -55,24 +55,24 @@
     gap: 10px;
     margin-bottom: 12px;
 }
-    .badge {
-      display: inline-block;
-      padding: 4px 14px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 700;
-    }
+.badge {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+}
     .badge-intern {
-      background: #2aab8e;
-      color: var(--white);
+        background: #2aab8e;
+        color: var(--white);
     }
     .badge-full {
-      background: var(--primary);
-      color: var(--white);
+        background: var(--primary);
+        color: var(--white);
     }
     .badge-part {
-      background: #e07b3a;
-      color: var(--white);
+        background: #e07b3a;
+        color: var(--white);
     }
 .job-header-dept {
     font-size: 14px;
@@ -242,6 +242,8 @@
     gap: 10px;
     font-size: 14px;
     color: var(--text-main);
+    padding-left: 0;
+    margin-left: 0;
 }
     .desc-list li {
       display: flex;
@@ -418,62 +420,109 @@ color: var(--text-main);
 line-height: 1.6;
 }
 
-/* ── USER DROPDOWN（登入後）── */
-.nav-user-logged {
-position: relative;
-flex-shrink: 0;
-}
-
-.nav-avatar {
-    width: 42px; height: 42px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.2);
-    border: 2px solid rgba(255,255,255,0.5);
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer;
-    transition: background 0.2s;
-}
-    .nav-avatar:hover { background: rgba(255,255,255,0.35); }
-
-.dropdown-menu {
-    display: none;
-    position: absolute;
-    top: 52px;
-    right: 0;
-    background: var(--white);
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-    border: 1px solid #e8e8e8;
-    min-width: 140px;
-    overflow: hidden;
-    z-index: 200;
-}
-    .dropdown-menu.show { display: block; }
-
-.dropdown-item {
-    display: block;
-    padding: 13px 20px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-main);
-    text-decoration: none;
-    transition: background 0.15s;
-    border-bottom: 1px solid #f0f0f0;
-    cursor: pointer;
-    background: none;
-    border-left: none;
-    border-right: none;
-    border-top: none;
+/* ── MODAL ── */
+.modal-header {
     width: 100%;
-    text-align: left;
-    font-family: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
 }
-    .dropdown-item:last-child { border-bottom: none; }
-    .dropdown-item:hover { background: var(--gray); color: var(--primary); }
-    .dropdown-item.logout {
-      color: #c94040;
-    }
-    .dropdown-item.logout:hover { background: #fff0f0; }
+
+.modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+}
+.modal-overlay.show {
+    display: flex;
+}
+
+.modal-card {
+    background: var(--white);
+    border-radius: 24px;
+    padding: 28px 32px;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    align-items: center;
+}
+
+.modal-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-main);
+    text-align: center;
+}
+
+.modal-job-name {
+    font-size: 14px;
+    color: var(--text-muted);
+    background: var(--gray);
+    padding: 10px 24px;
+    border-radius: 10px;
+    width: 100%;
+    text-align: center;
+}
+
+.modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    margin-top: 8px;
+}
+
+/* 白底藍框線按鈕 */
+.modal-btn {
+    width: 100%;
+    padding: 16px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s, color 0.2s;
+    background: var(--white);
+    color: var(--primary);
+    border: 1px solid var(--primary);
+}
+.modal-btn:hover {
+    background: var(--primary);
+    color: var(--white);
+}
+
+/* 返回按鈕 */
+.modal-footer {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    margin-top: 4px;
+}
+.modal-btn-back {
+    padding: 12px 48px;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s, color 0.2s;
+    display: inline-block;
+}
+.modal-btn-back:hover {
+    background: var(--primary);
+    color: var(--white);
+}
 
 @media (max-width: 900px) {
     .main { grid-template-columns: 1fr; }

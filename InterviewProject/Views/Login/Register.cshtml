@@ -1,0 +1,69 @@
+@{
+    ViewData["Title"] = "註冊";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/Register.css" asp-append-version="true" />
+}
+
+<!-- REGISTER -->
+<div class="register-page">
+    <div class="register-card">
+
+        <div class="register-title">
+            <h1>註冊帳號</h1>
+            <p>建立您的求職者帳號</p>
+        </div>
+
+        <form id="register-form" onsubmit="return validateForm()">
+
+            <div class="form-group">
+                <label>姓名 <span class="required">*</span></label>
+                <input type="text" class="form-control" placeholder="請輸入姓名" required />
+            </div>
+
+            <div class="form-group">
+                <label>電子郵件 <span class="required">*</span></label>
+                <input type="email" class="form-control" placeholder="請輸入電子郵件" required />
+            </div>
+
+            <div class="form-group">
+                <label>手機號碼 <span class="required">*</span></label>
+                <input type="tel" class="form-control" placeholder="請輸入手機號碼" required />
+            </div>
+
+            <div class="form-group">
+                <label>密碼 <span class="required">*</span></label>
+                <input type="password" id="password" class="form-control" placeholder="請設定密碼" required />
+            </div>
+
+            <div class="form-group">
+                <label>確認密碼 <span class="required">*</span></label>
+                <input type="password" id="confirm-password" class="form-control" placeholder="請再次輸入密碼" required />
+            </div>
+
+            <button type="submit" class="btn-submit">送出註冊</button>
+
+        </form>
+
+        <div class="back-login">
+            已有帳號？ <a asp-controller="Login" asp-action="Index">返回登入</a>
+        </div>
+
+    </div>
+</div>
+
+@section Scripts {
+  <script>
+    function validateForm() {
+        const password = document.getElementById('password').value;
+        const confirm = document.getElementById('confirm-password').value;
+
+        if (password !== confirm) {
+            alert('密碼與確認密碼不一致，請重新輸入');
+            return false;
+        }
+        return true;
+    }
+  </script>
+}
