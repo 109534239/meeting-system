@@ -1,0 +1,306 @@
+/* ── LAYOUT ── */
+.profile-main {
+    min-height: calc(100vh - 72px - 60px);
+    background: #f4f7f9;
+    padding: 40px 0;
+    display: flex;
+    justify-content: center;
+}
+
+.profile-wrap {
+    width: 100%;
+    max-width: 1200px;
+    padding: 0 40px;
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    box-sizing: border-box;
+}
+
+/* ── 左側 Sidebar ── */
+.profile-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--primary);
+    border-radius: 18px;
+    padding: 36px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 92px;
+}
+
+.profile-avatar {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 3px solid rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.sidebar-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 1px;
+    text-align: center;
+}
+
+.sidebar-role {
+    font-size: 13px;
+    color: rgba(255,255,255,1);
+    font-weight: 500;
+    padding: 3px 14px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 20px;
+    margin-bottom: 8px;
+}
+
+.btn-upload {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 16px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.15);
+    border: 1.5px solid rgba(255,255,255,0.35);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    white-space: nowrap;
+    font-family: inherit;
+    width: 100%;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
+.btn-upload:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+/* ── 右側內容 ── */
+.profile-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    min-width: 0;
+}
+
+/* ── 卡片 ── */
+.profile-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 16px rgba(23, 79, 103, 0.08);
+    overflow: hidden;
+}
+
+.card-header {
+    padding: 24px 32px 0;
+    border-bottom: 1.5px solid #eef1f4;
+    margin-bottom: 0;
+    padding-bottom: 16px;
+}
+
+.card-header h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 0.5px;
+    margin: 0;
+}
+
+/* ── 欄位格線 ── */
+.fields-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px 28px;
+    padding: 28px 32px 8px;
+}
+
+.field-item {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.field-item--full {
+    grid-column: 1 / -1;
+}
+
+.field-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted, #8a9bb0);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+.field-input {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-main, #1a2e3b);
+    padding: 10px 14px;
+    border: 1.5px solid #d0dde6;
+    border-radius: 8px;
+    background: #f8fbfc;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.field-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(23, 79, 103, 0.1);
+    background: #fff;
+}
+
+/* ── 密碼輸入框 ── */
+.input-password-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-password-wrap .field-input {
+    padding-right: 44px;
+}
+
+.btn-eye {
+    position: absolute;
+    right: 12px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted, #8a9bb0);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    opacity: 1;
+    transition: opacity 0.2s;
+}
+
+.btn-eye:hover {
+    color: var(--primary);
+}
+
+.pw-error {
+    margin: 0 32px 4px;
+    padding: 10px 16px;
+    background: #fff0f0;
+    border: 1.5px solid #f5c2c2;
+    border-radius: 8px;
+    color: #c94040;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* ── 儲存按鈕 ── */
+.card-actions {
+    padding: 20px 32px 28px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-save {
+    padding: 10px 32px;
+    border-radius: 8px;
+    border: none;
+    background: var(--primary);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-family: inherit;
+}
+
+.btn-save:hover {
+    background: var(--primary-dark);
+}
+
+/* ── Toast 通知 ── */
+.toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #1a2e3b;
+    color: #fff;
+    padding: 12px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 999;
+    white-space: nowrap;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.toast.toast-error {
+    background: #c94040;
+}
+
+/* 唯讀欄位 */
+.field-readonly {
+    background: #eef1f4;
+    color: var(--text-muted, #8a9bb0);
+    cursor: not-allowed;
+}
+
+/* 成功提示 */
+.alert-success {
+    margin: 0 32px 4px;
+    padding: 10px 16px;
+    background: #f0fff4;
+    border: 1.5px solid #b2dfc0;
+    border-radius: 8px;
+    color: #2e7d4f;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* ── RWD ── */
+@media (max-width: 700px) {
+    .profile-wrap {
+        flex-direction: column;
+    }
+    .profile-sidebar {
+        width: 100%;
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+        padding: 24px;
+    }
+    .fields-grid {
+        grid-template-columns: 1fr;
+        padding: 20px 20px 8px;
+    }
+    .field-item--full {
+        grid-column: 1;
+    }
+    .card-header {
+        padding: 20px 20px 14px;
+    }
+    .card-actions {
+        padding: 16px 20px 20px;
+    }
+}

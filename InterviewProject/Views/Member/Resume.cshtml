@@ -1,0 +1,92 @@
+@{
+    ViewData["Title"] = "我的履歷";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Resume.css" asp-append-version="true" />
+}
+
+<div class="resume-wrapper">
+
+    <!-- PAGE HEADER -->
+    <div class="page-header">
+        <div class="page-header-inner">
+            <h1>我的履歷</h1>
+            <p>Resume Management</p>
+        </div>
+    </div>
+
+    <!-- TOP ACTION BAR -->
+    <div class="resume-toolbar">
+        <div class="resume-toolbar-inner">
+            <div class="resume-count">
+                共 3 份履歷
+            </div>
+
+            <button class="btn-add-resume">
+                + 新增履歷
+            </button>
+        </div>
+    </div>
+
+    <!-- RESUME LIST -->
+    <div class="resume-page">
+
+        <!-- LIST -->
+        <div class="resume-list">
+
+            <!-- ROW -->
+            <div class="resume-card">
+                <div class="card-left">
+                    <div class="status-block">
+                        <span class="status-badge status-submitted">已投遞</span>
+                    </div>
+                    
+                    <div class="info-block">
+                        <span class="resume-updated">最後更新時間：2026/05/04 22:54</span>
+                        <h2 class="resume-title">20260504_前端工程師</h2>
+                    </div>
+                </div>
+                
+                <div class="card-right">
+                    <button class="btn-icon-delete" title="刪除">
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        </svg>
+                    </button>
+                    <div class="card-actions">
+                        <button class="btn-outline">匯出PDF</button>
+                        <button class="btn-outline">編輯</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="resume-card">
+                <div class="card-left">
+                    <div class="status-block">
+                        <span class="status-badge status-draft"">草稿</span>
+                    </div>
+                    
+                    <div class="info-block">
+                        <span class="resume-updated">最後更新時間：2026/05/08 23:02</span>
+                        <h2 class="resume-title">20250508_產品經理</h2>
+                    </div>
+                </div>
+                
+                <div class="card-right">
+                    <button class="btn-icon-delete" title="刪除">
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        </svg>
+                    </button>
+                    <div class="card-actions">
+                        <button class="btn-outline">匯出PDF</button>
+                        <button class="btn-outline">編輯</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
