@@ -14,5 +14,7 @@
         public DbSet<Room> Rooms { get; set; }
         public DbSet<RoomMember> RoomMembers { get; set; }
         public DbSet<Attendance> Attendances { get; set; }
+        public DbSet<Member> Members { get; set; }
+
     }
 }

@@ -6,77 +6,70 @@
     <link rel="stylesheet" href="~/css/Login.css" asp-append-version="true" />
 }
 
-  <!-- LOGIN -->
 <div class="login-page">
     <div class="login-card">
 
-    <div class="login-title">
-        <h1>登入頁面</h1>
-        <p>請選擇身分</p>
-    </div>
+      <div class="login-title">
+          <h1>登入頁面</h1>
+          <p>請選擇身分</p>
+      </div>
 
-    <!-- 身分切換 -->
-    <div class="role-tabs">
-        <button class="role-tab active" onclick="switchTab(this, 'jobseeker')">求職者</button>
-        <button class="role-tab" onclick="switchTab(this, 'employee')">員工</button>
-    </div>
+      <!-- 身分切換 -->
+      <div class="role-tabs">
+          <button class="role-tab active" onclick="switchTab(this, 'jobseeker')">求職者</button>
+          <button class="role-tab" onclick="switchTab(this, 'employee')">員工</button>
+      </div>
 
-    <!-- 求職者登入 -->
-    <div id="panel-jobseeker">
-        <div class="form-group">
-        <input type="text" class="form-control" placeholder="輸入身分證字號或 Email" />
-        </div>
-        <div class="form-group">
-        <input type="password" class="form-control" placeholder="輸入密碼" />
-        </div>
-        <button class="btn-login" onclick="doLogin('jobseeker')">登入</button>
-        <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
-        <hr class="register-divider" />
-        <a href="@Url.Action("Register", controller: "Login")" class="btn-register">註冊</a>
-    </div>
+      @if (TempData["LoginError"] != null)
+      {
+          <div class="alert-error">@TempData["LoginError"]</div>
+      }
 
-    <!-- 員工登入 -->
-    <div id="panel-employee" style="display:none">
-        <div class="form-group">
-        <input type="text" class="form-control" placeholder="輸入員工編號或 Email" />
-        </div>
-        <div class="form-group">
-        <input type="password" class="form-control" placeholder="輸入密碼" />
-        </div>
-        <button class="btn-login employee" onclick="doLogin('employee')">登入</button>
-        <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
-    </div>
+      <!-- 求職者登入 -->
+      <div id="panel-jobseeker">
+          <form method="post" asp-controller="Login" asp-action="Login">
+              @Html.AntiForgeryToken()
+              <input type="hidden" name="role" value="jobseeker" />
+              <div class="form-group">
+                  <input type="text" name="account" class="form-control" placeholder="輸入 Email" required />
+              </div>
+              <div class="form-group">
+                  <input type="password" name="password" class="form-control" placeholder="輸入密碼" required />
+              </div>
+              <button type="submit" class="btn-login">登入</button>
+          </form>
+          <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
+          <hr class="register-divider" />
+          <a href="@Url.Action("Register", controller: "Login")" class="btn-register">註冊</a>
+      </div>
+
+      <!-- 員工登入 -->
+      <div id="panel-employee" style="display:none">
+          <form method="post" asp-controller="Login" asp-action="Login">
+              @Html.AntiForgeryToken()
+              <input type="hidden" name="role" value="employee" />
+              <div class="form-group">
+                  <input type="text" name="account" class="form-control" placeholder="輸入 Email" required />
+              </div>
+              <div class="form-group">
+                  <input type="password" name="password" class="form-control" placeholder="輸入密碼" required />
+              </div>
+              <button type="submit" class="btn-login employee">登入</button>
+          </form>
+          <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
+      </div>
 
     </div>
 </div>
 
-
 @section Scripts {
   <script>
     function switchTab(btn, role) {
-      document.querySelectorAll('.role-tab').forEach(t => t.classList.remove('active'));
-      btn.classList.add('active');
-      ['jobseeker', 'employee'].forEach(r => {
-        document.getElementById('panel-' + r).style.display = r === role ? 'block' : 'none';
-      });
-    }
-
-    function doLogin(role) {
-      const panel = document.getElementById('panel-' + role);
-      const account = panel.querySelector('input[type="text"]').value.trim();
-      const password = panel.querySelector('input[type="password"]').value.trim();
-
-      if (!account || !password) {
-        alert('請填寫帳號與密碼！');
-        return;
-      }
-
-      // 模擬登入成功 → 儲存登入狀態
-      localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('role', role);
-
-      // 跳回首頁
-      window.location.href = '/Home/Index';
+        document.querySelectorAll('.role-tab').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+        ['jobseeker', 'employee'].forEach(r => {
+            document.getElementById('panel-' + r).style.display = r === role ? 'block' : 'none';
+        });
     }
   </script>
 }

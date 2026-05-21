@@ -15,26 +15,35 @@
             <p>建立您的求職者帳號</p>
         </div>
 
-        <form id="register-form" onsubmit="return validateForm()">
+        <form id="register-form" method="post"
+            asp-controller="Login" asp-action="Register"
+            onsubmit="return validateForm()">
+
+            @Html.AntiForgeryToken()
+
+            @if (TempData["RegisterError"] != null)
+            {
+                <div class="alert-error">@TempData["RegisterError"]</div>
+            }
 
             <div class="form-group">
                 <label>姓名 <span class="required">*</span></label>
-                <input type="text" class="form-control" placeholder="請輸入姓名" required />
+                <input type="text" name="name" class="form-control" placeholder="請輸入姓名" required />
             </div>
 
             <div class="form-group">
                 <label>電子郵件 <span class="required">*</span></label>
-                <input type="email" class="form-control" placeholder="請輸入電子郵件" required />
+                <input type="email" name="email" class="form-control" placeholder="請輸入電子郵件" required />
             </div>
 
             <div class="form-group">
                 <label>手機號碼 <span class="required">*</span></label>
-                <input type="tel" class="form-control" placeholder="請輸入手機號碼" required />
+                <input type="tel" name="phone" class="form-control" placeholder="請輸入手機號碼" required />
             </div>
 
             <div class="form-group">
                 <label>密碼 <span class="required">*</span></label>
-                <input type="password" id="password" class="form-control" placeholder="請設定密碼" required />
+                <input type="password" id="password" name="password" class="form-control" placeholder="請設定密碼" required />
             </div>
 
             <div class="form-group">
@@ -43,7 +52,6 @@
             </div>
 
             <button type="submit" class="btn-submit">送出註冊</button>
-
         </form>
 
         <div class="back-login">

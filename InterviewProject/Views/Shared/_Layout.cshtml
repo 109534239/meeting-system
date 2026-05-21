@@ -1,6 +1,11 @@
 ﻿@{ 
     var controller = ViewContext.RouteData.Values["controller"]?.ToString(); 
-    var action = ViewContext.RouteData.Values["action"]?.ToString(); 
+    var action = ViewContext.RouteData.Values["action"]?.ToString();
+    var memberId = Context.Session.GetInt32("MemberId");
+    var memberName = Context.Session.GetString("MemberName");
+    var memberRole = Context.Session.GetString("MemberRole");
+    var isLoggedIn = memberId.HasValue;
+    var roleLabel = memberRole == "employee" ? "人資" : "求職者";
 }
 
 <!DOCTYPE html>
@@ -35,26 +40,36 @@
                     <a class="nav-btn @(controller == "FAQ" && action == "Index" ? "active" : "")" 
                     asp-controller="FAQ" asp-action="Index">求職Q&A</a>
                 </div>
-                
-                <!-- 未登入 -->
-                <a href="/Login" class="nav-user" id="btn-login"><span>登入</span></a>
 
-                <!-- 登入後（預設隱藏，登入後顯示） -->
-                <div class="nav-user-logged" id="user-logged" style="display:none">
-                    <div class="nav-avatar" onclick="toggleDropdown()">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="8" r="4" fill="#fff" />
-                            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none" />
-                        </svg>
+                @if (!isLoggedIn)
+                {
+                    <!-- 未登入 -->
+                    <a href="/Login" class="nav-user"><span>登入</span></a>
+                }
+                else
+                {
+                    <!-- 登入後身份顯示 -->
+                    <div class="nav-identity">
+                        <span>@roleLabel：@memberName</span>
                     </div>
-                    <div class="dropdown-menu" id="dropdown-menu">
-                        <a href="profile.html" class="dropdown-item">基本資料</a>
-                        <a href="resume.html" class="dropdown-item">我的履歷</a>
-                        <a asp-controller="Member" asp-action="Application" class="dropdown-item">應徵管理</a>
-                        <a asp-controller="Member" asp-action="Favorites" class="dropdown-item">我的收藏</a>
-                        <button class="dropdown-item logout" onclick="logout()">登出</button>
+
+                    <!-- 頭像下拉 -->
+                    <div class="nav-user-logged">
+                        <div class="nav-avatar" onclick="toggleDropdown()">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="8" r="4" fill="#fff" />
+                                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none" />
+                            </svg>
+                        </div>
+                        <div class="dropdown-menu" id="dropdown-menu">
+                            <a asp-controller="Member" asp-action="Profile" class="dropdown-item">基本資料</a>
+                            <a asp-controller="Member" asp-action="Resume" class="dropdown-item">我的履歷</a>
+                            <a asp-controller="Member" asp-action="Application" class="dropdown-item">應徵管理</a>
+                            <a asp-controller="Member" asp-action="Favorites" class="dropdown-item">我的收藏</a>
+                            <a asp-controller="Login" asp-action="Logout" class="dropdown-item logout">登出</a>
+                        </div>
                     </div>
-                </div>
+                }
             </div>
         </nav>
     </header>
@@ -72,29 +87,17 @@
     @await RenderSectionAsync("Scripts", required: false)
 
     <script>
-        const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-
-        if (isLoggedIn) {
-            document.getElementById('btn-login').style.display = 'none';
-            document.getElementById('user-logged').style.display = 'block';
-        }
-
         function toggleDropdown() {
             document.getElementById('dropdown-menu').classList.toggle('show');
         }
 
         document.addEventListener('click', function (e) {
-            const userLogged = document.getElementById('user-logged');
+            const userLogged = document.querySelector('.nav-user-logged');
             if (userLogged && !userLogged.contains(e.target)) {
-                document.getElementById('dropdown-menu').classList.remove('show');
+                const menu = document.getElementById('dropdown-menu');
+                if (menu) menu.classList.remove('show');
             }
         });
-
-        function logout() {
-            localStorage.removeItem('isLoggedIn');
-            localStorage.removeItem('role');
-            window.location.href = '/Login';
-        }
     </script>
 </body>
 </html>

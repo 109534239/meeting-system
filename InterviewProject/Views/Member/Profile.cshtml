@@ -1,0 +1,209 @@
+@model InterviewProject.Models.Member
+
+@{
+    ViewData["Title"] = "基本資料";
+    var roleLabel = Context.Session.GetString("MemberRole") == "employee" ? "人資" : "求職者";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Profile.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>基本資料</h1>
+        <p>Profile Management</p>
+    </div>
+</div>
+
+<div class="profile-main">
+    <div class="profile-wrap">
+
+        <!-- ── 左側頭像卡片 ── -->
+        <div class="profile-sidebar">
+            <div class="profile-avatar" id="avatar-preview">
+                <svg width="54" height="54" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="8" r="4" fill="#fff" />
+                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>
+                </svg>
+            </div>
+            <div class="sidebar-name">@Model.Name</div>
+            <div class="sidebar-role">@roleLabel</div>
+            <label class="btn-upload">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    <polyline points="17 8 12 3 7 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                更換大頭照
+                <input type="file" accept="image/*" style="display:none" onchange="previewAvatar(event)" />
+            </label>
+        </div>
+
+        <!-- ── 右側資料卡片 ── -->
+        <div class="profile-content">
+
+            <!-- 個人資訊 -->
+            <div class="profile-card">
+                <div class="card-header">
+                    <h2>個人資訊</h2>
+                </div>
+
+                @if (TempData["SaveSuccess"] != null)
+                {
+                    <div class="alert-success">個人資訊已儲存！</div>
+                }
+
+                <form method="post" asp-controller="Member" asp-action="ProfileSave">
+                    @Html.AntiForgeryToken()
+                    <div class="fields-grid">
+
+                        <div class="field-item">
+                            <label class="field-label">姓名</label>
+                            <input class="field-input" name="name" type="text"
+                                   value="@Model.Name" placeholder="請輸入姓名" required />
+                        </div>
+
+                        <div class="field-item">
+                            <label class="field-label">性別</label>
+                            <select class="field-input" name="gender">
+                                @{
+                                    if (string.IsNullOrEmpty(Model.Gender))
+                                    {
+                                        <option value="" disabled selected>請選擇性別</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="" disabled>請選擇性別</option>
+                                    }
+                                    var genders = new[] { "男", "女", "不透露" };
+                                    foreach (var g in genders)
+                                    {
+                                        if (Model.Gender == g)
+                                        {
+                                            <option value="@g" selected>@g</option>
+                                        }
+                                        else
+                                        {
+                                            <option value="@g">@g</option>
+                                        }
+                                    }
+                                }
+                            </select>
+                        </div>
+
+                        <div class="field-item">
+                            <label class="field-label">生年月日</label>
+                            <input class="field-input" name="birthday" type="date"
+                                   value="@Model.Birthday?.ToString("yyyy-MM-dd")" />
+                        </div>
+
+                        <div class="field-item">
+                            <label class="field-label">手機號碼</label>
+                            <!-- 唯讀，不可修改 -->
+                            <input class="field-input field-readonly" type="tel"
+                                   value="@Model.Phone" readonly />
+                        </div>
+
+                        <div class="field-item field-item--full">
+                            <label class="field-label">電子郵件</label>
+                            <!-- 唯讀，不可修改 -->
+                            <input class="field-input field-readonly" type="email"
+                                   value="@Model.Email" readonly />
+                        </div>
+
+                        <div class="field-item field-item--full">
+                            <label class="field-label">居住地址</label>
+                            <input class="field-input" name="address" type="text"
+                                   value="@Model.Address" placeholder="請輸入地址" />
+                        </div>
+
+                    </div>
+                    <div class="card-actions">
+                        <button type="submit" class="btn-save">儲存變更</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- 密碼修改 -->
+            <div class="profile-card">
+                <div class="card-header">
+                    <h2>修改密碼</h2>
+                </div>
+
+                @if (TempData["PwError"] != null)
+                {
+                    <div class="pw-error">@TempData["PwError"]</div>
+                }
+                @if (TempData["PwSuccess"] != null)
+                {
+                    <div class="alert-success">密碼已更新！</div>
+                }
+
+                <form method="post" asp-controller="Member" asp-action="ChangePassword">
+                    @Html.AntiForgeryToken()
+                    <div class="fields-grid">
+
+                        <div class="field-item field-item--full">
+                            <label class="field-label">目前密碼</label>
+                            <div class="input-password-wrap">
+                                <input class="field-input" name="currentPassword" type="password" placeholder="請輸入目前密碼" />
+                                <button class="btn-eye" type="button" onclick="togglePw(this)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="field-item">
+                            <label class="field-label">新密碼</label>
+                            <div class="input-password-wrap">
+                                <input class="field-input" name="newPassword" type="password" placeholder="請輸入新密碼" />
+                                <button class="btn-eye" type="button" onclick="togglePw(this)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="field-item">
+                            <label class="field-label">確認新密碼</label>
+                            <div class="input-password-wrap">
+                                <input class="field-input" name="confirmPassword" type="password" placeholder="請再次輸入新密碼" />
+                                <button class="btn-eye" type="button" onclick="togglePw(this)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                    <div class="card-actions">
+                        <button type="submit" class="btn-save">更新密碼</button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function togglePw(btn) {
+        const input = btn.closest('.input-password-wrap').querySelector('input');
+        const isText = input.type === 'text';
+        input.type = isText ? 'password' : 'text';
+        btn.style.opacity = isText ? '0.4' : '1';
+    }
+
+    function previewAvatar(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            const av = document.getElementById('avatar-preview');
+            av.innerHTML = `<img src="${e.target.result}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`;
+        };
+        reader.readAsDataURL(file);
+    }
+</script>
+}
