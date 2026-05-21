@@ -100,7 +100,22 @@ body {
         background: rgba(255,255,255,0.35);
     }
 
-    /* ── NAVBAR ── */
+/* ── NAV 身份標籤（登入後）── */
+.nav-identity {
+    display: flex;
+    align-items: center;
+    margin-right: 16px;
+    padding: 6px 16px;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--white);
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+}
+
+/* ── NAVBAR ── */
 .navbar {
     background: var(--primary);
     height: 72px;
@@ -177,6 +192,31 @@ body {
 .nav-user:hover {
     background: var(--primary-dark);
     color: #fff;
+}
+
+/* ── PAGE HEADER ── */
+.page-header {
+    background: var(--white);
+    border-bottom: 1px solid #ddd;
+}
+
+.page-header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 40px 20px;
+}
+
+.page-header h1 {
+    font-size: 40px;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
+.page-header p {
+    font-size: 14px;
+    color: var(--text-muted);
 }
 
 /* ── FOOTER ── */
