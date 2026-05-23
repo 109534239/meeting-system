@@ -1,68 +1,124 @@
-using Microsoft.EntityFrameworkCore;
+ï»¿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using InterviewProject.Data;
-using InterviewProject.Hubs;
+using InterviewProject.Services; // ğŸš€ 1. ç¢ºä¿å¼•å…¥ Service çš„å‘½åç©ºé–“
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.   MVC
 builder.Services.AddControllersWithViews();
 
-//µù¥U SignalR ªA°È
+<<<<<<< HEAD
+//ï¿½ï¿½ï¿½U SignalR ï¿½Aï¿½ï¿½
 builder.Services.AddSignalR();
 
-// ¥[¤J Session
+// ï¿½[ï¿½J Session
+=======
+// ğŸš€ 2. è¨»å†Š AI æ©Ÿå™¨äººæœå‹™ï¼ˆè§£æ±º Unable to resolve service éŒ¯èª¤ï¼‰
+builder.Services.AddSingleton<JitsiBotService>();
+
+//è¨»å†Š SignalR æœå‹™
+builder.Services.AddSignalR();
+
+// åŠ å…¥ Session
+>>>>>>> 8866344074956b5162d25ed86764797f0aef079f
 builder.Services.AddSession();
 
 // DB Context
 builder.Services.AddDbContext<AppDbContext>(options =>
      options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection")));
+<<<<<<< HEAD
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        npgsqlOptions => npgsqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorCodesToAdd: null
+        )));
     //options.UseSqlite("Data Source=app.db"));
     //options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 
-// 1. ³]©w°ÆÀÉ¦W¹ï·Óªí
+// 1. ï¿½]ï¿½wï¿½ï¿½ï¿½É¦Wï¿½ï¿½Óªï¿½
 var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 provider.Mappings[".json"] = "application/json";
-// ÁöµM§AÀÉ®×¨SÂI¡A¦ı«OÀI°_¨£ÁÙ¬O¯dµÛ
+// ï¿½ï¿½ï¿½Mï¿½Aï¿½É®×¨Sï¿½Iï¿½Aï¿½ï¿½ï¿½Oï¿½Iï¿½_ï¿½ï¿½ï¿½Ù¬Oï¿½dï¿½ï¿½
 provider.Mappings[".shard1"] = "application/octet-stream"; 
 
-// 2. ®M¥Î³]©w
+// 2. ï¿½Mï¿½Î³]ï¿½w
 app.UseStaticFiles(new StaticFileOptions
 {
     ContentTypeProvider = provider,
-    // --- ÃöÁä¡G¥[¤J¤U­±³o¦æ¡A¤¹³\¤U¸ü¨S¦³°ÆÀÉ¦WªºÀÉ®× ---
+    // --- ï¿½ï¿½ï¿½ï¿½Gï¿½[ï¿½Jï¿½Uï¿½ï¿½ï¿½oï¿½ï¿½Aï¿½ï¿½ï¿½\ï¿½Uï¿½ï¿½ï¿½Sï¿½ï¿½ï¿½ï¿½ï¿½É¦Wï¿½ï¿½ï¿½É®ï¿½ ---
     ServeUnknownFileTypes = true, 
     DefaultContentType = "application/octet-stream"
 });
 
-// Configure the HTTP request pipeline.   ¿ù»~³B²z
+// Configure the HTTP request pipeline.   ï¿½ï¿½ï¿½~ï¿½Bï¿½z
+=======
+        builder.Configuration.GetConnectionString("DefaultConnection")));
+//options.UseSqlite("Data Source=app.db"));
+//options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+var app = builder.Build();
+
+// ğŸš€ é›²ç«¯å°ˆç”¨ï¼šè®“ Render å•Ÿå‹•æ™‚è‡ªå‹•ä¸‹è¼‰ Playwright ç€è¦½å™¨æ ¸å¿ƒï¼ˆè§£æ±ºç„¡æ ¸å¿ƒå¡æ­»å•é¡Œï¼‰
+if (!app.Environment.IsDevelopment())
+{
+    Console.WriteLine("---- æ­£åœ¨é›²ç«¯ç’°å¢ƒå®‰è£ Playwright ç€è¦½å™¨æ ¸å¿ƒ... ----");
+    Microsoft.Playwright.Program.Main(new string[] { "install", "chromium" });
+    Console.WriteLine("---- Playwright ç€è¦½å™¨å®‰è£å®Œæˆï¼ ----");
+}
+
+// 1. è¨­å®šå‰¯æª”åå°ç…§è¡¨
+var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+provider.Mappings[".json"] = "application/json";
+provider.Mappings[".shard1"] = "application/octet-stream";
+
+// 2. å¥—ç”¨è¨­å®š
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = provider,
+    ServeUnknownFileTypes = true,
+    DefaultContentType = "application/octet-stream"
+});
+
+// Configure the HTTP request pipeline.
+>>>>>>> 8866344074956b5162d25ed86764797f0aef079f
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
 app.UseHttpsRedirection();
-//app.UseStaticFiles();
 
 app.UseRouting();
 
-// Session ¥²¶·©ñ¦b³o¸Ì
+<<<<<<< HEAD
+// Session ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½bï¿½oï¿½ï¿½
+=======
+// Session å¿…é ˆæ”¾åœ¨é€™è£¡
+>>>>>>> 8866344074956b5162d25ed86764797f0aef079f
 app.UseSession();
 
 app.UseAuthorization();
 
-// ¸ô¥Ñ
+<<<<<<< HEAD
+// ï¿½ï¿½ï¿½ï¿½
+=======
+// è·¯ç”±
+>>>>>>> 8866344074956b5162d25ed86764797f0aef079f
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
-// ¥[¤J SignalR Hub ¸ô¥ÑÂI
-// "/chatHub" ¬O«eºİ JavaScript ³s½u®É­n«ü©wªººô§}¸ô®|
+<<<<<<< HEAD
+// ï¿½[ï¿½J SignalR Hub ï¿½ï¿½ï¿½ï¿½ï¿½I
+// "/chatHub" ï¿½Oï¿½eï¿½ï¿½ JavaScript ï¿½sï¿½uï¿½É­nï¿½ï¿½ï¿½wï¿½ï¿½ï¿½ï¿½ï¿½}ï¿½ï¿½ï¿½|
 app.MapHub<ChatHub>("/chatHub");
 
 app.Run();
+=======
+app.Run();
+>>>>>>> 8866344074956b5162d25ed86764797f0aef079f
