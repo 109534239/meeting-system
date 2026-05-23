@@ -1,0 +1,533 @@
+﻿@model InterviewProject.Models.Resume
+@{
+    ViewData["Title"] = "履歷管理";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/Resume.css" asp-append-version="true" />
+}
+
+<div class="resume-paper">
+    <div class="resume-title">履    歷    表</div>
+    <div style="text-align:right; margin-bottom:10px; color:#666;">
+        應徵職位：
+        @if (ViewBag.ViewMode == "apply")
+        {
+            <span style="color: #d9534f; font-weight: bold; background-color: #fff3f3; padding: 2px 5px; border-radius: 4px;">
+                等待資料表建立中
+            </span>
+        }
+        else
+        {
+            @Model.Position
+        }
+    </div>
+    <form method="post" asp-action="SaveResume">
+        <input type="hidden" asp-for="Id" />
+        <input type="hidden" asp-for="UserId" />
+        <input type="hidden" asp-for="Position" />
+        <table class="main-table">
+            <tr>
+                <td rowspan="7" class="label-bg">基本<br/>資料</td>
+                <td>姓名</td>
+                <td><input asp-for="Name" class="full-input" required /></td>
+                <td>性別</td>
+                <td>
+                    <input type="radio" asp-for="Gender" value="男" required />男
+                    <input type="radio" asp-for="Gender" value="女" required />女
+                </td>
+                <td rowspan="4" class="photo-cell">請貼照片</td>
+            </tr>
+            <tr>
+                <td>身分證號碼</td>
+                <td><input asp-for="IdNumber" class="full-input" required /></td>
+                <td>出生日期</td>
+                <td><input asp-for="Birthday" type="date" class="full-input" required /></td>
+            </tr>
+            <tr>
+                <td>聯絡地址</td>
+                <td colspan="4">
+                    郵遞區號 <input asp-for="ZipCode" class="input-inline" style="width:60px" required /><br />
+                    <input asp-for="Address" class="input-inline" style="width:70%" placeholder="完整地址" required />
+                </td>
+            </tr>
+            <tr>
+                <td>婚姻狀況</td>
+                <td>
+                    <input type="radio" asp-for="MaritalStatus" value="已婚" required />已婚
+                    <input type="radio" asp-for="MaritalStatus" value="單身" required />單身
+                </td>
+                <td>兵役狀況</td>
+                <td>
+                    <input type="radio" asp-for="MilitaryService" value="免役" required />免役
+                    <input type="radio" asp-for="MilitaryService" value="役畢" required />役畢<br />
+                    <input type="radio" asp-for="MilitaryService" value="未役" required />未役
+                    <input type="radio" asp-for="MilitaryService" value="待役中" required />待役中
+                </td>
+            </tr>
+
+            <tr>
+                <td>聯絡電話</td>
+                <td colspan="5">
+                    <div style="display:flex; flex-wrap:wrap; gap: 10px;">
+                        <span>電話1：<input asp-for="Phone1" class="input-inline" style="width:150px" required /></span>
+                        <span>電話2：<input asp-for="Phone2" class="input-inline" style="width:150px"/></span>
+                        <span>行動：<input asp-for="Mobile" class="input-inline" style="width:150px" required /></span>
+                    </div>
+                </td>
+            </tr>
+
+            <tr>
+                <td>學歷</td>
+                <td colspan="5">
+                    <div style="margin-bottom: 10px; padding-left: 10px;">
+                        <input type="radio" asp-for="EduLevel" value="博士" />博士
+                        <input type="radio" asp-for="EduLevel" value="碩士" />碩士
+                        <input type="radio" asp-for="EduLevel" value="大學" />大學
+                        <input type="radio" asp-for="EduLevel" value="專科" />專科
+                        <input type="radio" asp-for="EduLevel" value="高職" />高職
+                        <input type="radio" asp-for="EduLevel" value="高中" />高中
+                        <input type="radio" asp-for="EduLevel" value="國中" />國中
+                        <input type="radio" asp-for="EduLevel" value="國小" />國小
+                        <input type="radio" asp-for="EduLevel" id="radioOther" value="Other" style="display:none" />
+                        其他：<input type="text" id="otherEduLevel" class="input-inline" style="width:80px" />
+                    </div>
+                    <table style="width:100%; border-collapse:collapse; margin:-8px;">
+                        <tr style="text-align:center; background:#eee;">
+                            <td style="border:1px solid black; width:30%;">學校名稱</td>
+                            <td style="border:1px solid black; width:30%;">科系所</td>
+                            <td style="border:1px solid black; width:20%;">畢(肄)業狀況</td>
+                            <td style="border:1px solid black; width:20%;">年月</td>
+                        </tr>
+                        <tr>
+                            <td style="border:1px solid black"><input asp-for="SchoolName" class="full-input" required /></td>
+                            <td style="border:1px solid black"><input asp-for="Major" class="full-input" required /></td>
+                            <td style="border:1px solid black" id="eduStatusArea">
+                                <input type="hidden" asp-for="EduStatus" id="finalEduStatus" />
+                                <input type="checkbox" class="edu-chk" value="畢業" />畢業
+                                <input type="checkbox" class="edu-chk" value="肄業" />肄業
+                                <input type="checkbox" class="edu-chk" value="在學" />在學
+                            </td>
+                            <td style="border:1px solid black"><input type="month" asp-for="EduDate" class="full-input" required /></td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+
+            <tr>
+                <td>電子信箱</td>
+                <td colspan="5"><input asp-for="Email" type="email" class="full-input" style="width:70%" required /></td>
+            </tr>
+
+            <tr>
+                <td class="label-bg">工作<br />經歷</td>
+                <td colspan="5">
+                    <div style="padding: 10px;">
+                        <label><input type="checkbox" id="noWorkExp" /> 無工作經歷</label>
+                        <input type="checkbox" id="noWorkExp" />工作總年資：
+                        <input asp-for="WorkExperienceYears" class="input-inline" style="width:50px" /> 年
+                    </div>
+                    <table style="width:100%; border-collapse:collapse; margin:-8px;">
+                        <tr style="text-align:center; background:#eee;">
+                            <td style="border:1px solid black; width:25%;">公司名稱</td>
+                            <td style="border:1px solid black; width:25%;">工作職稱</td>
+                            <td style="border:1px solid black; width:25%;">工作說明</td>
+                            @* <td style="border:1px solid black; width:25%;">薪資</td> *@
+                        </tr>
+                        <tr>
+                            <td style="border:1px solid black"><input asp-for="CompanyName" class="full-input" required /></td>
+                            <td style="border:1px solid black"><input asp-for="JobTitle" class="full-input" required /></td>
+                            <td style="border:1px solid black"><input asp-for="JobDescription" class="full-input" required /></td>
+                            @* <td style="border:1px solid black">
+                                <input asp-for="Salary" class="full-input" placeholder="請輸入薪資" required />
+                            </td> *@
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td rowspan="5" class="label-bg">背景<br />及<br />專長</td>
+                <td>語文能力<br />(可複選)</td>
+                <td colspan="4">
+                    <input type="hidden" asp-for="LanguageSkills" id="finalLanguageSkills" />
+                    <div class="lang-group">
+                        1. <input type="checkbox" class="lang-node" value="不具外文能力" />不具外文能力<br />
+
+                        <div class="lang-row">
+                            2. <span class="lang-label">英語</span>：
+                            <input type="checkbox" class="lang-lv" value="精通" />精通
+                            <input type="checkbox" class="lang-lv" value="良好" />良好
+                            <input type="checkbox" class="lang-lv" value="普通" />普通
+                            <input type="checkbox" class="lang-lv" value="稍懂" />稍懂
+                        </div>
+
+                        <div class="lang-row">
+                            3. <span class="lang-label">日語</span>：
+                            <input type="checkbox" class="lang-lv" value="精通" />精通
+                            <input type="checkbox" class="lang-lv" value="良好" />良好
+                            <input type="checkbox" class="lang-lv" value="普通" />普通
+                            <input type="checkbox" class="lang-lv" value="稍懂" />稍懂
+                        </div>
+
+                        <div class="lang-row">
+                            4. <span class="lang-label">台語</span>：
+                            <input type="checkbox" class="lang-lv" value="精通" />精通
+                            <input type="checkbox" class="lang-lv" value="良好" />良好
+                            <input type="checkbox" class="lang-lv" value="普通" />普通
+                            <input type="checkbox" class="lang-lv" value="稍懂" />稍懂
+                        </div>
+
+                        <div class="lang-row">
+                            5. <span class="lang-label">客語</span>：
+                            <input type="checkbox" class="lang-lv" value="精通" />精通
+                            <input type="checkbox" class="lang-lv" value="良好" />良好
+                            <input type="checkbox" class="lang-lv" value="普通" />普通
+                            <input type="checkbox" class="lang-lv" value="稍懂" />稍懂
+                        </div>
+
+                        <div class="lang-row">
+                            6. <span class="lang-label">其他</span>：<input type="text" id="otherLangName" class="input-inline" style="width:80px" />
+                            <input type="checkbox" class="lang-lv" value="精通" />精通
+                            <input type="checkbox" class="lang-lv" value="良好" />良好
+                            <input type="checkbox" class="lang-lv" value="普通" />普通
+                            <input type="checkbox" class="lang-lv" value="稍懂" />稍懂
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td>駕照種類<br />(可複選)</td>
+                <td colspan="4">
+                    <input type="hidden" asp-for="DriverLicense" id="finalDriverLicense" />
+                    <div id="licenseGroup">
+                        <div class="license-row" data-type="自用">
+                            自用：
+                            <input type="checkbox" class="license-chk" value="小" />小
+                            <input type="checkbox" class="license-chk" value="大" />大
+                        </div>
+                        <div class="license-row" data-type="職業">
+                            職業：
+                            <input type="checkbox" class="license-chk" value="小" />小
+                            <input type="checkbox" class="license-chk" value="大" />大
+                            <input type="checkbox" class="license-chk" value="客" />客
+                        </div>
+                        <div class="license-row" data-type="機車">
+                            機車：
+                            <input type="checkbox" class="license-chk" value="輕型" />輕型
+                            <input type="checkbox" class="license-chk" value="重型" />重型
+                        </div>
+                        <div class="license-row" data-type="車輛狀態">
+                            汽(機)車：
+                            <input type="checkbox" class="license-chk" value="無" />無
+                            <input type="checkbox" class="license-chk" value="自備" />自備
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td>專長</td>
+                <td colspan="4">
+                    <input type="hidden" asp-for="Specialty" id="finalSpecialty" />
+                    1.<input type="text" class="spec-input" style="width:80%" /><br />
+                    2.<input type="text" class="spec-input" style="width:80%" /><br />
+                    3.<input type="text" class="spec-input" style="width:80%" />
+                </td>
+            </tr>
+            <tr>
+                <td>證照職類及級別</td>
+                <td colspan="4">
+                    <input type="hidden" asp-for="Certificates" id="finalCertificates" />
+                    <div class="cert-item">
+                        1. <input type="text" class="cert-name" placeholder="請輸入職類" style="width:150px" />
+                        <input type="checkbox" class="cert-lv" value="甲" />甲
+                        <input type="checkbox" class="cert-lv" value="乙" />乙
+                        <input type="checkbox" class="cert-lv" value="丙" />丙
+                        <input type="checkbox" class="cert-lv" value="單一級" />單一級
+                    </div>
+                    <div class="cert-item">
+                        2. <input type="text" class="cert-name" placeholder="請輸入職類" style="width:150px" />
+                        <input type="checkbox" class="cert-lv" value="甲" />甲
+                        <input type="checkbox" class="cert-lv" value="乙" />乙
+                        <input type="checkbox" class="cert-lv" value="丙" />丙
+                        <input type="checkbox" class="cert-lv" value="單一級" />單一級
+                    </div>
+                    <div class="cert-item">
+                        3.其他：<input type="text" id="othercert-name" class="input-inline" style="width:150px" />
+                        <input type="checkbox" class="cert-lv" value="甲" />甲
+                        <input type="checkbox" class="cert-lv" value="乙" />乙
+                        <input type="checkbox" class="cert-lv" value="丙" />丙
+                        <input type="checkbox" class="cert-lv" value="單一級" />單一級
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td>使用電腦能力<br />(可複選)</td>
+                <td colspan="4">
+                    <input type="hidden" asp-for="ComputerSkills" id="finalComputerSkills" />
+                    <input type="checkbox" class="comp-chk" value="電腦基本操作" />電腦基本操作
+                    <input type="checkbox" class="comp-chk" value="文書處理" />文書處理
+                    <input type="checkbox" class="comp-chk" value="網際網路" />網際網路
+                    <input type="checkbox" class="comp-chk" value="網頁編輯" />網頁編輯
+                    <input type="checkbox" class="comp-chk" value="商業軟體" />商業軟體
+                    <input type="checkbox" class="comp-chk" value="程式設計" />程式設計<br/>
+                    <input type="checkbox" class="comp-chk" value="其他" />其他：
+                    <input type="text" id="otherCompName" class="input-inline" style="width:80px" />
+                </td>
+            </tr>
+
+            <tr>
+                <td class="label-bg">自傳</td>
+                <td colspan="5">
+                    <textarea asp-for="Autobiography" rows="12" style="width:100%" required></textarea>
+                </td>
+            </tr>
+        </table>
+        <input type="hidden" asp-for="ResumeTime" id="finalResumeTime" />
+        <div style="margin-top: 20px; text-align: center;" class="no-print">
+            <button type="button" class="btn btn-warning" onclick="history.back()">
+                回上一頁
+            </button>
+            <button type="submit" asp-action="SaveResume" class="btn btn-primary">
+                儲存並繳交
+            </button>
+            @* <button type="submit" asp-action="ExportToPdf" class="btn btn-secondary">
+                列印/另存 PDF
+            </button> *@
+        </div>
+    </form>
+</div>
+
+<script>
+    // --- 頁面載入後，根據後端資料反勾選 Checkbox ---
+    window.onload = function() {
+        //1. 處理語文能力反填
+        const langData = "@Html.Raw(Model.LanguageSkills)";
+        if (langData) {
+            const items = langData.split(', ');
+            items.forEach(item => {
+                if (item === "不具外文能力") document.querySelector('.lang-node').checked = true;
+
+                document.querySelectorAll('.lang-row').forEach(row => {
+                    let label = row.querySelector('.lang-label').innerText;
+
+                    if (label === "其他") {
+                        // 判斷是否為非預設語言
+                        const knownLangs = ["英語", "日語", "台語", "客語"];
+                        let isOther = !knownLangs.some(k => item.startsWith(k)) && item.includes('(');
+                        if (isOther) {
+                            let otherName = item.split('(')[0];
+                            document.getElementById('otherLangName').value = otherName;
+                            row.querySelectorAll('.lang-lv').forEach(lv => {
+                                if (item.includes(`(${lv.value})`)) lv.checked = true;
+                            });
+                        }
+                    } else if (item.startsWith(label)) {
+                        row.querySelectorAll('.lang-lv').forEach(lv => {
+                            if (item.includes(`(${lv.value})`)) lv.checked = true;
+                        });
+                    }
+                });
+            });
+        }
+
+        // 2. 處理駕照種類
+        const licenseData = "@Html.Raw(Model.DriverLicense)";
+        if (licenseData) {
+            document.querySelectorAll('.license-chk').forEach(chk => {
+                if (licenseData.includes(chk.value)) chk.checked = true;
+            });
+        }
+
+        // 3. 處理專長
+        const specData = "@Html.Raw(Model.Specialty)";
+        if (specData) {
+            const specs = specData.split('; ');
+            const specInputs = document.querySelectorAll('.spec-input');
+            specs.forEach((val, index) => {
+                if(specInputs[index]) specInputs[index].value = val;
+            });
+        }
+
+        // 4. 處理證照
+        const certData = "@Html.Raw(Model.Certificates)";
+        if (certData) {
+            const certs = certData.split(', ');
+            document.querySelectorAll('.cert-item').forEach((item, index) => {
+                if(certs[index]) {
+                    let name = certs[index].split('(')[0];
+                    item.querySelector('.cert-name').value = name;
+                    item.querySelectorAll('.cert-lv').forEach(lv => {
+                        if (certs[index].includes(lv.value)) lv.checked = true;
+                    });
+                }
+            });
+        }
+
+        //5. 處理電腦能力反填 (修復「其他」顯示問題)
+        const compData = "@Html.Raw(Model.ComputerSkills)";
+        if (compData) {
+            document.querySelectorAll('.comp-chk').forEach(chk => {
+                // 一般項目的判斷
+                if (compData.split(',').map(s => s.trim()).includes(chk.value)) {
+                    chk.checked = true;
+                }
+            });
+            // 處理「其他:內容」
+            if (compData.includes("其他:")) {
+                const match = compData.match(/其他:([^,]+)/);
+                if (match) {
+                    document.getElementById('otherCompName').value = match[1].trim();
+                    const otherChk = Array.from(document.querySelectorAll('.comp-chk')).find(c => c.value === "其他");
+                    if(otherChk) otherChk.checked = true;
+                }
+            }
+        }
+
+        // 6. 處理學歷狀況
+        const eduData = "@Html.Raw(Model.EduStatus)";
+        if (eduData) {
+            document.querySelectorAll('#eduStatusArea .edu-chk').forEach(chk => {
+                if (eduData.includes(chk.value)) chk.checked = true;
+            });
+        }
+
+        // --- 限制邏輯 ---
+        // 語言程度單選 (移除 row 內的 .lang-main checkbox 判斷，直接選程度即代表該語言)
+        document.querySelectorAll('.lang-row').forEach(row => {
+            const lvs = row.querySelectorAll('.lang-lv');
+            lvs.forEach(chk => {
+                chk.addEventListener('change', function() {
+                    if (this.checked) {
+                        lvs.forEach(other => { if(other !== this) other.checked = false; });
+                    }
+                });
+            });
+        });
+
+        // 學歷單選
+        const eduChks = document.querySelectorAll('#eduStatusArea .edu-chk');
+        eduChks.forEach(chk => {
+            chk.addEventListener('change', function() {
+                if (this.checked) {
+                    eduChks.forEach(other => { if(other !== this) other.checked = false; });
+                }
+            });
+        });
+
+        //學歷
+            const eduLevelValue = "@Html.Raw(Model.EduLevel)";
+    const presetLevels = ["博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小"];
+
+    if (eduLevelValue && !presetLevels.includes(eduLevelValue)) {
+        // 如果值不在預設選項中，代表是「其他」
+        document.getElementById('otherEduLevel').value = eduLevelValue;
+        document.getElementById('radioOther').checked = true;
+        document.getElementById('radioOther').value = eduLevelValue;
+    }
+    };
+
+        // --- Submit 邏輯 (負責串接資料送往資料庫) ---
+    document.querySelector('form').addEventListener('submit', function (e) {
+
+        // 【修正：學歷等級 Radio】 必須寫在 submit 裡面
+        const otherEduInput = document.getElementById('otherEduLevel');
+        const radioOther = document.getElementById('radioOther');
+        const otherVal = otherEduInput.value.trim();
+
+        // 自動填入當前時間至 hidden 欄位
+    const now = new Date();
+    // 格式化為 ISO 字串，或者後端能辨認的格式
+    document.getElementById('finalResumeTime').value = now.toISOString();
+
+        if (otherVal !== "") {
+            radioOther.checked = true;
+            radioOther.value = otherVal; // 將文字框內容設為 Radio 的 value 送出
+        }
+
+        // 1. 語文能力串接
+        let langResults = [];
+        if (document.querySelector('.lang-node:checked')) langResults.push("不具外文能力");
+        document.querySelectorAll('.lang-row').forEach(row => {
+            let label = row.querySelector('.lang-label') ? row.querySelector('.lang-label').innerText : "";
+            if (label === "其他") label = document.getElementById('otherLangName').value;
+
+            let lv = row.querySelector('.lang-lv:checked');
+            if (lv && label) langResults.push(`${label}(${lv.value})`);
+        });
+        document.getElementById('finalLanguageSkills').value = langResults.join(', ');
+
+        // 2. 駕照種類
+        let licenseResults = [];
+        document.querySelectorAll('.license-row').forEach(row => {
+            let type = row.getAttribute('data-type');
+            let selected = [];
+            row.querySelectorAll('.license-chk:checked').forEach(chk => selected.push(chk.value));
+            if (selected.length > 0) {
+                if (type === "車輛狀態") licenseResults.push(selected.join('/'));
+                else licenseResults.push(`${type}(${selected.join('/')})`);
+            }
+        });
+        document.getElementById('finalDriverLicense').value = licenseResults.join(', ');
+
+        // 3. 專長
+        let specResults = [];
+        document.querySelectorAll('.spec-input').forEach(input => {
+            if(input.value) specResults.push(input.value);
+        });
+        document.getElementById('finalSpecialty').value = specResults.join('; ');
+
+        // 4. 證照
+        let certResults = [];
+        document.querySelectorAll('.cert-item').forEach((item, index) => {
+            let nameInput = item.querySelector('.cert-name');
+            let name = nameInput ? nameInput.value : "";
+            if (index === 2) {
+                name = document.getElementById('othercert-name').value;
+            }
+            let lv = item.querySelector('.cert-lv:checked');
+            if (name) {
+                certResults.push(lv ? `${name}(${lv.value})` : name);
+            }
+        });
+        document.getElementById('finalCertificates').value = certResults.join(', ');
+
+        // 5. 電腦能力串接
+        let compResults = [];
+        document.querySelectorAll('.comp-chk:checked').forEach(chk => {
+            if (chk.value === "其他") {
+                let otherValComp = document.getElementById('otherCompName').value;
+                if (otherValComp) compResults.push(`其他:${otherValComp}`);
+            } else {
+                compResults.push(chk.value);
+            }
+        });
+        document.getElementById('finalComputerSkills').value = compResults.join(', ');
+
+        // 6. 學歷狀況
+        let selectedEdu = document.querySelector('.edu-chk:checked');
+        document.getElementById('finalEduStatus').value = selectedEdu ? selectedEdu.value : "";
+    });
+
+    // --- 輔助 UI 邏輯 (放在 submit 外面) ---
+
+    // 當點擊學歷「其他」文字框時，自動選中 radio
+    document.getElementById('otherEduLevel').addEventListener('focus', function() {
+        document.getElementById('radioOther').checked = true;
+    });
+
+    // 無工作經歷切換
+    document.getElementById('noWorkExp').addEventListener('change', function() {
+        const isNoExp = this.checked;
+        // 修正：使用更精準的 Selector 避開 ID 重複
+        const inputs = this.closest('td').querySelectorAll('input.full-input');
+        inputs.forEach(input => {
+            input.disabled = isNoExp;
+            if (isNoExp) {
+                input.value = "無";
+                input.removeAttribute('required');
+            } else {
+                input.value = "";
+                input.setAttribute('required', 'required');
+            }
+        });
+    });
+</script>

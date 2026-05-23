@@ -82,155 +82,53 @@
         </div>
 
         <!-- JOB LIST -->
+        @model IEnumerable<InterviewProject.Models.Job>
         <div class="job-list" id="job-list">
+            @if (Model != null && Model.Any())
+            {
+                foreach (var job in Model)
+                {
+                    <div class="job-row">
+                        <div class="job-type-text">@job.Department</div>
 
-            <div class="job-row">
-                <div class="job-type-text">專案管理</div>
-                <div class="job-name-cell">
-                    <span class="job-fulltime">全職</span>
-                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">NB產品經理_260502001</a>
-                </div>
-                <div class="job-cell">新北汐止</div>
-                <div class="job-cell">3年以上</div>
-                <div class="job-cell">大學以上</div>
-                <div class="job-actions">
-                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
-                </div> 
-                <div class="job-actions">
-                    <button class="btn-icon" title="收藏" onclick="checkLogin('NB產品經理_260502001', this)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
+                        <div class="job-name-cell">
+                            <span class="job-fulltime">@job.JobType</span>
+                            <a class="job-title-link" asp-controller="Job" asp-action="Job_detail" asp-route-id="@job.Id">@job.Title</a>
+                        </div>
 
-            <div class="job-row">
-                <div class="job-type-text">資訊技術</div>
-                <div class="job-name-cell">
-                    <span class="job-fulltime">全職</span>
-                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">前端工程師_260502002</a>
-                </div>
-                <div class="job-cell">台北內湖</div>
-                <div class="job-cell">3年以上</div>
-                <div class="job-cell">大學以上</div>
-                <div class="job-actions">
-                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
-                </div>  
-                <div class="job-actions"> 
-                    <button class="btn-icon" title="收藏" onclick="checkLogin('前端工程師_260502002', this)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
+                        <div class="job-cell">@job.Location</div>
 
-            <div class="job-row">
-                <div class="job-type-text">人力資源</div>
-                <div class="job-name-cell">
-                    <span class="job-fulltime">全職</span>
-                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">HR 招募專員_260502003</a>
-                </div>
-                <div class="job-cell">新竹竹北</div>
-                <div class="job-cell">1年以上</div>
-                <div class="job-cell">大學以上</div>
-                <div class="job-actions">
-                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
-                </div>  
-                <div class="job-actions"> 
-                    <button class="btn-icon" title="收藏" onclick="checkLogin('HR 招募專員_260502003', this)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
+                        <div class="job-cell" style="font-size: 13px; color: #666;">
+                            @if (!string.IsNullOrEmpty(job.Requirements) && job.Requirements.Contains(","))
+                            {
+                                @job.Requirements.Split(',')[0]
+                            }
+                            else
+                            {
+                                @job.Requirements
+                            }
+                        </div>
 
-            <div class="job-row">
-                <div class="job-type-text">行銷企劃</div>
-                <div class="job-name-cell">
-                    <span class="job-fulltime">全職</span>
-                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">數位行銷專員_260502004</a>
-                </div>
-                <div class="job-cell">新北汐止</div>
-                <div class="job-cell">2年以上</div>
-                <div class="job-cell">大學以上</div>
-                <div class="job-actions">
-                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
-                </div>  
-                <div class="job-actions">  
-                    <button class="btn-icon" title="收藏" onclick="checkLogin('數位行銷專員_260502004', this)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
+                        <div class="job-cell">待遇: @(job.Salary)</div>
 
-            <div class="job-row">
-                <div class="job-type-text">財務會計</div>
-                <div class="job-name-cell">
-                    <span class="job-fulltime">全職</span>
-                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">財務分析師_260502005</a>
-                </div>
-                <div class="job-cell">新竹湖口</div>
-                <div class="job-cell">3年以上</div>
-                <div class="job-cell">大學以上</div>
-                <div class="job-actions">
-                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
-                </div>  
-                <div class="job-actions">  
-                    <button class="btn-icon" title="收藏" onclick="checkLogin('財務分析師_260502005', this)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
+                        <div class="job-actions">
+                            <a asp-controller="Job" asp-action="Job_detail" asp-route-id="@job.Id" class="btn-apply">立即應徵</a>
+                        </div>
 
-            <div class="job-row">
-                <div class="job-type-text">業務銷售</div>
-                <div class="job-name-cell">
-                    <span class="job-fulltime">全職</span>
-                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">業務開發專員_260502006</a>
-                </div>
-                <div class="job-cell">台北內湖</div>
-                <div class="job-cell">2年以上</div>
-                <div class="job-cell">大學以上</div>
-                <div class="job-actions">
-                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
-                </div>  
-                <div class="job-actions">     
-                    <button class="btn-icon" title="收藏" onclick="checkLogin('業務開發專員_260502006', this)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-
-            <div class="job-row">
-                <div class="job-type-text">行政管理</div>
-                <div class="job-name-cell">
-                    <span class="job-fulltime">全職</span>
-                    <a class="job-title-link" href="@Url.Action("Job_detail", "Job")">行政助理_260502007</a>
-                </div>
-                <div class="job-cell">新竹竹北</div>
-                <div class="job-cell">不限</div>
-                <div class="job-cell">大學以上</div>
-                <div class="job-actions">
-                    <a href="@Url.Action("Job_detail", "Job")" class="btn-apply">立即應徵</a>
-                </div>  
-                <div class="job-actions">     
-                    <button class="btn-icon" title="收藏" onclick="checkLogin('行政助理_260502007', this)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-
+                        <div class="job-actions">
+                            <button class="btn-icon" title="收藏" onclick="checkLogin('@job.Title', this)">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                    <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+            else
+            {
+                <div style="padding: 40px; text-align:center; color:#888; width: 100%;">目前資料庫內沒有開放中的職缺</div>
+            }
         </div>
 
 

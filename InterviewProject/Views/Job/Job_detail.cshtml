@@ -61,7 +61,6 @@
                 <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
             </svg>
         </button>
-        </button>
         </div>
     </div>
     </div>
@@ -197,8 +196,17 @@
         </div>
 
         <div class="modal-body">
-            <button class="modal-btn" onclick="goNewResume()">建立全新履歷</button>
-            <button class="modal-btn" onclick="goExistingResume()">套用現有履歷</button>
+            <a id="btn-new-resume" class="modal-btn" style="text-decoration: none; display: inline-block; text-align: center;">
+                建立全新履歷
+            </a>
+
+            <div style="margin-top:20px; border-top:1px solid #ddd; padding-top:15px; text-align:left;">
+                <label style="font-size:14px; font-weight:bold;">套用現有履歷：</label>
+                <select id="select-existing-pos" class="form-control" style="margin: 10px 0;">
+                    <option value="">-- 請選擇職位 --</option>
+                </select>
+                <button class="modal-btn" onclick="goExistingResume()">套用並開啟</button>
+            </div>
         </div>
 
         <div class="modal-footer">
@@ -242,20 +250,47 @@
             }
         });
 
-        function openModal() {
+              function openModal() {
             const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
             if (!isLoggedIn) {
-                const go = confirm('需要登入才能應徵職缺\n\n是否前往登入頁面？');
-                if (go) window.location.href = '/Login';
+                if (confirm('需要登入才能應徵職缺\n是否前往登入頁面？')) window.location.href = '/Login';
                 return;
             }
 
-            // 👈 抓取職位名稱填入 modal
             const jobTitle = document.getElementById('job-title').textContent.trim();
             document.getElementById('modal-job-title').textContent = jobTitle;
 
+           // A. 建立全新：傳入 mode=new
+                   const newUrl = `/Resume/Resume?isNew=true&position=${encodeURIComponent(jobTitle)}&mode=new`;
+        document.getElementById('btn-new-resume').href = newUrl;
+
+            // B. 抓取下拉選單資料
+            fetch('/Resume/GetSavedPositions')
+                .then(res => res.json())
+                .then(data => {
+                    const select = document.getElementById('select-existing-pos');
+                    select.innerHTML = '<option value="">-- 請選擇職位 --</option>'; // 清空
+                    data.forEach(pos => {
+                        const opt = document.createElement('option');
+                        opt.value = pos;
+                        opt.textContent = pos;
+                        select.appendChild(opt);
+                    });
+                });
+
             document.getElementById('apply-modal').classList.add('show');
-            document.body.style.overflow = 'hidden';
+        }
+
+                // B. 套用現有：傳入 mode=apply
+        function goExistingResume() {
+            const selectedPos = document.getElementById('select-existing-pos').value;
+            const currentJob = document.getElementById('job-title').textContent.trim(); // 抓目前應徵的職位
+            if (!selectedPos) {
+                alert('請先選擇一個職位！');
+                return;
+            }
+            // 跳轉時，position 帶入「當前職位」，但告訴 Controller 我是從「舊職位」套用過來的
+            window.location.href = `/Resume/Resume?isNew=false&position=${encodeURIComponent(currentJob)}&fromPos=${encodeURIComponent(selectedPos)}&mode=apply`;
         }
 
         function closeModal() {
@@ -263,13 +298,13 @@
             document.body.style.overflow = '';
         }
 
-        function goNewResume() {
-            window.location.href = '/Member/Resume';
-        }
+        // function goNewResume() {
+        //     window.location.href = '/Member/Resume';
+        // }
 
-        function goExistingResume() {
-            alert('套用現有履歷（待串接後端）');
-        }
+        // function goExistingResume() {
+        //     alert('套用現有履歷（待串接後端）');
+        // }
 
         document.getElementById('apply-modal').addEventListener('click', function(e) {
             if (e.target === this) closeModal();
