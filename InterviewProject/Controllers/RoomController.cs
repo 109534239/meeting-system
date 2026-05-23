@@ -6,6 +6,8 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 
 namespace InterviewProject.Controllers
 {
@@ -13,11 +15,14 @@ namespace InterviewProject.Controllers
     {
         private readonly AppDbContext _context;
         private readonly JitsiBotService _botService;
+        private readonly IWebHostEnvironment _env;
 
-        public RoomController(AppDbContext context, JitsiBotService botService)
+        // 注入 IWebHostEnvironment 來判斷目前是 Development 還是 Production
+        public RoomController(AppDbContext context, JitsiBotService botService, IWebHostEnvironment env)
         {
             _context = context;
             _botService = botService;
+            _env = env;
         }
 
         public IActionResult Index()
@@ -31,7 +36,6 @@ namespace InterviewProject.Controllers
             return View();
         }
 
-        // 🚀 建立房間：存入資料庫後，立刻讓 AI 面試官先進房占位
         [HttpPost]
         public async Task<IActionResult> Create(string roomName)
         {
@@ -41,6 +45,7 @@ namespace InterviewProject.Controllers
                 return View();
             }
 
+            // 修正點：確保使用 DateTime.UtcNow 符合 PostgreSQL 要求
             var room = new Room
             {
                 RoomName = roomName,
@@ -51,22 +56,28 @@ namespace InterviewProject.Controllers
             _context.Rooms.Add(room);
             await _context.SaveChangesAsync();
 
-            // 🌟 關鍵調整：在使用者加入前，先派 AI 面試官進去循環播放
-            string mockVideoPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "video", "男性面試官.y4m");
-
-            // 使用 Fire-and-Forget (不 await 阻塞)，讓背景線程去啟動 Playwright
-            _ = Task.Run(async () =>
+            // 判斷：如果是本機開發環境才執行 Playwright 機器人
+            if (_env.IsDevelopment())
             {
-                try
+                string mockVideoPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "video", "男性面試官.y4m");
+
+                _ = Task.Run(async () =>
                 {
-                    Console.WriteLine($"[預先部署] 房間建立成功，AI 面試官正在先行進入房間: {room.JitsiRoomName}");
-                    await _botService.JoinRoomAsync(room.JitsiRoomName, mockVideoPath);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[預先部署 Error] AI 面試官預先導航失敗: {ex.Message}");
-                }
-            });
+                    try
+                    {
+                        Console.WriteLine($"[預先部署] 本機環境建立成功，AI 面試官正在先行進入房間: {room.JitsiRoomName}");
+                        await _botService.JoinRoomAsync(room.JitsiRoomName, mockVideoPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[預先部署 Error] AI 面試官預先導航失敗: {ex.Message}");
+                    }
+                });
+            }
+            else
+            {
+                Console.WriteLine($"[預先部署提示] 目前處於雲端環境 ({_env.EnvironmentName})，為免記憶體溢出 (OOM)，已跳過 Playwright 機器人部署。");
+            }
 
             return RedirectToAction("Index");
         }

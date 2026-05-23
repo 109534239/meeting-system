@@ -3,6 +3,9 @@ using Microsoft.Extensions.Options;
 using InterviewProject.Data;
 using InterviewProject.Services; // 🚀 1. 確保引入 Service 的命名空間
 
+// 🌟 關鍵修正：解決 PostgreSQL timestamp with time zone (timestamptz) 的 Local / UTC 衝突問題
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.   MVC
@@ -55,6 +58,7 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseStaticFiles(); // 🌟 確保預設的 static files 有被啟用，site.css 才能正確加載
 
 app.UseRouting();
 

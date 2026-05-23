@@ -1,48 +1,116 @@
 ﻿@model IEnumerable<InterviewProject.Models.Room>
 
+@{
+    ViewData["Title"] = "房間列表";
+}
+
 <style>
-    .action-links {
-        margin-bottom: 20px;
+    /* 確保樣式名稱不會與全站其他 CSS 衝突，並加上更明確的宣告 */
+    .room-list-container {
+        padding: 20px;
+        font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
     }
 
+    .action-links {
+        margin-bottom: 25px;
+    }
+
+    /* 修正點：確保 display 為 inline-block 且有足夠的 padding 讓它看起來像按鈕 */
     .btn-custom {
-        display: inline-block;
-        padding: 8px 16px;
-        margin-right: 10px;
-        background-color: #2ecc71;
-        color: white;
-        text-decoration: none;
-        border-radius: 4px;
-        font-family: sans-serif;
+        display: inline-block !important;
+        padding: 10px 20px !important;
+        margin-right: 12px !important;
+        background-color: #2ecc71 !important;
+        color: white !important;
+        text-decoration: none !important;
+        border-radius: 6px !important;
+        font-weight: 500;
+        transition: background-color 0.2s;
     }
 
         .btn-custom.blue {
-            background-color: #3498db;
+            background-color: #3498db !important;
         }
 
         .btn-custom:hover {
             opacity: 0.9;
-            color: white;
+            color: white !important;
+            text-decoration: none !important;
+        }
+
+    .room-ul {
+        list-style: none;
+        padding-left: 0;
+    }
+
+    .room-li {
+        background: #f8f9fa;
+        padding: 15px;
+        margin-bottom: 12px;
+        border-radius: 6px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-left: 4px solid #3498db;
+        max-width: 600px;
+    }
+
+    .room-details {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .room-title {
+        font-size: 16px;
+        color: #2c3e50;
+    }
+
+    .room-code {
+        color: #7f8c8d;
+        font-size: 13px;
+        margin-top: 4px;
+    }
+
+    .join-link {
+        color: #3498db;
+        text-decoration: none;
+        font-weight: bold;
+    }
+
+        .join-link:hover {
+            text-decoration: underline;
         }
 </style>
 
-<h2>房間列表</h2>
+<div class="room-list-container">
+    <h2>房間列表</h2>
 
-<div class="action-links">
-    <a href="/Room/Create" class="btn-custom">建立房間</a>
-    <a href="/Room/EnterCode" class="btn-custom blue">使用房間碼進房</a>
+    <div class="action-links">
+        <a href="/Room/Create" class="btn-custom">建立房間</a>
+        <a href="/Room/EnterCode" class="btn-custom blue">使用房間碼進房</a>
+    </div>
+
+    <ul class="room-ul">
+        @if (Model != null && Model.Any())
+        {
+            @foreach (var item in Model)
+            {
+                <li class="room-li">
+                    <div class="room-details">
+                        <span class="room-title"><strong>@item.RoomName</strong></span>
+                        <span class="room-code">(代碼: @item.JitsiRoomName)</span>
+                    </div>
+                    <div>
+                        <a href="/Room/Join?code=@item.JitsiRoomName" class="join-link">
+                            進入房間 &rarr;
+                        </a>
+                    </div>
+                </li>
+            }
+        }
+        else
+        {
+            <li style="color: #7f8c8d; list-style: none;">目前沒有任何房間，請點擊上方按鈕建立。</li>
+        }
+    </ul>
 </div>
-
-<ul>
-    @foreach (var item in Model)
-    {
-        <li style="margin-bottom: 10px;">
-            <strong>@item.RoomName</strong>
-            <span style="color: #7f8c8d; font-size: 13px;">(代碼: @item.JitsiRoomName)</span>
-            &nbsp;&nbsp;
-            <a href="/Room/Join?code=@item.JitsiRoomName" style="color: #3498db;">
-                進入房間
-            </a>
-        </li>
-    }
-</ul>
