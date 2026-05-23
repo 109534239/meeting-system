@@ -17,7 +17,6 @@ namespace InterviewProject.Controllers
         private readonly JitsiBotService _botService;
         private readonly IWebHostEnvironment _env;
 
-        // 注入 IWebHostEnvironment 來判斷目前是 Development 還是 Production
         public RoomController(AppDbContext context, JitsiBotService botService, IWebHostEnvironment env)
         {
             _context = context;
@@ -45,7 +44,6 @@ namespace InterviewProject.Controllers
                 return View();
             }
 
-            // 修正點：確保使用 DateTime.UtcNow 符合 PostgreSQL 要求
             var room = new Room
             {
                 RoomName = roomName,
@@ -56,7 +54,6 @@ namespace InterviewProject.Controllers
             _context.Rooms.Add(room);
             await _context.SaveChangesAsync();
 
-            // 判斷：如果是本機開發環境才執行 Playwright 機器人
             if (_env.IsDevelopment())
             {
                 string mockVideoPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "video", "男性面試官.y4m");

@@ -3,6 +3,7 @@ using System;
 using InterviewProject.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace InterviewProject.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260522080202_AddJob")]
+    partial class AddJob
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -164,10 +167,6 @@ namespace InterviewProject.Migrations
 
                     b.Property<DateTime>("CreatedTime")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("JitsiRoomName")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<string>("RoomName")
                         .IsRequired()
