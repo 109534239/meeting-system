@@ -24,9 +24,8 @@ namespace InterviewProject.Controllers
 
         // POST: 註冊
         [HttpPost]
-        public async Task<IActionResult> Register(string name, string email, string phone, string password, string role = "jobseeker")
+        public async Task<IActionResult> Register(string name, string email, string phone, string password)
         {
-            // 檢查 Email 是否已註冊
             if (await _db.Members.AnyAsync(m => m.Email == email))
             {
                 TempData["RegisterError"] = "此 Email 已被註冊";
@@ -39,21 +38,22 @@ namespace InterviewProject.Controllers
                 Email = email,
                 Phone = phone,
                 PasswordHash = HashPassword(password),
-                Role = role
+                Role = "jobseeker"  // 寫死，不接受外部傳入
             };
 
             _db.Members.Add(member);
             await _db.SaveChangesAsync();
 
-            return RedirectToAction("Index"); // 導向登入頁
+            return RedirectToAction("Index");
         }
 
         // POST: 登入
         [HttpPost]
-        public async Task<IActionResult> Login(string account, string password, string role)
+        public async Task<IActionResult> Login(string account, string password)
         {
+            // 只用帳號密碼查，不接受前端傳來的 role
             var member = await _db.Members
-                .FirstOrDefaultAsync(m => m.Email == account && m.Role == role);
+                .FirstOrDefaultAsync(m => m.Email == account);
 
             if (member == null || member.PasswordHash != HashPassword(password))
             {
@@ -61,10 +61,16 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Index");
             }
 
-            // 存入 Session
+            // 存入 Session（role 來自資料庫，不是前端）
             HttpContext.Session.SetInt32("MemberId", member.Id);
             HttpContext.Session.SetString("MemberName", member.Name);
             HttpContext.Session.SetString("MemberRole", member.Role);
+
+            // 根據角色導向不同頁面
+            if (member.Role == "employee")
+            {
+                return RedirectToAction("Index", "Home"); // 之後可改成後台首頁
+            }
 
             return RedirectToAction("Index", "Home");
         }
@@ -79,7 +85,7 @@ namespace InterviewProject.Controllers
         private static string HashPassword(string password)
         {
             var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(password));
-            return Convert.ToHexString(bytes);
+            return Convert.ToHexString(bytes).ToLower(); // 加 .ToLower()
         }
     }
 }
