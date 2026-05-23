@@ -1,20 +1,20 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using InterviewProject.Data;
-using InterviewProject.Hubs;
-using InterviewProject.Services;
+using InterviewProject.Services; // 🚀 1. 確保引入 Service 的命名空間
 
-// 解決 PostgreSQL timestamp with time zone 的 Local / UTC 衝突問題
+// 🌟 關鍵修正：解決 PostgreSQL timestamp with time zone (timestamptz) 的 Local / UTC 衝突問題
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 var builder = WebApplication.CreateBuilder(args);
 
-// MVC
+// Add services to the container.   MVC
 builder.Services.AddControllersWithViews();
 
-// 註冊 AI 機器人服務
+// 🚀 2. 註冊 AI 機器人服務（解決 Unable to resolve service 錯誤）
 builder.Services.AddSingleton<JitsiBotService>();
 
-// 註冊 SignalR 服務
+//註冊 SignalR 服務
 builder.Services.AddSignalR();
 
 // 加入 Session
@@ -23,16 +23,13 @@ builder.Services.AddSession();
 // DB Context
 builder.Services.AddDbContext<AppDbContext>(options =>
      options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        npgsqlOptions => npgsqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(10),
-            errorCodesToAdd: null
-        )));
+        builder.Configuration.GetConnectionString("DefaultConnection")));
+//options.UseSqlite("Data Source=app.db"));
+//options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 
-// 雲端專用：讓 Render 啟動時自動下載 Playwright 瀏覽器核心
+// 🚀 雲端專用：讓 Render 啟動時自動下載 Playwright 瀏覽器核心（解決無核心卡死問題）
 if (!app.Environment.IsDevelopment())
 {
     Console.WriteLine("---- 正在雲端環境安裝 Playwright 瀏覽器核心... ----");
@@ -40,12 +37,12 @@ if (!app.Environment.IsDevelopment())
     Console.WriteLine("---- Playwright 瀏覽器安裝完成！ ----");
 }
 
-// 設定副檔名對照表
+// 1. 設定副檔名對照表
 var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 provider.Mappings[".json"] = "application/json";
 provider.Mappings[".shard1"] = "application/octet-stream";
 
-// 套用設定
+// 2. 套用設定
 app.UseStaticFiles(new StaticFileOptions
 {
     ContentTypeProvider = provider,
@@ -53,7 +50,7 @@ app.UseStaticFiles(new StaticFileOptions
     DefaultContentType = "application/octet-stream"
 });
 
-// 錯誤處理
+// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
@@ -61,7 +58,8 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();
+app.UseStaticFiles(); // 🌟 確保預設的 static files 有被啟用，site.css 才能正確加載
+
 app.UseRouting();
 
 // Session 必須放在這裡
@@ -73,8 +71,5 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
-
-// SignalR Hub
-app.MapHub<ChatHub>("/chatHub");
 
 app.Run();

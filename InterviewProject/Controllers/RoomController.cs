@@ -79,6 +79,37 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Index");
         }
 
+        // 🌟 修正：補上顯示「輸入房間碼」畫面的 Action (GET)
+        [HttpGet]
+        public IActionResult EnterCode()
+        {
+            return View();
+        }
+
+        // 🌟 修正：補上處理表單送出「檢查房間碼」的 Action (POST)
+        [HttpPost]
+        public IActionResult EnterCode(string roomCode)
+        {
+            if (string.IsNullOrEmpty(roomCode))
+            {
+                ViewBag.ErrorMessage = "請輸入房間代碼";
+                return View();
+            }
+
+            // 去資料庫搜尋是否有符合對應 JitsiRoomName 的房間
+            var room = _context.Rooms.FirstOrDefault(x => x.JitsiRoomName == roomCode.Trim());
+
+            if (room == null)
+            {
+                // 若找不到，將錯誤訊息存入 ViewBag，供 EnterCode.cshtml 顯示 ⚠️
+                ViewBag.ErrorMessage = "找不到該房間代碼，請確認是否輸入正確。";
+                return View();
+            }
+
+            // 成功找到房間，導向至 Join 方法，並將代碼作為參數傳入
+            return RedirectToAction("Join", new { code = room.JitsiRoomName });
+        }
+
         public IActionResult Join(string code)
         {
             var room = _context.Rooms.FirstOrDefault(x => x.JitsiRoomName == code);

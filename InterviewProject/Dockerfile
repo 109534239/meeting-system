@@ -26,5 +26,11 @@ RUN dotnet publish "./InterviewProject.csproj" -c $BUILD_CONFIGURATION -o /app/p
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+
+# --- 💡 新增以下這行：切換成 root 帳號來修改 Playwright 的執行檔權限 ---
+USER root
+RUN chmod -R +x /app/.playwright/node/linux-x64/ 2>/dev/null || true
+# -------------------------------------------------------------------
+
 # 執行檔名稱也必須是英文
 ENTRYPOINT ["dotnet", "InterviewProject.dll"]
