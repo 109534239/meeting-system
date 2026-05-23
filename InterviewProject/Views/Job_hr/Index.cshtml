@@ -1,0 +1,68 @@
+@model List<InterviewProject.Models.Job>
+
+@{
+    ViewData["Title"] = "職缺管理";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/HrJob.css" asp-append-version="true" />
+}
+
+<div class="hrjob-page">
+    <div class="hrjob-header">
+        <h2>職缺管理</h2>
+        <a asp-action="Create" class="btn-create">＋ 新增職缺</a>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert-success">@TempData["Success"]</div>
+    }
+
+    <table class="hrjob-table">
+        <thead>
+            <tr>
+                <th>職缺名稱</th>
+                <th>部門</th>
+                <th>地點</th>
+                <th>類型</th>
+                <th>薪資</th>
+                <th>狀態</th>
+                <th>建立時間</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var job in Model)
+            {
+                <tr>
+                    <td>@job.Title</td>
+                    <td>@job.Department</td>
+                    <td>@job.Location</td>
+                    <td>
+                        @(job.JobType == "fulltime" ? "全職" :
+                          job.JobType == "parttime" ? "兼職" : "實習")
+                    </td>
+                    <td>@job.Salary.ToString("N0")</td>
+                    <td>
+                        <form method="post" asp-action="ToggleActive" asp-route-id="@job.Id">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn-toggle @(job.IsActive ? "active" : "inactive")">
+                                @(job.IsActive ? "上架中" : "已下架")
+                            </button>
+                        </form>
+                    </td>
+                    <td>@job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")</td>
+                    <td class="action-btns">
+                        <a asp-action="Edit" asp-route-id="@job.Id" class="btn-edit">修改</a>
+                        <form method="post" asp-action="Delete" asp-route-id="@job.Id"
+                              onsubmit="return confirm('確定刪除此職缺？')">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn-delete">刪除</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
