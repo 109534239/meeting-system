@@ -1,324 +1,121 @@
-﻿<style>
+﻿@{
+    var room = ViewBag.Room;
+}
 
-    body {
+<style>
+    html, body {
         margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
         background: #202124;
-        color: white;
-        font-family: Arial;
+        font-family: sans-serif;
+        overflow: hidden;
     }
 
     .topbar {
         height: 60px;
         background: #2d2e30;
-        display: flex;
-        align-items: center;
-        padding-left: 20px;
-        font-size: 22px;
-    }
-
-    .main {
-        display: flex;
-        height: calc(100vh - 120px);
-    }
-
-    .video-section {
-        width: 75%;
-    }
-
-    .chat-section {
-        width: 25%;
-        background: #2d2e30;
-        padding: 10px;
-    }
-
-    .bottom-bar {
-        height: 60px;
-        background: #2d2e30;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 20px;
-    }
-
-    button {
-        padding: 10px 20px;
-        border: none;
-        border-radius: 30px;
-        cursor: pointer;
-    }
-
-    .leave {
-        background: red;
         color: white;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        box-sizing: border-box;
+        position: relative;
+        z-index: 10;
     }
 
+    .room-info {
+        font-size: 16px;
+        font-weight: bold;
+    }
+
+    #meet {
+        height: calc(100% - 60px);
+        width: 100%;
+    }
+
+    /* 🚀 AI 面試官連線狀態提示標籤 */
+    .bot-status {
+        font-size: 13px;
+        padding: 6px 14px;
+        border-radius: 20px;
+        background-color: #f39c12;
+        color: white;
+        font-weight: bold;
+    }
+
+    .bot-status.ready {
+        background-color: #2ecc71;
+    }
 </style>
 
 <div class="topbar">
-    線上會議系統
-</div>
-
-<div class="main">
-
-    <!-- 視訊 -->
-    <div class="video-section">
-
-        <iframe src="https://meet.jit.si/Room@ViewBag.RoomId"
-                style="width:100%; height:100%; border:none;"
-                allow="camera; microphone; fullscreen; display-capture">
-        </iframe>
-
+    <div class="room-info">
+        <span>房間名稱: @room.RoomName</span>
+        <span style="color: #bcbcbc; margin-left: 15px; font-size:14px;">代碼: @room.JitsiRoomName</span>
     </div>
-
-    <!-- 聊天 -->
-    <div class="chat-section">
-
-        <h3 id="onlineCount">目前在線：0 人</h3>
-
-        <video id="video" autoplay muted width="0" height="0"></video>
-
-        <h3>AI 情緒分析</h3>
-
-        <div id="emotionResult">
-            分析中...
-        </div>
-
-        <div id="messagesList"
-             style="height:70%; overflow:auto; border:1px solid gray; padding:10px;">
-        </div>
-
-        <br>
-
-        <input id="messageInput"
-               placeholder="輸入訊息"
-               style="width:70%; padding:10px;" />
-
-        <button onclick="sendMessage()">送出</button>
-
+    <div>
+        <span id="botStatusLabel" class="bot-status">🤖 正在呼叫 AI 面試官...</span>
     </div>
 </div>
 
-<!-- 底部工具列 -->
-<div class="bottom-bar">
+<div id="meet"></div>
 
-    <button onclick="startRecording()">
-        🎥 錄影
-    </button>
-
-    <button onclick="stopRecording()">
-        ⏹ 停止
-    </button>
-
-    <button class="leave"
-            onclick="location.href='/Room'">
-        離開會議
-    </button>
-
-</div>
-
-<!-- 人臉辨識模型 -->
-<script src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
-
-<!-- SignalR -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
-
+<script src="https://8x8.vc/external_api.js"></script>
 <script>
-    const userName = '@Context.Session.GetString("UserName")';
+    // 🚀 修正對接：使用 8x8 雲端高速伺服器
+    const domain = "8x8.vc"; 
 
-    const connection = new signalR.HubConnectionBuilder()
-        .withUrl("/chatHub")
-        .build();
-
-    connection.on("ReceiveMessage", function(user, message) {
-
-        const msg = document.createElement("div");
-
-        msg.innerHTML = `<b>${user}:</b> ${message}`;
-
-        document.getElementById("messagesList").appendChild(msg);
-    });
-
-    // 連線成功後通知加入
-    connection.start().then(function() {
-
-        connection.invoke(
-            "JoinRoom",
-            userName,
-            @ViewBag.RoomId
-        );
-
-    });
-
-    function sendMessage() {
-
-        const message =
-            document.getElementById("messageInput").value;
-
-        connection.invoke("SendMessage", userName, message);
-
-        document.getElementById("messageInput").value = "";
-    }
-
-    // 在線人數更新
-    connection.on("UpdateOnlineCount", function(count) {
-
-        document.getElementById("onlineCount").innerHTML =
-            `目前在線：${count} 人`;
-    });
-
-    // 加入通知
-    connection.on("UserJoinedMessage", function(message) {
-
-        const msg = document.createElement("div");
-
-        msg.style.color = "blue";
-
-        msg.innerHTML = message;
-
-        document.getElementById("messagesList")
-            .appendChild(msg);
-    });
-
-    // 「螢幕錄影」
-    let mediaRecorder;
-
-    let recordedChunks = [];
-
-    async function startRecording() {
-
-        const stream =
-            await navigator.mediaDevices.getDisplayMedia({
-                video: true,
-                audio: true
-            });
-
-        mediaRecorder =
-            new MediaRecorder(stream);
-
-        recordedChunks = [];
-
-        mediaRecorder.ondataavailable = function(event) {
-
-            if (event.data.size > 0) {
-
-                recordedChunks.push(event.data);
+    const options = {
+        // 🌟 關鍵修正：將 magic-cookie 填入 tenant 屬性中
+        tenant: "vpaas-magic-cookie-00203058b8f244a0a520be67d341b527",
+        // 🌟 房間名稱保持純代碼，絕不要自己加斜線拼接
+        roomName: "@room.JitsiRoomName",
+        width: "100%",
+        height: "100%",
+        parentNode: document.getElementById('meet'),
+        configOverwrite: {
+            startWithAudioMuted: false,
+            startWithVideoMuted: false,
+            prejoinPageEnabled: false, // 跳過預檢畫面
+            lobby: {
+                enableLobby: false     // 關閉大廳隔離
             }
-        };
-
-        mediaRecorder.onstop = function() {
-
-            const blob =
-                new Blob(recordedChunks, {
-                    type: "video/webm"
-                });
-
-            const url =
-                URL.createObjectURL(blob);
-
-            const a =
-                document.createElement("a");
-
-            a.href = url;
-
-            a.download = "meeting-record.webm";
-
-            a.click();
-        };
-
-        mediaRecorder.start();
-
-        alert("開始錄影");
-    }
-
-    function stopRecording() {
-
-        mediaRecorder.stop();
-
-        alert("錄影結束");
-    }
-
-    // AI分析情緒
-    async function loadModels() {
-        try {
-            // 使用 "/" 開頭確保從 wwwroot 根目錄開始找
-            await faceapi.nets.tinyFaceDetector.loadFromUri('/models/');
-            await faceapi.nets.faceExpressionNet.loadFromUri('/models/');
-
-            console.log("模型下載成功！");
-        } catch (err) {
-            console.error("錯誤發生在：", err);
+        },
+        interfaceConfigOverwrite: {
+            SHOW_JITSI_WATERMARK: false,
+            SHOW_BRAND_WATERMARK: false
+        },
+        userInfo: {
+            displayName: "求職者 (您)"
         }
-    }
-
-    // 確保在 window 載入完成後再跑，這能避開大多數 faceapi is not defined 的問題
-    window.onload = () => {
-        loadModels();
     };
 
-   async function analyzeEmotion() {
-        const video = document.getElementById("video");
-        const displaySize = { width: video.width, height: video.height };
+    // 掛載 Jitsi Iframe
+    const api = new JitsiMeetExternalAPI(domain, options);
 
-        // 每 500 毫秒跑一次偵測
-        setInterval(async () => {
-            try {
-                const detection = await faceapi
-                    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-                    .withFaceExpressions();
+    console.log("網頁載入就緒，主動請求後端部署 AI 面試官...");
 
-                if (detection) {
-                    // 取得分數最高的情緒
-                    const topEmotion = Object.keys(detection.expressions).reduce((a, b) => 
-                        detection.expressions[a] > detection.expressions[b] ? a : b
-                    );
-
-                    const emotionMap = {
-                        neutral: "平靜 😐",
-                        happy: "開心 😄",
-                        sad: "難過 😢",
-                        angry: "生氣 😡",
-                        fearful: "害怕 😨",
-                        disgusted: "厭惡 🤢",
-                        surprised: "驚訝 😲"
-                    };
-
-                    document.getElementById("emotionResult").innerHTML = 
-                        `目前情緒：<span style="color:#4285f4">${emotionMap[topEmotion] || topEmotion}</span>`;
-                } else {
-                    document.getElementById("emotionResult").innerHTML = "目前情緒：抓不到臉部...";
-                }
-            } catch (err) {
-                console.error("偵測循環出錯:", err);
-            }
-        }, 500);
-    }
-
-    loadModels().then(async () => {
-        console.log("模型載入成功，準備開始偵測...");
-    
-        // 💡 關鍵：加入這一行來呼叫偵測函式
-        await analyzeEmotion(); 
-    
-    }).catch(err => {
-        console.log("載入失敗:", err);
-        document.getElementById("emotionResult").innerHTML = "模型載入失敗";
+    // 觸發後端 Playwright 機器人進房
+    fetch('/Room/TriggerBot?roomCode=@room.JitsiRoomName', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        const statusLabel = document.getElementById('botStatusLabel');
+        if (data.success) {
+            console.log("AI 面試官已成功抵達會議！");
+            statusLabel.innerText = "🤖 AI 面試官已就位";
+            statusLabel.classList.add('ready');
+        } else {
+            console.error("AI 面試官啟動失敗: " + data.message);
+            statusLabel.innerText = "❌ AI 面試官連線失敗";
+            statusLabel.style.backgroundColor = "#e74c3c";
+        }
+    })
+    .catch(err => {
+        console.error("發送進房觸發失敗:", err);
     });
-
-    // 啟動攝影機
-    async function startCamera() {
-
-        const video = document.getElementById("video");
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: true
-        });
-
-        video.srcObject = stream;
-
-        return new Promise(resolve => {
-            video.onloadedmetadata = () => {
-                resolve(video);
-            };
-        });
-    }
 </script>

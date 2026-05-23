@@ -1,68 +1,71 @@
-using Microsoft.EntityFrameworkCore;
+ï»¿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using InterviewProject.Data;
-using InterviewProject.Hubs;
+using InterviewProject.Services; // ğŸš€ 1. ç¢ºä¿å¼•å…¥ Service çš„å‘½åç©ºé–“
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.   MVC
 builder.Services.AddControllersWithViews();
 
-//µù¥U SignalR ªA°È
+// ğŸš€ 2. è¨»å†Š AI æ©Ÿå™¨äººæœå‹™ï¼ˆè§£æ±º Unable to resolve service éŒ¯èª¤ï¼‰
+builder.Services.AddSingleton<JitsiBotService>();
+
+//è¨»å†Š SignalR æœå‹™
 builder.Services.AddSignalR();
 
-// ¥[¤J Session
+// åŠ å…¥ Session
 builder.Services.AddSession();
 
 // DB Context
 builder.Services.AddDbContext<AppDbContext>(options =>
      options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection")));
-    //options.UseSqlite("Data Source=app.db"));
-    //options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+//options.UseSqlite("Data Source=app.db"));
+//options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 
-// 1. ³]©w°ÆÀÉ¦W¹ï·Óªí
+// ğŸš€ é›²ç«¯å°ˆç”¨ï¼šè®“ Render å•Ÿå‹•æ™‚è‡ªå‹•ä¸‹è¼‰ Playwright ç€è¦½å™¨æ ¸å¿ƒï¼ˆè§£æ±ºç„¡æ ¸å¿ƒå¡æ­»å•é¡Œï¼‰
+if (!app.Environment.IsDevelopment())
+{
+    Console.WriteLine("---- æ­£åœ¨é›²ç«¯ç’°å¢ƒå®‰è£ Playwright ç€è¦½å™¨æ ¸å¿ƒ... ----");
+    Microsoft.Playwright.Program.Main(new string[] { "install", "chromium" });
+    Console.WriteLine("---- Playwright ç€è¦½å™¨å®‰è£å®Œæˆï¼ ----");
+}
+
+// 1. è¨­å®šå‰¯æª”åå°ç…§è¡¨
 var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 provider.Mappings[".json"] = "application/json";
-// ÁöµM§AÀÉ®×¨SÂI¡A¦ı«OÀI°_¨£ÁÙ¬O¯dµÛ
-provider.Mappings[".shard1"] = "application/octet-stream"; 
+provider.Mappings[".shard1"] = "application/octet-stream";
 
-// 2. ®M¥Î³]©w
+// 2. å¥—ç”¨è¨­å®š
 app.UseStaticFiles(new StaticFileOptions
 {
     ContentTypeProvider = provider,
-    // --- ÃöÁä¡G¥[¤J¤U­±³o¦æ¡A¤¹³\¤U¸ü¨S¦³°ÆÀÉ¦WªºÀÉ®× ---
-    ServeUnknownFileTypes = true, 
+    ServeUnknownFileTypes = true,
     DefaultContentType = "application/octet-stream"
 });
 
-// Configure the HTTP request pipeline.   ¿ù»~³B²z
+// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
 app.UseHttpsRedirection();
-//app.UseStaticFiles();
 
 app.UseRouting();
 
-// Session ¥²¶·©ñ¦b³o¸Ì
+// Session å¿…é ˆæ”¾åœ¨é€™è£¡
 app.UseSession();
 
 app.UseAuthorization();
 
-// ¸ô¥Ñ
+// è·¯ç”±
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
-
-// ¥[¤J SignalR Hub ¸ô¥ÑÂI
-// "/chatHub" ¬O«eºİ JavaScript ³s½u®É­n«ü©wªººô§}¸ô®|
-app.MapHub<ChatHub>("/chatHub");
 
 app.Run();

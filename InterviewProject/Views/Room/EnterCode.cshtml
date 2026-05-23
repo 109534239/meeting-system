@@ -1,0 +1,89 @@
+﻿@{
+    ViewData["Title"] = "輸入房間碼進房";
+}
+
+<style>
+    .enter-code-container {
+        max-width: 450px;
+        margin: 80px auto;
+        padding: 30px;
+        background: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        text-align: center;
+        font-family: "Segoe UI", Microsoft JhengHei, sans-serif;
+    }
+
+        .enter-code-container h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .code-input {
+        width: 100%;
+        padding: 12px 15px;
+        font-size: 16px;
+        border: 2px solid #ddd;
+        border-radius: 6px;
+        outline: none;
+        transition: border-color 0.3s;
+        text-align: center;
+        letter-spacing: 1px;
+    }
+
+        .code-input:focus {
+            border-color: #3498db;
+        }
+
+    .submit-btn {
+        width: 100%;
+        padding: 12px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+
+        .submit-btn:hover {
+            background-color: #2980b9;
+        }
+
+    .error-msg {
+        color: #e74c3c;
+        margin-top: 15px;
+        font-size: 14px;
+    }
+</style>
+
+<div class="enter-code-container">
+    <h2>加入視訊會議</h2>
+    <p style="color: #7f8c8d; margin-bottom: 25px;">請輸入 10 碼會議房間代碼以直接進入</p>
+
+    <form action="/Room/EnterCode" method="post">
+        <div class="form-group">
+            <input type="text"
+                   name="roomCode"
+                   class="code-input"
+                   placeholder="例如: 9868bcf965"
+                   required
+                   maxlength="50"
+                   autocomplete="off" />
+        </div>
+        <button type="submit" class="submit-btn">進入會議</button>
+    </form>
+
+    @if (ViewBag.ErrorMessage != null)
+    {
+        <div class="error-msg">
+            ⚠️ @ViewBag.ErrorMessage
+        </div>
+    }
+</div>
