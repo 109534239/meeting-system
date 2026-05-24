@@ -37,7 +37,9 @@
               </div>
               <button type="submit" class="btn-login">登入</button>
           </form>
-          <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
+            <div class="forgot-pw">
+                <a asp-controller="Login" asp-action="Forgetpassword">忘記密碼？</a>
+            </div>
           <hr class="register-divider" />
           <a href="@Url.Action("Register", controller: "Login")" class="btn-register">註冊</a>
       </div>
@@ -54,7 +56,9 @@
               </div>
               <button type="submit" class="btn-login employee">登入</button>
           </form>
-          <div class="forgot-pw"><a href="forgot_password.html">忘記密碼？</a></div>
+            <div class="forgot-pw">
+                <a asp-controller="Login" asp-action="Forgetpassword">忘記密碼？</a>
+            </div>
       </div>
 
     </div>

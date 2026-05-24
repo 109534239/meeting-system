@@ -25,6 +25,101 @@ namespace InterviewProject.Controllers
         // GET: 註冊頁
         public IActionResult Register() => View();
 
+
+        // 忘記密碼頁面
+        public IActionResult Forgetpassword() => View();
+
+        // 1. 發送驗證碼 (測試用：直接回傳驗證碼)
+        [HttpPost]
+        public async Task<IActionResult> SendVerificationCode(string email)
+        {
+            // 1. 檢查會員是否存在
+            var member = await _db.Members.FirstOrDefaultAsync(m => m.Email == email);
+            if (member == null) return Json(new { success = false, message = "找不到此 Email" });
+
+            // 2. 產生 6 位數隨機碼
+            string code = new Random().Next(100000, 999999).ToString();
+            // 使用 Local Time (在地時間) 比較直觀，避免 Utc 造成的時間差誤解
+            DateTime now = DateTime.Now;
+            DateTime expire = now.AddMinutes(10);
+
+            // 3. 【核心修改】：嘗試抓取該會員是否已有存在的驗證碼紀錄
+            var existingCode = await _db.VerificationCodes
+                .FirstOrDefaultAsync(v => v.MemberId == member.Id);
+
+            if (existingCode != null)
+            {
+                // 強制更新所有屬性，確保 EF 標記為 Modified
+                existingCode.Code = code;
+                existingCode.ExpireTime = expire; // 更新時效
+                existingCode.IsUsed = false;
+
+                _db.Entry(existingCode).State = EntityState.Modified; // 強制標記為已修改
+            }
+            else
+            {
+                var vCode = new VerificationCode
+                {
+                    MemberId = member.Id,
+                    Code = code,
+                    ExpireTime = expire,
+                    IsUsed = false
+                };
+                _db.VerificationCodes.Add(vCode);
+            }
+
+            // 4. 儲存並回傳
+            await _db.SaveChangesAsync();
+
+            return Json(new
+            {
+                success = true,
+                message = $"驗證碼已發送：{code}",
+                code = code,
+                // 新增：回傳格式化後的時間（例如 14:30:05）
+                expiryTime = expire.ToString("HH:mm:ss")
+            });
+        }
+
+        // 2. 驗證並重設密碼
+        [HttpPost]
+        public async Task<IActionResult> ResetPassword(string email, string code, string newPassword)
+        {
+            var member = await _db.Members.FirstOrDefaultAsync(m => m.Email == email);
+            if (member == null) return Json(new { success = false, message = "用戶不存在" });
+
+            var vEntry = await _db.VerificationCodes
+                .Where(v => v.MemberId == member.Id && v.Code == code && !v.IsUsed && v.ExpireTime > DateTime.UtcNow)
+                .OrderByDescending(v => v.Id)
+                .FirstOrDefaultAsync();
+
+            if (vEntry == null) return Json(new { success = false, message = "驗證碼錯誤或已過期" });
+
+            // 更新密碼 (使用你原本的 Hash 方法)
+            member.PasswordHash = HashPassword(newPassword);
+            vEntry.IsUsed = true; // 標記驗證碼已使用
+
+            await _db.SaveChangesAsync();
+            return Json(new { success = true, message = "密碼重設成功，請重新登入" });
+        }
+
+        // 3. 供前端步驟跳轉用的單獨驗證 (選用，若你的前端 checkCode 需要)
+        [HttpPost]
+        public async Task<IActionResult> VerifyCodeOnly(string email, string code)
+        {
+            var member = await _db.Members.FirstOrDefaultAsync(m => m.Email == email);
+            if (member == null) return Json(new { success = false, message = "用戶不存在" });
+
+            var vEntry = await _db.VerificationCodes
+                .Where(v => v.MemberId == member.Id && v.Code == code && !v.IsUsed && v.ExpireTime > DateTime.UtcNow)
+                .OrderByDescending(v => v.Id)
+                .FirstOrDefaultAsync();
+
+            if (vEntry == null) return Json(new { success = false, message = "驗證碼錯誤或已過期" });
+
+            return Json(new { success = true });
+        }
+
         // POST: 註冊（維持不變，僅針對一般求職者）
         [HttpPost]
         public async Task<IActionResult> Register(string name, string email, string phone, string password)

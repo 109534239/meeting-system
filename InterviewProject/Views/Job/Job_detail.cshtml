@@ -276,7 +276,7 @@
                 建立全新履歷
             </a>
 
-            <div style="margin-top:20px; border-top:1px solid #ddd; padding-top:15px; text-align:left;">
+            <div id="existing-resume-section" style="margin-top:20px; border-top:1px solid #ddd; padding-top:15px; text-align:left; display:none;">
                 <label style="font-size:14px; font-weight:bold;">套用現有履歷：</label>
                 <select id="select-existing-pos" class="form-control" style="margin: 10px 0;">
                     <option value="">-- 請選擇職位 --</option>
@@ -323,7 +323,7 @@
             }
         });
 
-        function openModal() {
+                function openModal() {
             const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
             if (!isLoggedIn) {
                 if (confirm('需要登入才能應徵職缺\n是否前往登入頁面？')) window.location.href = '/Login';
@@ -333,20 +333,36 @@
             const jobTitle = document.getElementById('job-title').textContent.trim();
             document.getElementById('modal-job-title').textContent = jobTitle;
 
+            // A. 設定建立全新的 URL
             const newUrl = `/Resume/Resume?isNew=true&position=${encodeURIComponent(jobTitle)}&mode=new`;
             document.getElementById('btn-new-resume').href = newUrl;
 
+            // B. 抓取下拉選單資料並判斷是否顯示
             fetch('/Resume/GetSavedPositions')
                 .then(res => res.json())
                 .then(data => {
                     const select = document.getElementById('select-existing-pos');
+                    const section = document.getElementById('existing-resume-section');
+
                     select.innerHTML = '<option value="">-- 請選擇職位 --</option>';
-                    data.forEach(pos => {
-                        const opt = document.createElement('option');
-                        opt.value = pos;
-                        opt.textContent = pos;
-                        select.appendChild(opt);
-                    });
+
+                    if (data && data.length > 0) {
+                        // 有舊資料：顯示區塊並填充選單
+                        section.style.display = 'block';
+                        data.forEach(pos => {
+                            const opt = document.createElement('option');
+                            opt.value = pos;
+                            opt.textContent = pos;
+                            select.appendChild(opt);
+                        });
+                    } else {
+                        // 沒有舊資料：隱藏區塊
+                        section.style.display = 'none';
+                    }
+                })
+                .catch(err => {
+                    console.error("抓取職位失敗:", err);
+                    document.getElementById('existing-resume-section').style.display = 'none';
                 });
 
             document.getElementById('apply-modal').classList.add('show');

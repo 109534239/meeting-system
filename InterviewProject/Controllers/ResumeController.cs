@@ -19,60 +19,83 @@ namespace InterviewProject.Controllers
             _context = context;
         }
 
+        // 在 Controller 內取得當前登入者 ID 的方法
+        private int GetCurrentUserId()
+        {
+            // 改為從 Session 抓取 "MemberId"
+            int? userId = HttpContext.Session.GetInt32("MemberId");
+
+            if (userId.HasValue)
+            {
+                return userId.Value;
+            }
+
+            // 如果 Session 抓不到，代表沒登入或是 Session 過期
+            return 0;
+        }
+
         // 頁面進入：讀取資料
         // 1. 新增：供 Job_detail 下拉選單抓取該使用者所有的職位
         [HttpGet]
         public async Task<IActionResult> GetSavedPositions()
         {
-            string userId = "test_user_01"; // 實作時建議改為抓登入 Session/Cookie
+            int userId = GetCurrentUserId();
+            if (userId == 0) return Json(new List<string>());
+
             var positions = await _context.Resume
-                .Where(r => r.UserId == userId && !string.IsNullOrEmpty(r.Position))
+                .Where(r => r.UserId == userId)
                 .Select(r => r.Position)
                 .Distinct()
                 .ToListAsync();
+
             return Json(positions);
         }
 
-        // 2. 修正：頁面進入點，加入 position 參數
+        // 2. 頁面進入點
         public async Task<IActionResult> Resume(bool isNew = false, string position = "", string fromPos = "", string mode = "")
         {
-            string userId = "test_user_01";
-            ViewBag.ViewMode = mode; // 將模式傳給前端
+            int userId = GetCurrentUserId();
+            if (userId == 0)
+            {
+                // 修正這裡：導向 Login 控制器的 Index Action
+                return RedirectToAction("Index", "Login");
+            }
+
+            ViewBag.ViewMode = mode;
 
             if (mode == "new")
             {
-                // 建立全新：直接給空物件
                 return View(new Resume { UserId = userId, Position = position });
             }
             else if (mode == "apply")
             {
-                // 套用現有：去抓 fromPos 那份資料
                 var existingData = await _context.Resume
                     .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == fromPos);
 
                 if (existingData != null)
                 {
-                    existingData.Id = 0; // 確保儲存時是新增
-                    existingData.Position = position; // 設定為「目前想應徵」的職位
+                    existingData.Id = 0;
+                    existingData.Position = position;
+                    existingData.UserId = userId; // 確保是當前 User
                     return View(existingData);
                 }
             }
 
-            // 一般進入（查看已存檔資料）
             var model = await _context.Resume.FirstOrDefaultAsync(r => r.UserId == userId && r.Position == position);
             return View(model ?? new Resume { UserId = userId, Position = position });
         }
 
-        // 3. 修正：儲存邏輯 (根據 Position 判斷更新或新增)
+        // 3. 儲存邏輯
         [HttpPost]
         public async Task<IActionResult> SaveResume(Resume model)
         {
             ModelState.Remove("ResumeTime");
+            // 因為 UserId 是從後端抓的，前端傳回來的 model.UserId 可能不安全，我們手動補上
+            int userId = GetCurrentUserId();
+            model.UserId = userId;
+
             if (!ModelState.IsValid) return View("Resume", model);
 
-            string userId = "test_user_01";
-
-            // 檢查該使用者是否已經存過「這個職位」的履歷
             var existing = await _context.Resume
                 .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == model.Position);
 
@@ -80,23 +103,19 @@ namespace InterviewProject.Controllers
 
             if (existing == null)
             {
-                // 新增一筆
                 model.Id = 0;
-                model.UserId = userId;
                 model.ResumeTime = now;
                 _context.Resume.Add(model);
             }
             else
             {
-                // 更新舊有
+                // 更新時，保持原有 ID
                 model.Id = existing.Id;
-                model.UserId = userId;
                 model.ResumeTime = now;
                 _context.Entry(existing).CurrentValues.SetValues(model);
             }
 
             await _context.SaveChangesAsync();
-            // 存完後回到該職位的履歷頁面
             return RedirectToAction("Resume", new { isNew = false, position = model.Position });
         }
 
