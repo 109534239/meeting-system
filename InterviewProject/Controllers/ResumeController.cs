@@ -1,7 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+﻿using DocumentFormat.OpenXml.Spreadsheet;
 using InterviewProject.Data;
 using InterviewProject.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using MiniSoftware;
 using Spire.Doc;
 using System.IO;
@@ -17,6 +18,31 @@ namespace InterviewProject.Controllers
         {
             _env = env;
             _context = context;
+        }
+
+        public async Task<IActionResult> CreateResume()
+        {
+            int userId = GetCurrentUserId();
+            if (userId == 0) return RedirectToAction("Index", "Login");
+
+            // 1. 抓取 Member 資料 (為了顯示姓名與性別)
+            var member = await _context.Members.FirstOrDefaultAsync(m => m.Id == userId);
+
+            if (member == null) return NotFound();
+
+            // 2. 將姓名與性別存入 ViewBag 供 View 顯示（因為 Resume 表不存這些）
+            ViewBag.UserName = member.Name;
+            ViewBag.UserGender = member.Gender;
+            ViewBag.UserEmail = member.Email;
+
+            // 3. 建立新的 Resume 物件，僅賦值資料庫有的欄位
+            var resume = new Resume
+            {
+                UserId = userId,
+            };
+
+            // 返回 View
+            return View(resume);
         }
 
         // 在 Controller 內取得當前登入者 ID 的方法
@@ -52,22 +78,22 @@ namespace InterviewProject.Controllers
         }
 
         // 2. 頁面進入點
-        public async Task<IActionResult> Resume(bool isNew = false, string position = "", string fromPos = "", string mode = "")
+        public async Task<IActionResult> Resume(string position = "", string fromPos = "", string mode = "")
         {
             int userId = GetCurrentUserId();
-            if (userId == 0)
-            {
-                // 修正這裡：導向 Login 控制器的 Index Action
-                return RedirectToAction("Index", "Login");
-            }
+            if (userId == 0) return RedirectToAction("Index", "Login");
 
+            // 將當前點擊的職位存入 ViewBag，確保 View 隨時拿得到
+            ViewBag.CurrentPos = position;
             ViewBag.ViewMode = mode;
 
-            if (mode == "new")
-            {
-                return View(new Resume { UserId = userId, Position = position });
-            }
-            else if (mode == "apply")
+            var member = await _context.Members.FirstOrDefaultAsync(m => m.Id == userId);
+            ViewBag.UserEmail = member?.Email ?? "";
+            ViewBag.UserName = member?.Name ?? "";
+            ViewBag.UserGender = member?.Gender ?? "";
+
+            // 1. 套用現有履歷模式
+            if (mode == "apply" && !string.IsNullOrEmpty(fromPos))
             {
                 var existingData = await _context.Resume
                     .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == fromPos);
@@ -75,14 +101,22 @@ namespace InterviewProject.Controllers
                 if (existingData != null)
                 {
                     existingData.Id = 0;
-                    existingData.Position = position;
-                    existingData.UserId = userId; // 確保是當前 User
+                    existingData.Position = position; // 強制將職位設為當前點擊的這個職位
                     return View(existingData);
                 }
             }
 
-            var model = await _context.Resume.FirstOrDefaultAsync(r => r.UserId == userId && r.Position == position);
-            return View(model ?? new Resume { UserId = userId, Position = position });
+            // 2. 一般模式 (讀取或新建)
+            var model = await _context.Resume
+                .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == position);
+
+            if (model == null)
+            {
+                // 如果是新應徵，建立空物件並帶入職位
+                model = new Resume { UserId = userId, Position = position };
+            }
+
+            return View(model);
         }
 
         // 3. 儲存邏輯
@@ -90,7 +124,8 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> SaveResume(Resume model)
         {
             ModelState.Remove("ResumeTime");
-            // 因為 UserId 是從後端抓的，前端傳回來的 model.UserId 可能不安全，我們手動補上
+            // 移除對 Gender 的驗證或操作，因為 Resume 表沒這欄位
+
             int userId = GetCurrentUserId();
             model.UserId = userId;
 
@@ -99,40 +134,51 @@ namespace InterviewProject.Controllers
             var existing = await _context.Resume
                 .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == model.Position);
 
-            DateTime now = DateTime.UtcNow.AddHours(8);
+            DateTime now = DateTime.Now;
 
             if (existing == null)
             {
                 model.Id = 0;
                 model.ResumeTime = now;
+                model.Status = "待審核"; // 新增時預設狀態
                 _context.Resume.Add(model);
             }
             else
             {
-                // 更新時，保持原有 ID
                 model.Id = existing.Id;
                 model.ResumeTime = now;
+                // 如果原本已經有狀態，保留原狀態不覆蓋（除非你要每次儲存都重置為待審核）
+                model.Status = existing.Status ?? "待審核";
+                // SetValues 會自動忽略 Resume Model 裡沒有的欄位
                 _context.Entry(existing).CurrentValues.SetValues(model);
             }
 
             await _context.SaveChangesAsync();
-            return RedirectToAction("Resume", new { isNew = false, position = model.Position });
+            return RedirectToAction("Job_search", "Job");
         }
 
         // 按鈕：匯出 PDF
         [HttpPost]
-        public IActionResult ExportToPdf(Resume model)
+        public async Task<IActionResult> ExportToPdf(Resume model) // 確保有 async Task
         {
-            if (string.IsNullOrEmpty(model.Name))
-            {
-                return Content("姓名為必填，否則無法生成 PDF。");
-            }
+            // 1. 驗證姓名
+            // 注意：如果 model.Name 因為 disabled 抓不到，這裡要改從 member 抓
+            var member = await _context.Members.FirstOrDefaultAsync(m => m.Id == model.UserId);
+            if (member == null) return Content("找不到會員資料");
+
+            string realName = member.Name ?? "";
+            string realGender = member.Gender ?? "";
+            string realEmail = member.Email ?? ""; 
 
             string templatePath = Path.Combine(_env.WebRootPath, "file", "履歷表.docx");
             if (!System.IO.File.Exists(templatePath))
             {
                 return Content($"找不到 Word 範本檔案：{templatePath}");
             }
+
+            // 定義符號
+            string ck = "■";
+            string un = "□";
 
             // 取得串接字串
             string lang = model.LanguageSkills ?? "";
@@ -142,16 +188,12 @@ namespace InterviewProject.Controllers
             string cert = model.Certificates ?? "";
             string edu = model.EduStatus ?? "";
 
-            // 定義符號
-            string ck = "■";
-            string un = "□";
-
             var value = new Dictionary<string, object>()
             {
                 //基本資料
-                ["Name"] = model.Name ?? "",
-                ["G_M"] = (model.Gender == "男") ? ck : un,
-                ["G_F"] = (model.Gender == "女") ? ck : un,
+                ["Name"] = realName, // 使用從 Member 抓出來的真名
+                ["G_M"] = (realGender == "男") ? ck : un,
+                ["G_F"] = (realGender == "女") ? ck : un,
                 ["IdNumber"] = model.IdNumber ?? "",
                 ["Birthday"] = model.Birthday?.ToString("yyyy/MM/dd") ?? "",
                 ["ZipCode"] = model.ZipCode ?? "",
@@ -165,7 +207,7 @@ namespace InterviewProject.Controllers
                 ["Phone1"] = model.Phone1 ?? "",
                 ["Phone2"] = model.Phone2 ?? "",
                 ["Mobile"] = model.Mobile ?? "",
-                ["Email"] = model.Email ?? "",
+                ["Email"] = realEmail,
 
                 //學歷
                 ["E_Dr"] = (model.EduLevel == "博士") ? ck : un,
@@ -249,18 +291,27 @@ namespace InterviewProject.Controllers
                 ["C_Other"] = comp.Contains("其他:") ? ck : un // 只要有 "其他:" 字眼就勾選
             };
 
-            
 
-            // 證照級別解析邏輯 (針對範本中的 1. 與 2. 進行解析)
+
+            // 證照級別解析邏輯 (支援多選，例如：電腦硬體裝修(乙,丙))
             var certList = cert.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
             for (int i = 1; i <= 2; i++)
             {
                 string currentCert = certList.ElementAtOrDefault(i - 1) ?? "";
-                value[$"C{i}_Name"] = currentCert.Split('(')[0];
-                value[$"C{i}_A"] = currentCert.Contains("甲") ? ck : un;
-                value[$"C{i}_B"] = currentCert.Contains("乙") ? ck : un;
-                value[$"C{i}_C"] = currentCert.Contains("丙") ? ck : un;
-                value[$"C{i}_S"] = currentCert.Contains("單一級") ? ck : un;
+                if (!string.IsNullOrEmpty(currentCert))
+                {
+                    value[$"C{i}_Name"] = currentCert.Split('(')[0];
+                    // 檢查括號內的等級字串
+                    value[$"C{i}_A"] = currentCert.Contains("甲") ? ck : un;
+                    value[$"C{i}_B"] = currentCert.Contains("乙") ? ck : un;
+                    value[$"C{i}_C"] = currentCert.Contains("丙") ? ck : un;
+                    value[$"C{i}_S"] = currentCert.Contains("單一級") ? ck : un;
+                }
+                else
+                {
+                    value[$"C{i}_Name"] = "";
+                    value[$"C{i}_A"] = un; value[$"C{i}_B"] = un; value[$"C{i}_C"] = un; value[$"C{i}_S"] = un;
+                }
             }
 
             try
@@ -276,7 +327,7 @@ namespace InterviewProject.Controllers
                     using (MemoryStream pdfStream = new MemoryStream())
                     {
                         doc.SaveToStream(pdfStream, FileFormat.PDF);
-                        return File(pdfStream.ToArray(), "application/pdf", $"{model.Name}_履歷表.pdf");
+                        return File(pdfStream.ToArray(), "application/pdf", $"{realName}_履歷表.pdf");
                     }
                 }
             }

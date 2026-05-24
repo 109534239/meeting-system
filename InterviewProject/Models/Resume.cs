@@ -11,8 +11,6 @@ namespace InterviewProject.Models
 
         [Required]
         public int UserId { get; set; }
-        public string Name { get; set; } = "";
-        public string? Gender { get; set; }
         public string? IdNumber { get; set; }
         public DateTime? Birthday { get; set; }
         public string? ZipCode { get; set; }
@@ -27,7 +25,6 @@ namespace InterviewProject.Models
         public string? Major { get; set; }
         public string? EduStatus { get; set; }
         public string? EduDate { get; set; }
-        public string? Email { get; set; }
         public int WorkExperienceYears { get; set; }
         public string? CompanyName { get; set; }
         public string? JobTitle { get; set; }
@@ -43,7 +40,7 @@ namespace InterviewProject.Models
         public string? Autobiography { get; set; }
         public DateTime ResumeTime { get; set; }
         public string? Position { get; set; }
-        
+        public string Status { get; set; } = "待審核";
 
     }
 }

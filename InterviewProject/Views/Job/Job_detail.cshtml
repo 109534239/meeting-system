@@ -330,24 +330,27 @@
                 return;
             }
 
+            // 1. 抓取當前畫面的職位名稱 (例如：工程師)
             const jobTitle = document.getElementById('job-title').textContent.trim();
             document.getElementById('modal-job-title').textContent = jobTitle;
 
-            // A. 設定建立全新的 URL
-            const newUrl = `/Resume/Resume?isNew=true&position=${encodeURIComponent(jobTitle)}&mode=new`;
+            // A. 設定建立全新的 URL (傳入當前職位)
+            const newUrl = `/Resume/Resume?position=${encodeURIComponent(jobTitle)}&mode=new`;
             document.getElementById('btn-new-resume').href = newUrl;
 
-            // B. 抓取下拉選單資料並判斷是否顯示
+            // --- 關鍵修正：將 jobTitle 存入全域變數或按鈕屬性，供套用時使用 ---
+            const applyBtn = document.querySelector('#existing-resume-section button');
+            applyBtn.setAttribute('onclick', `goExistingResume('${jobTitle.replace(/'/g, "\\'")}')`);
+
+            // B. 抓取下拉選單資料
             fetch('/Resume/GetSavedPositions')
                 .then(res => res.json())
                 .then(data => {
                     const select = document.getElementById('select-existing-pos');
                     const section = document.getElementById('existing-resume-section');
-
                     select.innerHTML = '<option value="">-- 請選擇職位 --</option>';
 
                     if (data && data.length > 0) {
-                        // 有舊資料：顯示區塊並填充選單
                         section.style.display = 'block';
                         data.forEach(pos => {
                             const opt = document.createElement('option');
@@ -356,7 +359,6 @@
                             select.appendChild(opt);
                         });
                     } else {
-                        // 沒有舊資料：隱藏區塊
                         section.style.display = 'none';
                     }
                 })
@@ -368,14 +370,19 @@
             document.getElementById('apply-modal').classList.add('show');
         }
 
-        function goExistingResume() {
-            const selectedPos = document.getElementById('select-existing-pos').value;
-            const currentJob = document.getElementById('job-title').textContent.trim();
-            if (!selectedPos) {
-                alert('請先選擇一個職位！');
+        // 修正：傳入 currentJobTitle 參數
+        function goExistingResume(currentJobTitle) {
+            const fromPos = document.getElementById('select-existing-pos').value;
+
+            if (!fromPos) {
+                alert("請選擇一個現有職位！");
                 return;
             }
-            window.location.href = `/Resume/Resume?isNew=false&position=${encodeURIComponent(currentJob)}&fromPos=${encodeURIComponent(selectedPos)}&mode=apply`;
+
+            // 導向網址：
+            // fromPos = 選單選的(舊資料來源)
+            // position = currentJobTitle (目前點擊的新職缺)
+            window.location.href = `/Resume/Resume?mode=apply&fromPos=${encodeURIComponent(fromPos)}&position=${encodeURIComponent(currentJobTitle)}`;
         }
 
         function closeModal() {

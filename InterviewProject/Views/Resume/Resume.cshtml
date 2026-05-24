@@ -10,30 +10,24 @@
     <div class="resume-title">履    歷    表</div>
     <div style="text-align:right; margin-bottom:10px; color:#666;">
         應徵職位：
-        @if (ViewBag.ViewMode == "apply")
-        {
-            <span style="color: #d9534f; font-weight: bold; background-color: #fff3f3; padding: 2px 5px; border-radius: 4px;">
-                等待資料表建立中
-            </span>
-        }
-        else
-        {
+        <span style="color: #d9534f; font-weight: bold;">
             @Model.Position
-        }
+        </span>
     </div>
     <form method="post" asp-action="SaveResume">
-        <input type="hidden" asp-for="Id" />
         <input type="hidden" asp-for="UserId" />
         <input type="hidden" asp-for="Position" />
         <table class="main-table">
             <tr>
                 <td rowspan="7" class="label-bg">基本<br/>資料</td>
                 <td>姓名</td>
-                <td><input asp-for="Name" class="full-input" required /></td>
+                <td>
+                    <input class="full-input" value="@ViewBag.UserName" readonly />
+                </td>
                 <td>性別</td>
                 <td>
-                    <input type="radio" asp-for="Gender" value="男" required />男
-                    <input type="radio" asp-for="Gender" value="女" required />女
+                    <input type="radio" name="Gender" value="男" @(ViewBag.UserGender == "男" ? "checked" : "") disabled />男
+                    <input type="radio" name="Gender" value="女" @(ViewBag.UserGender == "女" ? "checked" : "") disabled />女
                 </td>
                 <td rowspan="4" class="photo-cell">請貼照片</td>
             </tr>
@@ -115,7 +109,7 @@
 
             <tr>
                 <td>電子信箱</td>
-                <td colspan="5"><input asp-for="Email" type="email" class="full-input" style="width:70%" required /></td>
+                <td colspan="5"><input class="full-input" value="@ViewBag.UserEmail" readonly /></td>
             </tr>
 
             <tr>
@@ -347,17 +341,31 @@
             });
         }
 
-        // 4. 處理證照
+        // 4. 處理證照 (修正反填邏輯，支援多選)
         const certData = "@Html.Raw(Model.Certificates)";
         if (certData) {
             const certs = certData.split(', ');
             document.querySelectorAll('.cert-item').forEach((item, index) => {
                 if(certs[index]) {
+                    // 解析 "職類(級別1,級別2)"
                     let name = certs[index].split('(')[0];
-                    item.querySelector('.cert-name').value = name;
-                    item.querySelectorAll('.cert-lv').forEach(lv => {
-                        if (certs[index].includes(lv.value)) lv.checked = true;
-                    });
+                    let levelPart = certs[index].match(/\(([^)]+)\)/);
+
+                    // 填入名稱
+                    const nameInput = item.querySelector('.cert-name') || document.getElementById('othercert-name');
+                    if(nameInput && index === (certs.length -1) && index === 2) {
+                        document.getElementById('othercert-name').value = name;
+                    } else if (nameInput) {
+                        nameInput.value = name;
+                    }
+
+                    // 勾選所有對應的 Checkbox
+                    if (levelPart) {
+                        let levels = levelPart[1].split(',');
+                        item.querySelectorAll('.cert-lv').forEach(lv => {
+                            if (levels.includes(lv.value)) lv.checked = true;
+                        });
+                    }
                 }
             });
         }
@@ -476,16 +484,29 @@
         document.getElementById('finalSpecialty').value = specResults.join('; ');
 
         // 4. 證照
+        // 4. 證照 (修正串接邏輯，支援多個 Checkbox 勾選)
         let certResults = [];
         document.querySelectorAll('.cert-item').forEach((item, index) => {
             let nameInput = item.querySelector('.cert-name');
-            let name = nameInput ? nameInput.value : "";
+            let name = nameInput ? nameInput.value.trim() : "";
+
+            // 處理第三個「其他」項目的特殊 ID
             if (index === 2) {
-                name = document.getElementById('othercert-name').value;
+                name = document.getElementById('othercert-name').value.trim();
             }
-            let lv = item.querySelector('.cert-lv:checked');
+
             if (name) {
-                certResults.push(lv ? `${name}(${lv.value})` : name);
+                // 關鍵：找出該項目下「所有」被勾選的等級
+                let selectedLvs = [];
+                item.querySelectorAll('.cert-lv:checked').forEach(lv => {
+                    selectedLvs.push(lv.value);
+                });
+
+                if (selectedLvs.length > 0) {
+                    certResults.push(`${name}(${selectedLvs.join(',')})`);
+                } else {
+                    certResults.push(name);
+                }
             }
         });
         document.getElementById('finalCertificates').value = certResults.join(', ');
