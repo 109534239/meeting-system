@@ -14,6 +14,12 @@ namespace InterviewProject.Controllers
             _db = db;
         }
 
+        // 輔助方法：取得當前登入者 ID
+        private int GetCurrentUserId()
+        {
+            return HttpContext.Session.GetInt32("MemberId") ?? 0;
+        }
+
         // GET: 基本資料
         public async Task<IActionResult> Profile()
         {
@@ -87,7 +93,49 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Profile");
         }
 
-        public IActionResult Resume()     => View();
+        // 顯示履歷列表 (第一層)
+        public async Task<IActionResult> Resume()
+        {
+            int userId = GetCurrentUserId();
+            if (userId == 0) return RedirectToAction("Index", "Login");
+
+            // 修正：將 _context 改為 _db
+            var resumeList = await _db.Resume
+                .Where(r => r.UserId == userId)
+                .OrderByDescending(r => r.ResumeTime)
+                .ToListAsync();
+
+            return View(resumeList);
+        }
+
+        // 顯示單份履歷詳細內容 (第二層)
+        public async Task<IActionResult> ResumeDetail(int id)
+        {
+            // 1. 取得當前登入者 ID
+            int userId = GetCurrentUserId();
+            if (userId == 0) return RedirectToAction("Index", "Login");
+
+            // 2. 抓取這份履歷資料
+            var resume = await _db.Resume.FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+            if (resume == null) return NotFound();
+
+            // 3. 抓取 Member 基本資料 (為了讓 Resume.cshtml 顯示姓名、性別、Email)
+            var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);
+            if (member != null)
+            {
+                ViewBag.UserName = member.Name;
+                ViewBag.UserGender = member.Gender;
+                ViewBag.UserEmail = member.Email;
+            }
+
+            // 4. 設定為唯讀模式標記
+            ViewBag.IsReadOnly = true;
+
+            // 5. 回傳 ResumeController 下的 Resume 檢視頁面
+            // 注意：路徑必須寫完整路徑 "~/Views/Resume/Resume.cshtml" 才能跨目錄讀取
+            return View("~/Views/Resume/Resume.cshtml", resume);
+        }
+
         public IActionResult Application() => View();
         public IActionResult Favorites()   => View();
 

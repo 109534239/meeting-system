@@ -1,13 +1,44 @@
 ﻿@model InterviewProject.Models.Resume
 @{
-    ViewData["Title"] = "履歷管理";
-}
-@section Styles {
-    <link rel="stylesheet" href="~/css/Resume.css" asp-append-version="true" />
+    ViewData["Title"] = "填寫履歷";
+    bool isReadOnly = ViewBag.IsReadOnly ?? false;
 }
 
-<div class="resume-paper">
+@section Styles {
+    <link rel="stylesheet" href="~/css/Resume.css" asp-append-version="true" />
+    @if (isReadOnly)
+    {
+        <style>
+            /* 鎖定容器內所有的控制項 */
+            .is-readonly input,
+            .is-readonly textarea,
+            .is-readonly select {
+                background-color: #f9f9f9 !important;
+                border-color: #ccc !important;
+                pointer-events: none; /* 徹底禁止滑鼠互動 */
+                cursor: not-allowed;
+            }
+
+                /* 讓 Radio / Checkbox 看起來是灰色的 */
+                .is-readonly input[type="radio"],
+                .is-readonly input[type="checkbox"] {
+                    filter: grayscale(1);
+                    opacity: 0.6;
+                }
+
+            /* 隱藏不必要的提示或按鈕 */
+            .is-readonly .no-print-in-readonly {
+                display: none !important;
+            }
+        </style>
+    }
+}
+
+@* 在最外層標籤加上動態 Class *@
+<div class="resume-paper @(isReadOnly ? "is-readonly" : "")">
     <div class="resume-title">履    歷    表</div>
+
+    @* ... (中間表格內容保持不變) ... *@
     <div style="text-align:right; margin-bottom:10px; color:#666;">
         應徵職位：
         <span style="color: #d9534f; font-weight: bold;">
@@ -19,7 +50,7 @@
         <input type="hidden" asp-for="Position" />
         <table class="main-table">
             <tr>
-                <td rowspan="7" class="label-bg">基本<br/>資料</td>
+                <td rowspan="7" class="label-bg">基本<br />資料</td>
                 <td>姓名</td>
                 <td>
                     <input class="full-input" value="@ViewBag.UserName" readonly />
@@ -64,7 +95,7 @@
                 <td colspan="5">
                     <div style="display:flex; flex-wrap:wrap; gap: 10px;">
                         <span>電話1：<input asp-for="Phone1" class="input-inline" style="width:150px" required /></span>
-                        <span>電話2：<input asp-for="Phone2" class="input-inline" style="width:150px"/></span>
+                        <span>電話2：<input asp-for="Phone2" class="input-inline" style="width:150px" /></span>
                         <span>行動：<input asp-for="Mobile" class="input-inline" style="width:150px" required /></span>
                     </div>
                 </td>
@@ -116,9 +147,23 @@
                 <td class="label-bg">工作<br />經歷</td>
                 <td colspan="5">
                     <div style="padding: 10px;">
-                        <label><input type="checkbox" id="noWorkExp" /> 無工作經歷</label>
-                        <input type="checkbox" id="noWorkExp" />工作總年資：
-                        <input asp-for="WorkExperienceYears" class="input-inline" style="width:50px" /> 年
+                        <label>
+                            @* 使用變數判斷，若是唯讀則傳回 "disabled"，否則傳回 null *@
+                            <input type="checkbox" id="noWorkExp"
+                                   checked="@(Model.WorkExperienceYears < 1)"
+                                   disabled="@(isReadOnly ? "disabled" : null)" />
+                            無工作經歷
+                        </label>
+
+                        <label style="margin-left: 20px;">
+                            <input type="checkbox"
+                                   checked="@(Model.WorkExperienceYears >= 1)"
+                                   disabled="@(isReadOnly ? "disabled" : null)" />
+                            工作總年資：
+                            @* 注意：asp-for 本身就會處理 Name 和 Id，我們只需處理唯讀屬性 *@
+                            <input asp-for="WorkExperienceYears" class="input-inline" style="width:50px"
+                                   readonly="@(isReadOnly ? "readonly" : null)" /> 年
+                        </label>
                     </div>
                     <table style="width:100%; border-collapse:collapse; margin:-8px;">
                         <tr style="text-align:center; background:#eee;">
@@ -262,7 +307,7 @@
                     <input type="checkbox" class="comp-chk" value="網際網路" />網際網路
                     <input type="checkbox" class="comp-chk" value="網頁編輯" />網頁編輯
                     <input type="checkbox" class="comp-chk" value="商業軟體" />商業軟體
-                    <input type="checkbox" class="comp-chk" value="程式設計" />程式設計<br/>
+                    <input type="checkbox" class="comp-chk" value="程式設計" />程式設計<br />
                     <input type="checkbox" class="comp-chk" value="其他" />其他：
                     <input type="text" id="otherCompName" class="input-inline" style="width:80px" />
                 </td>
@@ -276,17 +321,33 @@
             </tr>
         </table>
         <input type="hidden" asp-for="ResumeTime" id="finalResumeTime" />
-        <div style="margin-top: 20px; text-align: center;" class="no-print">
-            <button type="button" class="btn btn-warning" onclick="history.back()">
-                回上一頁
-            </button>
-            <button type="submit" asp-action="SaveResume" class="btn btn-primary">
+       
+    @* 修改底部的按鈕區域 *@
+    <div style="margin-top: 20px; text-align: center;" class="no-print">
+        <button type="button" class="btn btn-warning" onclick="history.back()">
+            回上一頁
+        </button>
+
+        @if (isReadOnly)
+        {
+                @* 唯讀模式：提交表單到 ExportToPdf Action *@
+                @* 加上 formnovalidate 確保不會因為 input required 而被瀏覽器阻擋 *@
+                <button type="submit" asp-controller="Resume" asp-action="ExportToPdf" class="btn btn-secondary" formnovalidate>
+                    列印 PDF
+                </button>
+        }
+        else
+        {
+            @* 編輯模式：顯示儲存 *@
+            <button type="submit" class="btn btn-primary">
                 儲存並繳交
             </button>
-            @* <button type="submit" asp-action="ExportToPdf" class="btn btn-secondary">
+           @* <button type="submit" asp-action="ExportToPdf" class="btn btn-secondary">
                 列印/另存 PDF
             </button> *@
+        }
         </div>
+   
     </form>
 </div>
 
@@ -511,17 +572,17 @@
         });
         document.getElementById('finalCertificates').value = certResults.join(', ');
 
-        // 5. 電腦能力串接
-        let compResults = [];
-        document.querySelectorAll('.comp-chk:checked').forEach(chk => {
-            if (chk.value === "其他") {
-                let otherValComp = document.getElementById('otherCompName').value;
-                if (otherValComp) compResults.push(`其他:${otherValComp}`);
-            } else {
-                compResults.push(chk.value);
-            }
-        });
-        document.getElementById('finalComputerSkills').value = compResults.join(', ');
+            // 5.電腦能力範例
+    let compResults = [];
+    document.querySelectorAll('.comp-chk:checked').forEach(chk => {
+        if (chk.value === "其他") {
+            let val = document.getElementById('otherCompName').value;
+            compResults.push("其他:" + val); // 確保存成 "其他:超能力"
+        } else {
+            compResults.push(chk.value);
+        }
+    });
+    document.getElementById('finalComputerSkills').value = compResults.join(', ');
 
         // 6. 學歷狀況
         let selectedEdu = document.querySelector('.edu-chk:checked');

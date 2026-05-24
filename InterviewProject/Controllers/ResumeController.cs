@@ -12,12 +12,12 @@ namespace InterviewProject.Controllers
     public class ResumeController : Controller
     {
         private readonly IWebHostEnvironment _env;
-        private readonly AppDbContext _context;
+        private readonly AppDbContext _db;
 
         public ResumeController(IWebHostEnvironment env, AppDbContext context)
         {
             _env = env;
-            _context = context;
+            _db = context;
         }
 
         public async Task<IActionResult> CreateResume()
@@ -26,7 +26,7 @@ namespace InterviewProject.Controllers
             if (userId == 0) return RedirectToAction("Index", "Login");
 
             // 1. 抓取 Member 資料 (為了顯示姓名與性別)
-            var member = await _context.Members.FirstOrDefaultAsync(m => m.Id == userId);
+            var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);
 
             if (member == null) return NotFound();
 
@@ -68,7 +68,7 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return Json(new List<string>());
 
-            var positions = await _context.Resume
+            var positions = await _db.Resume
                 .Where(r => r.UserId == userId)
                 .Select(r => r.Position)
                 .Distinct()
@@ -87,7 +87,7 @@ namespace InterviewProject.Controllers
             ViewBag.CurrentPos = position;
             ViewBag.ViewMode = mode;
 
-            var member = await _context.Members.FirstOrDefaultAsync(m => m.Id == userId);
+            var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);
             ViewBag.UserEmail = member?.Email ?? "";
             ViewBag.UserName = member?.Name ?? "";
             ViewBag.UserGender = member?.Gender ?? "";
@@ -95,7 +95,7 @@ namespace InterviewProject.Controllers
             // 1. 套用現有履歷模式
             if (mode == "apply" && !string.IsNullOrEmpty(fromPos))
             {
-                var existingData = await _context.Resume
+                var existingData = await _db.Resume
                     .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == fromPos);
 
                 if (existingData != null)
@@ -107,7 +107,7 @@ namespace InterviewProject.Controllers
             }
 
             // 2. 一般模式 (讀取或新建)
-            var model = await _context.Resume
+            var model = await _db.Resume
                 .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == position);
 
             if (model == null)
@@ -131,7 +131,7 @@ namespace InterviewProject.Controllers
 
             if (!ModelState.IsValid) return View("Resume", model);
 
-            var existing = await _context.Resume
+            var existing = await _db.Resume
                 .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == model.Position);
 
             DateTime now = DateTime.Now;
@@ -141,7 +141,7 @@ namespace InterviewProject.Controllers
                 model.Id = 0;
                 model.ResumeTime = now;
                 model.Status = "待審核"; // 新增時預設狀態
-                _context.Resume.Add(model);
+                _db.Resume.Add(model);
             }
             else
             {
@@ -150,10 +150,10 @@ namespace InterviewProject.Controllers
                 // 如果原本已經有狀態，保留原狀態不覆蓋（除非你要每次儲存都重置為待審核）
                 model.Status = existing.Status ?? "待審核";
                 // SetValues 會自動忽略 Resume Model 裡沒有的欄位
-                _context.Entry(existing).CurrentValues.SetValues(model);
+                _db.Entry(existing).CurrentValues.SetValues(model);
             }
 
-            await _context.SaveChangesAsync();
+            await _db.SaveChangesAsync();
             return RedirectToAction("Job_search", "Job");
         }
 
@@ -163,7 +163,7 @@ namespace InterviewProject.Controllers
         {
             // 1. 驗證姓名
             // 注意：如果 model.Name 因為 disabled 抓不到，這裡要改從 member 抓
-            var member = await _context.Members.FirstOrDefaultAsync(m => m.Id == model.UserId);
+            var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == model.UserId);
             if (member == null) return Content("找不到會員資料");
 
             string realName = member.Name ?? "";
@@ -182,6 +182,8 @@ namespace InterviewProject.Controllers
 
             // 取得串接字串
             string lang = model.LanguageSkills ?? "";
+            string[] knownLangs = { "英語", "日語", "台語", "客語", "不具外文能力" };
+            
             string lic = model.DriverLicense ?? "";
             string comp = model.ComputerSkills ?? "";
             string spec = model.Specialty ?? "";
@@ -228,7 +230,13 @@ namespace InterviewProject.Controllers
                 ["E_Under"] = edu.Contains("肄業") ? ck : un,
                 ["E_Stud"] = edu.Contains("在學") ? ck : un,
                 ["EduDate"] = model.EduDate ?? "",
-                
+
+                // 如果年資 >= 1，WorkExp 顯示 ■，否則顯示 □
+                ["WorkExp"] = (model.WorkExperienceYears >= 1) ? "■" : "□",
+
+                // 同理，如果是要處理「無工作經歷」那個欄位
+                ["NoWorkExp"] = (model.WorkExperienceYears < 1) ? "■" : "□",
+
                 //工作經驗
                 ["WorkExperienceYears"] = model.WorkExperienceYears.ToString(),
                 ["CompanyName"] = model.CompanyName ?? "",
@@ -258,10 +266,12 @@ namespace InterviewProject.Controllers
                 ["L_Hakka_3"] = lang.Contains("客語(普通)") ? ck : un,
                 ["L_Hakka_4"] = lang.Contains("客語(稍懂)") ? ck : un,
 
-                ["L_Other_1"] = lang.Contains("其他(精通)") ? ck : un,
-                ["L_Other_2"] = lang.Contains("其他(良好)") ? ck : un,
-                ["L_Other_3"] = lang.Contains("其他(普通)") ? ck : un,
-                ["L_Other_4"] = lang.Contains("其他(稍懂)") ? ck : un,
+                //["L_Other_Name"] = otherLangItem?.Split('(')[0] ?? "", // 填入 "韓語"
+                //["L_Other_1"] = lang.Contains("其他(精通)") ? ck : un,
+                //["L_Other_2"] = lang.Contains("其他(良好)") ? ck : un,
+                //["L_Other_3"] = lang.Contains("其他(普通)") ? ck : un,
+                //["L_Other_4"] = lang.Contains("其他(稍懂)") ? ck : un,
+
 
                 //駕照種類
                 ["D_Self_S"] = lic.Contains("自用(小)") ? ck : un,
@@ -281,6 +291,7 @@ namespace InterviewProject.Controllers
                 ["Spec3"] = spec.Split(new[] { "; " }, StringSplitOptions.None).ElementAtOrDefault(2) ?? "",
 
                 ["Cert"] = cert,
+
                 //電腦能力
                 ["C_Base"] = comp.Contains("電腦基本操作") ? ck : un,
                 ["C_Doc"] = comp.Contains("文書處理") ? ck : un,
@@ -291,16 +302,42 @@ namespace InterviewProject.Controllers
                 ["C_Other"] = comp.Contains("其他:") ? ck : un // 只要有 "其他:" 字眼就勾選
             };
 
+            // 1. 找出不屬於已知語言的項目 (例如：韓語(普通))
+            var otherLangItem = lang.Split(", ")
+                .FirstOrDefault(s => !knownLangs.Any(k => s.StartsWith(k)) && s.Contains("("));
 
+            string otherLevel = "";
+            string otherName = "";
+
+            if (otherLangItem != null)
+            {
+                // 取得名稱，例如 "韓語"
+                otherName = otherLangItem.Split('(')[0];
+                // 取得括號內的程度，例如 "普通"
+                otherLevel = otherLangItem.Split('(', ')')[1];
+            }
+
+            // 2. 填入 Dictionary
+            value["L_Other_Name"] = otherName;
+
+            // 關鍵修正：改用上面解析出來的 otherLevel 來判斷，而不是用 lang.Contains("其他(...)")
+            value["L_Other_1"] = (otherLevel == "精通") ? ck : un;
+            value["L_Other_2"] = (otherLevel == "良好") ? ck : un;
+            value["L_Other_3"] = (otherLevel == "普通") ? ck : un;
+            value["L_Other_4"] = (otherLevel == "稍懂") ? ck : un;
 
             // 證照級別解析邏輯 (支援多選，例如：電腦硬體裝修(乙,丙))
-            var certList = cert.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 1; i <= 2; i++)
+            var certList = cert.Split(", ").ToList();
+
+            // 跑 3 次，涵蓋前兩個固定項與第三個「其他」項
+            for (int i = 1; i <= 3; i++)
             {
                 string currentCert = certList.ElementAtOrDefault(i - 1) ?? "";
+                string prefix = $"C{i}"; // PDF 欄位前綴，例如 C1_Name, C3_Name
+
                 if (!string.IsNullOrEmpty(currentCert))
                 {
-                    value[$"C{i}_Name"] = currentCert.Split('(')[0];
+                    value[$"C{i}_Name"] = currentCert.Split('(')[0].Trim();
                     // 檢查括號內的等級字串
                     value[$"C{i}_A"] = currentCert.Contains("甲") ? ck : un;
                     value[$"C{i}_B"] = currentCert.Contains("乙") ? ck : un;
@@ -309,9 +346,34 @@ namespace InterviewProject.Controllers
                 }
                 else
                 {
+                    // 如果沒有資料，清空欄位
                     value[$"C{i}_Name"] = "";
-                    value[$"C{i}_A"] = un; value[$"C{i}_B"] = un; value[$"C{i}_C"] = un; value[$"C{i}_S"] = un;
+                    value[$"C{i}_A"] = un;
+                    value[$"C {i}_B"] = un;
+                    value[$"C {i}_C"] = un;
+                    value[$"C {i}_S"] = un;
                 }
+            }
+            // 處理「其他」
+            if (comp.Contains("其他:"))
+            {
+                value["C_Other"] = ck; // 勾選「其他」框框
+
+                // 提取文字邏輯：
+                // 找到 "其他:" 的索引位置，往後跳 3 個字元 (即 "其他:" 的長度)
+                int startIndex = comp.IndexOf("其他:") + 3;
+                string remainingStr = comp.Substring(startIndex);
+
+                // 如果後面還有其他項目 (逗號隔開)，則只取到逗號前
+                string otherText = remainingStr.Split(',')[0].Trim();
+
+                // 將提取到的文字 (例如：超能力) 填入 PDF 專用文字欄位
+                value["C_Other_Text"] = otherText;
+            }
+            else
+            {
+                value["C_Other"] = un;
+                value["C_Other_Text"] = "";
             }
 
             try

@@ -9,6 +9,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Remove="wwwroot\css\MemberResume.css" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="wwwroot\css\MemberResume.css" />
     <None Include="wwwroot\css\Resume.css" />
     <None Include="wwwroot\img\hero-banner.jpg" />
     <None Include="wwwroot\img\introduction-1.jpg" />
