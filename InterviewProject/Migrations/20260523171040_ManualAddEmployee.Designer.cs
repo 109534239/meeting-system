@@ -3,6 +3,7 @@ using System;
 using InterviewProject.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace InterviewProject.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260523171040_ManualAddEmployee")]
+    partial class ManualAddEmployee
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -92,10 +95,6 @@ namespace InterviewProject.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("CertRequired")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp without time zone");
 
@@ -105,30 +104,11 @@ namespace InterviewProject.Migrations
                     b.Property<int?>("CreatorId")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime>("Deadline")
-                        .HasColumnType("timestamp without time zone");
-
                     b.Property<string>("Department")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("EducationRequired")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("ExperienceRequired")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("HeadCount")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("IndustryExperience")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -139,31 +119,7 @@ namespace InterviewProject.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("LanguageRequired")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("LeavePolicy")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<string>("Location")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("MajorRequired")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("ManagerName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("OtherRequirements")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("ReportToName")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -171,15 +127,8 @@ namespace InterviewProject.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("SalaryMax")
+                    b.Property<int>("Salary")
                         .HasColumnType("integer");
-
-                    b.Property<int>("SalaryMin")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("SkillTags")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -187,10 +136,6 @@ namespace InterviewProject.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp without time zone");
-
-                    b.Property<string>("WorkShift")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.HasKey("Id");
 

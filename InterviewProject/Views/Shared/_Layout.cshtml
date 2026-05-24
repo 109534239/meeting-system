@@ -1,12 +1,22 @@
 ﻿@{ 
     var controller = ViewContext.RouteData.Values["controller"]?.ToString(); 
     var action = ViewContext.RouteData.Values["action"]?.ToString();
+    
     var memberId = Context.Session.GetInt32("MemberId");
     var memberName = Context.Session.GetString("MemberName");
-    var memberRole = Context.Session.GetString("MemberRole");
+    var memberRole = Context.Session.GetString("MemberRole")?.ToLower(); // 💡 轉小寫防呆
+    
     var isLoggedIn = memberId.HasValue;
-    var isEmployee = memberRole == "employee";
-    var roleLabel = isEmployee ? "人資" : "求職者";
+    
+    // 💡 關鍵修正：只要 Session 裡面的角色是 hr 或 manager，就代表是員工！
+    var isEmployee = memberRole == "hr" || memberRole == "manager" || memberRole == "employee";
+    
+    // 動態標籤顯示
+    var roleLabel = "求職者";
+    if (isEmployee)
+    {
+        roleLabel = memberRole == "manager" ? "主管" : "人資";
+    }
 }
 
 <!DOCTYPE html>
@@ -100,7 +110,9 @@
         </nav>
     </header>
 
-    @RenderBody()
+    <main class="page-wrapper">
+        @RenderBody()
+    </main>
 
     <footer class="footer">
         <div class="container text-center">

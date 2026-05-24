@@ -17,8 +17,8 @@ namespace InterviewProject.Controllers
         // 權限檢查 helper
         private bool IsEmployee()
         {
-            var role = HttpContext.Session.GetString("MemberRole");
-            return role == "employee";
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            return role == "hr" || role == "manager" || role == "employee";
         }
 
         // GET: 職缺列表
@@ -78,15 +78,30 @@ namespace InterviewProject.Controllers
             var existing = await _db.Jobs.FindAsync(job.Id);
             if (existing == null) return NotFound();
 
-            existing.Title = job.Title;
-            existing.Department = job.Department;
-            existing.Location = job.Location;
-            existing.JobType = job.JobType;
-            existing.Description = job.Description;
-            existing.Requirements = job.Requirements;
-            existing.Salary = job.Salary;
-            existing.IsActive = job.IsActive;
-            existing.UpdatedAt = DateTime.UtcNow;
+            existing.Title               = job.Title;
+            existing.Department          = job.Department;
+            existing.Location            = job.Location;
+            existing.JobType             = job.JobType;
+            existing.WorkShift           = job.WorkShift;
+            existing.LeavePolicy         = job.LeavePolicy;
+            existing.HeadCount           = job.HeadCount;
+            existing.Description         = job.Description;
+            existing.Requirements        = job.Requirements;
+            existing.ExperienceRequired  = job.ExperienceRequired;
+            existing.EducationRequired   = job.EducationRequired;
+            existing.IndustryExperience  = job.IndustryExperience;
+            existing.MajorRequired       = job.MajorRequired;
+            existing.LanguageRequired    = job.LanguageRequired;
+            existing.CertRequired        = job.CertRequired;
+            existing.OtherRequirements   = job.OtherRequirements;
+            existing.SkillTags           = job.SkillTags;
+            existing.SalaryMin           = job.SalaryMin;
+            existing.SalaryMax           = job.SalaryMax;
+            existing.ManagerName         = job.ManagerName;
+            existing.ReportToName        = job.ReportToName;
+            existing.Deadline            = job.Deadline;
+            existing.IsActive            = job.IsActive;
+            existing.UpdatedAt           = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
 
@@ -119,7 +134,7 @@ namespace InterviewProject.Controllers
             var job = await _db.Jobs.FindAsync(id);
             if (job == null) return NotFound();
 
-            job.IsActive = !job.IsActive;
+            job.IsActive  = !job.IsActive;
             job.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
 

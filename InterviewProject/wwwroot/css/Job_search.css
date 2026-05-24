@@ -129,7 +129,7 @@
 /* ── TABLE HEADER ── */
 .job-table-head {
     display: grid;
-    grid-template-columns: 130px 1fr 120px 100px 100px 180px 80px;
+    grid-template-columns: 120px 1fr 140px 140px 140px 80px 60px;
     padding: 12px 20px;
     font-size: 13px;
     color: #525252;
@@ -156,7 +156,7 @@
     background: var(--white);
     border-radius: var(--radius-card);
     display: grid;
-    grid-template-columns: 130px 1fr 120px 100px 100px 180px 80px;
+    grid-template-columns: 120px 1fr 140px 140px 140px 80px 60px;
     align-items: center;
     padding: 18px 20px;
     gap: 8px;
@@ -202,17 +202,24 @@
     white-space: nowrap;
 }
 .job-actions {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; 
+    align-items: center; 
+    gap: 4px;
     justify-content: flex-end;
 }
 .btn-apply {
-    display: flex; align-items: center; gap: 6px;
-    padding: 10px 30px;
+    display: flex; 
+    align-items: center; 
+    gap: 6px;
+    padding: 8px 16px;
     background: var(--primary);
     color: var(--white);
-    border: none; border-radius: 6px;
-    font-size: 13px; font-weight: 600;
-    cursor: pointer; font-family: inherit;
+    border: none; 
+    border-radius: 6px;
+    font-size: 13px; 
+    font-weight: 600;
+    cursor: pointer; 
+    font-family: inherit;
     transition: background 0.2s;
     white-space: nowrap;
     text-decoration: none;
@@ -222,13 +229,18 @@
         color: var(--white);
     }
 .btn-icon {
-    width: 32px; height: 32px; border-radius: 50%;
+    width: 32px; 
+    height: 32px; 
+    border-radius: 50%;
     background: var(--gray);
-    border: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
+    border: none; 
+    cursor: pointer;
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
     transition: background 0.2s;
     flex-shrink: 0;
-    margin-right: 12px;
+    margin-right: 0;
 }
     .btn-icon:hover { background: var(--primary-light); }
 

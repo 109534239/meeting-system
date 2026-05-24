@@ -18,5 +18,7 @@
         public DbSet<Job> Jobs { get; set; }
         public DbSet<Resume> Resume { get; set; }
         public DbSet<Resume> Resumes { get; set; }
+
+        public DbSet<Employee> Employees { get; set; }
     }
 }

@@ -5,12 +5,22 @@
 }
 
 @section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/HrJob.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
 }
 
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>職缺管理</h1>
+        <p>Job Management</p>
+    </div>
+</div>
+
 <div class="hrjob-page">
-    <div class="hrjob-header">
-        <h2>職缺管理</h2>
+
+    @* ── 新增按鈕 ── *@
+    <div class="hrjob-actions">
         <a asp-action="Create" class="btn-create">＋ 新增職缺</a>
     </div>
 
@@ -19,50 +29,84 @@
         <div class="alert-success">@TempData["Success"]</div>
     }
 
-    <table class="hrjob-table">
-        <thead>
-            <tr>
-                <th>職缺名稱</th>
-                <th>部門</th>
-                <th>地點</th>
-                <th>類型</th>
-                <th>薪資</th>
-                <th>狀態</th>
-                <th>建立時間</th>
-                <th>操作</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var job in Model)
-            {
-                <tr>
-                    <td>@job.Title</td>
-                    <td>@job.Department</td>
-                    <td>@job.Location</td>
-                    <td>
-                        @(job.JobType == "fulltime" ? "全職" :
-                          job.JobType == "parttime" ? "兼職" : "實習")
-                    </td>
-                    <td>@job.Salary.ToString("N0")</td>
-                    <td>
-                        <form method="post" asp-action="ToggleActive" asp-route-id="@job.Id">
-                            @Html.AntiForgeryToken()
-                            <button type="submit" class="btn-toggle @(job.IsActive ? "active" : "inactive")">
-                                @(job.IsActive ? "上架中" : "已下架")
-                            </button>
-                        </form>
-                    </td>
-                    <td>@job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")</td>
-                    <td class="action-btns">
-                        <a asp-action="Edit" asp-route-id="@job.Id" class="btn-edit">修改</a>
-                        <form method="post" asp-action="Delete" asp-route-id="@job.Id"
-                              onsubmit="return confirm('確定刪除此職缺？')">
-                            @Html.AntiForgeryToken()
-                            <button type="submit" class="btn-delete">刪除</button>
-                        </form>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    @* ── Grid 標頭 ── *@
+    <div class="hrjob-cols hrjob-grid-head">
+        <div>部門</div>
+        <div>職缺名稱</div>
+        <div>部門主管 / 隸屬</div>
+        <div>應徵人數 (新/總)</div>
+        <div class="text-center">狀態</div>
+        <div class="text-center">上架 / 下架日期</div>
+        <div class="text-center">操作</div>
+    </div>
+
+    @* ── 資料列 ── *@
+    <div class="hrjob-list">
+        @foreach (var job in Model)
+        {
+            <div class="hrjob-row hrjob-cols">
+
+                @* 1. 部門 *@
+                <div class="hrjob-dept-text">@job.Department</div>
+
+                @* 2. 職缺名稱與類型 *@
+                <div class="hrjob-title-cell">
+                    <span class="job-fulltime">
+                        @(job.JobType == "fulltime" ? "全職" : job.JobType == "parttime" ? "兼職" : "實習")
+                    </span>
+                    <span class="hrjob-title-text">@job.Title</span>
+                </div>
+
+                @* 3. 主管 / 隸屬 *@
+                <div>
+                    <div class="hrjob-manager-name">@job.ManagerName</div>
+                    <div class="hrjob-manager-sub">隸屬：@job.ReportToName</div>
+                </div>
+
+                @* 4. 應徵人數 *@
+                <div>
+                    <a asp-controller="HrApplication"
+                       asp-action="Index"
+                       asp-route-jobId="@job.Id"
+                       class="hrjob-count-link">
+                        <span class="hrjob-count-num">@job.NewApplicationsCount</span>
+                        <span class="hrjob-count-total">/ @job.TotalApplicationsCount 人</span>
+                    </a>
+                </div>
+
+                @* 5. 上下架切換 *@
+                <div class="hrjob-status-cell">
+                    <form method="post" asp-action="ToggleActive" asp-route-id="@job.Id">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn-toggle @(job.IsActive ? "active" : "inactive")">
+                            @(job.IsActive ? "上架中" : "已下架")
+                        </button>
+                    </form>
+                </div>
+
+                @* 6. 上架 / 截止日期 *@
+                <div>
+                    <div class="hrjob-time-item">
+                        <span class="hrjob-time-label">上架：</span>
+                        @job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")
+                    </div>
+                    <div class="hrjob-time-item">
+                        <span class="hrjob-time-label-deadline">截止：</span>
+                        <span class="hrjob-time-deadline">@job.Deadline.ToLocalTime().ToString("yyyy/MM/dd")</span>
+                    </div>
+                </div>
+
+                @* 7. 操作按鈕 *@
+                <div class="action-btns">
+                    <a asp-action="Edit" asp-route-id="@job.Id" class="btn-edit">修改</a>
+                    <form method="post" asp-action="Delete" asp-route-id="@job.Id"
+                          onsubmit="return confirm('確定刪除此職缺？')">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn-delete">刪除</button>
+                    </form>
+                </div>
+
+            </div>
+        }
+    </div>
 </div>

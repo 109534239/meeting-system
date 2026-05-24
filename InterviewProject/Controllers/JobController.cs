@@ -18,31 +18,63 @@ namespace InterviewProject.Controllers
         // 1. 職缺搜尋列表
         public IActionResult Job_search(string category, string location, string type, string keyword)
         {
-            // 只撈取啟用中 (IsActive == true) 的職缺
+            // 只撈取啟用中的職缺
             var query = _context.Jobs.Where(x => x.IsActive).AsQueryable();
 
-            // 動態條件篩選 (對應你們的真實欄位)
+            // 💡 1. 職缺類別對照 (英文 Value 轉成資料庫中文)
             if (!string.IsNullOrEmpty(category))
             {
-                // 對應前端 value (如 pm, it)，你資料庫如果存的是中文 "專案管理"，要自己轉換，這裡先做包含搜尋
-                query = query.Where(x => x.Department.Contains(category));
+                string categoryName = category switch
+                {
+                    "pm" => "專案管理",
+                    "it" => "資訊技術",
+                    "hr" => "人力資源",
+                    "mkt" => "行銷企劃",
+                    "fin" => "財務會計",
+                    "sales" => "業務銷售",
+                    _ => category
+                };
+                query = query.Where(x => x.Department.Contains(categoryName));
             }
+
+            // 💡 2. 工作地址對照
             if (!string.IsNullOrEmpty(location))
             {
-                query = query.Where(x => x.Location.Contains(location));
+                string locationName = location switch
+                {
+                    "taipei" => "台北內湖",
+                    "xinbei" => "新北汐止",
+                    "hsinchu1" => "新竹竹北",
+                    "hsinchu2" => "新竹湖口",
+                    _ => location
+                };
+                query = query.Where(x => x.Location.Contains(locationName));
             }
+
+            // 💡 3. 工作性質對照 (前端 full 轉成 Model 預設的 fulltime)
             if (!string.IsNullOrEmpty(type))
             {
-                query = query.Where(x => x.JobType.Contains(type));
+                string typeName = type switch
+                {
+                    "full" => "fulltime",
+                    "part" => "parttime",
+                    "intern" => "intern",
+                    _ => type
+                };
+                query = query.Where(x => x.JobType == typeName);
             }
+
+            // 4. 關鍵字搜尋
             if (!string.IsNullOrEmpty(keyword))
             {
-                query = query.Where(x => x.Title.Contains(keyword) || x.Description.Contains(keyword) || x.Requirements.Contains(keyword));
+                query = query.Where(x => x.Title.Contains(keyword) || 
+                                    x.Description.Contains(keyword) || 
+                                    x.Requirements.Contains(keyword));
             }
 
-            // 依照建立時間排序
             var data = query.OrderByDescending(x => x.CreatedAt).ToList();
 
+            // 把目前的篩選條件存起來，等一下讓前端可以「保留選取狀態」
             ViewBag.SelectedCategory = category;
             ViewBag.SelectedLocation = location;
             ViewBag.SelectedType = type;

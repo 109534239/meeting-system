@@ -7,81 +7,75 @@
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
 }
 
-<!-- PAGE HEADER -->
 <div class="page-wrapper">
     <div class="page-header">
         <div class="page-header-inner">
-        <h1>搜尋條件</h1>
-        <p>Search Conditions</p>
+            <h1>搜尋條件</h1>
+            <p>Search Conditions</p>
         </div>
     </div>
 
-    <!-- SEARCH BAR -->
     <div class="search-bar">
         <div class="search-inner">
-        <div class="search-field">
-            <label>職缺類別</label>
-            <select id="sel-category">
-            <option value="">全部類別</option>
-            <option value="pm">專案管理</option>
-            <option value="it">資訊技術</option>
-            <option value="hr">人力資源</option>
-            <option value="mkt">行銷企劃</option>
-            <option value="fin">財務會計</option>
-            <option value="sales">業務銷售</option>
-            </select>
-        </div>
-        <div class="search-field">
-            <label>工作地址</label>
-            <select id="sel-location">
-            <option value="">全部地址</option>
-            <option value="taipei">台北內湖</option>
-            <option value="xinbei">新北汐止</option>
-            <option value="hsinchu1">新竹竹北</option>
-            <option value="hsinchu2">新竹湖口</option>
-            </select>
-        </div>
-        <div class="search-field">
-            <label>工作性質</label>
-            <select id="sel-type">
-            <option value="">全部性質</option>
-            <option value="full">全職</option>
-            <option value="part">兼職</option>
-            <option value="intern">實習</option>
-            </select>
-        </div>
-        <div class="search-field keyword">
-            <label>關鍵字搜尋</label>
-            <input type="text" id="kw-input" placeholder="輸入職缺、技能、證照等關鍵字" />
-        </div>
-        <button class="search-btn" onclick="doSearch()">搜尋</button>
-        <button class="reset-btn" onclick="resetSearch()">重置</button>
+            <div class="search-field">
+                <label>職缺類別</label>
+                <select id="sel-category">
+                    <option value="">全部類別</option>
+                    <option value="pm" selected="@(ViewBag.SelectedCategory == "pm")">專案管理</option>
+                    <option value="it" selected="@(ViewBag.SelectedCategory == "it")">資訊技術</option>
+                    <option value="hr" selected="@(ViewBag.SelectedCategory == "hr")">人力資源</option>
+                    <option value="mkt" selected="@(ViewBag.SelectedCategory == "mkt")">行銷企劃</option>
+                    <option value="fin" selected="@(ViewBag.SelectedCategory == "fin")">財務會計</option>
+                    <option value="sales" selected="@(ViewBag.SelectedCategory == "sales")">業務銷售</option>
+                </select>
+            </div>
+            <div class="search-field">
+                <label>工作地址</label>
+                <select id="sel-location">
+                    <option value="">全部地址</option>
+                    <option value="taipei" selected="@(ViewBag.SelectedLocation == "taipei")">台北內湖</option>
+                    <option value="xinbei" selected="@(ViewBag.SelectedLocation == "xinbei")">新北汐止</option>
+                    <option value="hsinchu1" selected="@(ViewBag.SelectedLocation == "hsinchu1")">新竹竹北</option>
+                    <option value="hsinchu2" selected="@(ViewBag.SelectedLocation == "hsinchu2")">新竹湖口</option>
+                </select>
+            </div>
+            <div class="search-field">
+                <label>工作性質</label>
+                <select id="sel-type">
+                    <option value="">全部性質</option>
+                    <option value="full" selected="@(ViewBag.SelectedType == "full")">全職</option>
+                    <option value="part" selected="@(ViewBag.SelectedType == "part")">兼職</option>
+                    <option value="intern" selected="@(ViewBag.SelectedType == "intern")">實習</option>
+                </select>
+            </div>
+            <div class="search-field keyword">
+                <label>關鍵字搜尋</label>
+                <input type="text" id="kw-input" value="@ViewBag.Keyword" placeholder="輸入職缺、技能、證照等關鍵字" />
+            </div>
+            <button class="search-btn" onclick="doSearch()">搜尋</button>
+            <button class="reset-btn" onclick="resetSearch()">重置</button>
         </div>
     </div>
 
-    <!-- MAIN -->
     <main class="main">
 
-        <!-- RESULT META -->
         <div class="result-meta">
-        <div class="result-count">共 <span id="result-num">7</span> 筆職缺</div>
-        <div class="filter-tag" id="active-filter" style="display:none">
-            專案管理 <button onclick="removeFilter()">×</button>
-        </div>
+            <div class="result-count">共 <span id="result-num">@(Model != null ? Model.Count() : 0)</span> 筆職缺</div>
+            <div class="filter-tag" id="active-filter" style="display:none">
+                專案管理 <button onclick="removeFilter()">×</button>
+            </div>
         </div>
 
-        <!-- TABLE HEADER -->
         <div class="job-table-head">
-        <div>職缺類型</div>
-        <div>職缺名稱</div>
-        <div>工作地點</div>
-        <div class="sortable">經歷</div>
-        <div class="sortable">學歷</div>
-        <div></div>
-        <div></div>
+            <div>職缺類型</div>
+            <div>職缺名稱</div>
+            <div>工作地點</div>
+            <div>經歷要求</div>
+            <div>學歷要求</div>
+            <div></div>
+            <div></div>
         </div>
 
-        <!-- JOB LIST -->
         @model IEnumerable<InterviewProject.Models.Job>
         <div class="job-list" id="job-list">
             @if (Model != null && Model.Any())
@@ -89,151 +83,181 @@
                 foreach (var job in Model)
                 {
                     <div class="job-row">
+
+                        @* 1. 職缺類型（部門） *@
                         <div class="job-type-text">@job.Department</div>
 
+                        @* 2. 職缺名稱 *@
                         <div class="job-name-cell">
-                            <span class="job-fulltime">@job.JobType</span>
-                            <a class="job-title-link" asp-controller="Job" asp-action="Job_detail" asp-route-id="@job.Id">@job.Title</a>
+                            <span class="job-fulltime">
+                                @(job.JobType == "fulltime" ? "全職" : job.JobType == "parttime" ? "兼職" : "實習")
+                            </span>
+                            <a class="job-title-link"
+                               asp-controller="Job"
+                               asp-action="Job_detail"
+                               asp-route-id="@job.Id">@job.Title</a>
                         </div>
 
+                        @* 3. 工作地點 *@
                         <div class="job-cell">@job.Location</div>
 
-                        <div class="job-cell" style="font-size: 13px; color: #666;">
-                            @if (!string.IsNullOrEmpty(job.Requirements) && job.Requirements.Contains(","))
+                        @* 4. 經歷要求 *@
+                        <div class="job-cell">
+                            @(string.IsNullOrEmpty(job.ExperienceRequired) ? "不限" : job.ExperienceRequired)
+                        </div>
+
+                        @* 5. 學歷要求 *@
+                        <div class="job-cell">
+                            @switch (job.EducationRequired)
                             {
-                                @job.Requirements.Split(',')[0]
-                            }
-                            else
-                            {
-                                @job.Requirements
+                                case "highschool": @:高中職以上
+                                    break;
+                                case "college": @:專科以上
+                                    break;
+                                case "bachelor": @:大學以上
+                                    break;
+                                case "master": @:碩士以上
+                                    break;
+                                case "phd": @:博士以上
+                                    break;
+                                default: @:不限
+                                    break;
                             }
                         </div>
 
-                        <div class="job-cell">待遇: @(job.Salary)</div>
-
+                        @* 6. 立即應徵按鈕 *@
                         <div class="job-actions">
-                            <a asp-controller="Job" asp-action="Job_detail" asp-route-id="@job.Id" class="btn-apply">立即應徵</a>
+                            <a asp-controller="Job"
+                               asp-action="Job_detail"
+                               asp-route-id="@job.Id"
+                               class="btn-apply">立即應徵</a>
                         </div>
 
+                        @* 7. 收藏按鈕 *@
                         <div class="job-actions">
-                            <button class="btn-icon" title="收藏" onclick="checkLogin('@job.Title', this)">
+                            <button class="btn-icon" title="收藏"
+                                    onclick="checkLogin('@job.Title', this)">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                    <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none" />
+                                    <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z"
+                                          stroke="#206c8b" stroke-width="2" fill="none" />
                                 </svg>
                             </button>
                         </div>
+
                     </div>
                 }
             }
             else
             {
-                <div style="padding: 40px; text-align:center; color:#888; width: 100%;">目前資料庫內沒有開放中的職缺</div>
+                <div style="padding: 40px; text-align:center; color:#888; width: 100%;">
+                    目前資料庫內沒有符合條件開放中的職缺
+                </div>
             }
         </div>
 
-
-        <!-- PAGINATION -->
         <div class="pagination" id="pagination"></div>
     </main>
 </div>
 
-
-
-
 @section Scripts {
-  <script>
-    const PAGE_SIZE = 20;
-    let currentPage = 1;
+    <script>
+        const PAGE_SIZE = 20;
+        let currentPage = 1;
 
-    function checkLogin(jobTitle, btn) {
-      const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-      if (!isLoggedIn) {
-        const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
-        if (go) window.location.href = '/Login';
-        return;
-      }
-
-      // 已登入 → 切換收藏狀態
-      const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-      const index = favorites.indexOf(jobTitle);
-
-      if (index === -1) {
-        // 尚未收藏 → 加入，按鈕變淺藍
-        favorites.push(jobTitle);
-        btn.style.background = 'var(--primary-light)';
-      } else {
-        // 已收藏 → 取消，按鈕還原灰色
-        favorites.splice(index, 1);
-        btn.style.background = 'var(--gray)';
-      }
-
-      localStorage.setItem('favorites', JSON.stringify(favorites));
-    }
-    window.addEventListener('load', function() {
-        const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-        document.querySelectorAll('.btn-icon').forEach(btn => {
-            const jobTitle = btn.getAttribute('onclick').match(/'([^']+)'/)?.[1];
-            if (jobTitle && favorites.includes(jobTitle)) {
-                btn.style.background = 'var(--primary-light)';
+        function checkLogin(jobTitle, btn) {
+            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            if (!isLoggedIn) {
+                const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
+                if (go) window.location.href = '/Login';
+                return;
             }
+            const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+            const index = favorites.indexOf(jobTitle);
+            if (index === -1) {
+                favorites.push(jobTitle);
+                btn.style.background = 'var(--primary-light)';
+            } else {
+                favorites.splice(index, 1);
+                btn.style.background = 'var(--gray)';
+            }
+            localStorage.setItem('favorites', JSON.stringify(favorites));
+        }
+
+        window.addEventListener('load', function () {
+            const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+            document.querySelectorAll('.btn-icon').forEach(btn => {
+                const jobTitle = btn.getAttribute('onclick').match(/'([^']+)'/)?.[1];
+                if (jobTitle && favorites.includes(jobTitle)) {
+                    btn.style.background = 'var(--primary-light)';
+                }
+            });
+            
+            // 頁面載入時初始化分頁
+            renderPagination();
         });
-    });
 
-    function getTotalRows() {
-      return document.querySelectorAll('#job-list .job-row').length;
-    }
+        function getTotalRows() {
+            return document.querySelectorAll('#job-list .job-row').length;
+        }
 
-    function renderPagination() {
-      const total = getTotalRows();
-      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-      const pg = document.getElementById('pagination');
-      pg.innerHTML = '';
+        function renderPagination() {
+            const total = getTotalRows();
+            const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+            const pg = document.getElementById('pagination');
+            if (!pg) return;
+            pg.innerHTML = '';
 
-      const prev = document.createElement('button');
-      prev.className = 'page-arrow';
-      prev.innerHTML = '&#8249;';
-      prev.onclick = () => { if (currentPage > 1) goPage(currentPage - 1); };
-      pg.appendChild(prev);
+            const prev = document.createElement('button');
+            prev.className = 'page-arrow';
+            prev.innerHTML = '&#8249;';
+            prev.onclick = () => { if (currentPage > 1) goPage(currentPage - 1); };
+            pg.appendChild(prev);
 
-      for (let i = 1; i <= totalPages; i++) {
-        const btn = document.createElement('button');
-        btn.className = 'page-num' + (i === currentPage ? ' active' : '');
-        btn.textContent = i;
-        btn.onclick = () => goPage(i);
-        pg.appendChild(btn);
-      }
+            for (let i = 1; i <= totalPages; i++) {
+                const btn = document.createElement('button');
+                btn.className = 'page-num' + (i === currentPage ? ' active' : '');
+                btn.textContent = i;
+                btn.onclick = () => goPage(i);
+                pg.appendChild(btn);
+            }
 
-      const next = document.createElement('button');
-      next.className = 'page-arrow';
-      next.innerHTML = '&#8250;';
-      next.onclick = () => { if (currentPage < totalPages) goPage(currentPage + 1); };
-      pg.appendChild(next);
-    }
+            const next = document.createElement('button');
+            next.className = 'page-arrow';
+            next.innerHTML = '&#8250;';
+            next.onclick = () => { if (currentPage < totalPages) goPage(currentPage + 1); };
+            pg.appendChild(next);
+        }
 
-    function goPage(page) {
-      currentPage = page;
-      renderPagination();
-    }
+        function goPage(page) {
+            currentPage = page;
+            renderPagination();
+            // 這裡可以另外實作前端切換顯示隐藏 job-row 的邏輯
+        }
 
-    function setActive(btn) {
-      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    }
+        function removeFilter() {
+            document.getElementById('active-filter').style.display = 'none';
+        }
 
-    function removeFilter() {
-      document.getElementById('active-filter').style.display = 'none';
-    }
+        // 💡 實作前端搜尋送回後端的跳轉邏輯
+        function doSearch() {
+            const category = document.getElementById('sel-category').value;
+            const location = document.getElementById('sel-location').value;
+            const type = document.getElementById('sel-type').value;
+            const keyword = document.getElementById('kw-input').value.trim();
 
-    function doSearch() {
-      const kw = document.getElementById('kw-input').value;
-      if (kw) alert('搜尋關鍵字：' + kw + '\n（此為示範，實際串接後端後會過濾結果）');
-    }
+            const params = new URLSearchParams();
+            if (category) params.append('category', category);
+            if (location) params.append('location', location);
+            if (type) params.append('type', type);
+            if (keyword) params.append('keyword', keyword);
 
-    function resetSearch() {
-      document.getElementById('sel-category').value = '';
-      document.getElementById('sel-location').value = '';
-      document.getElementById('sel-type').value = '';
-      document.getElementById('kw-input').value = '';
-    }
-  </script>
+            // 重新導向，並帶上篩選參數給 Controller
+            window.location.href = '/Job/Job_search?' + params.toString();
+        }
+
+        // 💡 實作重置搜尋邏輯：重置後直接導回乾淨的搜尋頁
+        function resetSearch() {
+            window.location.href = '/Job/Job_search';
+        }
+    </script>
 }
