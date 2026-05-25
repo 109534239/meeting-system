@@ -193,56 +193,62 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Index");
         }
 
-        // POST: 登入（調整為雙表查詢）
+        // POST: 登入（✨已優化：精準身分分流處理）
         [HttpPost]
-        public async Task<IActionResult> Login(string account, string password)
+        // POST: 登入（✨已改為 AJAX JSON 回傳格式）
+        [HttpPost]
+        public async Task<IActionResult> Login(string account, string password, string role)
         {
-            Console.WriteLine($"==== 輸入密碼的 Hash 是: {HashPassword(password)} ====");
-            
             string hashedPassword = HashPassword(password);
 
-            // 1. 先從求職者資料表 (Members) 尋找
-            var member = await _db.Members.FirstOrDefaultAsync(m => m.Email == account);
-
-            if (member != null && member.PasswordHash == hashedPassword)
+            // 1. 如果前端傳來的是求職者身分 (jobseeker)，只去 Members 表查
+            if (role == "jobseeker")
             {
-                // 求職者登入成功，寫入 Session
-                HttpContext.Session.SetInt32("MemberId", member.Id);
-                HttpContext.Session.SetString("MemberName", member.Name);
-                HttpContext.Session.SetString("MemberRole", member.Role); // "jobseeker"
+                var member = await _db.Members.FirstOrDefaultAsync(m => m.Email == account);
 
-                return RedirectToAction("Index", "Home");
-            }
-
-            // 2. 如果求職者找不到或密碼錯誤，改從員工資料表 (Employees) 尋找
-            var employee = await _db.Employees.FirstOrDefaultAsync(e => e.Account == account);
-
-            if (employee != null && employee.PasswordHash == hashedPassword)
-            {
-                // 員工/HR 登入成功，寫入 Session
-                HttpContext.Session.SetInt32("MemberId", employee.Id); 
-                HttpContext.Session.SetString("MemberName", employee.Name);
-                HttpContext.Session.SetString("MemberRole", employee.Role); // 資料庫通常存的是 "hr" 或 "manager"
-
-                // 🌟 自動跳轉：如果是 hr 或 manager，登入成功直接導向 HR 後台的「職缺管理」
-                if (employee.Role == "hr" || employee.Role == "manager")
+                if (member != null && member.PasswordHash == hashedPassword)
                 {
-                    return RedirectToAction("Index", "HrJob"); 
-                }
+                    // 求職者登入成功，寫入 Session
+                    HttpContext.Session.SetInt32("MemberId", member.Id);
+                    HttpContext.Session.SetString("MemberName", member.Name);
+                    HttpContext.Session.SetString("MemberRole", member.Role); // "jobseeker"
 
-                return RedirectToAction("Index", "Home");
+                    // 回傳成功狀態與目標網址
+                    return Json(new { success = true, redirectUrl = Url.Action("Index", "Home") });
+                }
+            }
+            // 2. 如果前端傳來的是員工身分 (employee)，只去 Employees 表查
+            else if (role == "employee")
+            {
+                var employee = await _db.Employees.FirstOrDefaultAsync(e => e.Account == account);
+
+                if (employee != null && employee.PasswordHash == hashedPassword)
+                {
+                    // 員工/HR 登入成功，寫入 Session
+                    HttpContext.Session.SetInt32("MemberId", employee.Id);
+                    HttpContext.Session.SetString("MemberName", employee.Name);
+                    HttpContext.Session.SetString("MemberRole", employee.Role); // "hr" 或 "manager"
+
+                    string targetUrl = Url.Action("Index", "Home");
+
+                    // 如果是 hr 或 manager，自動跳轉到 HR 後台的「職缺管理」
+                    if (employee.Role == "hr" || employee.Role == "manager")
+                    {
+                        targetUrl = Url.Action("Index", "HrJob");
+                    }
+
+                    return Json(new { success = true, redirectUrl = targetUrl });
+                }
             }
 
-            // 3. 兩邊都找不到，才報帳密錯誤
-            TempData["LoginError"] = "帳號或密碼錯誤";
-            return RedirectToAction("Index");
+            // 3. 若不符合任何登入條件，回傳失敗訊息（前端會拿來跳 alert）
+            return Json(new { success = false, message = "帳號、密碼錯誤，或登入身分不符！" });
         }
-
         // 登出
         public IActionResult Logout()
         {
             HttpContext.Session.Clear();
-            
+
             // 登出後導向登入頁面
             return RedirectToAction("Index");
         }

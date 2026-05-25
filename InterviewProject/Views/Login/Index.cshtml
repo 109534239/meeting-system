@@ -9,69 +9,98 @@
 <div class="login-page">
     <div class="login-card">
 
-      <div class="login-title">
-          <h1>登入頁面</h1>
-          <p>請選擇身分</p>
-      </div>
+        <div class="login-title">
+            <h1>登入頁面</h1>
+            <p>請選擇身分</p>
+        </div>
 
-      <!-- 身分切換 -->
-      <div class="role-tabs">
-          <button class="role-tab active" onclick="switchTab(this, 'jobseeker')">求職者</button>
-          <button class="role-tab" onclick="switchTab(this, 'employee')">員工</button>
-      </div>
+        <div class="role-tabs">
+            <button class="role-tab active" onclick="switchTab(this, 'jobseeker')">求職者</button>
+            <button class="role-tab" onclick="switchTab(this, 'employee')">員工</button>
+        </div>
 
-      @if (TempData["LoginError"] != null)
-      {
-          <div class="alert-error">@TempData["LoginError"]</div>
-      }
+        <div id="panel-jobseeker">
+            <form class="login-form" method="post" asp-controller="Login" asp-action="Login">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="role" value="jobseeker" />
 
-      <!-- 求職者登入 -->
-      <div id="panel-jobseeker">
-          <form method="post" asp-controller="Login" asp-action="Login">
-              @Html.AntiForgeryToken()
-              <div class="form-group">
-                  <input type="text" name="account" class="form-control" placeholder="輸入 Email" required />
-              </div>
-              <div class="form-group">
-                  <input type="password" name="password" class="form-control" placeholder="輸入密碼" required />
-              </div>
-              <button type="submit" class="btn-login">登入</button>
-          </form>
+                <div class="form-group">
+                    <input type="text" name="account" class="form-control" placeholder="輸入 Email" required />
+                </div>
+                <div class="form-group">
+                    <input type="password" name="password" class="form-control" placeholder="輸入密碼" required />
+                </div>
+                <button type="submit" class="btn-login">登入</button>
+            </form>
             <div class="forgot-pw">
                 <a asp-controller="Login" asp-action="Forgetpassword">忘記密碼？</a>
             </div>
-          <hr class="register-divider" />
-          <a href="@Url.Action("Register", controller: "Login")" class="btn-register">註冊</a>
-      </div>
+            <hr class="register-divider" />
+            <a href="@Url.Action("Register", controller: "Login")" class="btn-register">註冊</a>
+        </div>
 
-      <!-- 員工登入 -->
-      <div id="panel-employee" style="display:none">
-          <form method="post" asp-controller="Login" asp-action="Login">
-              @Html.AntiForgeryToken()
-              <div class="form-group">
-                  <input type="text" name="account" class="form-control" placeholder="輸入 Email" required />
-              </div>
-              <div class="form-group">
-                  <input type="password" name="password" class="form-control" placeholder="輸入密碼" required />
-              </div>
-              <button type="submit" class="btn-login employee">登入</button>
-          </form>
+        <div id="panel-employee" style="display:none">
+            <form class="login-form" method="post" asp-controller="Login" asp-action="Login">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="role" value="employee" />
+
+                <div class="form-group">
+                    <input type="text" name="account" class="form-control" placeholder="輸入 Email" required />
+                </div>
+                <div class="form-group">
+                    <input type="password" name="password" class="form-control" placeholder="輸入密碼" required />
+                </div>
+                <button type="submit" class="btn-login employee">登入</button>
+            </form>
             <div class="forgot-pw">
                 <a asp-controller="Login" asp-action="Forgetpassword">忘記密碼？</a>
             </div>
-      </div>
+        </div>
 
     </div>
 </div>
 
 @section Scripts {
-  <script>
-    function switchTab(btn, role) {
-        document.querySelectorAll('.role-tab').forEach(t => t.classList.remove('active'));
-        btn.classList.add('active');
-        ['jobseeker', 'employee'].forEach(r => {
-            document.getElementById('panel-' + r).style.display = r === role ? 'block' : 'none';
+    <script>
+        // 切換求職者 / 員工面板
+        function switchTab(btn, role) {
+            document.querySelectorAll('.role-tab').forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+            ['jobseeker', 'employee'].forEach(r => {
+                document.getElementById('panel-' + r).style.display = r === role ? 'block' : 'none';
+            });
+        }
+
+        // 🌟 核心修正：監聽頁面上所有的登入表單，改用 AJAX 發送並攔截錯誤跳出 alert
+        document.querySelectorAll('.login-form').forEach(form => {
+            form.addEventListener('submit', function (e) {
+                e.preventDefault(); // 阻擋表單預設的整頁重新整理
+
+                const formData = new FormData(this);
+                const actionUrl = this.getAttribute('action');
+
+                fetch(actionUrl, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 登入成功：跳轉至指定頁面
+                        window.location.href = data.redirectUrl;
+                    } else {
+                        // ✨ 登入失敗：不刷新頁面，直接跳出 alert
+                        alert(data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('系統連線異常，請稍後再試。');
+                });
+            });
         });
-    }
-  </script>
+    </script>
 }
