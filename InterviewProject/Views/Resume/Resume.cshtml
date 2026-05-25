@@ -38,16 +38,19 @@
 <div class="resume-paper @(isReadOnly ? "is-readonly" : "")">
     <div class="resume-title">履    歷    表</div>
 
-    @* ... (中間表格內容保持不變) ... *@
     <div style="text-align:right; margin-bottom:10px; color:#666;">
         應徵職位：
         <span style="color: #d9534f; font-weight: bold;">
-            @Model.Position
+            @* 🎯 修正：畫面上透過關聯物件印出職缺的「名稱文字」 *@
+            @(Model.Job?.Title ?? "未指定職缺")
         </span>
     </div>
     <form method="post" asp-action="SaveResume">
         <input type="hidden" asp-for="UserId" />
+
+        @* 🎯 保持隱藏傳遞：這行會自動把 JobId 數字（如 1, 2）安全地送回後端 Controller *@
         <input type="hidden" asp-for="Position" />
+
         <table class="main-table">
             <tr>
                 <td rowspan="7" class="label-bg">基本<br />資料</td>
@@ -148,7 +151,6 @@
                 <td colspan="5">
                     <div style="padding: 10px;">
                         <label>
-                            @* 使用變數判斷，若是唯讀則傳回 "disabled"，否則傳回 null *@
                             <input type="checkbox" id="noWorkExp"
                                    checked="@(Model.WorkExperienceYears < 1)"
                                    disabled="@(isReadOnly ? "disabled" : null)" />
@@ -160,7 +162,6 @@
                                    checked="@(Model.WorkExperienceYears >= 1)"
                                    disabled="@(isReadOnly ? "disabled" : null)" />
                             工作總年資：
-                            @* 注意：asp-for 本身就會處理 Name 和 Id，我們只需處理唯讀屬性 *@
                             <input asp-for="WorkExperienceYears" class="input-inline" style="width:50px"
                                    readonly="@(isReadOnly ? "readonly" : null)" /> 年
                         </label>
@@ -170,7 +171,6 @@
                             <td style="border:1px solid black; width:25%;">公司名稱</td>
                             <td style="border:1px solid black; width:25%;">工作職稱</td>
                             <td style="border:1px solid black; width:25%;">工作說明</td>
-                            @* <td style="border:1px solid black; width:25%;">薪資</td> *@
                         </tr>
                         <tr>
                             <td style="border:1px solid black"><input asp-for="CompanyName" class="full-input" required /></td>
@@ -318,33 +318,26 @@
             </tr>
         </table>
         <input type="hidden" asp-for="ResumeTime" id="finalResumeTime" />
-       
-    @* 修改底部的按鈕區域 *@
-    <div style="margin-top: 20px; text-align: center;" class="no-print">
-        <button type="button" class="btn btn-warning" onclick="history.back()">
-            回上一頁
-        </button>
 
-        @if (isReadOnly)
-        {
-                @* 唯讀模式：提交表單到 ExportToPdf Action *@
-                @* 加上 formnovalidate 確保不會因為 input required 而被瀏覽器阻擋 *@
+        <div style="margin-top: 20px; text-align: center;" class="no-print">
+            <button type="button" class="btn btn-warning" onclick="history.back()">
+                回上一頁
+            </button>
+
+            @if (isReadOnly)
+            {
                 <button type="submit" asp-controller="Resume" asp-action="ExportToPdf" class="btn btn-secondary" formnovalidate>
                     列印 PDF
                 </button>
-        }
-        else
-        {
-            @* 編輯模式：顯示儲存 *@
-            <button type="submit" class="btn btn-primary">
-                儲存並繳交
-            </button>
-           @* <button type="submit" asp-action="ExportToPdf" class="btn btn-secondary">
-                列印/另存 PDF
-            </button> *@
-        }
+            }
+            else
+            {
+                <button type="submit" class="btn btn-primary">
+                    儲存並繳交
+                </button>
+            }
         </div>
-   
+
     </form>
 </div>
 
@@ -362,7 +355,6 @@
                     let label = row.querySelector('.lang-label').innerText;
 
                     if (label === "其他") {
-                        // 判斷是否為非預設語言
                         const knownLangs = ["英語", "日語", "台語", "客語"];
                         let isOther = !knownLangs.some(k => item.startsWith(k)) && item.includes('(');
                         if (isOther) {
@@ -399,17 +391,15 @@
             });
         }
 
-        // 4. 處理證照 (修正反填邏輯，支援多選)
+        // 4. 處理證照
         const certData = "@Html.Raw(Model.Certificates)";
         if (certData) {
             const certs = certData.split(', ');
             document.querySelectorAll('.cert-item').forEach((item, index) => {
                 if(certs[index]) {
-                    // 解析 "職類(級別1,級別2)"
                     let name = certs[index].split('(')[0];
                     let levelPart = certs[index].match(/\(([^)]+)\)/);
 
-                    // 填入名稱
                     const nameInput = item.querySelector('.cert-name') || document.getElementById('othercert-name');
                     if(nameInput && index === (certs.length -1) && index === 2) {
                         document.getElementById('othercert-name').value = name;
@@ -417,7 +407,6 @@
                         nameInput.value = name;
                     }
 
-                    // 勾選所有對應的 Checkbox
                     if (levelPart) {
                         let levels = levelPart[1].split(',');
                         item.querySelectorAll('.cert-lv').forEach(lv => {
@@ -428,16 +417,14 @@
             });
         }
 
-        //5. 處理電腦能力反填 (修復「其他」顯示問題)
+        //5. 處理電腦能力反填
         const compData = "@Html.Raw(Model.ComputerSkills)";
         if (compData) {
             document.querySelectorAll('.comp-chk').forEach(chk => {
-                // 一般項目的判斷
                 if (compData.split(',').map(s => s.trim()).includes(chk.value)) {
                     chk.checked = true;
                 }
             });
-            // 處理「其他:內容」
             if (compData.includes("其他:")) {
                 const match = compData.match(/其他:([^,]+)/);
                 if (match) {
@@ -457,7 +444,6 @@
         }
 
         // --- 限制邏輯 ---
-        // 語言程度單選 (移除 row 內的 .lang-main checkbox 判斷，直接選程度即代表該語言)
         document.querySelectorAll('.lang-row').forEach(row => {
             const lvs = row.querySelectorAll('.lang-lv');
             lvs.forEach(chk => {
@@ -469,7 +455,6 @@
             });
         });
 
-        // 學歷單選
         const eduChks = document.querySelectorAll('#eduStatusArea .edu-chk');
         eduChks.forEach(chk => {
             chk.addEventListener('change', function() {
@@ -479,34 +464,28 @@
             });
         });
 
-        //學歷
-            const eduLevelValue = "@Html.Raw(Model.EduLevel)";
-    const presetLevels = ["博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小"];
+        const eduLevelValue = "@Html.Raw(Model.EduLevel)";
+        const presetLevels = ["博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小"];
 
-    if (eduLevelValue && !presetLevels.includes(eduLevelValue)) {
-        // 如果值不在預設選項中，代表是「其他」
-        document.getElementById('otherEduLevel').value = eduLevelValue;
-        document.getElementById('radioOther').checked = true;
-        document.getElementById('radioOther').value = eduLevelValue;
-    }
+        if (eduLevelValue && !presetLevels.includes(eduLevelValue)) {
+            document.getElementById('otherEduLevel').value = eduLevelValue;
+            document.getElementById('radioOther').checked = true;
+            document.getElementById('radioOther').value = eduLevelValue;
+        }
     };
 
-        // --- Submit 邏輯 (負責串接資料送往資料庫) ---
+    // --- Submit 邏輯 ---
     document.querySelector('form').addEventListener('submit', function (e) {
-
-        // 【修正：學歷等級 Radio】 必須寫在 submit 裡面
         const otherEduInput = document.getElementById('otherEduLevel');
         const radioOther = document.getElementById('radioOther');
         const otherVal = otherEduInput.value.trim();
 
-        // 自動填入當前時間至 hidden 欄位
-    const now = new Date();
-    // 格式化為 ISO 字串，或者後端能辨認的格式
-    document.getElementById('finalResumeTime').value = now.toISOString();
+        const now = new Date();
+        document.getElementById('finalResumeTime').value = now.toISOString();
 
         if (otherVal !== "") {
             radioOther.checked = true;
-            radioOther.value = otherVal; // 將文字框內容設為 Radio 的 value 送出
+            radioOther.value = otherVal;
         }
 
         // 1. 語文能力串接
@@ -542,19 +521,16 @@
         document.getElementById('finalSpecialty').value = specResults.join('; ');
 
         // 4. 證照
-        // 4. 證照 (修正串接邏輯，支援多個 Checkbox 勾選)
         let certResults = [];
         document.querySelectorAll('.cert-item').forEach((item, index) => {
             let nameInput = item.querySelector('.cert-name');
             let name = nameInput ? nameInput.value.trim() : "";
 
-            // 處理第三個「其他」項目的特殊 ID
             if (index === 2) {
                 name = document.getElementById('othercert-name').value.trim();
             }
 
             if (name) {
-                // 關鍵：找出該項目下「所有」被勾選的等級
                 let selectedLvs = [];
                 item.querySelectorAll('.cert-lv:checked').forEach(lv => {
                     selectedLvs.push(lv.value);
@@ -569,34 +545,29 @@
         });
         document.getElementById('finalCertificates').value = certResults.join(', ');
 
-            // 5.電腦能力範例
-    let compResults = [];
-    document.querySelectorAll('.comp-chk:checked').forEach(chk => {
-        if (chk.value === "其他") {
-            let val = document.getElementById('otherCompName').value;
-            compResults.push("其他:" + val); // 確保存成 "其他:超能力"
-        } else {
-            compResults.push(chk.value);
-        }
-    });
-    document.getElementById('finalComputerSkills').value = compResults.join(', ');
+        // 5.電腦能力
+        let compResults = [];
+        document.querySelectorAll('.comp-chk:checked').forEach(chk => {
+            if (chk.value === "其他") {
+                let val = document.getElementById('otherCompName').value;
+                compResults.push("其他:" + val);
+            } else {
+                compResults.push(chk.value);
+            }
+        });
+        document.getElementById('finalComputerSkills').value = compResults.join(', ');
 
         // 6. 學歷狀況
         let selectedEdu = document.querySelector('.edu-chk:checked');
         document.getElementById('finalEduStatus').value = selectedEdu ? selectedEdu.value : "";
     });
 
-    // --- 輔助 UI 邏輯 (放在 submit 外面) ---
-
-    // 當點擊學歷「其他」文字框時，自動選中 radio
     document.getElementById('otherEduLevel').addEventListener('focus', function() {
         document.getElementById('radioOther').checked = true;
     });
 
-    // 無工作經歷切換
     document.getElementById('noWorkExp').addEventListener('change', function() {
         const isNoExp = this.checked;
-        // 修正：使用更精準的 Selector 避開 ID 重複
         const inputs = this.closest('td').querySelectorAll('input.full-input');
         inputs.forEach(input => {
             input.disabled = isNoExp;
