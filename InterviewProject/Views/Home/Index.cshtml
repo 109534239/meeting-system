@@ -1,4 +1,6 @@
-﻿@{
+﻿@model IEnumerable<InterviewProject.Models.Job>
+
+@{
     ViewData["Title"] = "首頁";
 }
 
@@ -7,7 +9,6 @@
     <link rel="stylesheet" href="~/css/Home.css" asp-append-version="true" />
 }
 
-<!-- HERO -->
 <section class="hero">
     <h1>加入我們，共創未來</h1>
     <p>探索 XXX 公司最新職缺，找到最適合你的舞台</p>
@@ -17,10 +18,9 @@
     </div>
 </section>
 
-<!-- MAIN -->
 <main class="home-main">
     <div class="home-main-inner">
-        <!-- 公告 -->
+
         <section>
             <div class="section-label">最新公告</div>
             <div class="announce-card">
@@ -49,57 +49,51 @@
             </div>
         </section>
 
-        <!-- 最新職缺 -->
         <section>
             <div class="section-label">最新職缺</div>
 
             <div class="job-grid">
+                @if (Model != null && Model.Any())
+                {
+                    @foreach (var job in Model)
+                    {
+                        <a asp-controller="Job" asp-action="Job_detail" asp-route-id="@job.Id" class="job-card">
 
-                <!-- 1 -->
-                <a href="#" class="job-card">
-                    <div class="job-dept">資訊技術</div>
-                    <div class="job-title">前端工程師_260502002</div>
-                    <div class="job-tags">
-                        <span class="tag">台北內湖</span>
-                        <span class="tag">全職</span>
-                        <span class="tag">3年以上</span>
+                            @* A. 職缺所屬部門 *@
+                            <div class="job-dept">@job.Department</div>
+
+                            @* B. 職缺詳細名稱 *@
+                            <div class="job-title">@job.Title</div>
+
+                            @* C. 標籤列 (工作地點、性質類型、年資要求) *@
+                            <div class="job-tags">
+                                <span class="tag">@job.Location</span>
+
+                                <span class="tag">
+                                    @(job.JobType == "fulltime" ? "全職" : job.JobType == "parttime" ? "兼職" : "實習")
+                                </span>
+
+                                <span class="tag">
+                                    @(string.IsNullOrEmpty(job.ExperienceRequired) ? "不限" : job.ExperienceRequired)
+                                </span>
+                            </div>
+                        </a>
+                    }
+                }
+                else
+                {
+                    <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #888; background: #fff; border-radius: 8px; width: 100%;">
+                        目前資料庫內沒有符合條件開放中的最新職缺。
                     </div>
-                </a>
-
-                <!-- 2 -->
-                <a href="job_detail.html" class="job-card">
-                    <div class="job-dept">專案管理</div>
-                    <div class="job-title">NB產品經理_260502001</div>
-                    <div class="job-tags">
-                        <span class="tag">新北汐止</span>
-                        <span class="tag">全職</span>
-                        <span class="tag">3年以上</span>
-                    </div>
-                </a>
-
-                <!-- 3 -->
-                <a href="#" class="job-card">
-                    <div class="job-dept">人力資源</div>
-                    <div class="job-title">HR 招募專員_260502003</div>
-                    <div class="job-tags">
-                        <span class="tag">新竹竹北</span>
-                        <span class="tag">全職</span>
-                        <span class="tag">1年以上</span>
-                    </div>
-                </a>
-
-                <!-- 4 -->
-                <a href="#" class="job-card">
-                    <div class="job-dept">行銷企劃</div>
-                    <div class="job-title">數位行銷專員_260502004</div>
-                    <div class="job-tags">
-                        <span class="tag">新北汐止</span>
-                        <span class="tag">全職</span>
-                        <span class="tag">2年以上</span>
-                    </div>
-                </a>
-
+                }
             </div>
         </section>
+
     </div>
 </main>
+
+@section Scripts {
+    <script>
+        
+    </script>
+}
