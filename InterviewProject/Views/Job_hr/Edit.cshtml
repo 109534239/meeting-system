@@ -6,6 +6,21 @@
 
 @section Styles {
     <link rel="stylesheet" href="~/css/HrJob.css" asp-append-version="true" />
+    <style>
+        /* 💡 保持視覺標記一致 */
+        .text-danger {
+            color: #e53e3e;
+            margin-left: 4px;
+            font-weight: bold;
+        }
+
+        .text-muted {
+            color: #a0aec0;
+            font-size: 13px;
+            margin-left: 6px;
+            font-weight: normal;
+        }
+    </style>
 }
 
 <div class="hrjob-form-page">
@@ -18,17 +33,19 @@
         @Html.AntiForgeryToken()
         <input type="hidden" name="Id" value="@Model.Id" />
 
-        @* ── 基本資訊 ── *@
+        @* ═══════════════════════════════
+            基本資訊 (對應最新規格：全數必填)
+           ═══════════════════════════════ *@
         <div class="form-section-title">基本資訊</div>
 
         <div class="form-group">
-            <label>職缺名稱</label>
+            <label>職缺名稱<span class="text-danger">*</span></label>
             <input type="text" name="Title" class="form-control" value="@Model.Title" required />
         </div>
 
         <div class="form-row">
             <div class="form-group">
-                <label>職缺類別（部門）</label>
+                <label>職缺類別（部門）<span class="text-danger">*</span></label>
                 <select name="Department" class="form-control" required>
                     <option value="">-- 請選擇職缺類別 --</option>
                     <option value="專案管理" selected="@(Model.Department == "專案管理" ? "selected" : null)">專案管理</option>
@@ -40,175 +57,171 @@
                 </select>
             </div>
             <div class="form-group">
-                <label>工作地點</label>
+                <label>工作地點<span class="text-danger">*</span></label>
                 <input type="text" name="Location" class="form-control" value="@Model.Location" required />
             </div>
         </div>
 
         <div class="form-row">
             <div class="form-group">
-                <label>職缺類型</label>
-                <select name="JobType" class="form-control">
-                    <option value="fulltime"  selected="@(Model.JobType == "fulltime"  ? "selected" : null)">全職</option>
-                    <option value="parttime"  selected="@(Model.JobType == "parttime"  ? "selected" : null)">兼職</option>
-                    <option value="intern"    selected="@(Model.JobType == "intern"    ? "selected" : null)">實習</option>
+                <label>職缺類型<span class="text-danger">*</span></label>
+                <select name="JobType" class="form-control" required>
+                    <option value="fulltime" selected="@(Model.JobType == "fulltime" ? "selected" : null)">全職</option>
+                    <option value="parttime" selected="@(Model.JobType == "parttime" ? "selected" : null)">兼職</option>
+                    <option value="intern" selected="@(Model.JobType == "intern" ? "selected" : null)">實習</option>
                 </select>
             </div>
             <div class="form-group">
-                <label>需求人數</label>
-                <input type="text" name="HeadCount" class="form-control"
-                       value="@Model.HeadCount" placeholder="例：1 ～ 3 人" required />
+                <label>需求人數<span class="text-danger">*</span></label>
+                <input type="text" name="HeadCount" class="form-control" value="@Model.HeadCount" placeholder="例：1 ～ 3 人" required />
             </div>
         </div>
 
         <div class="form-row">
             <div class="form-group">
-                <label>上班時段</label>
-                <select name="WorkShift" class="form-control">
-                    <option value="day"       selected="@(Model.WorkShift == "day"       ? "selected" : null)">日班</option>
-                    <option value="night"     selected="@(Model.WorkShift == "night"     ? "selected" : null)">夜班</option>
-                    <option value="rotating"  selected="@(Model.WorkShift == "rotating"  ? "selected" : null)">輪班</option>
+                <label>上班時段<span class="text-danger">*</span></label>
+                <select name="WorkShift" class="form-control" required>
+                    <option value="day" selected="@(Model.WorkShift == "day" ? "selected" : null)">日班</option>
+                    <option value="night" selected="@(Model.WorkShift == "night" ? "selected" : null)">夜班</option>
+                    <option value="rotating" selected="@(Model.WorkShift == "rotating" ? "selected" : null)">輪班</option>
                 </select>
             </div>
             <div class="form-group">
-                <label>休假制度</label>
-                <select name="LeavePolicy" class="form-control">
-                    <option value="twodays"   selected="@(Model.LeavePolicy == "twodays"   ? "selected" : null)">週休二日</option>
-                    <option value="oneday"    selected="@(Model.LeavePolicy == "oneday"    ? "selected" : null)">週休一日</option>
-                    <option value="flexible"  selected="@(Model.LeavePolicy == "flexible"  ? "selected" : null)">彈性休假</option>
+                <label>休假制度<span class="text-danger">*</span></label>
+                <select name="LeavePolicy" class="form-control" required>
+                    <option value="twodays" selected="@(Model.LeavePolicy == "twodays" ? "selected" : null)">週休二日</option>
+                    <option value="oneday" selected="@(Model.LeavePolicy == "oneday" ? "selected" : null)">週休一日</option>
+                    <option value="flexible" selected="@(Model.LeavePolicy == "flexible" ? "selected" : null)">彈性休假</option>
                 </select>
             </div>
         </div>
 
-        @* ── 薪資範圍 ── *@
+        @* ═══════════════════════════════
+            薪資範圍 (必填)
+           ═══════════════════════════════ *@
         <div class="form-section-title">薪資範圍</div>
 
         <div class="form-row">
             <div class="form-group">
-                <label>最低月薪（元）</label>
-                <input type="number" name="SalaryMin" class="form-control"
-                       value="@Model.SalaryMin" min="0" required />
+                <label>最低月薪（元）<span class="text-danger">*</span></label>
+                <input type="number" name="SalaryMin" class="form-control" value="@Model.SalaryMin" min="0" required />
             </div>
             <div class="form-group">
-                <label>最高月薪（元）</label>
-                <input type="number" name="SalaryMax" class="form-control"
-                       value="@Model.SalaryMax" min="0" required />
+                <label>最高月薪（元）<span class="text-danger">*</span></label>
+                <input type="number" name="SalaryMax" class="form-control" value="@Model.SalaryMax" min="0" required />
             </div>
         </div>
 
-        @* ── 主管資訊 ── *@
+        @* ═══════════════════════════════
+            主管資訊 (對應最新規格：全數必填)
+           ═══════════════════════════════ *@
         <div class="form-section-title">主管資訊</div>
 
         <div class="form-row">
             <div class="form-group">
-                <label>部門主管</label>
-                <input type="text" name="ManagerName" class="form-control"
-                       value="@Model.ManagerName" placeholder="例：王小明" required />
+                <label>部門主管<span class="text-danger">*</span></label>
+                <input type="text" name="ManagerName" class="form-control" value="@Model.ManagerName" placeholder="例：王小明" required />
             </div>
             <div class="form-group">
-                <label>隸屬上級</label>
-                <input type="text" name="ReportToName" class="form-control"
-                       value="@Model.ReportToName" placeholder="例：技術長" required />
+                <label>隸屬上級<span class="text-danger">*</span></label>
+                <input type="text" name="ReportToName" class="form-control" value="@Model.ReportToName" placeholder="例：技術長" required />
             </div>
         </div>
 
-        @* ── 工作內容 ── *@
+        @* ═══════════════════════════════
+            工作內容 (必填)
+           ═══════════════════════════════ *@
         <div class="form-section-title">工作內容</div>
 
         <div class="form-group">
-            <label>職缺描述（工作內容）</label>
-            <textarea name="Description" class="form-control" rows="5"
-                      placeholder="請條列主要工作職責" required>@Model.Description</textarea>
+            <label>職缺描述（工作內容）<span class="text-danger">*</span></label>
+            <textarea name="Description" class="form-control" rows="5" placeholder="請條列主要工作職責" required>@Model.Description</textarea>
         </div>
 
-        @* ── 條件要求 ── *@
+        @* ═══════════════════════════════
+            條件要求 (全數選填)
+           ═══════════════════════════════ *@
         <div class="form-section-title">條件要求</div>
 
         <div class="form-row">
             <div class="form-group">
-                <label>工作經歷</label>
+                <label>工作經歷<span class="text-muted">(選填)</span></label>
                 <input type="hidden" name="ExperienceRequired" id="experience-value" value="@Model.ExperienceRequired" />
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    <select id="exp-type" class="form-control" style="width: 130px; flex-shrink: 0;"
-                            onchange="updateExperience()">
+                    <select id="exp-type" class="form-control" style="width: 130px; flex-shrink: 0;" onchange="updateExperience()">
                         <option value="unlimited">不限</option>
                         <option value="years">要求</option>
                     </select>
-                    <input type="number" id="exp-years" class="form-control" min="1" max="30"
-                           placeholder="輸入年數" style="display: none;"
-                           oninput="updateExperience()" />
+                    <input type="number" id="exp-years" class="form-control" min="1" max="30" placeholder="輸入年數" style="display: none;" oninput="updateExperience()" />
                 </div>
             </div>
             <div class="form-group">
-                <label>學歷需求</label>
+                <label>學歷需求<span class="text-muted">(選填)</span></label>
                 <select name="EducationRequired" class="form-control">
+                    <option value="">-- 不限 --</option>
                     <option value="highschool" selected="@(Model.EducationRequired == "highschool" ? "selected" : null)">高中職以上</option>
-                    <option value="college"    selected="@(Model.EducationRequired == "college"    ? "selected" : null)">專科以上</option>
-                    <option value="bachelor"   selected="@(Model.EducationRequired == "bachelor"   ? "selected" : null)">大學以上</option>
-                    <option value="master"     selected="@(Model.EducationRequired == "master"     ? "selected" : null)">碩士以上</option>
-                    <option value="phd"        selected="@(Model.EducationRequired == "phd"        ? "selected" : null)">博士以上</option>
+                    <option value="college" selected="@(Model.EducationRequired == "college" ? "selected" : null)">專科以上</option>
+                    <option value="bachelor" selected="@(Model.EducationRequired == "bachelor" ? "selected" : null)">大學以上</option>
+                    <option value="master" selected="@(Model.EducationRequired == "master" ? "selected" : null)">碩士以上</option>
+                    <option value="phd" selected="@(Model.EducationRequired == "phd" ? "selected" : null)">博士以上</option>
                 </select>
             </div>
         </div>
 
         <div class="form-group">
-            <label>產業經歷</label>
-            <input type="text" name="IndustryExperience" class="form-control"
-                   value="@Model.IndustryExperience" placeholder="例：電腦及其週邊設備業、半導體業" />
+            <label>產業經歷<span class="text-muted">(選填)</span></label>
+            <input type="text" name="IndustryExperience" class="form-control" value="@Model.IndustryExperience" placeholder="例：電腦及其週邊設備業、半導體業" />
         </div>
 
         <div class="form-group">
-            <label>科系需求</label>
-            <input type="text" name="MajorRequired" class="form-control"
-                   value="@Model.MajorRequired" placeholder="例：資訊工程、電機、工業工程或商管相關科系尤佳" />
+            <label>科系需求<span class="text-muted">(選填)</span></label>
+            <input type="text" name="MajorRequired" class="form-control" value="@Model.MajorRequired" placeholder="例：資訊工程、電機、工業工程或商管相關科系尤佳" />
         </div>
 
         <div class="form-group">
-            <label>語文條件</label>
-            <input type="text" name="LanguageRequired" class="form-control"
-                   value="@Model.LanguageRequired" placeholder="例：英文 — 中等（能撰寫英文技術文件）" />
+            <label>語文條件<span class="text-muted">(選填)</span></label>
+            <input type="text" name="LanguageRequired" class="form-control" value="@Model.LanguageRequired" placeholder="例：英文 — 中等（能撰寫英文技術文件）" />
         </div>
 
         <div class="form-group">
-            <label>知識技能</label>
-            <textarea name="SkillsRequired" class="form-control" rows="3"
-                      placeholder="例：熟悉 MS Project、跨部門協調能力" required>@Model.Requirements</textarea>
+            <label>知識技能<span class="text-muted">(選填)</span></label>
+            <textarea name="Requirements" class="form-control" rows="3" placeholder="例：熟悉 MS Project、跨部門協調能力">@Model.Requirements</textarea>
         </div>
 
         <div class="form-group">
-            <label>必要證照</label>
-            <input type="text" name="CertRequired" class="form-control"
-                   value="@Model.CertRequired" placeholder="例：無特定要求" />
+            <label>必要證照<span class="text-muted">(選填)</span></label>
+            <input type="text" name="CertRequired" class="form-control" value="@Model.CertRequired" placeholder="例：無特定要求" />
         </div>
 
         <div class="form-group">
-            <label>其他條件</label>
-            <textarea name="OtherRequirements" class="form-control" rows="2"
-                      placeholder="例：主動積極，能在高壓環境下有效處理多項任務">@Model.OtherRequirements</textarea>
+            <label>其他條件<span class="text-muted">(選填)</span></label>
+            <textarea name="OtherRequirements" class="form-control" rows="2" placeholder="例：主動積極，能在高壓環境下有效處理多項任務">@Model.OtherRequirements</textarea>
         </div>
 
-        @* ── 技能標籤 ── *@
+        @* ═══════════════════════════════
+            技能標籤
+           ═══════════════════════════════ *@
         <div class="form-section-title">技能標籤</div>
 
         <div class="form-group">
-            <label>技能標籤</label>
-            <input type="text" name="SkillTags" class="form-control"
-                   value="@Model.SkillTags" placeholder="以逗號分隔，例：產品管理, 專案規劃, 英文溝通" />
+            <label>技能標籤<span class="text-muted">(選填)</span></label>
+            <input type="text" name="SkillTags" class="form-control" value="@Model.SkillTags" placeholder="以逗號分隔，例：產品管理, 專案規劃, 英文溝通" />
         </div>
 
-        @* ── 上架設定 ── *@
+        @* ═══════════════════════════════
+            上架設定
+           ═══════════════════════════════ *@
         <div class="form-section-title">上架設定</div>
 
         <div class="form-row">
             <div class="form-group">
-                <label>截止日期</label>
-                <input type="date" name="Deadline" class="form-control"
-                       value="@Model.Deadline.ToLocalTime().ToString("yyyy-MM-dd")" required />
+                <label>截止日期<span class="text-danger">*</span></label>
+                <input type="date" name="Deadline" class="form-control" value="@Model.Deadline.ToLocalTime().ToString("yyyy-MM-dd")" required />
             </div>
         </div>
 
         <div class="form-group checkbox-group">
-            <label>
+            <label style="cursor: pointer; font-weight: normal;">
                 <input type="checkbox" name="IsActive" value="true" @(Model.IsActive ? "checked" : "") />
                 上架中
             </label>
@@ -223,7 +236,7 @@
 
 @section Scripts {
     <script>
-        // 💡 頁面載入時：反向解析現有的工作經驗資料並還原控制項狀態
+        // 💡 頁面載入時：反向解析現有的工作經驗資料並還原控制項状態
         window.addEventListener('DOMContentLoaded', (event) => {
             const hiddenValue = document.getElementById('experience-value').value;
             const typeSelect = document.getElementById('exp-type');
@@ -232,7 +245,6 @@
             if (hiddenValue && hiddenValue !== '不限') {
                 typeSelect.value = 'years';
                 yearsInput.style.display = 'block';
-                // 從類似 "3年以上工作經驗" 提取出數字 3
                 const match = hiddenValue.match(/\d+/);
                 if (match) {
                     yearsInput.value = match[0];

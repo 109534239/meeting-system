@@ -26,8 +26,9 @@ namespace InterviewProject.Controllers
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
+            // 🎯 核心修正：將 .Include(j => j.Creator) 導正為 .Include(j => j.Employee) 解決編譯報錯
             var jobs = await _db.Jobs
-                .Include(j => j.Creator)
+                .Include(j => j.Employee)
                 .OrderByDescending(j => j.CreatedAt)
                 .ToListAsync();
 
@@ -48,8 +49,10 @@ namespace InterviewProject.Controllers
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
             job.CreatedBy = HttpContext.Session.GetInt32("MemberId") ?? 0;
-            job.CreatedAt = DateTime.UtcNow;
-            job.UpdatedAt = DateTime.UtcNow;
+
+            // 🎯 修正：使用 DateTime.Now 寫入本地時間
+            job.CreatedAt = DateTime.Now;
+            job.UpdatedAt = DateTime.Now;
 
             _db.Jobs.Add(job);
             await _db.SaveChangesAsync();
@@ -78,30 +81,32 @@ namespace InterviewProject.Controllers
             var existing = await _db.Jobs.FindAsync(job.Id);
             if (existing == null) return NotFound();
 
-            existing.Title               = job.Title;
-            existing.Department          = job.Department;
-            existing.Location            = job.Location;
-            existing.JobType             = job.JobType;
-            existing.WorkShift           = job.WorkShift;
-            existing.LeavePolicy         = job.LeavePolicy;
-            existing.HeadCount           = job.HeadCount;
-            existing.Description         = job.Description;
-            existing.Requirements        = job.Requirements;
-            existing.ExperienceRequired  = job.ExperienceRequired;
-            existing.EducationRequired   = job.EducationRequired;
-            existing.IndustryExperience  = job.IndustryExperience;
-            existing.MajorRequired       = job.MajorRequired;
-            existing.LanguageRequired    = job.LanguageRequired;
-            existing.CertRequired        = job.CertRequired;
-            existing.OtherRequirements   = job.OtherRequirements;
-            existing.SkillTags           = job.SkillTags;
-            existing.SalaryMin           = job.SalaryMin;
-            existing.SalaryMax           = job.SalaryMax;
-            existing.ManagerName         = job.ManagerName;
-            existing.ReportToName        = job.ReportToName;
-            existing.Deadline            = job.Deadline;
-            existing.IsActive            = job.IsActive;
-            existing.UpdatedAt           = DateTime.UtcNow;
+            existing.Title = job.Title;
+            existing.Department = job.Department;
+            existing.Location = job.Location;
+            existing.JobType = job.JobType;
+            existing.WorkShift = job.WorkShift;
+            existing.LeavePolicy = job.LeavePolicy;
+            existing.HeadCount = job.HeadCount;
+            existing.Description = job.Description;
+            existing.Requirements = job.Requirements;
+            existing.ExperienceRequired = job.ExperienceRequired;
+            existing.EducationRequired = job.EducationRequired;
+            existing.IndustryExperience = job.IndustryExperience;
+            existing.MajorRequired = job.MajorRequired;
+            existing.LanguageRequired = job.LanguageRequired;
+            existing.CertRequired = job.CertRequired;
+            existing.OtherRequirements = job.OtherRequirements;
+            existing.SkillTags = job.SkillTags;
+            existing.SalaryMin = job.SalaryMin;
+            existing.SalaryMax = job.SalaryMax;
+            existing.ManagerName = job.ManagerName;
+            existing.ReportToName = job.ReportToName;
+            existing.Deadline = job.Deadline;
+            existing.IsActive = job.IsActive;
+
+            // 🎯 修正：使用 DateTime.Now 更新時間
+            existing.UpdatedAt = DateTime.Now;
 
             await _db.SaveChangesAsync();
 
@@ -134,8 +139,10 @@ namespace InterviewProject.Controllers
             var job = await _db.Jobs.FindAsync(id);
             if (job == null) return NotFound();
 
-            job.IsActive  = !job.IsActive;
-            job.UpdatedAt = DateTime.UtcNow;
+            job.IsActive = !job.IsActive;
+
+            // 🎯 修正：使用 DateTime.Now 更新時間
+            job.UpdatedAt = DateTime.Now;
             await _db.SaveChangesAsync();
 
             return RedirectToAction("Index");

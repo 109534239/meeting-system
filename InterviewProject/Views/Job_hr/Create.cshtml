@@ -4,6 +4,21 @@
 
 @section Styles {
     <link rel="stylesheet" href="~/css/HrJob.css" asp-append-version="true" />
+    <style>
+        /* ✨ 精準區分必填與選填的視覺樣式 */
+        .text-danger {
+            color: #e53e3e;
+            margin-left: 4px;
+            font-weight: bold;
+        }
+
+        .text-muted {
+            color: #a0aec0;
+            font-size: 13px;
+            margin-left: 6px;
+            font-weight: normal;
+        }
+    </style>
 }
 
 <div class="hrjob-form-page">
@@ -18,18 +33,17 @@
         @Html.AntiForgeryToken()
 
         @* ═══════════════════════════════
-           基本資訊
-        ═══════════════════════════════ *@
+            基本資訊 (全數為必填)
+           ═══════════════════════════════ *@
         <div class="hrjob-form">
 
             <div class="form-section-title">
                 基本資訊
             </div>
 
-            <!-- 職缺名稱 -->
             <div class="form-grid-1">
                 <div class="form-group">
-                    <label>職缺名稱</label>
+                    <label>職缺名稱<span class="text-danger">*</span></label>
 
                     <input type="text"
                            name="Title"
@@ -39,11 +53,10 @@
                 </div>
             </div>
 
-            <!-- 部門 / 地點 -->
             <div class="form-grid-2">
 
                 <div class="form-group">
-                    <label>職缺類別（部門）</label>
+                    <label>職缺類別（部門）<span class="text-danger">*</span></label>
 
                     <select name="Department"
                             class="form-control"
@@ -61,7 +74,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>工作地點</label>
+                    <label>工作地點<span class="text-danger">*</span></label>
 
                     <input type="text"
                            name="Location"
@@ -72,14 +85,14 @@
 
             </div>
 
-            <!-- 類型 / 人數 -->
             <div class="form-grid-2">
 
                 <div class="form-group">
-                    <label>職缺類型</label>
+                    <label>職缺類型<span class="text-danger">*</span></label>
 
                     <select name="JobType"
-                            class="form-control">
+                            class="form-control"
+                            required>
 
                         <option value="fulltime">全職</option>
                         <option value="parttime">兼職</option>
@@ -89,26 +102,27 @@
                 </div>
 
                 <div class="form-group">
-                    <label>需求人數</label>
+                    <label>需求人數<span class="text-danger">*</span></label>
 
                     <input type="text"
                            name="HeadCount"
                            class="form-control"
-                           placeholder="例：1 ～ 3 人"
+                           placeholder="例：1人、2人、不限"
                            required />
                 </div>
 
             </div>
 
-            <!-- 上班 / 休假 -->
             <div class="form-grid-2">
 
                 <div class="form-group">
-                    <label>上班時段</label>
+                    <label>上班時段<span class="text-danger">*</span></label>
 
                     <select name="WorkShift"
-                            class="form-control">
+                            class="form-control"
+                            required>
 
+                        <option value="">-- 請選擇上班時段 --</option>
                         <option value="day">日班</option>
                         <option value="night">夜班</option>
                         <option value="rotating">輪班</option>
@@ -117,11 +131,13 @@
                 </div>
 
                 <div class="form-group">
-                    <label>休假制度</label>
+                    <label>休假制度<span class="text-danger">*</span></label>
 
                     <select name="LeavePolicy"
-                            class="form-control">
+                            class="form-control"
+                            required>
 
+                        <option value="">-- 請選擇休假制度 --</option>
                         <option value="twodays">週休二日</option>
                         <option value="oneday">週休一日</option>
                         <option value="flexible">彈性休假</option>
@@ -134,8 +150,8 @@
         </div>
 
         @* ═══════════════════════════════
-           薪資範圍
-        ═══════════════════════════════ *@
+            薪資範圍 (全數為必填)
+           ═══════════════════════════════ *@
         <div class="hrjob-form">
 
             <div class="form-section-title">
@@ -145,24 +161,24 @@
             <div class="form-grid-2">
 
                 <div class="form-group">
-                    <label>最低月薪（元）</label>
+                    <label>最低月薪（元）<span class="text-danger">*</span></label>
 
                     <input type="number"
                            name="SalaryMin"
                            class="form-control"
                            min="0"
-                           value="0"
+                           placeholder="例：40000"
                            required />
                 </div>
 
                 <div class="form-group">
-                    <label>最高月薪（元）</label>
+                    <label>最高月薪（元）<span class="text-danger">*</span></label>
 
                     <input type="number"
                            name="SalaryMax"
                            class="form-control"
                            min="0"
-                           value="0"
+                           placeholder="例：60000"
                            required />
                 </div>
 
@@ -171,8 +187,8 @@
         </div>
 
         @* ═══════════════════════════════
-           主管資訊
-        ═══════════════════════════════ *@
+            主管資訊 (依照最新規格，全數改為必填)
+           ═══════════════════════════════ *@
         <div class="hrjob-form">
 
             <div class="form-section-title">
@@ -182,7 +198,7 @@
             <div class="form-grid-2">
 
                 <div class="form-group">
-                    <label>部門主管</label>
+                    <label>部門主管<span class="text-danger">*</span></label>
 
                     <input type="text"
                            name="ManagerName"
@@ -192,7 +208,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>職稱階級</label>
+                    <label>職稱階級<span class="text-danger">*</span></label>
 
                     <input type="text"
                            name="ReportToName"
@@ -206,8 +222,8 @@
         </div>
 
         @* ═══════════════════════════════
-           工作內容
-        ═══════════════════════════════ *@
+            工作內容 (必填)
+           ═══════════════════════════════ *@
         <div class="hrjob-form">
 
             <div class="form-section-title">
@@ -217,7 +233,7 @@
             <div class="form-grid-1">
 
                 <div class="form-group">
-                    <label>職缺描述（工作內容）</label>
+                    <label>職缺描述（工作內容）<span class="text-danger">*</span></label>
 
                     <textarea name="Description"
                               class="form-control"
@@ -231,20 +247,19 @@
         </div>
 
         @* ═══════════════════════════════
-           條件要求
-        ═══════════════════════════════ *@
+            條件要求 (全數為選填)
+           ═══════════════════════════════ *@
         <div class="hrjob-form">
 
             <div class="form-section-title">
                 條件要求
             </div>
 
-            <!-- 工作經歷 / 學歷 -->
             <div class="form-grid-2">
 
                 <div class="form-group">
 
-                    <label>工作經歷</label>
+                    <label>工作經歷<span class="text-muted">(選填)</span></label>
 
                     <input type="hidden"
                            name="ExperienceRequired"
@@ -278,11 +293,11 @@
 
                 <div class="form-group">
 
-                    <label>學歷需求</label>
+                    <label>學歷需求<span class="text-muted">(選填)</span></label>
 
                     <select name="EducationRequired"
                             class="form-control">
-
+                        <option value="">-- 不限 --</option>
                         <option value="highschool">高中職以上</option>
                         <option value="college">專科以上</option>
                         <option value="bachelor">大學以上</option>
@@ -295,11 +310,10 @@
 
             </div>
 
-            <!-- 產業 / 科系 -->
             <div class="form-grid-2">
 
                 <div class="form-group">
-                    <label>產業經歷</label>
+                    <label>產業經歷<span class="text-muted">(選填)</span></label>
 
                     <input type="text"
                            name="IndustryExperience"
@@ -308,7 +322,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>科系需求</label>
+                    <label>科系需求<span class="text-muted">(選填)</span></label>
 
                     <input type="text"
                            name="MajorRequired"
@@ -318,11 +332,10 @@
 
             </div>
 
-            <!-- 語文 -->
             <div class="form-grid-1">
 
                 <div class="form-group">
-                    <label>語文條件</label>
+                    <label>語文條件<span class="text-muted">(選填)</span></label>
 
                     <input type="text"
                            name="LanguageRequired"
@@ -332,26 +345,23 @@
 
             </div>
 
-            <!-- 技能 -->
             <div class="form-grid-1">
 
                 <div class="form-group">
-                    <label>知識技能</label>
+                    <label>知識技能<span class="text-muted">(選填)</span></label>
 
-                    <textarea name="SkillsRequired"
+                    <textarea name="Requirements"
                               class="form-control"
                               rows="4"
-                              placeholder="例：熟悉 MS Project、跨部門協調能力"
-                              required></textarea>
+                              placeholder="例：熟悉 MS Project、跨部門協調能力"></textarea>
                 </div>
 
             </div>
 
-            <!-- 證照 / 其他 -->
             <div class="form-grid-2">
 
                 <div class="form-group">
-                    <label>必要證照</label>
+                    <label>必要證照<span class="text-muted">(選填)</span></label>
 
                     <input type="text"
                            name="CertRequired"
@@ -360,7 +370,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>其他條件</label>
+                    <label>其他條件<span class="text-muted">(選填)</span></label>
 
                     <textarea name="OtherRequirements"
                               class="form-control"
@@ -373,8 +383,8 @@
         </div>
 
         @* ═══════════════════════════════
-           技能標籤
-        ═══════════════════════════════ *@
+            技能標籤
+           ═══════════════════════════════ *@
         <div class="hrjob-form">
 
             <div class="form-section-title">
@@ -385,7 +395,7 @@
 
                 <div class="form-group">
 
-                    <label>技能標籤</label>
+                    <label>技能標籤<span class="text-muted">(選填)</span></label>
 
                     <input type="text"
                            name="SkillTags"
@@ -399,8 +409,8 @@
         </div>
 
         @* ═══════════════════════════════
-           上架設定
-        ═══════════════════════════════ *@
+            上架設定 (截止日期為必填)
+           ═══════════════════════════════ *@
         <div class="hrjob-form">
 
             <div class="form-section-title">
@@ -411,7 +421,7 @@
 
                 <div class="form-group">
 
-                    <label>截止日期</label>
+                    <label>截止日期<span class="text-danger">*</span></label>
 
                     <input type="date"
                            name="Deadline"
@@ -420,15 +430,15 @@
 
                 </div>
 
-                <div class="form-group checkbox-group">
+                <div class="form-group checkbox-group" style="padding-top: 32px;">
 
-                    <label>
+                    <label style="cursor: pointer; font-weight: normal;">
                         <input type="checkbox"
                                name="IsActive"
                                value="true"
                                checked />
 
-                        立即上架
+                        立即上架此職缺
                     </label>
 
                 </div>
@@ -488,6 +498,9 @@
 
             }
         }
+
+        // 監聽數字輸入，當有更動時自動更新隱藏欄位的文字內容
+        document.getElementById('exp-years').addEventListener('input', updateExperience);
 
     </script>
 

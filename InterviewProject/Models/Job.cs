@@ -24,22 +24,27 @@ namespace InterviewProject.Models
         public string OtherRequirements { get; set; } = "";
         public string SkillTags { get; set; } = "";     // 逗號分隔，前台標籤用
 
-        // 薪資範圍（取代原本單一 Salary）
+        // 薪資範圍
         public int SalaryMin { get; set; } = 0;
         public int SalaryMax { get; set; } = 0;
 
-        // 主管資訊（存 DB）
+        // 主管資訊
         public string ManagerName { get; set; } = "";
         public string ReportToName { get; set; } = "";
 
-        // 截止日期（存 DB）
+        // 截止日期
         public DateTime Deadline { get; set; } = DateTime.UtcNow.AddDays(30);
 
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        // 🎯 核心修正一：指定此欄位為外鍵，連接到下方的 Employee 導覽屬性
+        [ForeignKey("Employee")]
         public int CreatedBy { get; set; }
-        public Member? Creator { get; set; }
+
+        // 🎯 核心修正二：徹底移除舊的 Member? Creator，改為關聯到 Employee
+        public virtual Employee? Employee { get; set; }
 
         // ── 不存 DB，查詢時計算 ──
         [NotMapped]
