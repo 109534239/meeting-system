@@ -8,7 +8,7 @@
 
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/Application.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/MemberResume.css" asp-append-version="true" />
 }
 
 <div class="app-wrapper">
@@ -38,7 +38,7 @@
         </div>
 
         <div class="app-table-head">
-            <div>建立時間</div>
+            <div>投遞時間</div>
             <div>職缺名稱</div>
             <div>目前狀態</div>
             <div>操作區域</div>
@@ -65,7 +65,7 @@
                                 _ => "status-review"
                             };
                         }
-                        <div><span class="@statusClass">@item.Status</span></div>
+                        <div class="row-status"><span class="@statusClass">@item.Status</span></div>
                         <div class="row-actions">
                             <a href="@Url.Action("ResumeDetail", "Member", new { id = item.Id })" class="btn-view">查看</a>
 

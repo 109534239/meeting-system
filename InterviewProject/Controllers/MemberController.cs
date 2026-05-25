@@ -136,7 +136,20 @@ namespace InterviewProject.Controllers
             return View("~/Views/Resume/Resume.cshtml", resume);
         }
 
-        public IActionResult Application() => View();
+        public async Task<IActionResult> Application()
+        {
+            int userId = GetCurrentUserId();
+            if (userId == 0) return RedirectToAction("Index", "Login");
+
+            // 抓取該使用者的所有履歷，按時間倒序排列
+            var applications = await _db.Resume
+                .Where(r => r.UserId == userId)
+                .OrderByDescending(r => r.ResumeTime)
+                .ToListAsync();
+
+            return View(applications);
+        }
+
         public IActionResult Favorites()   => View();
 
         private static string HashPassword(string password)

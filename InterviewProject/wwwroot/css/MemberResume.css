@@ -133,7 +133,11 @@
     padding: 4px 12px;
     border-radius: 20px;
 }
-
+.row-status {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
 /* ¢w¢w «ö¶s°Ï ¢w¢w */
 .row-actions {
     display: flex;

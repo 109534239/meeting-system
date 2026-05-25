@@ -72,7 +72,7 @@
                 <td>聯絡地址</td>
                 <td colspan="4">
                     郵遞區號 <input asp-for="ZipCode" class="input-inline" style="width:60px" required /><br />
-                    <input asp-for="Address" class="input-inline" style="width:70%" placeholder="完整地址" required />
+                    <input asp-for="Address" class="input-inline" style="width:70%" required />
                 </td>
             </tr>
             <tr>
@@ -119,8 +119,8 @@
                     <table style="width:100%; border-collapse:collapse; margin:-8px;">
                         <tr style="text-align:center; background:#eee;">
                             <td style="border:1px solid black; width:30%;">學校名稱</td>
-                            <td style="border:1px solid black; width:30%;">科系所</td>
-                            <td style="border:1px solid black; width:20%;">畢(肄)業狀況</td>
+                            <td style="border:1px solid black; width:25%;">科系所</td>
+                            <td style="border:1px solid black; width:25%;">畢(肄)業狀況</td>
                             <td style="border:1px solid black; width:20%;">年月</td>
                         </tr>
                         <tr>
@@ -176,9 +176,6 @@
                             <td style="border:1px solid black"><input asp-for="CompanyName" class="full-input" required /></td>
                             <td style="border:1px solid black"><input asp-for="JobTitle" class="full-input" required /></td>
                             <td style="border:1px solid black"><input asp-for="JobDescription" class="full-input" required /></td>
-                            @* <td style="border:1px solid black">
-                                <input asp-for="Salary" class="full-input" placeholder="請輸入薪資" required />
-                            </td> *@
                         </tr>
                     </table>
                 </td>
@@ -276,14 +273,14 @@
                 <td colspan="4">
                     <input type="hidden" asp-for="Certificates" id="finalCertificates" />
                     <div class="cert-item">
-                        1. <input type="text" class="cert-name" placeholder="請輸入職類" style="width:150px" />
+                        1. <input type="text" class="cert-name" style="width:150px" />
                         <input type="checkbox" class="cert-lv" value="甲" />甲
                         <input type="checkbox" class="cert-lv" value="乙" />乙
                         <input type="checkbox" class="cert-lv" value="丙" />丙
                         <input type="checkbox" class="cert-lv" value="單一級" />單一級
                     </div>
                     <div class="cert-item">
-                        2. <input type="text" class="cert-name" placeholder="請輸入職類" style="width:150px" />
+                        2. <input type="text" class="cert-name" style="width:150px" />
                         <input type="checkbox" class="cert-lv" value="甲" />甲
                         <input type="checkbox" class="cert-lv" value="乙" />乙
                         <input type="checkbox" class="cert-lv" value="丙" />丙

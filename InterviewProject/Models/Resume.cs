@@ -29,7 +29,7 @@ namespace InterviewProject.Models
         public string? CompanyName { get; set; }
         public string? JobTitle { get; set; }
         public string? JobDescription { get; set; }
-        public string? Salary { get; set; }
+        //public string? Salary { get; set; }
 
         // 這些欄位將接收 JavaScript 串接後的長字串
         public string? LanguageSkills { get; set; }
