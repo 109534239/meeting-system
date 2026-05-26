@@ -128,9 +128,14 @@
     font-family: inherit;
     transition: background 0.2s;
     white-space: nowrap;
+    text-decoration: none !important; /* 移除底線 */
+    display: inline-block;
 }
-    .btn-apply-lg:hover { 
-        background: var(--primary-dark); 
+
+    .btn-apply-lg:hover {
+        background: var(--primary-dark);
+        color: var(--white);
+        text-decoration: none;
     }
 
 .btn-icon-lg {

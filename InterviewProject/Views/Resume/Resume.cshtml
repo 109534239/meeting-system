@@ -41,11 +41,20 @@
     <div style="text-align:right; margin-bottom:10px; color:#666;">
         應徵職位：
         <span style="color: #d9534f; font-weight: bold;">
-            @* 🎯 修正：畫面上透過關聯物件印出職缺的「名稱文字」 *@
-            @(Model.Job?.Title ?? "未指定職缺")
+            @* 1. 優先顯示關聯的 Job Title *@
+            @if (Model.Job != null)
+            {
+                @Model.Job.Title
+            }
+            @* 2. 如果沒關聯，顯示 Position 原始值 *@
+            else
+            {
+                @(Model.Position.ToString() ?? "未指定職缺")
+            }
         </span>
     </div>
     <form method="post" asp-action="SaveResume">
+        <input type="hidden" asp-for="Position" />
         <input type="hidden" asp-for="UserId" />
 
         @* 🎯 保持隱藏傳遞：這行會自動把 JobId 數字（如 1, 2）安全地送回後端 Controller *@
@@ -149,21 +158,21 @@
             <tr>
                 <td class="label-bg">工作<br />經歷</td>
                 <td colspan="5">
+                    @* --- 無工作經歷 Radio (不預設勾選) --- *@
                     <div style="padding: 10px;">
                         <label>
-                            <input type="checkbox" id="noWorkExp"
-                                   checked="@(Model.WorkExperienceYears < 1)"
-                                   disabled="@(isReadOnly ? "disabled" : null)" />
-                            無工作經歷
+                            <input type="radio" name="workExpType"
+                                   checked="@(Model.WorkExperienceYears == 0)"
+                                   onclick="setWorkExp(0)" /> 無工作經歷
                         </label>
 
                         <label style="margin-left: 20px;">
-                            <input type="checkbox"
-                                   checked="@(Model.WorkExperienceYears >= 1)"
-                                   disabled="@(isReadOnly ? "disabled" : null)" />
-                            工作總年資：
-                            <input asp-for="WorkExperienceYears" class="input-inline" style="width:50px"
-                                   readonly="@(isReadOnly ? "readonly" : null)" /> 年
+                            <input type="radio" name="workExpType"
+                                   checked="@(Model.WorkExperienceYears > 0)"
+                                   onclick="setWorkExp(1)" /> 工作總年資：
+                            <input asp-for="WorkExperienceYears" id="workYearsInput"
+                                   type="number" class="input-inline" style="width:50px"
+                                   readonly="@(Model.WorkExperienceYears <= 0)" /> 年
                         </label>
                     </div>
                     <table style="width:100%; border-collapse:collapse; margin:-8px;">
@@ -566,18 +575,16 @@
         document.getElementById('radioOther').checked = true;
     });
 
-    document.getElementById('noWorkExp').addEventListener('change', function() {
-        const isNoExp = this.checked;
-        const inputs = this.closest('td').querySelectorAll('input.full-input');
-        inputs.forEach(input => {
-            input.disabled = isNoExp;
-            if (isNoExp) {
-                input.value = "無";
-                input.removeAttribute('required');
-            } else {
-                input.value = "";
-                input.setAttribute('required', 'required');
-            }
-        });
-    });
+
+       function setWorkExp(type) {
+        const input = document.getElementById('workYearsInput');
+        if (type === 0) {
+            input.value = 0;
+            input.readOnly = true;
+        } else {
+            input.readOnly = false;
+            if (input.value <= 0) input.value = 1;
+            input.focus();
+        }
+    }
 </script>

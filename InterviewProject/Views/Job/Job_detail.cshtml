@@ -73,7 +73,21 @@
                 </div>
             </div>
             <div class="job-header-actions">
-                <button class="btn-apply-lg" onclick="openModal()">立即應徵</button>
+                @* 按鈕邏輯 *@
+                @if (ViewBag.HasApplied == true)
+                {
+                    @* 已投過：點擊顯示漂亮彈窗 *@
+                    <a href="javascript:void(0)"
+                       class="btn-apply-lg"
+                       onclick="showPendingAlert()">立即應徵</a>
+                }
+                else
+                {
+                    @* 未投過：執行原本的 openModal 並跳轉至 Resume 頁面 *@
+                    <a href="javascript:void(0)"
+                       class="btn-apply-lg"
+                       onclick="openModal(@Model.Id)">立即應徵</a>
+                }
                 <button class="btn-icon-lg btn-favorite" title="收藏" data-job-id="@Model.Id" data-job-title="@Model.Title">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                         <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
@@ -258,7 +272,21 @@
             </div>
         </div>
 
-        <button class="btn-apply-full" onclick="openModal()">立即應徵</button>
+        @* 按鈕邏輯 *@
+        @if (ViewBag.HasApplied == true)
+        {
+            @* 已投過：點擊顯示漂亮彈窗 *@
+            <a href="javascript:void(0)"
+               class="btn-apply-lg"
+               onclick="showPendingAlert()">立即應徵</a>
+        }
+        else
+        {
+            @* 未投過：執行原本的 openModal 並跳轉至 Resume 頁面 *@
+            <a href="javascript:void(0)"
+               class="btn-apply-lg"
+               onclick="openModal(@Model.Id)">立即應徵</a>
+        }
     </div>
 
 </main>
@@ -348,58 +376,60 @@
         // ============================
         // 應徵 Modal
         // ============================
-        function openModal() {
-            // 💡 同樣改用 Session 判斷，不再用 localStorage
-            if (!IS_LOGGED_IN) {
-                if (confirm('需要登入才能應徵職缺\n\n是否前往登入頁面？')) {
-                    window.location.href = '/Login';
-                }
+               // 全域變數或透過參數傳遞
+        function openModal(currentJobId) {
+            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            if (!isLoggedIn) {
+                if (confirm('需要登入才能應徵職缺\n是否前往登入頁面？')) window.location.href = '/Login';
                 return;
             }
 
+            // 1. 抓取當前畫面的職位名稱顯示在 Modal
             const jobTitle = document.getElementById('job-title').textContent.trim();
             document.getElementById('modal-job-title').textContent = jobTitle;
 
-            const newUrl = `/Resume/Resume?position=${encodeURIComponent(jobTitle)}&mode=new`;
+            // A. 設定「新建履歷」按鈕 (改傳 jobId)
+            const newUrl = `/Resume/Resume?jobId=${currentJobId}&mode=new`;
             document.getElementById('btn-new-resume').href = newUrl;
 
+            // B. 設定「套用現有」按鈕的行為 (傳入 currentJobId)
             const applyBtn = document.querySelector('#existing-resume-section button');
-            applyBtn.setAttribute('onclick', `goExistingResume('${jobTitle.replace(/'/g, "\\'")}')`);
+            applyBtn.onclick = function() { goExistingResume(currentJobId); };
 
-            fetch('/Resume/GetSavedPositions')
-                .then(res => res.json())
-                .then(data => {
-                    const select  = document.getElementById('select-existing-pos');
-                    const section = document.getElementById('existing-resume-section');
-                    select.innerHTML = '<option value="">-- 請選擇職位 --</option>';
+                    // C. 抓取下拉選單資料
+        fetch('/Job/GetSavedPositions') // 確保路徑對應到 JobController
+            .then(res => res.json())
+            .then(data => {
+                const select = document.getElementById('select-existing-pos');
+                const section = document.getElementById('existing-resume-section');
+                select.innerHTML = '<option value="">-- 請選擇職位 --</option>';
 
-                    if (data && data.length > 0) {
-                        section.style.display = 'block';
-                        data.forEach(pos => {
-                            const opt = document.createElement('option');
-                            opt.value = pos;
-                            opt.textContent = pos;
-                            select.appendChild(opt);
-                        });
-                    } else {
-                        section.style.display = 'none';
-                    }
-                })
-                .catch(err => {
-                    console.error("抓取職位失敗:", err);
-                    document.getElementById('existing-resume-section').style.display = 'none';
-                });
+                if (data && data.length > 0) {
+                    section.style.display = 'block';
+                    data.forEach(item => {
+                        const opt = document.createElement('option');
+                        // 🎯 這裡要對應後端傳回的小寫欄位名 id 和 title
+                        opt.value = item.id;
+                        opt.textContent = item.title;
+                        select.appendChild(opt);
+                    });
+                } else {
+                    // 如果沒資料，也要隱藏區塊
+                    section.style.display = 'none';
+                }
+            });
 
             document.getElementById('apply-modal').classList.add('show');
         }
 
-        function goExistingResume(currentJobTitle) {
-            const fromPos = document.getElementById('select-existing-pos').value;
-            if (!fromPos) {
+                function goExistingResume(currentJobId) {
+            const fromJobId = document.getElementById('select-existing-pos').value;
+            if (!fromJobId) {
                 alert("請選擇一個現有職位！");
                 return;
             }
-            window.location.href = `/Resume/Resume?mode=apply&fromPos=${encodeURIComponent(fromPos)}&position=${encodeURIComponent(currentJobTitle)}`;
+            // 傳送參數：jobId (目標), fromJobId (來源範本), mode (模式)
+            window.location.href = `/Resume/Resume?jobId=${currentJobId}&fromJobId=${fromJobId}&mode=apply`;
         }
 
         function closeModal() {
@@ -418,4 +448,32 @@
             restoreFavorites();
         });
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <script>
+        // 供「已投過」按鈕使用的函式
+        function showPendingAlert() {
+            Swal.fire({
+                title: '履歷待審核中',
+                text: '您已投遞過此職缺，請靜候佳音。',
+                icon: 'info',
+                confirmButtonColor: '#3085d6',
+                confirmButtonText: '確定'
+            });
+        }
+
+        // 處理從 SaveResume 跳轉回來後的成功通知
+        @if (TempData["ShowSuccessAlert"] != null)
+        {
+                    <text>
+                    Swal.fire({
+                        title: '履歷已完成！',
+                        text: '您的履歷已成功送出，目前待審核中。',
+                        icon: 'success',
+                        confirmButtonText: '確定'
+                    });
+                    </text>
+        }
+    </script>
+
 }

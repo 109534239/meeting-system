@@ -99,8 +99,8 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            // 修正：將 _context 改為 _db
             var resumeList = await _db.Resume
+                .Include(r => r.Job) // 🎯 這裡也要加
                 .Where(r => r.UserId == userId)
                 .OrderByDescending(r => r.ResumeTime)
                 .ToListAsync();
@@ -115,8 +115,12 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            // 2. 抓取這份履歷資料
-            var resume = await _db.Resume.FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+            // 2. 抓取這份履歷資料 
+            // 🎯 關鍵修正：必須加上 .Include(r => r.Job) 才能在 View 顯示 Job.Title
+            var resume = await _db.Resume
+                .Include(r => r.Job)
+                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+
             if (resume == null) return NotFound();
 
             // 3. 抓取 Member 基本資料 (為了讓 Resume.cshtml 顯示姓名、性別、Email)
@@ -132,7 +136,6 @@ namespace InterviewProject.Controllers
             ViewBag.IsReadOnly = true;
 
             // 5. 回傳 ResumeController 下的 Resume 檢視頁面
-            // 注意：路徑必須寫完整路徑 "~/Views/Resume/Resume.cshtml" 才能跨目錄讀取
             return View("~/Views/Resume/Resume.cshtml", resume);
         }
 
@@ -141,8 +144,9 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            // 抓取該使用者的所有履歷，按時間倒序排列
+            // 🎯 關鍵：使用 Include 抓取關聯的 Job 資料
             var applications = await _db.Resume
+                .Include(r => r.Job)
                 .Where(r => r.UserId == userId)
                 .OrderByDescending(r => r.ResumeTime)
                 .ToListAsync();
