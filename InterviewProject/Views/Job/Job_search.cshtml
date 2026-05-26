@@ -135,11 +135,13 @@
 
                         @* 7. 收藏按鈕 *@
                         <div class="job-actions">
-                            <button class="btn-icon" title="收藏"
-                                    onclick="checkLogin('@job.Title', this)">
+                            <button class="btn-icon btn-favorite"
+                                    title="收藏"
+                                    data-job-id="@job.Id"
+                                    data-job-title="@job.Title">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                                     <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z"
-                                          stroke="#206c8b" stroke-width="2" fill="none" />
+                                        stroke="#206c8b" stroke-width="2" fill="none" />
                                 </svg>
                             </button>
                         </div>
@@ -161,41 +163,65 @@
 
 @section Scripts {
     <script>
+        // 💡 修正：View 裡要用 HttpContext
+        const IS_LOGGED_IN = @Json.Serialize((bool)ViewBag.IsLoggedIn);
+        const MEMBER_ID    = @Json.Serialize((int)ViewBag.MemberId);
+
         const PAGE_SIZE = 20;
         let currentPage = 1;
 
-        function checkLogin(jobTitle, btn) {
-            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-            if (!isLoggedIn) {
+        // ============================
+        // 收藏功能
+        // ============================
+        function getFavorites() {
+            return JSON.parse(localStorage.getItem(`favorites_${MEMBER_ID}`) || '[]');
+        }
+
+        function saveFavorites(list) {
+            localStorage.setItem(`favorites_${MEMBER_ID}`, JSON.stringify(list));
+        }
+
+        function toggleFavorite(btn) {
+            // 未登入 → 提示並跳轉
+            if (!IS_LOGGED_IN) {
                 const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
                 if (go) window.location.href = '/Login';
                 return;
             }
-            const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-            const index = favorites.indexOf(jobTitle);
+
+            const jobId = btn.dataset.jobId;
+            const favorites = getFavorites();
+            const index = favorites.indexOf(jobId);
+
             if (index === -1) {
-                favorites.push(jobTitle);
-                btn.style.background = 'var(--primary-light)';
+                favorites.push(jobId);
+                btn.classList.add('favorited');
             } else {
                 favorites.splice(index, 1);
-                btn.style.background = 'var(--gray)';
+                btn.classList.remove('favorited');
             }
-            localStorage.setItem('favorites', JSON.stringify(favorites));
+            saveFavorites(favorites);
         }
 
-        window.addEventListener('load', function () {
-            const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-            document.querySelectorAll('.btn-icon').forEach(btn => {
-                const jobTitle = btn.getAttribute('onclick').match(/'([^']+)'/)?.[1];
-                if (jobTitle && favorites.includes(jobTitle)) {
-                    btn.style.background = 'var(--primary-light)';
+        // 頁面載入時，還原已收藏的按鈕狀態
+        function restoreFavorites() {
+            if (!IS_LOGGED_IN) return;
+            const favorites = getFavorites();
+            document.querySelectorAll('.btn-favorite').forEach(btn => {
+                if (favorites.includes(btn.dataset.jobId)) {
+                    btn.classList.add('favorited');
                 }
             });
-            
-            // 頁面載入時初始化分頁
-            renderPagination();
+        }
+
+        // 綁定所有收藏按鈕
+        document.querySelectorAll('.btn-favorite').forEach(btn => {
+            btn.addEventListener('click', () => toggleFavorite(btn));
         });
 
+        // ============================
+        // 分頁
+        // ============================
         function getTotalRows() {
             return document.querySelectorAll('#job-list .job-row').length;
         }
@@ -231,33 +257,37 @@
         function goPage(page) {
             currentPage = page;
             renderPagination();
-            // 這裡可以另外實作前端切換顯示隐藏 job-row 的邏輯
         }
 
         function removeFilter() {
             document.getElementById('active-filter').style.display = 'none';
         }
 
-        // 💡 實作前端搜尋送回後端的跳轉邏輯
         function doSearch() {
             const category = document.getElementById('sel-category').value;
             const location = document.getElementById('sel-location').value;
-            const type = document.getElementById('sel-type').value;
-            const keyword = document.getElementById('kw-input').value.trim();
+            const type     = document.getElementById('sel-type').value;
+            const keyword  = document.getElementById('kw-input').value.trim();
 
             const params = new URLSearchParams();
             if (category) params.append('category', category);
             if (location) params.append('location', location);
-            if (type) params.append('type', type);
-            if (keyword) params.append('keyword', keyword);
+            if (type)     params.append('type', type);
+            if (keyword)  params.append('keyword', keyword);
 
-            // 重新導向，並帶上篩選參數給 Controller
             window.location.href = '/Job/Job_search?' + params.toString();
         }
 
-        // 💡 實作重置搜尋邏輯：重置後直接導回乾淨的搜尋頁
         function resetSearch() {
             window.location.href = '/Job/Job_search';
         }
+
+        // ============================
+        // 初始化
+        // ============================
+        window.addEventListener('load', function () {
+            restoreFavorites();
+            renderPagination();
+        });
     </script>
 }

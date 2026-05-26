@@ -18,6 +18,10 @@ namespace InterviewProject.Controllers
         // 1. 職缺搜尋列表
         public IActionResult Job_search(string category, string location, string type, string keyword)
         {
+            // 💡 把 Session 值傳給 View
+            ViewBag.IsLoggedIn = HttpContext.Session.GetInt32("MemberId").HasValue;
+            ViewBag.MemberId   = HttpContext.Session.GetInt32("MemberId") ?? 0;
+            
             // 只撈取啟用中的職缺
             var query = _context.Jobs.Where(x => x.IsActive).AsQueryable();
 
@@ -86,6 +90,9 @@ namespace InterviewProject.Controllers
         // 2. 職缺詳細頁 (改用 Id 查詢)
         public IActionResult Job_detail(int id)
         {
+            ViewBag.IsLoggedIn = HttpContext.Session.GetInt32("MemberId").HasValue;
+            ViewBag.MemberId   = HttpContext.Session.GetInt32("MemberId") ?? 0;
+            
             if (id <= 0)
             {
                 return NotFound();
@@ -111,6 +118,34 @@ namespace InterviewProject.Controllers
                 .ToList();
 
             return Json(savedPositions);
+        }
+
+        // 💡 新增：Favorites 頁面用來批次查詢職缺資料
+        [HttpGet]
+        public IActionResult GetJobsByIds(string ids)
+        {
+            if (string.IsNullOrEmpty(ids))
+                return Json(new List<object>());
+
+            var idList = ids.Split(',')
+                            .Select(s => int.TryParse(s.Trim(), out var n) ? n : 0)
+                            .Where(n => n > 0)
+                            .ToList();
+
+            var jobs = _context.Jobs
+                .Where(j => idList.Contains(j.Id) && j.IsActive)
+                .Select(j => new {
+                    j.Id,
+                    j.Title,
+                    j.Department,
+                    j.Location,
+                    j.JobType,
+                    j.ExperienceRequired,
+                    j.EducationRequired
+                })
+                .ToList();
+
+            return Json(jobs);
         }
     }
 }

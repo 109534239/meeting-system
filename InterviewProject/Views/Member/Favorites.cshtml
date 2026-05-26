@@ -52,74 +52,94 @@
 </div>
 
 @section Scripts {
-<script>
-    // 靜態職缺資料（之後串接後端）
-    const allJobs = [
-        { title: 'NB產品經理_260502001', type: '專案管理', location: '新北汐止', exp: '3年以上', edu: '大學以上' },
-        { title: '前端工程師_260502002', type: '資訊技術', location: '台北內湖', exp: '3年以上', edu: '大學以上' },
-        { title: 'HR 招募專員_260502003', type: '人力資源', location: '新竹竹北', exp: '1年以上', edu: '大學以上' },
-        { title: '數位行銷專員_260502004', type: '行銷企劃', location: '新北汐止', exp: '2年以上', edu: '大學以上' },
-        { title: '財務分析師_260502005', type: '財務會計', location: '新竹湖口', exp: '3年以上', edu: '大學以上' },
-        { title: '業務開發專員_260502006', type: '業務銷售', location: '台北內湖', exp: '2年以上', edu: '大學以上' },
-        { title: '行政助理_260502007', type: '行政管理', location: '新竹竹北', exp: '不限', edu: '大學以上' },
-    ];
+    <script>
+        const MEMBER_ID = @Json.Serialize((int)ViewBag.MemberId);
 
-    function renderFavorites() {
-        const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-        const list = document.getElementById('favorites-list');
-        const emptyMsg = document.getElementById('empty-msg');
-        const resultNum = document.getElementById('result-num');
-
-        list.innerHTML = '';
-
-        const favJobs = allJobs.filter(job => favorites.includes(job.title));
-        resultNum.textContent = favJobs.length;
-
-        if (favJobs.length === 0) {
-            emptyMsg.style.display = 'block';
-            return;
+        function getFavorites() {
+            return JSON.parse(localStorage.getItem(`favorites_${MEMBER_ID}`) || '[]');
         }
 
-        emptyMsg.style.display = 'none';
-
-        favJobs.forEach(job => {
-            const row = document.createElement('div');
-            row.className = 'job-row';
-            row.innerHTML = `
-                <div class="job-type-text">${job.type}</div>
-                <div class="job-name-cell">
-                    <span class="job-fulltime">全職</span>
-                    <a class="job-title-link" href="/Job/Job_detail">${job.title}</a>
-                </div>
-                <div class="job-cell">${job.location}</div>
-                <div class="job-cell">${job.exp}</div>
-                <div class="job-cell">${job.edu}</div>
-                <div class="job-actions">
-                    <a href="/Job/Job_detail" class="btn-apply">立即應徵</a>
-                </div>
-                <div class="job-actions">
-                    <button class="btn-icon favorited" title="取消收藏" onclick="removeFavorite('${job.title}', this)" style="background: var(--primary-light)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
-                        </svg>
-                    </button>
-                </div>
-            `;
-            list.appendChild(row);
-        });
-    }
-
-    function removeFavorite(jobTitle, btn) {
-        const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-        const index = favorites.indexOf(jobTitle);
-        if (index !== -1) {
-            favorites.splice(index, 1);
-            localStorage.setItem('favorites', JSON.stringify(favorites));
+        function saveFavorites(list) {
+            localStorage.setItem(`favorites_${MEMBER_ID}`, JSON.stringify(list));
         }
-        renderFavorites();
-    }
 
-    // 頁面載入時渲染
-    window.addEventListener('load', renderFavorites);
-</script>
+        async function renderFavorites() {
+            const favorites = getFavorites();
+            const list      = document.getElementById('favorites-list');
+            const emptyMsg  = document.getElementById('empty-msg');
+            const resultNum = document.getElementById('result-num');
+
+            list.innerHTML = '';
+
+            if (favorites.length === 0) {
+                resultNum.textContent = 0;
+                emptyMsg.style.display = 'block';
+                return;
+            }
+
+            // 💡 向後端查詢這些 Id 的職缺資料
+            const res  = await fetch(`/Job/GetJobsByIds?ids=${favorites.join(',')}`);
+            const jobs = await res.json();
+
+            resultNum.textContent = jobs.length;
+
+            if (jobs.length === 0) {
+                emptyMsg.style.display = 'block';
+                return;
+            }
+
+            emptyMsg.style.display = 'none';
+
+            jobs.forEach(job => {
+                const eduMap = {
+                    highschool: '高中職以上', college: '專科以上',
+                    bachelor: '大學以上', master: '碩士以上', phd: '博士以上'
+                };
+                const edu     = eduMap[job.educationRequired] || '不限';
+                const exp     = job.experienceRequired || '不限';
+                const jobType = job.jobType === 'fulltime' ? '全職'
+                            : job.jobType === 'parttime' ? '兼職' : '實習';
+
+                const row = document.createElement('div');
+                row.className = 'job-row';
+                row.innerHTML = `
+                    <div class="job-type-text">${job.department}</div>
+                    <div class="job-name-cell">
+                        <span class="job-fulltime">${jobType}</span>
+                        <a class="job-title-link" href="/Job/Job_detail/${job.id}">${job.title}</a>
+                    </div>
+                    <div class="job-cell">${job.location}</div>
+                    <div class="job-cell">${exp}</div>
+                    <div class="job-cell">${edu}</div>
+                    <div class="job-actions">
+                        <a href="/Job/Job_detail/${job.id}" class="btn-apply">立即應徵</a>
+                    </div>
+                    <div class="job-actions">
+                        <button class="btn-icon btn-favorite favorited"
+                                title="取消收藏"
+                                data-job-id="${job.id}"
+                                onclick="removeFavorite('${job.id}', this)">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z"
+                                    stroke="#206c8b" stroke-width="2" fill="#206c8b"/>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+                list.appendChild(row);
+            });
+        }
+
+        function removeFavorite(jobId, btn) {
+            const favorites = getFavorites();
+            const index = favorites.indexOf(String(jobId));
+            if (index !== -1) {
+                favorites.splice(index, 1);
+                saveFavorites(favorites);
+            }
+            renderFavorites();
+        }
+
+        window.addEventListener('load', renderFavorites);
+    </script>
 }

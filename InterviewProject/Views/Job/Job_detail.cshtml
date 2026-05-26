@@ -74,7 +74,7 @@
             </div>
             <div class="job-header-actions">
                 <button class="btn-apply-lg" onclick="openModal()">立即應徵</button>
-                <button class="btn-icon-lg" title="收藏" onclick="checkLogin('@Model.Title', this)">
+                <button class="btn-icon-lg btn-favorite" title="收藏" data-job-id="@Model.Id" data-job-title="@Model.Title">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                         <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z" stroke="#206c8b" stroke-width="2" fill="none"/>
                     </svg>
@@ -293,60 +293,83 @@
 
 @section Scripts {
     <script>
-        function checkLogin(jobTitle, btn) {
-            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-            if (!isLoggedIn) {
+        // 💡 與 Job_search 保持一致
+        const IS_LOGGED_IN = @Json.Serialize((bool)ViewBag.IsLoggedIn);
+        const MEMBER_ID    = @Json.Serialize((int)ViewBag.MemberId);
+
+        // ============================
+        // 收藏功能
+        // ============================
+        function getFavorites() {
+            return JSON.parse(localStorage.getItem(`favorites_${MEMBER_ID}`) || '[]');
+        }
+
+        function saveFavorites(list) {
+            localStorage.setItem(`favorites_${MEMBER_ID}`, JSON.stringify(list));
+        }
+
+        function toggleFavorite(btn) {
+            if (!IS_LOGGED_IN) {
                 const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
                 if (go) window.location.href = '/Login';
                 return;
             }
 
-            const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-            const index = favorites.indexOf(jobTitle);
+            const jobId    = btn.dataset.jobId;
+            const favorites = getFavorites();
+            const index    = favorites.indexOf(jobId);
 
             if (index === -1) {
-                favorites.push(jobTitle);
-                btn.style.background = 'var(--primary-light)';
+                favorites.push(jobId);
+                btn.classList.add('favorited');
             } else {
                 favorites.splice(index, 1);
-                btn.style.background = 'var(--gray)';
+                btn.classList.remove('favorited');
             }
-
-            localStorage.setItem('favorites', JSON.stringify(favorites));
+            saveFavorites(favorites);
         }
 
-        window.addEventListener('load', function() {
-            const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-            const btn = document.querySelector('.btn-icon-lg');
-            if (btn && favorites.includes('@Model.Title')) {
-                btn.style.background = 'var(--primary-light)';
+        // 還原收藏狀態
+        function restoreFavorites() {
+            if (!IS_LOGGED_IN) return;
+            const favorites = getFavorites();
+            const btn = document.querySelector('.btn-favorite');
+            if (btn && favorites.includes(btn.dataset.jobId)) {
+                btn.classList.add('favorited');
             }
-        });
+        }
 
-                function openModal() {
-            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-            if (!isLoggedIn) {
-                if (confirm('需要登入才能應徵職缺\n是否前往登入頁面？')) window.location.href = '/Login';
+        // 綁定收藏按鈕
+        const favoriteBtn = document.querySelector('.btn-favorite');
+        if (favoriteBtn) {
+            favoriteBtn.addEventListener('click', () => toggleFavorite(favoriteBtn));
+        }
+
+        // ============================
+        // 應徵 Modal
+        // ============================
+        function openModal() {
+            // 💡 同樣改用 Session 判斷，不再用 localStorage
+            if (!IS_LOGGED_IN) {
+                if (confirm('需要登入才能應徵職缺\n\n是否前往登入頁面？')) {
+                    window.location.href = '/Login';
+                }
                 return;
             }
 
-            // 1. 抓取當前畫面的職位名稱 (例如：工程師)
             const jobTitle = document.getElementById('job-title').textContent.trim();
             document.getElementById('modal-job-title').textContent = jobTitle;
 
-            // A. 設定建立全新的 URL (傳入當前職位)
             const newUrl = `/Resume/Resume?position=${encodeURIComponent(jobTitle)}&mode=new`;
             document.getElementById('btn-new-resume').href = newUrl;
 
-            // --- 關鍵修正：將 jobTitle 存入全域變數或按鈕屬性，供套用時使用 ---
             const applyBtn = document.querySelector('#existing-resume-section button');
             applyBtn.setAttribute('onclick', `goExistingResume('${jobTitle.replace(/'/g, "\\'")}')`);
 
-            // B. 抓取下拉選單資料
             fetch('/Resume/GetSavedPositions')
                 .then(res => res.json())
                 .then(data => {
-                    const select = document.getElementById('select-existing-pos');
+                    const select  = document.getElementById('select-existing-pos');
                     const section = document.getElementById('existing-resume-section');
                     select.innerHTML = '<option value="">-- 請選擇職位 --</option>';
 
@@ -370,18 +393,12 @@
             document.getElementById('apply-modal').classList.add('show');
         }
 
-        // 修正：傳入 currentJobTitle 參數
         function goExistingResume(currentJobTitle) {
             const fromPos = document.getElementById('select-existing-pos').value;
-
             if (!fromPos) {
                 alert("請選擇一個現有職位！");
                 return;
             }
-
-            // 導向網址：
-            // fromPos = 選單選的(舊資料來源)
-            // position = currentJobTitle (目前點擊的新職缺)
             window.location.href = `/Resume/Resume?mode=apply&fromPos=${encodeURIComponent(fromPos)}&position=${encodeURIComponent(currentJobTitle)}`;
         }
 
@@ -390,8 +407,15 @@
             document.body.style.overflow = '';
         }
 
-        document.getElementById('apply-modal').addEventListener('click', function(e) {
+        document.getElementById('apply-modal').addEventListener('click', function (e) {
             if (e.target === this) closeModal();
+        });
+
+        // ============================
+        // 初始化
+        // ============================
+        window.addEventListener('load', function () {
+            restoreFavorites();
         });
     </script>
 }

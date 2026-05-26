@@ -289,3 +289,17 @@
     margin: 32px auto;
     padding: 0 40px;
 }
+
+/* ── 收藏按鈕：已收藏狀態 ── */
+.btn-favorite.favorited {
+    background: var(--primary-light);
+}
+
+.btn-favorite.favorited path {
+    fill: #206c8b;
+    stroke: #206c8b;
+}
+
+.btn-favorite:hover {
+    background: var(--primary-light);
+}

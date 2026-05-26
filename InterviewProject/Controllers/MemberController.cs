@@ -150,7 +150,11 @@ namespace InterviewProject.Controllers
             return View(applications);
         }
 
-        public IActionResult Favorites()   => View();
+        public IActionResult Favorites()
+        {
+            ViewBag.MemberId = HttpContext.Session.GetInt32("MemberId") ?? 0;
+            return View();
+        }
 
         private static string HashPassword(string password)
         {

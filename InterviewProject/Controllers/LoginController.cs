@@ -210,8 +210,8 @@ namespace InterviewProject.Controllers
                 {
                     // 求職者登入成功，寫入 Session
                     HttpContext.Session.SetInt32("MemberId", member.Id);
-                    HttpContext.Session.SetString("MemberName", member.Name);
-                    HttpContext.Session.SetString("MemberRole", member.Role); // "jobseeker"
+                    HttpContext.Session.SetString("MemberName", member.Name ?? "");
+                    HttpContext.Session.SetString("MemberRole", member.Role ?? ""); // "jobseeker"
 
                     // 回傳成功狀態與目標網址
                     return Json(new { success = true, redirectUrl = Url.Action("Index", "Home") });
@@ -226,8 +226,8 @@ namespace InterviewProject.Controllers
                 {
                     // 員工/HR 登入成功，寫入 Session
                     HttpContext.Session.SetInt32("MemberId", employee.Id);
-                    HttpContext.Session.SetString("MemberName", employee.Name);
-                    HttpContext.Session.SetString("MemberRole", employee.Role); // "hr" 或 "manager"
+                    HttpContext.Session.SetString("MemberName", employee.Name ?? "");
+                    HttpContext.Session.SetString("MemberRole", employee.Role ); // "hr" 或 "manager"
 
                     string targetUrl = Url.Action("Index", "Home");
 

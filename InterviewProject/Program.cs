@@ -18,7 +18,13 @@ builder.Services.AddSingleton<JitsiBotService>();
 builder.Services.AddSignalR();
 
 // 加入 Session
-builder.Services.AddSession();
+builder.Services.AddDistributedMemoryCache(); // 💡 新增：Session 需要的記憶體儲存體
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromHours(2);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
 
 // DB Context
 builder.Services.AddDbContext<AppDbContext>(options =>
