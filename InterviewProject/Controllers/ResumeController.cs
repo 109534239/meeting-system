@@ -82,48 +82,62 @@ namespace InterviewProject.Controllers
         }
 
         // 2. 頁面進入點 (🎯 精準修正：將原本的字串 position / fromPos 調整為整數 jobId / fromJobId)
-        public async Task<IActionResult> Resume(int jobId, int fromJobId = 0, string mode = "")
+        // 🎯 修改後的進入點：支援「新建」與「套用」
+        public async Task<IActionResult> Resume(int jobId, int? fromJobId = null, string mode = "")
         {
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            // 將當前點擊的職位 Id 與 Mode 存入 ViewBag，確保 View 隨時拿得到
-            ViewBag.CurrentJobId = jobId;
-            ViewBag.ViewMode = mode;
+            // 1. 抓取「目前點擊」的新職缺資料 (用於顯示：應徵職位)
+            var targetJob = await _db.Jobs.FindAsync(jobId);
+            if (targetJob == null) return Content("找不到目標職缺");
 
-            var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);
-            ViewBag.UserEmail = member?.Email ?? "";
-            ViewBag.UserName = member?.Name ?? "";
-            ViewBag.UserGender = member?.Gender ?? "";
+            Resume model = null;
 
-            // 1. 套用現有履歷模式 (🎯 修正行 99、111 與 116 的強型別比對錯誤)
-            if (mode == "apply" && fromJobId != 0)
+            // 2. 判斷模式
+            if (mode == "apply" && fromJobId.HasValue)
             {
-                var existingData = await _db.Resumes
-                    .Include(r => r.Job)
-                    .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == fromJobId);
+                // 🌟 核心邏輯：套用現有履歷
+                // 抓取該使用者在「另一個職位(fromJobId)」所填寫的履歷內容
+                var existingResume = await _db.Resumes
+                    .AsNoTracking() // 使用 AsNoTracking 避免 EF 追蹤，方便我們修改 ID 後存為新紀錄
+                    .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == fromJobId.Value);
 
-                if (existingData != null)
+                if (existingResume != null)
                 {
-                    existingData.Id = 0;
-                    existingData.Position = jobId; // 強制將職位外鍵設為當前點擊的這個職缺 Id
-                    return View(existingData);
+                    model = existingResume;
+                    model.Id = 0;           // 重置 Id，確保儲存時是新增紀錄
+                    model.Position = jobId; // 🎯 關鍵：將職位 ID 改成目前點擊的這個新職缺
+                    model.Job = targetJob;  // 關聯目前的新職缺物件 (供 View 顯示 Title)
+                    model.ResumeTime = DateTime.Now;
+                    model.Status = "待審核";
                 }
             }
 
-            // 2. 一般模式 (讀取或新建) - 加上 .Include(r => r.Job) 確保前端看得到 Job.Title
-            var model = await _db.Resumes
-                .Include(r => r.Job)
-                .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == jobId);
-
+            // 3. 如果不是套用模式，或是找不到舊履歷，則嘗試抓取該職位是否已有暫存，或建立全新品
             if (model == null)
             {
-                // 如果是新應徵，建立空物件並帶入職位 Id
-                model = new Resume { UserId = userId, Position = jobId };
+                model = await _db.Resumes
+                    .Include(r => r.Job)
+                    .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == jobId);
 
-                // 動態加載職缺物件，防止前端讀取 Model.Job?.Title 報空值
-                model.Job = await _db.Jobs.FindAsync(jobId);
+                if (model == null)
+                {
+                    model = new Resume
+                    {
+                        UserId = userId,
+                        Position = jobId,
+                        WorkExperienceYears = -1,
+                        Job = targetJob
+                    };
+                }
             }
+
+            // 4. 抓取會員基本資料 (用於 View 顯示姓名、性別等)
+            var member = await _db.Members.FindAsync(userId);
+            ViewBag.UserName = member?.Name;
+            ViewBag.UserGender = member?.Gender;
+            ViewBag.UserEmail = member?.Email;
 
             return View(model);
         }
@@ -132,21 +146,24 @@ namespace InterviewProject.Controllers
         [HttpPost]
         public async Task<IActionResult> SaveResume(Resume model)
         {
+            // 移除不需驗證的欄位
             ModelState.Remove("ResumeTime");
-            ModelState.Remove("Job"); // 移除對導覽屬性的驗證
+            ModelState.Remove("Job");
+            ModelState.Remove("Status"); // 狀態由後端控制
 
             int userId = GetCurrentUserId();
             model.UserId = userId;
 
             if (!ModelState.IsValid)
             {
-                // 若驗證失敗，回填 Job 導覽屬性，避免前端畫面拋出空指標
+                // 🎯 偵錯技巧：如果資料沒存進去，可以在這行打斷點
+                // 檢查 ModelState.Values.SelectMany(v => v.Errors) 看是哪個欄位報錯
                 model.Job = await _db.Jobs.FindAsync(model.Position);
                 return View("Resume", model);
             }
 
             var existing = await _db.Resumes
-                .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == model.Position);
+    .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == model.Position);
 
             DateTime now = DateTime.Now;
 
@@ -154,11 +171,12 @@ namespace InterviewProject.Controllers
             {
                 model.Id = 0;
                 model.ResumeTime = now;
-                model.Status = "待審核"; // 新增時預設狀態
+                model.Status = "待審核";
                 _db.Resumes.Add(model);
             }
             else
             {
+                // 更新現有資料
                 model.Id = existing.Id;
                 model.ResumeTime = now;
                 model.Status = existing.Status ?? "待審核";
@@ -166,7 +184,12 @@ namespace InterviewProject.Controllers
             }
 
             await _db.SaveChangesAsync();
-            return RedirectToAction("Job_search", "Job");
+
+            // 🎯 儲存成功後，設定 TempData 訊息
+            TempData["ShowSuccessAlert"] = "履歷已送出！";
+
+            // 🎯 跳轉回 Job_detail，需要傳入 jobId (即 model.Position)
+            return RedirectToAction("Job_detail", "Job", new { id = model.Position });
         }
 
         // 按鈕：匯出 PDF

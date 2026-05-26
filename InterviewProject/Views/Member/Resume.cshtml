@@ -55,7 +55,7 @@
                 {
                     <div class="app-row">
                         <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd")</div>
-                        <div class="row-position">@item.Position</div>
+                        <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>
                         @{
                             string statusClass = item.Status switch
                             {

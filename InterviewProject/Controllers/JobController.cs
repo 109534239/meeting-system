@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
 using InterviewProject.Data;
 using InterviewProject.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Linq;
 
@@ -87,35 +88,50 @@ namespace InterviewProject.Controllers
             return View(data);
         }
 
-        // 2. 職缺詳細頁 (改用 Id 查詢)
-        public IActionResult Job_detail(int id)
+        // 2. 職缺詳細頁 (整合已投遞判斷)
+        public async Task<IActionResult> Job_detail(int id)
         {
-            ViewBag.IsLoggedIn = HttpContext.Session.GetInt32("MemberId").HasValue;
-            ViewBag.MemberId   = HttpContext.Session.GetInt32("MemberId") ?? 0;
-            
-            if (id <= 0)
+            if (id <= 0) return NotFound();
+
+            // 1. 抓取職缺資料
+            var job = await _context.Jobs.FirstOrDefaultAsync(x => x.Id == id);
+            if (job == null) return NotFound();
+
+            // 2. 檢查使用者是否已經投過履歷
+            int? userId = HttpContext.Session.GetInt32("MemberId");
+            bool hasApplied = false;
+
+            if (userId.HasValue)
             {
-                return NotFound();
+                // 🎯 判斷 Resume 表中是否已有該 UserId 且 Position (JobId) 等於目前的 id
+                hasApplied = await _context.Resumes.AnyAsync(r => r.UserId == userId.Value && r.Position == id);
             }
 
-            var job = _context.Jobs.FirstOrDefault(x => x.Id == id);
-
-            if (job == null)
-            {
-                return NotFound();
-            }
+            // 3. 將狀態傳給 View
+            ViewBag.HasApplied = hasApplied;
 
             return View(job);
         }
 
+        // 3. 獲取已儲存的職位列表 (供 Modal 下拉選單使用)
         [HttpGet]
-        public IActionResult GetSavedPositions()
+        public async Task<IActionResult> GetSavedPositions()
         {
-            var savedPositions = _context.Resumes
-                .Select(x => x.Position)
+            int? userId = HttpContext.Session.GetInt32("MemberId");
+            if (!userId.HasValue) return Json(new List<object>());
+
+            // 🎯 必須有 Include(r => r.Job)
+            var savedPositions = await _context.Resumes
+                .Include(r => r.Job)
+                .Where(x => x.UserId == userId.Value)
+                .Select(x => new
+                {
+                    id = x.Position, // JobId
+                                     // 如果 Job 是 null，這裡會抓不到 Title
+                    title = x.Job != null ? x.Job.Title : "職位 ID: " + x.Position
+                })
                 .Distinct()
-                .Take(5)
-                .ToList();
+                .ToListAsync();
 
             return Json(savedPositions);
         }
