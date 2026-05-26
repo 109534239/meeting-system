@@ -50,11 +50,11 @@
                         <a class="nav-btn @(controller == "HrJob" ? "active" : "")"
                            asp-controller="HrJob" asp-action="Index">職缺管理</a>
 
-                        <a class="nav-btn @(controller == "HrApplication" ? "active" : "")"
-                           asp-controller="HrApplication" asp-action="Index">應徵管理</a>
+                        <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
+                           asp-controller="AdminApplication" asp-action="Index">應徵管理</a>
 
-                        <a class="nav-btn @(controller == "Announcement" ? "active" : "")"
-                           asp-controller="Announcement" asp-action="Index">公告管理</a>
+                        <a class="nav-btn @(controller == "AdminAnnouncement" ? "active" : "")"
+                           asp-controller="AdminAnnouncement" asp-action="Index">公告管理</a>
 
                         <a class="nav-btn @(controller == "HrFAQ" && action != "Report" ? "active" : "")"
                            asp-controller="HrFAQ" asp-action="Index">求職Q&A</a>
