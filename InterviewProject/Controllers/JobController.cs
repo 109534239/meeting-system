@@ -92,6 +92,9 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> Job_detail(int id)
         {
             if (id <= 0) return NotFound();
+            
+            ViewBag.IsLoggedIn = HttpContext.Session.GetInt32("MemberId").HasValue;
+            ViewBag.MemberId   = HttpContext.Session.GetInt32("MemberId") ?? 0;
 
             // 1. 抓取職缺資料
             var job = await _context.Jobs.FirstOrDefaultAsync(x => x.Id == id);
