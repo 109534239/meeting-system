@@ -65,12 +65,57 @@
 }
 .form-control::placeholder { color: #bbb; }
 
-.btn-submit {
-    width: 30%;
+/* ── 🎯 換頁切換與按鈕控制 ── */
+.form-step {
+    display: none;
+}
+
+.form-step.active {
     display: block;
+}
+
+.btn-group {
+    display: flex;
+    gap: 16px;
     margin-top: 28px;
-    margin-left: auto;
-    margin-right: auto;
+}
+
+.btn-prev {
+    flex: 1;
+    padding: 14px;
+    background: var(--white);
+    color: var(--primary-dark);
+    font-size: 16px;
+    font-weight: 700;
+    border: 1.5px solid var(--primary-dark);
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s;
+}
+.btn-prev:hover { 
+    background: var(--primary-light);
+    border: 1.5px solid var(--primary-light);
+}
+
+.btn-next {
+    flex: 1;
+    padding: 14px;
+    background: var(--primary);
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s;
+}
+.btn-next:hover { background: var(--primary-dark); }
+
+/* ── 送出按鈕調整 ── */
+.btn-submit {
+    flex: 1; /* 讓它在第二頁與上一步按鈕等寬平分 */
     padding: 14px;
     background: var(--primary);
     color: var(--white);
@@ -84,6 +129,7 @@
 }
 .btn-submit:hover { background: var(--primary-dark); }
 
+/* ── 其他原本樣式 ── */
 .back-login {
     text-align: center;
     margin-top: 28px;

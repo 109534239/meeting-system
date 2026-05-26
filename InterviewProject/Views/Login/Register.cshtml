@@ -1,18 +1,17 @@
 @{
-    ViewData["Title"] = "註冊";
+    ViewData["Title"] = "註冊帳號";
 }
 
 @section Styles {
     <link rel="stylesheet" href="~/css/Register.css" asp-append-version="true" />
 }
 
-<!-- REGISTER -->
 <div class="register-page">
     <div class="register-card">
 
         <div class="register-title">
             <h1>註冊帳號</h1>
-            <p>建立您的求職者帳號</p>
+            <p id="step-indicator">第一步：帳號密碼設定</p>
         </div>
 
         <form id="register-form" method="post"
@@ -26,32 +25,64 @@
                 <div class="alert-error">@TempData["RegisterError"]</div>
             }
 
-            <div class="form-group">
-                <label>姓名 <span class="required">*</span></label>
-                <input type="text" name="name" class="form-control" placeholder="請輸入姓名" required />
+            <div class="form-step active" id="step-1">
+                <div class="form-group">
+                    <label>電子郵件<span class="required">*</span></label>
+                    <input type="email" id="email" name="email" class="form-control" placeholder="請輸入電子郵件" />
+                </div>
+
+                <div class="form-group">
+                    <label>手機號碼 <span class="required">*</span></label>
+                    <input type="tel" id="phone" name="phone" class="form-control" placeholder="請輸入手機號碼" />
+                </div>
+
+                <div class="form-group">
+                    <label>密碼 <span class="required">*</span></label>
+                    <input type="password" id="password" name="password" class="form-control" placeholder="請設定密碼" />
+                </div>
+
+                <div class="form-group">
+                    <label>確認密碼 <span class="required">*</span></label>
+                    <input type="password" id="confirm-password" class="form-control" placeholder="請再次輸入密碼" />
+                </div>
+
+                <div class="btn-group">
+                    <button type="button" class="btn-next" onclick="nextStep()">下一步</button>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>電子郵件 <span class="required">*</span></label>
-                <input type="email" name="email" class="form-control" placeholder="請輸入電子郵件" required />
+            <div class="form-step" id="step-2">
+                <div class="form-group">
+                    <label>姓名 <span class="required">*</span></label>
+                    <input type="text" id="name" name="name" class="form-control" placeholder="請輸入姓名" />
+                </div>
+
+                <div class="form-group">
+                    <label>性別 <span class="required">*</span></label>
+                    <select id="gender" name="gender" class="form-control">
+                        <option value="">-- 請選擇 --</option>
+                        <option value="男">男</option>
+                        <option value="女">女</option>
+                        <option value="不透露">不透露</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>生日 <span class="required">*</span></label>
+                    <input type="date" id="birthday" name="birthday" class="form-control" />
+                </div>
+
+                <div class="form-group">
+                    <label>居住地址 <span class="required">*</span></label>
+                    <input type="text" id="address" name="address" class="form-control" placeholder="請輸入居住地址" />
+                </div>
+
+                <div class="btn-group">
+                    <button type="button" class="btn-prev" onclick="prevStep()">上一步</button>
+                    <button type="submit" class="btn-submit">送出註冊</button>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>手機號碼 <span class="required">*</span></label>
-                <input type="tel" name="phone" class="form-control" placeholder="請輸入手機號碼" required />
-            </div>
-
-            <div class="form-group">
-                <label>密碼 <span class="required">*</span></label>
-                <input type="password" id="password" name="password" class="form-control" placeholder="請設定密碼" required />
-            </div>
-
-            <div class="form-group">
-                <label>確認密碼 <span class="required">*</span></label>
-                <input type="password" id="confirm-password" class="form-control" placeholder="請再次輸入密碼" required />
-            </div>
-
-            <button type="submit" class="btn-submit">送出註冊</button>
         </form>
 
         <div class="back-login">
@@ -63,12 +94,41 @@
 
 @section Scripts {
   <script>
-    function validateForm() {
+    function nextStep() {
+        const email = document.getElementById('email').value.trim();
+        const phone = document.getElementById('phone').value.trim();
         const password = document.getElementById('password').value;
         const confirm = document.getElementById('confirm-password').value;
 
+        if (!email || !phone || !password || !confirm) {
+            alert('請完整填寫第一步的所有必填欄位');
+            return;
+        }
+
         if (password !== confirm) {
             alert('密碼與確認密碼不一致，請重新輸入');
+            return;
+        }
+
+        document.getElementById('step-1').classList.remove('active');
+        document.getElementById('step-2').classList.add('active');
+        document.getElementById('step-indicator').innerText = "第二步：個人詳細資料";
+    }
+
+    function prevStep() {
+        document.getElementById('step-2').classList.remove('active');
+        document.getElementById('step-1').classList.add('active');
+        document.getElementById('step-indicator').innerText = "第一步：帳號密碼設定";
+    }
+
+    function validateForm() {
+        const name = document.getElementById('name').value.trim();
+        const gender = document.getElementById('gender').value;
+        const birthday = document.getElementById('birthday').value;
+        const address = document.getElementById('address').value.trim();
+
+        if (!name || !gender || !birthday || !address) {
+            alert('請完整填寫個人詳細資料欄位');
             return false;
         }
         return true;
