@@ -57,7 +57,7 @@
 
                         <div class="app-row">
                         @* 1. 投遞時間 *@
-                        <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd")</div>
+                        <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm:ss")</div>
 
                         @* 2. 職缺名稱 *@
                         <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>

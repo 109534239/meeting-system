@@ -379,8 +379,11 @@
                // 全域變數或透過參數傳遞
         function openModal(currentJobId) {
             const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-            if (!isLoggedIn) {
-                if (confirm('需要登入才能應徵職缺\n是否前往登入頁面？')) window.location.href = '/Login';
+            // 💡 同樣改用 Session 判斷，不再用 localStorage
+            if (!IS_LOGGED_IN) {
+                if (confirm('需要登入才能應徵職缺\n\n是否前往登入頁面？')) {
+                    window.location.href = '/Login';
+                }
                 return;
             }
 
