@@ -1,0 +1,111 @@
+@model InterviewProject.Models.Employee
+
+@{
+    ViewData["Title"] = "個人資料";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/AdminProfile.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>個人資料</h1>
+        <p>Profile Management</p>
+    </div>
+</div>
+
+<div class="profile-main">
+    <div class="profile-wrap">
+
+        @* ── 左側 Sidebar ── *@
+        <div class="profile-sidebar">
+            <div class="profile-avatar">
+                @* 這裡預留頭像圖示，例如 SVG 或大字 *@
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+            </div>
+            <div class="sidebar-name">@Model.Name</div>
+            <div class="sidebar-role">
+                @(Model.Role == "director" ? "部門最高管理員"
+                    : Model.Role == "manager"  ? "部門主管"
+                    : "人資")
+            </div>
+        </div>
+
+        @* ── 右側內容 ── *@
+        <div class="profile-content">
+
+            @* 成功 / 錯誤訊息（如有需要可改用 .toast 類別） *@
+            @if (TempData["PwSuccess"] != null)
+            {
+                <div class="alert alert-success">@TempData["PwSuccess"]</div>
+            }
+            @if (TempData["PwError"] != null)
+            {
+                <div class="pw-error">@TempData["PwError"]</div>
+            }
+
+            @* 基本資料卡片 *@
+            <div class="profile-card">
+                <div class="card-header">
+                    <h2>基本資料</h2>
+                </div>
+                <div class="fields-grid">
+                    <div class="field-item">
+                        <label class="field-label">姓名</label>
+                        <input type="text" class="field-input field-readonly" value="@Model.Name" readonly />
+                    </div>
+                    <div class="field-item">
+                        <label class="field-label">帳號</label>
+                        <input type="text" class="field-input field-readonly" value="@Model.Account" readonly />
+                    </div>
+                    <div class="field-item field-item--full">
+                        <label class="field-label">職稱／角色</label>
+                        <input type="text" class="field-input field-readonly" 
+                               value="@(Model.Role == "director" ? "部門最高管理員" : Model.Role == "manager" ? "部門主管" : "人資")" readonly />
+                    </div>
+                </div>
+            </div>
+
+            @* 修改密碼卡片 *@
+            <div class="profile-card">
+                <div class="card-header">
+                    <h2>修改密碼</h2>
+                </div>
+                
+                <form asp-controller="Employee" asp-action="ChangePassword" method="post">
+                    <div class="fields-grid">
+                        <div class="field-item field-item--full">
+                            <label class="field-label">目前密碼</label>
+                            <div class="input-password-wrap">
+                                <input type="password" name="currentPassword" required class="field-input" />
+                            </div>
+                        </div>
+                        <div class="field-item">
+                            <label class="field-label">新密碼</label>
+                            <div class="input-password-wrap">
+                                <input type="password" name="newPassword" required class="field-input" />
+                            </div>
+                        </div>
+                        <div class="field-item">
+                            <label class="field-label">確認新密碼</label>
+                            <div class="input-password-wrap">
+                                <input type="password" name="confirmPassword" required class="field-input" />
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card-actions">
+                        <button type="submit" class="btn-save">儲存新密碼</button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+
+    </div>
+</div>

@@ -170,7 +170,7 @@ namespace InterviewProject.Controllers
 
         // POST: 註冊（維持不變，僅針對一般求職者）
         [HttpPost]
-        public async Task<IActionResult> Register(string name, string email, string phone, string password)
+        public async Task<IActionResult> Register(string email, string phone, string password, string name, string gender, DateOnly? birthday, string address)
         {
             if (await _db.Members.AnyAsync(m => m.Email == email))
             {
@@ -180,11 +180,14 @@ namespace InterviewProject.Controllers
 
             var member = new Member
             {
-                Name = name,
                 Email = email,
                 Phone = phone,
                 PasswordHash = HashPassword(password),
-                Role = "jobseeker"
+                Role = "jobseeker",
+                Name = name,
+                Gender = gender,
+                Birthday = birthday,
+                Address = address
             };
 
             _db.Members.Add(member);
@@ -193,9 +196,7 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Index");
         }
 
-        // POST: 登入（✨已優化：精準身分分流處理）
-        [HttpPost]
-        // POST: 登入（✨已改為 AJAX JSON 回傳格式）
+        // POST: 登入（✨已優化：精準身分分流處理，解決主管導向問題）
         [HttpPost]
         public async Task<IActionResult> Login(string account, string password, string role)
         {
@@ -224,17 +225,21 @@ namespace InterviewProject.Controllers
 
                 if (employee != null && employee.PasswordHash == hashedPassword)
                 {
+                    string cleanRole = employee.Role?.ToLower() ?? "";
+
                     // 員工/HR 登入成功，寫入 Session
                     HttpContext.Session.SetInt32("MemberId", employee.Id);
                     HttpContext.Session.SetString("MemberName", employee.Name ?? "");
-                    HttpContext.Session.SetString("MemberRole", employee.Role ); // "hr" 或 "manager"
+                    HttpContext.Session.SetString("MemberRole", cleanRole ?? ""); 
 
-                    string targetUrl = Url.Action("Index", "Home");
+                    // 預設跳轉首頁
+                    string targetUrl = Url.Action("Index", "Home") ?? "/";
 
-                    // 如果是 hr 或 manager，自動跳轉到 HR 後台的「職缺管理」
-                    if (employee.Role == "hr" || employee.Role == "manager")
+                    // 🎯 依據角色進行精準分流
+                    if (cleanRole == "hr" || cleanRole == "manager" || cleanRole == "director")
                     {
-                        targetUrl = Url.Action("Index", "HrJob");
+                        // 部門主管與最高管理員預設去：招募數據（首頁）
+                        targetUrl = Url.Action("Dashboard", "AdminHome") ?? "/";
                     }
 
                     return Json(new { success = true, redirectUrl = targetUrl });
@@ -244,13 +249,23 @@ namespace InterviewProject.Controllers
             // 3. 若不符合任何登入條件，回傳失敗訊息（前端會拿來跳 alert）
             return Json(new { success = false, message = "帳號、密碼錯誤，或登入身分不符！" });
         }
-        // 登出
+
+        // 任何角色按下「登出」按鈕，導向登入頁面
         public IActionResult Logout()
         {
             HttpContext.Session.Clear();
 
-            // 登出後導向登入頁面
+            // 登出後導向登入頁面（因為在同一個 Controller，這會去 Login/Index）
             return RedirectToAction("Index");
+        }
+
+        // 員工點擊 LOGO，清除 Session 後導向訪客首頁
+        public IActionResult LogoLogout()
+        {
+            HttpContext.Session.Clear();
+
+            // 登出後導向訪客頁面的首頁（Home/Index）
+            return RedirectToAction("Index", "Home");
         }
 
         private static string HashPassword(string password)

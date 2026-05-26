@@ -32,10 +32,20 @@
     <header>
         <nav class="navbar">
             <div class="nav-container">
-                <a class="nav-brand" asp-controller="Home" asp-action="Index">
-                    <div class="logo-circle">LOGO</div>
-                    <span class="brand-name">XXX公司</span>
-                </a>
+               @if (isHr || isManager || isDirector)
+               {
+                  <a class="nav-brand" asp-controller="Login" asp-action="LogoLogout" onclick="return confirm('點擊 LOGO 將會登出並返回前台訪客首頁，確定要離開目前後台嗎？');">
+                     <div class="logo-circle">LOGO</div>
+                     <span class="brand-name">XXX公司</span>
+                  </a>
+               }
+               else
+               {
+                  <a class="nav-brand" asp-controller="Home" asp-action="Index">
+                     <div class="logo-circle">LOGO</div>
+                     <span class="brand-name">XXX公司</span>
+                  </a>
+               }
 
                 <div class="nav-links">
 
@@ -44,8 +54,8 @@
                        ============================== *@
                     @if (isHr)
                     {
-                        <a class="nav-btn @(controller == "Home" && action == "Dashboard" ? "active" : "")"
-                           asp-controller="Home" asp-action="Dashboard">招募數據</a>
+                        <a class="nav-btn @(controller == "AdminHome" && action == "Dashboard" ? "active" : "")"
+                           asp-controller="AdminHome" asp-action="Dashboard">招募數據</a>
 
                         <a class="nav-btn @(controller == "HrJob" ? "active" : "")"
                            asp-controller="HrJob" asp-action="Index">職缺管理</a>
@@ -56,11 +66,11 @@
                         <a class="nav-btn @(controller == "AdminAnnouncement" ? "active" : "")"
                            asp-controller="AdminAnnouncement" asp-action="Index">公告管理</a>
 
-                        <a class="nav-btn @(controller == "HrFAQ" && action != "Report" ? "active" : "")"
-                           asp-controller="HrFAQ" asp-action="Index">求職Q&A</a>
+                        <a class="nav-btn @(controller == "AdminFAQ" && action != "Report" ? "active" : "")"
+                           asp-controller="AdminFAQ" asp-action="Index">求職Q&A</a>
 
-                        <a class="nav-btn @(controller == "HrFAQ" && action == "Report" ? "active" : "")"
-                           asp-controller="HrFAQ" asp-action="Report">Q&A回報</a>
+                        <a class="nav-btn @(controller == "AdminFAQ" && action == "Report" ? "active" : "")"
+                           asp-controller="AdminFAQ" asp-action="Report">Q&A回報</a>
                     }
 
                     @* ==============================
@@ -68,14 +78,15 @@
                        ============================== *@
                     else if (isManager)
                     {
-                        <a class="nav-btn @(controller == "Home" && action == "Dashboard" ? "active" : "")"
-                           asp-controller="Home" asp-action="Dashboard">招募數據</a>
+                        <a class="nav-btn @(controller == "AdminHome" && action == "Dashboard" ? "active" : "")"
+                           asp-controller="AdminHome" asp-action="Dashboard">招募數據</a>
 
-                        <a class="nav-btn @(controller == "HrApplication" ? "active" : "")"
-                           asp-controller="HrApplication" asp-action="Index">應徵管理</a>
+                        <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
+                           asp-controller="AdminApplication" asp-action="Index">應徵管理</a>
 
-                        <a class="nav-btn @(controller == "HrFAQ" && action == "Report" ? "active" : "")"
-                           asp-controller="HrFAQ" asp-action="Report">Q&A回報</a>
+                        @* 主管：只有 Report *@
+                        <a class="nav-btn @(controller == "AdminFAQ" && action == "Report" ? "active" : "")"
+                           asp-controller="AdminFAQ" asp-action="Report">Q&A回報</a>
                     }
 
                     @* ==============================
@@ -83,11 +94,11 @@
                        ============================== *@
                     else if (isDirector)
                     {
-                        <a class="nav-btn @(controller == "Home" && action == "Dashboard" ? "active" : "")"
-                           asp-controller="Home" asp-action="Dashboard">招募數據</a>
+                        <a class="nav-btn @(controller == "AdminHome" && action == "Dashboard" ? "active" : "")"
+                           asp-controller="AdminHome" asp-action="Dashboard">招募數據</a>
 
-                        <a class="nav-btn @(controller == "HrApplication" ? "active" : "")"
-                           asp-controller="HrApplication" asp-action="Index">應徵管理</a>
+                        <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
+                           asp-controller="AdminApplication" asp-action="Index">應徵管理</a>
                     }
 
                     @* ==============================
@@ -152,19 +163,19 @@
 
                         <div class="dropdown-menu" id="dropdown-menu">
 
-                            @* 人資 / 部門主管 / 部門最高管理員：個人資料 + 登出 *@
-                            @if (isHr || isManager || isDirector)
-                            {
-                                <a asp-controller="Member" asp-action="Profile"
-                                   class="dropdown-item">個人資料</a>
-                                <a asp-controller="Login" asp-action="Logout"
-                                   class="dropdown-item logout">登出</a>
-                            }
+                            @* 人資 / 主管 / 最高管理員：個人資料 + 登出 *@
+                           @if (isHr || isManager || isDirector)
+                           {
+                              <a asp-controller="Employee" asp-action="Profile"
+                                 class="dropdown-item">個人資料</a>
+                              <a asp-controller="Login" asp-action="Logout"
+                                 class="dropdown-item logout">登出</a>
+                           }
                             @* 求職者：完整個人選單 *@
                             else
                             {
                                 <a asp-controller="Member" asp-action="Profile"
-                                   class="dropdown-item">基本資料</a>
+                                   class="dropdown-item">個人資料</a>
                                 <a asp-controller="Member" asp-action="Resume"
                                    class="dropdown-item">我的履歷</a>
                                 <a asp-controller="Member" asp-action="Application"
