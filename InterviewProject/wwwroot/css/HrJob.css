@@ -253,7 +253,7 @@
     font-weight: 700;
     color: var(--primary);
     padding-bottom: 8px;
-    border-bottom: 2px solid var(--primary);
+    border-bottom: 2px solid var(--primary-light);
     margin-bottom: 6px;
 }
 .form-group { display: flex; flex-direction: column; gap: 8px; }

@@ -1,26 +1,25 @@
 ﻿@{ 
     var controller = ViewContext.RouteData.Values["controller"]?.ToString(); 
-    var action = ViewContext.RouteData.Values["action"]?.ToString();
+    var action     = ViewContext.RouteData.Values["action"]?.ToString();
     
-    var memberId = Context.Session.GetInt32("MemberId");
+    var memberId   = Context.Session.GetInt32("MemberId");
     var memberName = Context.Session.GetString("MemberName");
-    var memberRole = Context.Session.GetString("MemberRole")?.ToLower(); // 💡 轉小寫防呆
+    var memberRole = Context.Session.GetString("MemberRole")?.ToLower();
     
-    var isLoggedIn = memberId.HasValue;
-    
-    // 💡 關鍵修正：只要 Session 裡面的角色是 hr 或 manager，就代表是員工！
-    var isEmployee = memberRole == "hr" || memberRole == "manager" || memberRole == "employee";
-    
-    // 動態標籤顯示
-    var roleLabel = "求職者";
-    if (isEmployee)
-    {
-        roleLabel = memberRole == "manager" ? "主管" : "人資";
-    }
+    var isLoggedIn  = memberId.HasValue;
+    var isHr        = memberRole == "hr";
+    var isManager   = memberRole == "manager";
+    var isDirector  = memberRole == "director";  // 💡 新增：部門最高管理員
+    var isApplicant = isLoggedIn && !isHr && !isManager && !isDirector;
+
+    var roleLabel = isDirector ? "最高主管"
+                  : isManager  ? "主管"
+                  : isHr       ? "人資"
+                  : "求職者";
 }
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -39,23 +38,79 @@
                 </a>
 
                 <div class="nav-links">
-                    @if (isEmployee)
+
+                    @* ==============================
+                       人資：招募數據 / 職缺管理 / 應徵管理 / 公告管理 / 求職Q&A後台 / Q&A回報
+                       ============================== *@
+                    @if (isHr)
+                    {
+                        <a class="nav-btn @(controller == "Home" && action == "Dashboard" ? "active" : "")"
+                           asp-controller="Home" asp-action="Dashboard">招募數據</a>
+
+                        <a class="nav-btn @(controller == "HrJob" ? "active" : "")"
+                           asp-controller="HrJob" asp-action="Index">職缺管理</a>
+
+                        <a class="nav-btn @(controller == "HrApplication" ? "active" : "")"
+                           asp-controller="HrApplication" asp-action="Index">應徵管理</a>
+
+                        <a class="nav-btn @(controller == "Announcement" ? "active" : "")"
+                           asp-controller="Announcement" asp-action="Index">公告管理</a>
+
+                        <a class="nav-btn @(controller == "HrFAQ" && action != "Report" ? "active" : "")"
+                           asp-controller="HrFAQ" asp-action="Index">求職Q&A</a>
+
+                        <a class="nav-btn @(controller == "HrFAQ" && action == "Report" ? "active" : "")"
+                           asp-controller="HrFAQ" asp-action="Report">Q&A回報</a>
+                    }
+
+                    @* ==============================
+                       部門主管：招募數據 / 應徵管理 / Q&A回報（限本部門）
+                       ============================== *@
+                    else if (isManager)
+                    {
+                        <a class="nav-btn @(controller == "Home" && action == "Dashboard" ? "active" : "")"
+                           asp-controller="Home" asp-action="Dashboard">招募數據</a>
+
+                        <a class="nav-btn @(controller == "HrApplication" ? "active" : "")"
+                           asp-controller="HrApplication" asp-action="Index">應徵管理</a>
+
+                        <a class="nav-btn @(controller == "HrFAQ" && action == "Report" ? "active" : "")"
+                           asp-controller="HrFAQ" asp-action="Report">Q&A回報</a>
+                    }
+
+                    @* ==============================
+                       部門最高管理員：招募數據 / 應徵管理（含錄取決定權）
+                       ============================== *@
+                    else if (isDirector)
+                    {
+                        <a class="nav-btn @(controller == "Home" && action == "Dashboard" ? "active" : "")"
+                           asp-controller="Home" asp-action="Dashboard">招募數據</a>
+
+                        <a class="nav-btn @(controller == "HrApplication" ? "active" : "")"
+                           asp-controller="HrApplication" asp-action="Index">應徵管理</a>
+                    }
+
+                    @* ==============================
+                       求職者（已登入）：首頁 / 職缺搜尋 / 公司介紹 / 求職Q&A前台
+                       ============================== *@
+                    else if (isApplicant)
                     {
                         <a class="nav-btn @(controller == "Home" && action == "Index" ? "active" : "")"
                            asp-controller="Home" asp-action="Index">首頁</a>
 
-                        <a class="nav-btn @(controller == "HrJob" ? "active" : "")"
-                            asp-controller="HrJob" asp-action="Index">職缺管理</a>
+                        <a class="nav-btn @(controller == "Job" && action == "Job_search" ? "active" : "")"
+                           asp-controller="Job" asp-action="Job_search">職缺搜尋</a>
 
-                        <a class="nav-btn @(controller == "HrApplication" ? "active" : "")"
-                            asp-controller="HrApplication" asp-action="Index">應徵管理</a>
+                        <a class="nav-btn @(controller == "Introduction" ? "active" : "")"
+                           asp-controller="Introduction" asp-action="Index">公司介紹</a>
 
-                        <a class="nav-btn @(controller == "Announcement" ? "active" : "")"
-                            asp-controller="Announcement" asp-action="Index">公告管理</a>
-
-                        <a class="nav-btn @(controller == "HrFAQ" ? "active" : "")"
-                            asp-controller="HrFAQ" asp-action="Index">求職Q&A</a>
+                        <a class="nav-btn @(controller == "FAQ" ? "active" : "")"
+                           asp-controller="FAQ" asp-action="Index">求職Q&A</a>
                     }
+
+                    @* ==============================
+                       訪客（未登入）：首頁 / 職缺搜尋 / 公司介紹 / 求職Q&A前台
+                       ============================== *@
                     else
                     {
                         <a class="nav-btn @(controller == "Home" && action == "Index" ? "active" : "")"
@@ -64,14 +119,18 @@
                         <a class="nav-btn @(controller == "Job" && action == "Job_search" ? "active" : "")"
                            asp-controller="Job" asp-action="Job_search">職缺搜尋</a>
 
-                        <a class="nav-btn @(controller == "Introduction" && action == "Index" ? "active" : "")"
+                        <a class="nav-btn @(controller == "Introduction" ? "active" : "")"
                            asp-controller="Introduction" asp-action="Index">公司介紹</a>
 
-                        <a class="nav-btn @(controller == "FAQ" && action == "Index" ? "active" : "")"
+                        <a class="nav-btn @(controller == "FAQ" ? "active" : "")"
                            asp-controller="FAQ" asp-action="Index">求職Q&A</a>
                     }
+
                 </div>
 
+                @* ==============================
+                   右側：登入狀態區塊
+                   ============================== *@
                 @if (!isLoggedIn)
                 {
                     <a href="/Login" class="nav-user"><span>登入</span></a>
@@ -86,23 +145,36 @@
                         <div class="nav-avatar" onclick="toggleDropdown()">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
                                 <circle cx="12" cy="8" r="4" fill="#fff" />
-                                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none" />
+                                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"
+                                      stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none" />
                             </svg>
                         </div>
+
                         <div class="dropdown-menu" id="dropdown-menu">
-                            @if (isEmployee)
+
+                            @* 人資 / 部門主管 / 部門最高管理員：個人資料 + 登出 *@
+                            @if (isHr || isManager || isDirector)
                             {
-                                <a asp-controller="Member" asp-action="Profile" class="dropdown-item">個人資料</a>
-                                <a asp-controller="Login" asp-action="Logout" class="dropdown-item logout">登出</a>
+                                <a asp-controller="Member" asp-action="Profile"
+                                   class="dropdown-item">個人資料</a>
+                                <a asp-controller="Login" asp-action="Logout"
+                                   class="dropdown-item logout">登出</a>
                             }
+                            @* 求職者：完整個人選單 *@
                             else
                             {
-                                <a asp-controller="Member" asp-action="Profile" class="dropdown-item">基本資料</a>
-                                <a asp-controller="Member" asp-action="Resume" class="dropdown-item">我的履歷</a>
-                                <a asp-controller="Member" asp-action="Application" class="dropdown-item">應徵管理</a>
-                                <a asp-controller="Member" asp-action="Favorites" class="dropdown-item">我的收藏</a>
-                                <a asp-controller="Login" asp-action="Logout" class="dropdown-item logout">登出</a>
+                                <a asp-controller="Member" asp-action="Profile"
+                                   class="dropdown-item">基本資料</a>
+                                <a asp-controller="Member" asp-action="Resume"
+                                   class="dropdown-item">我的履歷</a>
+                                <a asp-controller="Member" asp-action="Application"
+                                   class="dropdown-item">應徵管理</a>
+                                <a asp-controller="Member" asp-action="Favorites"
+                                   class="dropdown-item">我的收藏</a>
+                                <a asp-controller="Login" asp-action="Logout"
+                                   class="dropdown-item logout">登出</a>
                             }
+
                         </div>
                     </div>
                 }
