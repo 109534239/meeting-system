@@ -453,7 +453,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-    <script>
+    @* <script>
         // 供「已投過」按鈕使用的函式
         function showPendingAlert() {
             Swal.fire({
@@ -477,6 +477,32 @@
                     });
                     </text>
         }
+    </script> *@  
+
+    <script>
+        // 供「已投過」按鈕使用的函式
+        function showPendingAlert() {
+            Swal.fire({
+                title: '履歷待審核中',
+                text: '您已投遞過此職缺，請靜候佳音。',
+                icon: 'info',
+                confirmButtonColor: '#3085d6',
+                confirmButtonText: '確定'
+            });
+        }
     </script>
+
+    // 處理從 SaveResume 跳轉回來後的成功通知
+    @if (TempData["ShowSuccessAlert"] != null)
+    {
+        <script>
+            Swal.fire({
+                title: '履歷已完成！',
+                text: '您的履歷已成功送出，目前待審核中。',
+                icon: 'success',
+                confirmButtonText: '確定'
+            });
+        </script>
+    }
 
 }

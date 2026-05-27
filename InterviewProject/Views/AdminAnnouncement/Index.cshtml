@@ -1,3 +1,5 @@
+@model IEnumerable<InterviewProject.Models.Announcement>
+
 @{
     ViewData["Title"] = "公告管理";
 }
@@ -14,3 +16,79 @@
         <p>Announcement Management</p>
     </div>
 </div>
+
+<div class="announce-manage-wrap">
+
+    @* 成功訊息 *@
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert-success">@TempData["Success"]</div>
+    }
+
+    @* 新增按鈕 *@
+    <div class="announce-toolbar">
+        <a asp-controller="AdminAnnouncement" asp-action="Create" class="btn-add">
+            ＋ 新增公告
+        </a>
+    </div>
+
+    @* 公告列表 *@
+    <div class="announce-table">
+        <div class="announce-table-head">
+            <div>類別</div>
+            <div>標題</div>
+            <div>日期</div>
+            <div>狀態</div>
+            <div>操作</div>
+        </div>
+
+        @if (Model != null && Model.Any())
+        {
+            foreach (var item in Model)
+            {
+                <div class="announce-row">
+                    <div>
+                        <span class="badge-category badge-@item.Category">@item.Category</span>
+                    </div>
+                    <div class="announce-row-title">@item.Title</div>
+                    <div>@item.Date.ToString("yyyy-MM-dd")</div>
+                    <div>
+                        <button class="btn-toggle @(item.IsActive ? "active" : "inactive")"
+                                onclick="toggleActive(@item.Id, this)">
+                            @(item.IsActive ? "顯示中" : "已停用")
+                        </button>
+                    </div>
+                    <div class="announce-actions">
+                        <a asp-controller="AdminAnnouncement"
+                           asp-action="Edit"
+                           asp-route-id="@item.Id"
+                           class="btn-edit">編輯</a>
+
+                        <form asp-controller="AdminAnnouncement"
+                              asp-action="Delete"
+                              asp-route-id="@item.Id"
+                              method="post"
+                              onsubmit="return confirm('確定刪除此公告？')">
+                            <button type="submit" class="btn-delete">刪除</button>
+                        </form>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="announce-empty">目前沒有任何公告</div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    async function toggleActive(id, btn) {
+        const res  = await fetch(`/AdminAnnouncement/ToggleActive/${id}`, { method: 'POST' });
+        const data = await res.json();
+        btn.textContent = data.isActive ? '顯示中' : '已停用';
+        btn.className   = 'btn-toggle ' + (data.isActive ? 'active' : 'inactive');
+    }
+</script>
+}

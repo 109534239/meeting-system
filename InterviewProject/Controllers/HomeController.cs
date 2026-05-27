@@ -18,17 +18,24 @@ namespace InterviewProject.Controllers
             _db = db;
         }
 
-        // 🌟 核心修正：將 Index 改為 async Task，並從資料庫撈出前 4 筆最新職缺送給 View
         public async Task<IActionResult> Index()
         {
-            // 🔍 撈取資料庫中開放中 (IsActive == true) 並且依時間倒序排列的前 4 筆職缺
+            // 最新職缺
             var latestJobs = await _db.Jobs
                 .Where(j => j.IsActive)
                 .OrderByDescending(j => j.CreatedAt)
                 .Take(4)
                 .ToListAsync();
 
-            // 🎯 關鍵：必須把最新職缺變數丟進 View() 括號裡，前端的 @model 才能接收到資料！
+            // 💡 撈取啟用中的公告
+            var announcements = await _db.Announcements
+                .Where(a => a.IsActive)
+                .OrderByDescending(a => a.Date)
+                .Take(5)
+                .ToListAsync();
+
+            ViewBag.Announcements = announcements;
+
             return View(latestJobs);
         }
 

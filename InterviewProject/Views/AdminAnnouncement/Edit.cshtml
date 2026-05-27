@@ -1,0 +1,67 @@
+@model InterviewProject.Models.Announcement
+
+@{
+    ViewData["Title"] = "編輯公告";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/AdminAnnouncement.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>編輯公告</h1>
+        <p>Edit Announcement</p>
+    </div>
+</div>
+
+<div class="announce-form-wrap">
+    <form asp-controller="AdminAnnouncement" asp-action="Edit"
+          asp-route-id="@Model.Id" method="post">
+        <div class="form-card">
+
+            <div class="field-item">
+                <label class="field-label">標題</label>
+                <input class="field-input" type="text" name="title"
+                       value="@Model.Title" required />
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">類別</label>
+                <select class="field-input" name="category">
+                    <option value="最新"  selected="@(Model.Category == "最新")">最新</option>
+                    <option value="公告"  selected="@(Model.Category == "公告")">公告</option>
+                    <option value="活動"  selected="@(Model.Category == "活動")">活動</option>
+                </select>
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">日期</label>
+                <input class="field-input" type="date" name="date"
+                       value="@Model.Date.ToString("yyyy-MM-dd")" required />
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">是否顯示</label>
+                <select class="field-input" name="isActive">
+                    <option value="true"  selected="@(Model.IsActive)">顯示</option>
+                    <option value="false" selected="@(!Model.IsActive)">停用</option>
+                </select>
+            </div>
+
+            <div class="field-item field-item--full">
+                <label class="field-label">內容</label>
+                <textarea class="field-input field-textarea" name="content"
+                          rows="5">@Model.Content</textarea>
+            </div>
+
+            <div class="form-actions">
+                <a asp-controller="AdminAnnouncement" asp-action="Index" class="btn-cancel">取消</a>
+                <button type="submit" class="btn-save">儲存變更</button>
+            </div>
+
+        </div>
+    </form>
+</div>

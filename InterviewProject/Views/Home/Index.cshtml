@@ -25,26 +25,23 @@
             <div class="section-label">最新公告</div>
             <div class="announce-card">
                 <ul class="announce-list">
-                    <li class="announce-item">
-                        <span class="announce-date">2026-05-01</span>
-                        <span class="announce-badge">最新</span>
-                        <span class="announce-title">2026 校園徵才活動開始報名，歡迎應屆畢業生踴躍參加</span>
-                    </li>
-                    <li class="announce-item">
-                        <span class="announce-date">2026-04-20</span>
-                        <span class="announce-badge">公告</span>
-                        <span class="announce-title">系統維護通知：5/5 凌晨 2:00–4:00 暫停服務</span>
-                    </li>
-                    <li class="announce-item">
-                        <span class="announce-date">2026-04-10</span>
-                        <span class="announce-badge">公告</span>
-                        <span class="announce-title">面試流程更新說明，請應徵者務必詳閱</span>
-                    </li>
-                    <li class="announce-item">
-                        <span class="announce-date">2026-03-28</span>
-                        <span class="announce-badge">活動</span>
-                        <span class="announce-title">2026 年度職涯講座報名連結開放，名額有限請盡速報名</span>
-                    </li>
+                    @if (ViewBag.Announcements != null && ((IEnumerable<InterviewProject.Models.Announcement>)ViewBag.Announcements).Any())
+                    {
+                        foreach (var a in (IEnumerable<InterviewProject.Models.Announcement>)ViewBag.Announcements)
+                        {
+                            <li class="announce-item">
+                                <span class="announce-date">@a.Date.ToString("yyyy-MM-dd")</span>
+                                <span class="announce-badge">@a.Category</span>
+                                <span class="announce-title">@a.Title</span>
+                            </li>
+                        }
+                    }
+                    else
+                    {
+                        <li class="announce-item">
+                            <span class="announce-title" style="color:#aaa;">目前沒有公告</span>
+                        </li>
+                    }
                 </ul>
             </div>
         </section>
