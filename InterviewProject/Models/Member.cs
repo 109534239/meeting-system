@@ -11,11 +11,15 @@ namespace InterviewProject.Models
         public string Email { get; set; } = "";
         public string Phone { get; set; } = "";
         public string PasswordHash { get; set; } = "";
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public string Gender { get; set; } = "";
-        public DateOnly Birthday { get; set; } 
+
+        // 🎯 成功新增：身分證字號（順序在性別後面，且為必填）
+        public string IdNumber { get; set; } = "";
+
+        public DateOnly Birthday { get; set; }
         public string Address { get; set; } = "";
 
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }

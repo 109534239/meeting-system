@@ -15,9 +15,8 @@
         </div>
 
         <form id="register-form" method="post"
-            asp-controller="Login" asp-action="Register"
-            onsubmit="return validateForm()">
-
+              asp-controller="Login" asp-action="Register"
+              onsubmit="return validateForm(event)">
             @Html.AntiForgeryToken()
 
             @if (TempData["RegisterError"] != null)
@@ -68,6 +67,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label>身分證字號 <span class="required">*</span></label>
+                    <input type="text" id="idNumber" name="idNumber" class="form-control" placeholder="請輸入身分證字號" required />
+                </div>
+
+                <div class="form-group">
                     <label>生日 <span class="required">*</span></label>
                     <input type="date" id="birthday" name="birthday" class="form-control" required />
                 </div>
@@ -93,47 +97,108 @@
 </div>
 
 @section Scripts {
-  <script>
-    function nextStep() {
-        const email = document.getElementById('email').value.trim();
-        const phone = document.getElementById('phone').value.trim();
-        const password = document.getElementById('password').value;
-        const confirm = document.getElementById('confirm-password').value;
+    <script>
+        // 🎯 修正：改成 async 方法，按下下一步時立刻異步檢查第一步的資料
+        async function nextStep() {
+            const email = document.getElementById('email').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const password = document.getElementById('password').value;
+            const confirm = document.getElementById('confirm-password').value;
 
-        // 🎯 確保欄位不是空白
-        if (!email || !phone || !password || !confirm) {
-            alert('請完整填寫第一步的所有必填欄位');
-            return;
+            if (!email || !phone || !password || !confirm) {
+                alert('請完整填寫第一步的所有必填欄位');
+                return;
+            }
+
+            if (password !== confirm) {
+                alert('密碼與確認密碼不一致，請重新輸入');
+                return;
+            }
+
+            // 🎯 發送 AJAX 檢查第一步的 Mail 與電話是否有人用過
+            try {
+                const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+                const response = await fetch('/Login/CheckDuplicate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'RequestVerificationToken': token
+                    },
+                    body: `email=${encodeURIComponent(email)}&phone=${encodeURIComponent(phone)}`
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.isDuplicate) {
+                        alert(result.message); // 跳出「此電子郵件已被註冊！」或手機重複的提示
+                        return; // 卡在第一步，不往下切換
+                    }
+                } else {
+                    alert('系統驗證連線異常，請稍後再試');
+                    return;
+                }
+            } catch (err) {
+                console.error(err);
+                alert('驗證時發生未知錯誤');
+                return;
+            }
+
+            document.getElementById('step-1').classList.remove('active');
+            document.getElementById('step-2').classList.add('active');
+            document.getElementById('step-indicator').innerText = "第二步：個人詳細資料";
         }
 
-        if (password !== confirm) {
-            alert('密碼與確認密碼不一致，請重新輸入');
-            return;
+        function prevStep() {
+            document.getElementById('step-2').classList.remove('active');
+            document.getElementById('step-1').classList.add('active');
+            document.getElementById('step-indicator').innerText = "第一步：帳號密碼設定";
         }
 
-        document.getElementById('step-1').classList.remove('active');
-        document.getElementById('step-2').classList.add('active');
-        document.getElementById('step-indicator').innerText = "第二步：個人詳細資料";
-    }
+        // 🎯 修正：加入 async 與 event 阻擋控制。按下送出時，異步檢查第二步的身分證字號
+        async function validateForm(event) {
+            event.preventDefault(); // 先阻止表單直接送出刷新網頁
 
-    function prevStep() {
-        document.getElementById('step-2').classList.remove('active');
-        document.getElementById('step-1').classList.add('active');
-        document.getElementById('step-indicator').innerText = "第一步：帳號密碼設定";
-    }
+            const name = document.getElementById('name').value.trim();
+            const gender = document.getElementById('gender').value;
+            const idNumber = document.getElementById('idNumber').value.trim();
+            const birthday = document.getElementById('birthday').value;
+            const address = document.getElementById('address').value.trim();
 
-    function validateForm() {
-        const name = document.getElementById('name').value.trim();
-        const gender = document.getElementById('gender').value;
-        const birthday = document.getElementById('birthday').value;
-        const address = document.getElementById('address').value.trim();
+            if (!name || !gender || !idNumber || !birthday || !address) {
+                alert('請完整填寫個人詳細資料欄位');
+                return false;
+            }
 
-        // 🎯 嚴格檢查所有欄位是否有填寫
-        if (!name || !gender || !birthday || !address) {
-            alert('請完整填寫個人詳細資料欄位');
-            return false;
+            // 🎯 發送 AJAX 檢查第二步的身分證字號是否被用過
+            try {
+                const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+                const response = await fetch('/Login/CheckDuplicate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'RequestVerificationToken': token
+                    },
+                    body: `idNumber=${encodeURIComponent(idNumber)}`
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.isDuplicate) {
+                        alert(result.message); // 跳出「此身分證字號已被註冊！」
+                        return false;
+                    }
+                } else {
+                    alert('系統驗證連線異常，請稍後再試');
+                    return false;
+                }
+            } catch (err) {
+                console.error(err);
+                alert('驗證身分證時發生未知錯誤');
+                return false;
+            }
+
+            // 兩步驗證全部大獲全勝，手動提交表單
+            document.getElementById('register-form').submit();
         }
-        return true;
-    }
-  </script>
+    </script>
 }
