@@ -10,10 +10,7 @@
         {
         }
 
-        public DbSet<User> Users { get; set; }
         public DbSet<Room> Rooms { get; set; }
-        public DbSet<RoomMember> RoomMembers { get; set; }
-        public DbSet<Attendance> Attendances { get; set; }
         public DbSet<Member> Members { get; set; }
         public DbSet<Job> Jobs { get; set; }
         public DbSet<Resume> Resume { get; set; }
@@ -22,5 +19,7 @@
         public DbSet<VerificationCode> VerificationCodes { get; set; }
         public DbSet<Employee> Employees { get; set; }
         public DbSet<Announcement> Announcements { get; set; }
+
+        public DbSet<InterviewSchedule> InterviewSchedule { get; set; }
     }
 }
