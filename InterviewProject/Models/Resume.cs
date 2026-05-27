@@ -12,10 +12,6 @@ namespace InterviewProject.Models
 
         [Required]
         public int UserId { get; set; }
-        public string? IdNumber { get; set; }
-        public DateTime? Birthday { get; set; }
-        public string? ZipCode { get; set; }
-        public string? Address { get; set; }
         public string? MaritalStatus { get; set; }
         public string? MilitaryService { get; set; }
         public string? Phone1 { get; set; }
@@ -29,7 +25,7 @@ namespace InterviewProject.Models
         // 🎯 貼心修正：將型態由 string? 改為 DateTime?，才能完美接收前端 input type="month" 的日期
         public DateTime? EduDate { get; set; }
 
-        public int WorkExperienceYears { get; set; }
+        public int? WorkExperienceYears { get; set; }
         public string? CompanyName { get; set; }
         public string? JobTitle { get; set; }
         public string? JobDescription { get; set; }

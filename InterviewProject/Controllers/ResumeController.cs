@@ -37,6 +37,9 @@ namespace InterviewProject.Controllers
             // 2. 將姓名與性別存入 ViewBag 供 View 顯示（因為 Resume 表不存這些）
             ViewBag.UserName = member.Name;
             ViewBag.UserGender = member.Gender;
+            ViewBag.UserIdNumber = member.IdNumber;
+            ViewBag.UserBirthday = member.Birthday;
+            ViewBag.UserAddress = member.Address;
             ViewBag.UserEmail = member.Email;
 
             // 3. 建立新的 Resume 物件，僅賦值資料庫有的欄位
@@ -127,8 +130,12 @@ namespace InterviewProject.Controllers
                     {
                         UserId = userId,
                         Position = jobId,
+                        // 🎯 核心修正：預設值為 -1，View 將判斷此值不勾選 Radio
                         WorkExperienceYears = -1,
-                        Job = targetJob
+                        Job = targetJob,
+                        CompanyName = null,     // 確保建立時為空
+                        JobTitle = null,
+                        JobDescription = null
                     };
                 }
             }
@@ -137,6 +144,9 @@ namespace InterviewProject.Controllers
             var member = await _db.Members.FindAsync(userId);
             ViewBag.UserName = member?.Name;
             ViewBag.UserGender = member?.Gender;
+            ViewBag.UserIdNumber = member?.IdNumber;
+            ViewBag.UserBirthday = member?.Birthday;
+            ViewBag.UserAddress = member?.Address;
             ViewBag.UserEmail = member?.Email;
 
             return View(model);
@@ -202,7 +212,12 @@ namespace InterviewProject.Controllers
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
+            string realIdNumber = member.IdNumber ?? "";
+            // 格式化為 yyyy/MM/dd，若為空則回傳空字串
+            string realBirthday = member.Birthday.ToString("yyyy/MM/dd");
+          
             string realEmail = member.Email ?? "";
+            string realAddress = member.Address ?? "";
 
             string templatePath = Path.Combine(_env.WebRootPath, "file", "履歷表.docx");
             if (!System.IO.File.Exists(templatePath))
@@ -230,10 +245,9 @@ namespace InterviewProject.Controllers
                 ["Name"] = realName,
                 ["G_M"] = (realGender == "男") ? ck : un,
                 ["G_F"] = (realGender == "女") ? ck : un,
-                ["IdNumber"] = model.IdNumber ?? "",
-                ["Birthday"] = model.Birthday?.ToString("yyyy/MM/dd") ?? "",
-                ["ZipCode"] = model.ZipCode ?? "",
-                ["Address"] = model.Address ?? "",
+                ["IdNumber"] = realIdNumber,
+                ["Birthday"] = realBirthday,
+                ["Address"] = realAddress,
                 ["M_M"] = (model.MaritalStatus == "已婚") ? ck : un,
                 ["M_S"] = (model.MaritalStatus == "單身") ? ck : un,
                 ["MS_1"] = (model.MilitaryService == "免役") ? ck : un,
@@ -267,12 +281,14 @@ namespace InterviewProject.Controllers
                 // 🎯 核心修正：EduDate 已經演化為 DateTime?，改用標準時間格式化輸出，移除了不相容的 ?? "" 串接
                 ["EduDate"] = model.EduDate?.ToString("yyyy/MM") ?? "",
 
-                // 如果年資 >= 1，WorkExp 顯示 ■，否則顯示 □
-                ["WorkExp"] = (model.WorkExperienceYears >= 1) ? "■" : "□",
-                ["NoWorkExp"] = (model.WorkExperienceYears < 1) ? "■" : "□",
+                // 🎯 修正 ExportToPdf 內的年資判定
+                // 如果年資 >= 0 且不為 -1，視為有填寫
+                ["WorkExp"] = (model.WorkExperienceYears >= 1) ? ck : un,
+                ["NoWorkExp"] = (model.WorkExperienceYears == 0) ? ck : un,
 
-                //工作經驗
-                ["WorkExperienceYears"] = model.WorkExperienceYears.ToString(),
+                // 顯示給使用者的數字
+                ["WorkExperienceYears"] = (model.WorkExperienceYears == -1) ? "0" : model.WorkExperienceYears.ToString(),
+
                 ["CompanyName"] = model.CompanyName ?? "",
                 ["JobTitle"] = model.JobTitle ?? "",
                 ["JobDescription"] = model.JobDescription ?? "",

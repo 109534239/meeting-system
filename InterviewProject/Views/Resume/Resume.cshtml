@@ -76,15 +76,17 @@
             </tr>
             <tr>
                 <td>身分證號碼</td>
-                <td><input asp-for="IdNumber" class="full-input" required /></td>
+                <td>
+                    <input class="full-input" value="@ViewBag.UserIdNumber" readonly />
+                </td>
                 <td>出生日期</td>
-                <td><input asp-for="Birthday" type="date" class="full-input" required /></td>
+                <td><input class="full-input" value="@ViewBag.UserBirthday" readonly /></td>
             </tr>
             <tr>
                 <td>聯絡地址</td>
                 <td colspan="4">
-                    郵遞區號 <input asp-for="ZipCode" class="input-inline" style="width:60px" required /><br />
-                    <input asp-for="Address" class="input-inline" style="width:70%" required />
+                    郵遞區號<br />
+                    <input class="full-input" value="@ViewBag.UserAddress" readonly />
                 </td>
             </tr>
             <tr>
@@ -158,33 +160,38 @@
             <tr>
                 <td class="label-bg">工作<br />經歷</td>
                 <td colspan="5">
-                    @* --- 無工作經歷 Radio (不預設勾選) --- *@
                     <div style="padding: 10px;">
                         <label>
+                            @* 🎯 只有當值明確為 0 才勾選 *@
                             <input type="radio" name="workExpType"
                                    checked="@(Model.WorkExperienceYears == 0)"
                                    onclick="setWorkExp(0)" /> 無工作經歷
                         </label>
 
                         <label style="margin-left: 20px;">
+                            @* 🎯 只有當值 > 0 才勾選 *@
                             <input type="radio" name="workExpType"
                                    checked="@(Model.WorkExperienceYears > 0)"
                                    onclick="setWorkExp(1)" /> 工作總年資：
+
+                            @* 🎯 顯示邏輯：如果是 -1 就顯示空字串，避免畫面出現 -1 *@
                             <input asp-for="WorkExperienceYears" id="workYearsInput"
                                    type="number" class="input-inline" style="width:50px"
+                                   value="@(Model.WorkExperienceYears == -1 ? "" : Model.WorkExperienceYears.ToString())"
                                    readonly="@(Model.WorkExperienceYears <= 0)" /> 年
                         </label>
                     </div>
                     <table style="width:100%; border-collapse:collapse; margin:-8px;">
                         <tr style="text-align:center; background:#eee;">
-                            <td style="border:1px solid black; width:25%;">公司名稱</td>
-                            <td style="border:1px solid black; width:25%;">工作職稱</td>
-                            <td style="border:1px solid black; width:25%;">工作說明</td>
+                            <td style="border:1px solid black; width:33%;">公司名稱</td>
+                            <td style="border:1px solid black; width:33%;">工作職稱</td>
+                            <td style="border:1px solid black; width:33%;">工作說明</td>
                         </tr>
                         <tr>
-                            <td style="border:1px solid black"><input asp-for="CompanyName" class="full-input" required /></td>
-                            <td style="border:1px solid black"><input asp-for="JobTitle" class="full-input" required /></td>
-                            <td style="border:1px solid black"><input asp-for="JobDescription" class="full-input" required /></td>
+                            @* 🎯 移除 required，由 JavaScript 根據年資判斷是否必填 *@
+                            <td style="border:1px solid black"><input asp-for="CompanyName" id="CompanyName" class="full-input" /></td>
+                            <td style="border:1px solid black"><input asp-for="JobTitle" id="JobTitle" class="full-input" /></td>
+                            <td style="border:1px solid black"><input asp-for="JobDescription" id="JobDescription" class="full-input" /></td>
                         </tr>
                     </table>
                 </td>
@@ -576,15 +583,44 @@
     });
 
 
-       function setWorkExp(type) {
+             function setWorkExp(val) {
         const input = document.getElementById('workYearsInput');
-        if (type === 0) {
+        const company = document.getElementById('CompanyName');
+        const title = document.getElementById('JobTitle');
+        const desc = document.getElementById('JobDescription');
+
+        if (val === 0) {
             input.value = 0;
             input.readOnly = true;
+            // 選擇無工作經驗時，自動清空內容
+            company.value = "";
+            title.value = "";
+            desc.value = "";
         } else {
+            // 點擊「有年資」時，若原為 -1 或 0，預設給 1 年
+            if(input.value <= 0) input.value = 1;
             input.readOnly = false;
-            if (input.value <= 0) input.value = 1;
-            input.focus();
         }
     }
+
+    // 在表單送出前進行驗證
+    document.querySelector('form').onsubmit = function() {
+        const years = parseInt(document.getElementById('workYearsInput').value);
+
+        // 檢查是否有選 Radio
+        if (isNaN(years)) {
+            Swal.fire('提示', '請選擇是否有工作經歷', 'warning');
+            return false;
+        }
+
+        // 如果年資 > 0，強制要求填寫經歷
+        if (years > 0) {
+            if (!document.getElementById('CompanyName').value.trim() ||
+                !document.getElementById('JobTitle').value.trim()) {
+                Swal.fire('提示', '您已填寫年資，請完整填寫公司名稱與職稱', 'warning');
+                return false;
+            }
+        }
+        return true;
+    };
 </script>

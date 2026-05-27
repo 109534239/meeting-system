@@ -377,55 +377,55 @@
         // 應徵 Modal
         // ============================
                // 全域變數或透過參數傳遞
-        function openModal(currentJobId) {
-            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-            // 💡 同樣改用 Session 判斷，不再用 localStorage
-            if (!IS_LOGGED_IN) {
+                async function openModal(currentJobId) {
+            // 1. 登入檢查
+            if (typeof IS_LOGGED_IN === 'undefined' || !IS_LOGGED_IN) {
                 if (confirm('需要登入才能應徵職缺\n\n是否前往登入頁面？')) {
                     window.location.href = '/Login';
                 }
                 return;
             }
 
-            // 1. 抓取當前畫面的職位名稱顯示在 Modal
-            const jobTitle = document.getElementById('job-title').textContent.trim();
-            document.getElementById('modal-job-title').textContent = jobTitle;
+            // 🌟 先抓取下拉選單資料，等拿到資料後再繼續往下走
+            try {
+                const response = await fetch('/Job/GetSavedPositions');
+                const data = await response.json();
 
-            // A. 設定「新建履歷」按鈕 (改傳 jobId)
-            const newUrl = `/Resume/Resume?jobId=${currentJobId}&mode=new`;
-            document.getElementById('btn-new-resume').href = newUrl;
-
-            // B. 設定「套用現有」按鈕的行為 (傳入 currentJobId)
-            const applyBtn = document.querySelector('#existing-resume-section button');
-            applyBtn.onclick = function() { goExistingResume(currentJobId); };
-
-                    // C. 抓取下拉選單資料
-        fetch('/Job/GetSavedPositions') // 確保路徑對應到 JobController
-            .then(res => res.json())
-            .then(data => {
                 const select = document.getElementById('select-existing-pos');
                 const section = document.getElementById('existing-resume-section');
+
                 select.innerHTML = '<option value="">-- 請選擇職位 --</option>';
 
                 if (data && data.length > 0) {
-                    section.style.display = 'block';
                     data.forEach(item => {
                         const opt = document.createElement('option');
-                        // 🎯 這裡要對應後端傳回的小寫欄位名 id 和 title
                         opt.value = item.id;
                         opt.textContent = item.title;
                         select.appendChild(opt);
                     });
+                    section.style.display = 'block'; // 有資料就顯示
                 } else {
-                    // 如果沒資料，也要隱藏區塊
-                    section.style.display = 'none';
+                    section.style.display = 'none'; // 沒資料就隱藏
                 }
-            });
+            } catch (error) {
+                console.error("抓取資料失敗:", error);
+            }
 
+            // 2. 設定 Modal 內容
+            const jobTitle = document.getElementById('job-title').textContent.trim();
+            document.getElementById('modal-job-title').textContent = jobTitle;
+
+            const newUrl = `/Resume/Resume?jobId=${currentJobId}&mode=new`;
+            document.getElementById('btn-new-resume').href = newUrl;
+
+            const applyBtn = document.querySelector('#existing-resume-section button');
+            applyBtn.onclick = function() { goExistingResume(currentJobId); };
+
+            // 3. 最後才開啟 Modal（這時候資料已經填好了，不會有跳動感）
             document.getElementById('apply-modal').classList.add('show');
         }
 
-                function goExistingResume(currentJobId) {
+        function goExistingResume(currentJobId) {
             const fromJobId = document.getElementById('select-existing-pos').value;
             if (!fromJobId) {
                 alert("請選擇一個現有職位！");
@@ -453,31 +453,6 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-    @* <script>
-        // 供「已投過」按鈕使用的函式
-        function showPendingAlert() {
-            Swal.fire({
-                title: '履歷待審核中',
-                text: '您已投遞過此職缺，請靜候佳音。',
-                icon: 'info',
-                confirmButtonColor: '#3085d6',
-                confirmButtonText: '確定'
-            });
-        }
-
-        // 處理從 SaveResume 跳轉回來後的成功通知
-        @if (TempData["ShowSuccessAlert"] != null)
-        {
-                    <text>
-                    Swal.fire({
-                        title: '履歷已完成！',
-                        text: '您的履歷已成功送出，目前待審核中。',
-                        icon: 'success',
-                        confirmButtonText: '確定'
-                    });
-                    </text>
-        }
-    </script> *@  
 
     <script>
         // 供「已投過」按鈕使用的函式
