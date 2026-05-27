@@ -2,6 +2,10 @@ using InterviewProject.Data;
 using InterviewProject.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
+using System;
+using System.Threading.Tasks;
+using System.Linq;
 
 namespace InterviewProject.Controllers
 {
@@ -34,24 +38,32 @@ namespace InterviewProject.Controllers
 
         // POST: 儲存基本資料（只允許修改姓名、性別、生日、地址）
         [HttpPost]
-        public async Task<IActionResult> ProfileSave(string name, string? gender,
-            DateOnly? birthday, string? address)
+        public async Task<IActionResult> ProfileSave(string name, string gender, DateOnly birthday, string address)
         {
+            // 🎯 1. 調整接收參數，移除 "?" 改為必填
             var id = HttpContext.Session.GetInt32("MemberId");
             if (id == null) return RedirectToAction("Index", "Login");
+
+            // 🎯 2. 後端嚴格驗證：確保參數絕非 Null 或是空字串
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(gender) || string.IsNullOrWhiteSpace(address))
+            {
+                TempData["SaveError"] = "所有欄位皆為必填，請勿留空。";
+                return RedirectToAction("Profile");
+            }
 
             var member = await _db.Members.FindAsync(id);
             if (member == null) return NotFound();
 
-            member.Name    = name;
-            member.Gender  = gender;
+            // 🎯 3. 正常賦值（由於型態安全，此處絕不會存入 null）
+            member.Name = name.Trim();
+            member.Gender = gender;
             member.Birthday = birthday;
-            member.Address = address;
+            member.Address = address.Trim();
 
             await _db.SaveChangesAsync();
 
             // 更新 Session 裡的姓名
-            HttpContext.Session.SetString("MemberName", name);
+            HttpContext.Session.SetString("MemberName", member.Name);
 
             TempData["SaveSuccess"] = "true";
             return RedirectToAction("Profile");
@@ -67,6 +79,13 @@ namespace InterviewProject.Controllers
 
             var member = await _db.Members.FindAsync(id);
             if (member == null) return NotFound();
+
+            // 後端密碼必填防護
+            if (string.IsNullOrEmpty(currentPassword) || string.IsNullOrEmpty(newPassword) || string.IsNullOrEmpty(confirmPassword))
+            {
+                TempData["PwError"] = "密碼欄位不可為空";
+                return RedirectToAction("Profile");
+            }
 
             if (member.PasswordHash != HashPassword(currentPassword))
             {
@@ -100,7 +119,7 @@ namespace InterviewProject.Controllers
             if (userId == 0) return RedirectToAction("Index", "Login");
 
             var resumeList = await _db.Resume
-                .Include(r => r.Job) // 🎯 這裡也要加
+                .Include(r => r.Job)
                 .Where(r => r.UserId == userId)
                 .OrderByDescending(r => r.ResumeTime)
                 .ToListAsync();
@@ -111,19 +130,15 @@ namespace InterviewProject.Controllers
         // 顯示單份履歷詳細內容 (第二層)
         public async Task<IActionResult> ResumeDetail(int id)
         {
-            // 1. 取得當前登入者 ID
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            // 2. 抓取這份履歷資料 
-            // 🎯 關鍵修正：必須加上 .Include(r => r.Job) 才能在 View 顯示 Job.Title
             var resume = await _db.Resume
                 .Include(r => r.Job)
                 .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
 
             if (resume == null) return NotFound();
 
-            // 3. 抓取 Member 基本資料 (為了讓 Resume.cshtml 顯示姓名、性別、Email)
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);
             if (member != null)
             {
@@ -132,10 +147,8 @@ namespace InterviewProject.Controllers
                 ViewBag.UserEmail = member.Email;
             }
 
-            // 4. 設定為唯讀模式標記
             ViewBag.IsReadOnly = true;
 
-            // 5. 回傳 ResumeController 下的 Resume 檢視頁面
             return View("~/Views/Resume/Resume.cshtml", resume);
         }
 
@@ -144,7 +157,6 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            // 🎯 關鍵：使用 Include 抓取關聯的 Job 資料
             var applications = await _db.Resume
                 .Include(r => r.Job)
                 .Where(r => r.UserId == userId)

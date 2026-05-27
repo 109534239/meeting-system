@@ -20,7 +20,6 @@
 <div class="profile-main">
     <div class="profile-wrap">
 
-        <!-- ── 左側頭像卡片 ── -->
         <div class="profile-sidebar">
             <div class="profile-avatar" id="avatar-preview">
                 <svg width="54" height="54" viewBox="0 0 24 24" fill="none">
@@ -41,10 +40,8 @@
             </label>
         </div>
 
-        <!-- ── 右側資料卡片 ── -->
         <div class="profile-content">
 
-            <!-- 個人資訊 -->
             <div class="profile-card">
                 <div class="card-header">
                     <h2>個人資訊</h2>
@@ -60,22 +57,22 @@
                     <div class="fields-grid">
 
                         <div class="field-item">
-                            <label class="field-label">姓名</label>
+                            <label class="field-label">姓名 <span class="required" style="color: red;">*</span></label>
                             <input class="field-input" name="name" type="text"
                                    value="@Model.Name" placeholder="請輸入姓名" required />
                         </div>
 
                         <div class="field-item">
-                            <label class="field-label">性別</label>
-                            <select class="field-input" name="gender">
+                            <label class="field-label">性別 <span class="required" style="color: red;">*</span></label>
+                            <select class="field-input" name="gender" required>
                                 @{
                                     if (string.IsNullOrEmpty(Model.Gender))
                                     {
-                                        <option value="" disabled selected>請選擇性別</option>
+                                        <option value="" disabled selected>-- 請選擇 --</option>
                                     }
                                     else
                                     {
-                                        <option value="" disabled>請選擇性別</option>
+                                        <option value="" disabled>-- 請選擇 --</option>
                                     }
                                     var genders = new[] { "男", "女", "不透露" };
                                     foreach (var g in genders)
@@ -94,29 +91,27 @@
                         </div>
 
                         <div class="field-item">
-                            <label class="field-label">生年月日</label>
+                            <label class="field-label">生年月日 <span class="required" style="color: red;">*</span></label>
                             <input class="field-input" name="birthday" type="date"
-                                   value="@Model.Birthday?.ToString("yyyy-MM-dd")" />
+                                   value="@Model.Birthday.ToString("yyyy-MM-dd")" required />
                         </div>
 
                         <div class="field-item">
                             <label class="field-label">手機號碼</label>
-                            <!-- 唯讀，不可修改 -->
                             <input class="field-input field-readonly" type="tel"
                                    value="@Model.Phone" readonly />
                         </div>
 
                         <div class="field-item field-item--full">
                             <label class="field-label">電子郵件</label>
-                            <!-- 唯讀，不可修改 -->
                             <input class="field-input field-readonly" type="email"
                                    value="@Model.Email" readonly />
                         </div>
 
                         <div class="field-item field-item--full">
-                            <label class="field-label">居住地址</label>
+                            <label class="field-label">居住地址 <span class="required" style="color: red;">*</span></label>
                             <input class="field-input" name="address" type="text"
-                                   value="@Model.Address" placeholder="請輸入地址" />
+                                   value="@Model.Address" placeholder="請輸入地址" required />
                         </div>
 
                     </div>
@@ -126,7 +121,6 @@
                 </form>
             </div>
 
-            <!-- 密碼修改 -->
             <div class="profile-card">
                 <div class="card-header">
                     <h2>修改密碼</h2>
@@ -146,9 +140,9 @@
                     <div class="fields-grid">
 
                         <div class="field-item field-item--full">
-                            <label class="field-label">目前密碼</label>
+                            <label class="field-label">目前密碼 <span class="required" style="color: red;">*</span></label>
                             <div class="input-password-wrap">
-                                <input class="field-input" name="currentPassword" type="password" placeholder="請輸入目前密碼" />
+                                <input class="field-input" name="currentPassword" type="password" placeholder="請輸入目前密碼" required />
                                 <button class="btn-eye" type="button" onclick="togglePw(this)">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
                                 </button>
@@ -156,9 +150,9 @@
                         </div>
 
                         <div class="field-item">
-                            <label class="field-label">新密碼</label>
+                            <label class="field-label">新密碼 <span class="required" style="color: red;">*</span></label>
                             <div class="input-password-wrap">
-                                <input class="field-input" name="newPassword" type="password" placeholder="請輸入新密碼" />
+                                <input class="field-input" name="newPassword" type="password" placeholder="請輸入新密碼" required />
                                 <button class="btn-eye" type="button" onclick="togglePw(this)">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
                                 </button>
@@ -166,9 +160,9 @@
                         </div>
 
                         <div class="field-item">
-                            <label class="field-label">確認新密碼</label>
+                            <label class="field-label">確認新密碼 <span class="required" style="color: red;">*</span></label>
                             <div class="input-password-wrap">
-                                <input class="field-input" name="confirmPassword" type="password" placeholder="請再次輸入新密碼" />
+                                <input class="field-input" name="confirmPassword" type="password" placeholder="請再次輸入新密碼" required />
                                 <button class="btn-eye" type="button" onclick="togglePw(this)">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
                                 </button>
