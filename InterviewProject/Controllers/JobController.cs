@@ -107,7 +107,7 @@ namespace InterviewProject.Controllers
             if (userId.HasValue)
             {
                 // 🎯 判斷 Resume 表中是否已有該 UserId 且 Position (JobId) 等於目前的 id
-                hasApplied = await _context.Resumes.AnyAsync(r => r.UserId == userId.Value && r.Position == id);
+                hasApplied = await _context.Resumes.AnyAsync(r => r.MembersId == userId.Value && r.JobsId == id);
             }
 
             // 3. 將狀態傳給 View
@@ -126,12 +126,12 @@ namespace InterviewProject.Controllers
             // 🎯 必須有 Include(r => r.Job)
             var savedPositions = await _context.Resumes
                 .Include(r => r.Job)
-                .Where(x => x.UserId == userId.Value)
+                .Where(x => x.MembersId == userId.Value)
                 .Select(x => new
                 {
-                    id = x.Position, // JobId
+                    id = x.JobsId, // JobId
                                      // 如果 Job 是 null，這裡會抓不到 Title
-                    title = x.Job != null ? x.Job.Title : "職位 ID: " + x.Position
+                    title = x.Job != null ? x.Job.Title : "職位 ID: " + x.JobsId
                 })
                 .Distinct()
                 .ToListAsync();

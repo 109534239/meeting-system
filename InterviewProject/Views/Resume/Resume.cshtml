@@ -46,19 +46,19 @@
             {
                 @Model.Job.Title
             }
-            @* 2. 如果沒關聯，顯示 Position 原始值 *@
+            @* 2. 如果沒關聯，顯示 JobsId 原始值 *@
             else
             {
-                @(Model.Position.ToString() ?? "未指定職缺")
+                @(Model.JobsId.ToString() ?? "未指定職缺")
             }
         </span>
     </div>
     <form method="post" asp-action="SaveResume">
-        <input type="hidden" asp-for="Position" />
-        <input type="hidden" asp-for="UserId" />
+        <input type="hidden" asp-for="JobsId" />
+        <input type="hidden" asp-for="MembersId" />
 
         @* 🎯 保持隱藏傳遞：這行會自動把 JobId 數字（如 1, 2）安全地送回後端 Controller *@
-        <input type="hidden" asp-for="Position" />
+        <input type="hidden" asp-for="JobsId" />
 
         <table class="main-table">
             <tr>
@@ -84,8 +84,7 @@
             </tr>
             <tr>
                 <td>聯絡地址</td>
-                <td colspan="4">
-                    郵遞區號<br />
+                <td colspan="3">
                     <input class="full-input" value="@ViewBag.UserAddress" readonly />
                 </td>
             </tr>
@@ -361,33 +360,45 @@
     // --- 頁面載入後，根據後端資料反勾選 Checkbox ---
     window.onload = function() {
         //1. 處理語文能力反填
-        const langData = "@Html.Raw(Model.LanguageSkills)";
-        if (langData) {
-            const items = langData.split(', ');
-            items.forEach(item => {
-                if (item === "不具外文能力") document.querySelector('.lang-node').checked = true;
+            // --- 修改後的語文能力反填邏輯 ---
+    const langData = `@Html.Raw(Model?.LanguageSkills ?? "")`; // 加上空值處理
+    if (langData && langData.trim() !== "") {
+        const items = langData.split(', ');
+        const knownLangs = ["英語", "日語", "台語", "客語"];
 
+        items.forEach(item => {
+            if (item === "不具外文能力") {
+                const node = document.querySelector('.lang-node');
+                if(node) node.checked = true;
+                return;
+            }
+
+            const name = item.split('(')[0];
+            const lvMatch = item.match(/\(([^)]+)\)/);
+            const lvValue = lvMatch ? lvMatch[1] : "";
+
+            if (knownLangs.includes(name)) {
                 document.querySelectorAll('.lang-row').forEach(row => {
-                    let label = row.querySelector('.lang-label').innerText;
-
-                    if (label === "其他") {
-                        const knownLangs = ["英語", "日語", "台語", "客語"];
-                        let isOther = !knownLangs.some(k => item.startsWith(k)) && item.includes('(');
-                        if (isOther) {
-                            let otherName = item.split('(')[0];
-                            document.getElementById('otherLangName').value = otherName;
-                            row.querySelectorAll('.lang-lv').forEach(lv => {
-                                if (item.includes(`(${lv.value})`)) lv.checked = true;
-                            });
-                        }
-                    } else if (item.startsWith(label)) {
-                        row.querySelectorAll('.lang-lv').forEach(lv => {
-                            if (item.includes(`(${lv.value})`)) lv.checked = true;
-                        });
+                    const labelElement = row.querySelector('.lang-label');
+                    if (labelElement && labelElement.innerText.includes(name)) { // 使用 includes
+                        const lvChk = Array.from(row.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
+                        if (lvChk) lvChk.checked = true;
                     }
                 });
-            });
-        }
+            } else {
+                // 處理「其他」
+                const otherRow = Array.from(document.querySelectorAll('.lang-row')).find(row => {
+                    const lbl = row.querySelector('.lang-label');
+                    return lbl && lbl.innerText.includes("其他");
+                });
+                if (otherRow) {
+                    document.getElementById('otherLangName').value = name;
+                    const lvChk = Array.from(otherRow.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
+                    if (lvChk) lvChk.checked = true;
+                }
+            }
+        });
+    }
 
         // 2. 處理駕照種類
         const licenseData = "@Html.Raw(Model.DriverLicense)";
@@ -583,7 +594,7 @@
     });
 
 
-             function setWorkExp(val) {
+    function setWorkExp(val) {
         const input = document.getElementById('workYearsInput');
         const company = document.getElementById('CompanyName');
         const title = document.getElementById('JobTitle');
