@@ -1,0 +1,117 @@
+﻿@model List<InterviewProject.Models.InterviewSchedule>
+@{
+    ViewData["Title"] = "我的面試通知";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>我的面試通知</h1>
+        <p>My Interview Schedules</p>
+    </div>
+</div>
+
+<div class="interview-container">
+
+    @if (!Model.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-icon">📭</div>
+            <p>目前尚無面試安排，請持續關注！</p>
+        </div>
+    }
+    else
+    {
+        <div class="my-interviews-list">
+            @foreach (var s in Model)
+            {
+                var cardClass = s.Status switch
+                {
+                    "已確認" => "status-confirmed",
+                    "已完成" => "status-done",
+                    "已取消" => "status-cancelled",
+                    _ => ""
+                };
+                var isUpcoming = s.ScheduledAt > DateTime.Now && s.Status != "已取消";
+
+                <div class="interview-card @cardClass">
+                    <div class="card-left">
+                        <div class="card-job-title">
+                            📋 @(s.Job?.Title ?? "未知職缺")
+                        </div>
+
+                        <div class="card-meta">
+                            <span>📅 @s.ScheduledAt.ToString("yyyy年MM月dd日 HH:mm")</span>
+                            <span>👤 排程人：@(s.ScheduledByEmployee?.Name ?? "—")</span>
+                            <span>
+                                <span class="status-badge @(s.Status switch {
+                                    "已確認" => "status-confirmed",
+                                    "已完成" => "status-done",
+                                    "已取消" => "status-cancelled",
+                                    _ => "status-pending"
+                                })">@s.Status</span>
+                            </span>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(s.Notes))
+                        {
+                            <div class="card-notes">
+                                📝 <strong>面試備註：</strong>@s.Notes
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(s.ResultNote))
+                        {
+                            <div class="card-notes" style="border-left-color: #818cf8;">
+                                🏆 <strong>面試結果：</strong>@s.ResultNote
+                            </div>
+                        }
+
+                        @if (isUpcoming)
+                        {
+                            var diff = s.ScheduledAt - DateTime.Now;
+                            var timeText = diff.TotalDays >= 1
+                                ? $"還有 {(int)diff.TotalDays} 天"
+                                : diff.TotalHours >= 1
+                                    ? $"還有 {(int)diff.TotalHours} 小時"
+                                    : "即將開始";
+                            <div style="font-size:12px; color:#f59e0b; font-weight:600;">
+                                ⏰ @timeText
+                            </div>
+                        }
+                    </div>
+
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+                        @if (s.Room != null && s.Status != "已取消" && s.Status != "已完成")
+                        {
+                            <a asp-controller="Room" asp-action="Join"
+                               asp-route-code="@s.Room.JitsiRoomName"
+                               class="card-room-link" target="_blank">
+                                🎥 進入面試
+                            </a>
+                            <div class="card-room-code">代碼：@s.Room.JitsiRoomName</div>
+                        }
+                        else if (s.Status == "已完成")
+                        {
+                            <span style="font-size:32px;">✅</span>
+                            <span style="font-size:12px;color:#6b7280;">面試已完成</span>
+                        }
+                        else if (s.Status == "已取消")
+                        {
+                            <span style="font-size:32px;">❌</span>
+                            <span style="font-size:12px;color:#6b7280;">已取消</span>
+                        }
+                        else
+                        {
+                            <span style="font-size:12px;color:#9ca3af;">等待確認中</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>

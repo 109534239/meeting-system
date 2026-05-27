@@ -1,0 +1,157 @@
+﻿@{
+    ViewData["Title"] = "新增面試排程";
+    var rooms = ViewBag.Rooms as List<InterviewProject.Models.Room>;
+    var pendingResumes = ViewBag.PendingResumes as List<InterviewProject.Models.Resume>;
+    var memberNames = ViewBag.MemberNames as Dictionary<int, string>;
+    var prefilledResume = ViewBag.PrefilledResume as InterviewProject.Models.Resume;
+    var prefilledMember = ViewBag.PrefilledMember as InterviewProject.Models.Member;
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>新增面試排程</h1>
+        <p>Schedule a New Interview</p>
+    </div>
+</div>
+
+<div class="interview-container">
+    <div class="form-card">
+        <form asp-controller="Interview" asp-action="Create" method="post">
+
+            <!-- 選擇履歷（求職者） -->
+            <div class="form-section">
+                <h3 class="section-title">📄 選擇應徵履歷</h3>
+                <div class="form-group">
+                    <label for="ResumeId">應徵者 / 職缺 <span class="required">*</span></label>
+                    <select name="ResumeId" id="ResumeId" class="form-control" required
+                            onchange="loadResumeInfo(this.value)">
+                        <option value="">— 請選擇 —</option>
+                        @foreach (var r in pendingResumes ?? new List<InterviewProject.Models.Resume>())
+                        {
+                            var name = memberNames != null && memberNames.ContainsKey(r.UserId)
+                            ? memberNames[r.UserId] : "未知";
+                            var isSelected = prefilledResume != null && prefilledResume.Id == r.Id;
+                            <option value="@r.Id" selected="@(isSelected ? "selected" : null)">
+                                @name — @(r.Job?.Title ?? "未知職缺")（ID: @r.Id）
+                            </option>
+                        }
+                    </select>
+                </div>
+
+                <!-- 動態顯示求職者資訊 -->
+                <div class="applicant-info-box" id="applicantInfoBox" style="display:@(prefilledResume != null ? "flex" : "none")">
+                    <div class="info-item">
+                        <span class="info-label">求職者姓名</span>
+                        <span class="info-value" id="infoMemberName">@(prefilledMember?.Name ?? "")</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">應徵職缺</span>
+                        <span class="info-value" id="infoJobTitle">@(prefilledResume?.Job?.Title ?? "")</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 面試時間 -->
+            <div class="form-section">
+                <h3 class="section-title">🕐 面試時間</h3>
+                <div class="form-group">
+                    <label for="ScheduledAt">面試日期與時間 <span class="required">*</span></label>
+                    <input type="datetime-local" name="ScheduledAt" id="ScheduledAt"
+                           class="form-control" required
+                           min="@DateTime.Now.ToString("yyyy-MM-ddTHH:mm")" />
+                </div>
+            </div>
+
+            <!-- 選擇會議室 -->
+            <div class="form-section">
+                <h3 class="section-title">🎥 面試會議室</h3>
+                <div class="room-choice-tabs">
+                    <button type="button" class="room-tab active" id="tabExisting"
+                            onclick="switchRoomTab('existing')">
+                        使用既有房間
+                    </button>
+                    <button type="button" class="room-tab" id="tabNew"
+                            onclick="switchRoomTab('new')">
+                        自動建立新房間
+                    </button>
+                </div>
+
+                <div id="existingRoomPanel">
+                    <div class="form-group">
+                        <label for="RoomId">選擇房間</label>
+                        <select name="RoomId" id="RoomId" class="form-control">
+                            <option value="">— 請選擇 —</option>
+                            @foreach (var room in rooms ?? new List<InterviewProject.Models.Room>())
+                            {
+                                <option value="@room.Id">@room.RoomName（代碼：@room.JitsiRoomName）</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div id="newRoomPanel" style="display:none">
+                    <div class="info-hint">
+                        💡 系統將自動建立一個全新的視訊會議房間，並將連結通知給求職者。
+                    </div>
+                </div>
+            </div>
+
+            <!-- 備註 -->
+            <div class="form-section">
+                <h3 class="section-title">📝 面試備註</h3>
+                <div class="form-group">
+                    <label for="Notes">備註（選填）</label>
+                    <textarea name="Notes" id="Notes" class="form-control" rows="3"
+                              placeholder="例如：請攜帶作品集、線上面試請確保網路順暢..."></textarea>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn-primary-action">✅ 確認排程</button>
+                <a asp-controller="Interview" asp-action="Index" class="btn-secondary">取消</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function switchRoomTab(mode) {
+            if (mode === 'existing') {
+                document.getElementById('tabExisting').classList.add('active');
+                document.getElementById('tabNew').classList.remove('active');
+                document.getElementById('existingRoomPanel').style.display = '';
+                document.getElementById('newRoomPanel').style.display = 'none';
+                document.getElementById('RoomId').required = false;
+            } else {
+                document.getElementById('tabNew').classList.add('active');
+                document.getElementById('tabExisting').classList.remove('active');
+                document.getElementById('existingRoomPanel').style.display = 'none';
+                document.getElementById('newRoomPanel').style.display = '';
+                document.getElementById('RoomId').value = '';
+                document.getElementById('RoomId').required = false;
+            }
+        }
+
+        function loadResumeInfo(resumeId) {
+            if (!resumeId) {
+                document.getElementById('applicantInfoBox').style.display = 'none';
+                return;
+            }
+            fetch(`/Interview/GetResumeInfo?resumeId=${resumeId}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('infoMemberName').textContent = data.memberName;
+                        document.getElementById('infoJobTitle').textContent = data.jobTitle;
+                        document.getElementById('applicantInfoBox').style.display = 'flex';
+                    }
+                });
+        }
+    </script>
+}

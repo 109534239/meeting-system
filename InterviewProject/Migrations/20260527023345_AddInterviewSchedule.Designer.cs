@@ -3,6 +3,7 @@ using System;
 using InterviewProject.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace InterviewProject.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260527023345_AddInterviewSchedule")]
+    partial class AddInterviewSchedule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,71 +24,6 @@ namespace InterviewProject.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("InterviewProject.Models.Announcement", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Announcements");
-                });
-
-            modelBuilder.Entity("InterviewProject.Models.Attendance", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ConnectionId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("JoinTime")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<DateTime?>("LeaveTime")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<int>("RoomId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("UserName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Attendances");
-                });
-
 
             modelBuilder.Entity("InterviewProject.Models.Employee", b =>
                 {
@@ -191,6 +129,9 @@ namespace InterviewProject.Migrations
                     b.Property<int>("CreatedBy")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("CreatorId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("Deadline")
                         .HasColumnType("timestamp without time zone");
 
@@ -280,7 +221,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CreatedBy");
+                    b.HasIndex("CreatorId");
 
                     b.ToTable("Jobs");
                 });
@@ -359,8 +300,8 @@ namespace InterviewProject.Migrations
                     b.Property<string>("DriverLicense")
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("EduDate")
-                        .HasColumnType("timestamp without time zone");
+                    b.Property<string>("EduDate")
+                        .HasColumnType("text");
 
                     b.Property<string>("EduLevel")
                         .HasColumnType("text");
@@ -398,11 +339,14 @@ namespace InterviewProject.Migrations
                     b.Property<string>("Phone2")
                         .HasColumnType("text");
 
-                    b.Property<int>("Position")
-                        .HasColumnType("integer");
+                    b.Property<string>("Position")
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("ResumeTime")
                         .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("Salary")
+                        .HasColumnType("text");
 
                     b.Property<string>("SchoolName")
                         .HasColumnType("text");
@@ -424,8 +368,6 @@ namespace InterviewProject.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("Position");
 
                     b.ToTable("Resume");
                 });
@@ -520,51 +462,13 @@ namespace InterviewProject.Migrations
                     b.Navigation("ScheduledByEmployee");
                 });
 
-            modelBuilder.Entity("InterviewProject.Models.VerificationCode", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Code")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("ExpireTime")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<bool>("IsUsed")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("MemberId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("VerificationCodes");
-                });
-
             modelBuilder.Entity("InterviewProject.Models.Job", b =>
                 {
-                    b.HasOne("InterviewProject.Models.Employee", "Employee")
+                    b.HasOne("InterviewProject.Models.Member", "Creator")
                         .WithMany()
-                        .HasForeignKey("CreatedBy")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("CreatorId");
 
-                    b.Navigation("Employee");
-                });
-
-            modelBuilder.Entity("InterviewProject.Models.Resume", b =>
-                {
-                    b.HasOne("InterviewProject.Models.Job", "Job")
-                        .WithMany()
-                        .HasForeignKey("Position")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Job");
+                    b.Navigation("Creator");
                 });
 #pragma warning restore 612, 618
         }

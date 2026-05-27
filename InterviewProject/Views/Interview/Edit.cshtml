@@ -1,0 +1,118 @@
+﻿@model InterviewProject.Models.InterviewSchedule
+@{
+    ViewData["Title"] = "編輯面試排程";
+    var rooms = ViewBag.Rooms as List<InterviewProject.Models.Room>;
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>編輯面試排程</h1>
+        <p>Edit Interview Schedule</p>
+    </div>
+</div>
+
+<div class="interview-container">
+    <div class="form-card">
+
+        <!-- 唯讀資訊 -->
+        <div class="form-section">
+            <h3 class="section-title">📄 面試資訊（唯讀）</h3>
+            <div class="applicant-info-box" style="display:flex">
+                <div class="info-item">
+                    <span class="info-label">求職者</span>
+                    <span class="info-value">@(Model.Member?.Name ?? "—")</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">應徵職缺</span>
+                    <span class="info-value">@(Model.Job?.Title ?? "—")</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">排程建立時間</span>
+                    <span class="info-value" style="font-size:13px;color:#666">@Model.CreatedAt.ToString("yyyy/MM/dd HH:mm")</span>
+                </div>
+            </div>
+        </div>
+
+        <form asp-controller="Interview" asp-action="Edit" method="post">
+            <input type="hidden" name="Id" value="@Model.Id" />
+            <input type="hidden" name="MemberId" value="@Model.MemberId" />
+            <input type="hidden" name="ResumeId" value="@Model.ResumeId" />
+            <input type="hidden" name="JobId" value="@Model.JobId" />
+            <input type="hidden" name="ScheduledByEmployeeId" value="@Model.ScheduledByEmployeeId" />
+
+            <!-- 面試時間 -->
+            <div class="form-section">
+                <h3 class="section-title">🕐 面試時間</h3>
+                <div class="form-group">
+                    <label>面試日期與時間 <span class="required">*</span></label>
+                    <input type="datetime-local" name="ScheduledAt" class="form-control" required
+                           value="@Model.ScheduledAt.ToString("yyyy-MM-ddTHH:mm")" />
+                </div>
+            </div>
+
+            <!-- 狀態 -->
+            <div class="form-section">
+                <h3 class="section-title">📋 排程狀態</h3>
+                <div class="form-group">
+                    <label>目前狀態</label>
+                    <select name="Status" class="form-control">
+                        @foreach (var s in new[] { "待確認", "已確認", "已完成", "已取消" })
+                        {
+                            <option value="@s" selected="@(Model.Status == s ? "selected" : null)">@s</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <!-- 會議室 -->
+            <div class="form-section">
+                <h3 class="section-title">🎥 面試會議室</h3>
+                <div class="form-group">
+                    <label>選擇房間</label>
+                    <select name="RoomId" class="form-control">
+                        <option value="">— 不更換 —</option>
+                        @foreach (var room in rooms ?? new List<InterviewProject.Models.Room>())
+                        {
+                            <option value="@room.Id"
+                                    selected="@(Model.RoomId == room.Id ? "selected" : null)">
+                                @room.RoomName（代碼：@room.JitsiRoomName）
+                            </option>
+                        }
+                    </select>
+                </div>
+                @if (Model.Room != null)
+                {
+                    <div class="info-hint">
+                        目前房間：<strong>@Model.Room.RoomName</strong>
+                        ｜代碼：<code>@Model.Room.JitsiRoomName</code>
+                    </div>
+                }
+            </div>
+
+            <!-- 備註 -->
+            <div class="form-section">
+                <h3 class="section-title">📝 備註</h3>
+                <div class="form-group">
+                    <label>面試備註</label>
+                    <textarea name="Notes" class="form-control" rows="3"
+                              placeholder="例如：請攜帶作品集...">@Model.Notes</textarea>
+                </div>
+                <div class="form-group">
+                    <label>結果備註（面試後填寫）</label>
+                    <textarea name="ResultNote" class="form-control" rows="3"
+                              placeholder="例如：表現良好，建議錄取...">@Model.ResultNote</textarea>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn-primary-action">💾 儲存變更</button>
+                <a asp-controller="Interview" asp-action="Index" class="btn-secondary">取消</a>
+            </div>
+        </form>
+    </div>
+</div>

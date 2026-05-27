@@ -1,20 +1,20 @@
-﻿@{ 
-    var controller = ViewContext.RouteData.Values["controller"]?.ToString(); 
-    var action     = ViewContext.RouteData.Values["action"]?.ToString();
-    
-    var memberId   = Context.Session.GetInt32("MemberId");
+﻿@{
+    var controller = ViewContext.RouteData.Values["controller"]?.ToString();
+    var action = ViewContext.RouteData.Values["action"]?.ToString();
+
+    var memberId = Context.Session.GetInt32("MemberId");
     var memberName = Context.Session.GetString("MemberName");
     var memberRole = Context.Session.GetString("MemberRole")?.ToLower();
-    
-    var isLoggedIn  = memberId.HasValue;
-    var isHr        = memberRole == "hr";
-    var isManager   = memberRole == "manager";
-    var isDirector  = memberRole == "director";  // 💡 新增：部門最高管理員
+
+    var isLoggedIn = memberId.HasValue;
+    var isHr = memberRole == "hr";
+    var isManager = memberRole == "manager";
+    var isDirector = memberRole == "director";  // 💡 新增：部門最高管理員
     var isApplicant = isLoggedIn && !isHr && !isManager && !isDirector;
 
     var roleLabel = isDirector ? "最高主管"
-                  : isManager  ? "主管"
-                  : isHr       ? "人資"
+                  : isManager ? "主管"
+                  : isHr ? "人資"
                   : "求職者";
 }
 
@@ -32,25 +32,25 @@
     <header>
         <nav class="navbar">
             <div class="nav-container">
-               @if (isHr || isManager || isDirector)
-               {
-                  <a class="nav-brand" asp-controller="Login" asp-action="LogoLogout" onclick="return confirm('點擊 LOGO 將會登出並返回前台訪客首頁，確定要離開目前後台嗎？');">
-                     <div class="logo-circle">LOGO</div>
-                     <span class="brand-name">XXX公司</span>
-                  </a>
-               }
-               else
-               {
-                  <a class="nav-brand" asp-controller="Home" asp-action="Index">
-                     <div class="logo-circle">LOGO</div>
-                     <span class="brand-name">XXX公司</span>
-                  </a>
-               }
+                @if (isHr || isManager || isDirector)
+                {
+                    <a class="nav-brand" asp-controller="Login" asp-action="LogoLogout" onclick="return confirm('點擊 LOGO 將會登出並返回前台訪客首頁，確定要離開目前後台嗎？');">
+                        <div class="logo-circle">LOGO</div>
+                        <span class="brand-name">XXX公司</span>
+                    </a>
+                }
+                else
+                {
+                    <a class="nav-brand" asp-controller="Home" asp-action="Index">
+                        <div class="logo-circle">LOGO</div>
+                        <span class="brand-name">XXX公司</span>
+                    </a>
+                }
 
                 <div class="nav-links">
 
                     @* ==============================
-                       人資：招募數據 / 職缺管理 / 應徵管理 / 公告管理 / 求職Q&A後台 / Q&A回報
+                       人資：招募數據 / 職缺管理 / 應徵管理 / 面試排程 / 公告管理 / 求職Q&A後台 / Q&A回報
                        ============================== *@
                     @if (isHr)
                     {
@@ -63,6 +63,10 @@
                         <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
                            asp-controller="AdminApplication" asp-action="Index">應徵管理</a>
 
+                        @* ✅ 新增：面試排程（HR） *@
+                        <a class="nav-btn @(controller == "Interview" ? "active" : "")"
+                           asp-controller="Interview" asp-action="Index">面試排程</a>
+
                         <a class="nav-btn @(controller == "AdminAnnouncement" ? "active" : "")"
                            asp-controller="AdminAnnouncement" asp-action="Index">公告管理</a>
 
@@ -74,7 +78,7 @@
                     }
 
                     @* ==============================
-                       部門主管：招募數據 / 應徵管理 / Q&A回報（限本部門）
+                       部門主管：招募數據 / 應徵管理 / 面試排程 / Q&A回報（限本部門）
                        ============================== *@
                     else if (isManager)
                     {
@@ -84,13 +88,17 @@
                         <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
                            asp-controller="AdminApplication" asp-action="Index">應徵管理</a>
 
+                        @* ✅ 新增：面試排程（主管） *@
+                        <a class="nav-btn @(controller == "Interview" ? "active" : "")"
+                           asp-controller="Interview" asp-action="Index">面試排程</a>
+
                         @* 主管：只有 Report *@
                         <a class="nav-btn @(controller == "AdminFAQ" && action == "Report" ? "active" : "")"
                            asp-controller="AdminFAQ" asp-action="Report">Q&A回報</a>
                     }
 
                     @* ==============================
-                       部門最高管理員：招募數據 / 應徵管理（含錄取決定權）
+                       部門最高管理員：招募數據 / 應徵管理 / 面試排程（含錄取決定權）
                        ============================== *@
                     else if (isDirector)
                     {
@@ -99,6 +107,10 @@
 
                         <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
                            asp-controller="AdminApplication" asp-action="Index">應徵管理</a>
+
+                        @* ✅ 新增：面試排程（Director） *@
+                        <a class="nav-btn @(controller == "Interview" ? "active" : "")"
+                           asp-controller="Interview" asp-action="Index">面試排程</a>
                     }
 
                     @* ==============================
@@ -164,14 +176,14 @@
                         <div class="dropdown-menu" id="dropdown-menu">
 
                             @* 人資 / 主管 / 最高管理員：個人資料 + 登出 *@
-                           @if (isHr || isManager || isDirector)
-                           {
-                              <a asp-controller="Employee" asp-action="Profile"
-                                 class="dropdown-item">個人資料</a>
-                              <a asp-controller="Login" asp-action="Logout"
-                                 class="dropdown-item logout">登出</a>
-                           }
-                            @* 求職者：完整個人選單 *@
+                            @if (isHr || isManager || isDirector)
+                            {
+                                <a asp-controller="Employee" asp-action="Profile"
+                                   class="dropdown-item">個人資料</a>
+                                <a asp-controller="Login" asp-action="Logout"
+                                   class="dropdown-item logout">登出</a>
+                            }
+                            @* 求職者：完整個人選單 + 我的面試通知 *@
                             else
                             {
                                 <a asp-controller="Member" asp-action="Profile"
@@ -182,6 +194,9 @@
                                    class="dropdown-item">應徵管理</a>
                                 <a asp-controller="Member" asp-action="Favorites"
                                    class="dropdown-item">我的收藏</a>
+                                @* ✅ 新增：求職者查看面試通知 *@
+                                <a asp-controller="Interview" asp-action="MyInterviews"
+                                   class="dropdown-item">📅 我的面試</a>
                                 <a asp-controller="Login" asp-action="Logout"
                                    class="dropdown-item logout">登出</a>
                             }

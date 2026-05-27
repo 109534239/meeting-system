@@ -1,0 +1,177 @@
+﻿@model List<InterviewProject.Models.InterviewSchedule>
+@{
+    ViewData["Title"] = "面試排程管理";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>面試排程管理</h1>
+        <p>Interview Schedule Management</p>
+    </div>
+</div>
+
+<div class="interview-container">
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert-success">✅ @TempData["Success"]</div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert-error">⚠️ @TempData["Error"]</div>
+    }
+
+    <div class="toolbar">
+        <a asp-controller="Interview" asp-action="Create" class="btn-primary-action">
+            ＋ 新增面試排程
+        </a>
+
+        <!-- 狀態篩選 -->
+        <div class="filter-tabs" id="filterTabs">
+            <button class="filter-tab active" data-status="all">全部</button>
+            <button class="filter-tab" data-status="待確認">待確認</button>
+            <button class="filter-tab" data-status="已確認">已確認</button>
+            <button class="filter-tab" data-status="已完成">已完成</button>
+            <button class="filter-tab" data-status="已取消">已取消</button>
+        </div>
+    </div>
+
+    @if (!Model.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-icon">📅</div>
+            <p>尚無任何面試排程</p>
+            <a asp-controller="Interview" asp-action="Create" class="btn-primary-action">立即新增</a>
+        </div>
+    }
+    else
+    {
+        <div class="schedule-table-wrap">
+            <table class="schedule-table" id="scheduleTable">
+                <thead>
+                    <tr>
+                        <th>求職者</th>
+                        <th>應徵職缺</th>
+                        <th>面試時間</th>
+                        <th>會議室</th>
+                        <th>狀態</th>
+                        <th>排程人</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in Model)
+                    {
+                        var statusClass = s.Status switch
+                        {
+                            "已確認" => "status-confirmed",
+                            "已完成" => "status-done",
+                            "已取消" => "status-cancelled",
+                            _ => "status-pending"
+                        };
+                        <tr data-status="@s.Status">
+                            <td class="td-name">@(s.Member?.Name ?? "—")</td>
+                            <td>@(s.Job?.Title ?? "—")</td>
+                            <td class="td-time">
+                                <span class="date">@s.ScheduledAt.ToString("yyyy/MM/dd")</span>
+                                <span class="time">@s.ScheduledAt.ToString("HH:mm")</span>
+                            </td>
+                            <td>
+                                @if (s.Room != null)
+                                {
+                                    <a asp-controller="Room" asp-action="Join"
+                                       asp-route-code="@s.Room.JitsiRoomName"
+                                       class="room-link" target="_blank">
+                                        🎥 @s.Room.RoomName
+                                    </a>
+                                    <br />
+                                    <span class="room-code">代碼：@s.Room.JitsiRoomName</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                            <td><span class="status-badge @statusClass">@s.Status</span></td>
+                            <td>@(s.ScheduledByEmployee?.Name ?? "—")</td>
+                            <td class="td-actions">
+                                <a asp-controller="Interview" asp-action="Edit"
+                                   asp-route-id="@s.Id" class="btn-edit">編輯</a>
+
+                                @if (s.Status != "已取消" && s.Status != "已完成")
+                                {
+                                    <form asp-controller="Interview" asp-action="Cancel"
+                                          asp-route-id="@s.Id" method="post" style="display:inline"
+                                          onsubmit="return confirm('確定取消此面試排程？')">
+                                        <button type="submit" class="btn-cancel">取消</button>
+                                    </form>
+                                }
+
+                                @if (s.Status == "已確認")
+                                {
+                                    <button class="btn-complete"
+                                            onclick="openCompleteModal(@s.Id)">
+                                        完成
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<!-- 完成面試 Modal -->
+<div class="modal-overlay" id="completeModal" style="display:none">
+    <div class="modal-box">
+        <h3>📋 記錄面試結果</h3>
+        <form asp-controller="Interview" asp-action="Complete" method="post">
+            <input type="hidden" id="completeScheduleId" name="id" />
+            <div class="form-group">
+                <label>結果備註（選填）</label>
+                <textarea name="resultNote" rows="4" placeholder="例如：表現良好，建議進行下一輪..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="btn-primary-action">確認完成</button>
+                <button type="button" class="btn-secondary" onclick="closeModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // 篩選標籤
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            tab.addEventListener('click', function () {
+                document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+
+                const status = this.dataset.status;
+                document.querySelectorAll('#scheduleTable tbody tr').forEach(row => {
+                    if (status === 'all' || row.dataset.status === status) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+        });
+
+        function openCompleteModal(id) {
+            document.getElementById('completeScheduleId').value = id;
+            document.getElementById('completeModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('completeModal').style.display = 'none';
+        }
+    </script>
+}
