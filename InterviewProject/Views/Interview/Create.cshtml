@@ -33,8 +33,8 @@
                         <option value="">— 請選擇 —</option>
                         @foreach (var r in pendingResumes ?? new List<InterviewProject.Models.Resume>())
                         {
-                            var name = memberNames != null && memberNames.ContainsKey(r.UserId)
-                            ? memberNames[r.UserId] : "未知";
+                            var name = memberNames != null && memberNames.ContainsKey(r.MembersId)
+                            ? memberNames[r.MembersId] : "未知";
                             var isSelected = prefilledResume != null && prefilledResume.Id == r.Id;
                             <option value="@r.Id" selected="@(isSelected ? "selected" : null)">
                                 @name — @(r.Job?.Title ?? "未知職缺")（ID: @r.Id）

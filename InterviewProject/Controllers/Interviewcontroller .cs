@@ -14,24 +14,16 @@ namespace InterviewProject.Controllers
             _db = db;
         }
 
-        // ─────────────────────────────────────────────
-        //  共用：權限判斷
-        // ─────────────────────────────────────────────
         private bool IsEmployee()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
             return role == "hr" || role == "manager" || role == "director";
         }
 
-        private int GetEmployeeId() =>
-            HttpContext.Session.GetInt32("MemberId") ?? 0;
+        private int GetEmployeeId() => HttpContext.Session.GetInt32("MemberId") ?? 0;
+        private int GetMemberId() => HttpContext.Session.GetInt32("MemberId") ?? 0;
 
-        private int GetMemberId() =>
-            HttpContext.Session.GetInt32("MemberId") ?? 0;
-
-        // ─────────────────────────────────────────────
-        //  【HR / 主管】面試排程管理列表
-        // ─────────────────────────────────────────────
+        // ── HR/主管：面試排程列表 ──
         public async Task<IActionResult> Index()
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
@@ -49,45 +41,44 @@ namespace InterviewProject.Controllers
             if (role == "manager")
                 query = query.Where(s => s.ScheduledByEmployeeId == empId);
 
-            var schedules = await query
-                .OrderByDescending(s => s.ScheduledAt)
-                .ToListAsync();
-
+            var schedules = await query.OrderByDescending(s => s.ScheduledAt).ToListAsync();
             return View("~/Views/Interview/Index.cshtml", schedules);
         }
 
-        // ─────────────────────────────────────────────
-        //  【HR / 主管】新增排程 GET
-        // ─────────────────────────────────────────────
+        // ── HR/主管：新增排程 GET ──
         [HttpGet]
         public async Task<IActionResult> Create(int? resumeId)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
-            ViewBag.Rooms = await _db.Rooms.OrderByDescending(r => r.CreatedTime).ToListAsync();
+            ViewBag.Rooms = await _db.Rooms
+                .Where(r => r.IsActive)
+                .OrderByDescending(r => r.CreatedTime)
+                .ToListAsync();
 
             if (resumeId.HasValue)
             {
-                // ✅ 修正：Resume 沒有 Member navigation，只 Include Job 即可
                 var resume = await _db.Resumes
                     .Include(r => r.Job)
                     .FirstOrDefaultAsync(r => r.Id == resumeId);
 
                 if (resume != null)
                 {
-                    var member = await _db.Members.FindAsync(resume.UserId);
+                    // UserId → DB 欄位 MembersId
+                    var member = await _db.Members.FindAsync(resume.MembersId);
                     ViewBag.PrefilledResume = resume;
                     ViewBag.PrefilledMember = member;
                 }
             }
 
+            // 書審通過或待審核的履歷才能排面試
             var pendingResumes = await _db.Resumes
                 .Include(r => r.Job)
-                .Where(r => r.Status == "待審核" || r.Status == "書審通過")
+                .Where(r => r.Status == "待審核" || r.Status == "書審通過" || r.Status == "通過")
                 .OrderByDescending(r => r.ResumeTime)
                 .ToListAsync();
 
-            var memberIds = pendingResumes.Select(r => r.UserId).Distinct().ToList();
+            var memberIds = pendingResumes.Select(r => r.MembersId).Distinct().ToList();
             var members = await _db.Members
                 .Where(m => memberIds.Contains(m.Id))
                 .ToDictionaryAsync(m => m.Id, m => m.Name);
@@ -98,9 +89,7 @@ namespace InterviewProject.Controllers
             return View("~/Views/Interview/Create.cshtml");
         }
 
-        // ─────────────────────────────────────────────
-        //  【HR / 主管】新增排程 POST
-        // ─────────────────────────────────────────────
+        // ── HR/主管：新增排程 POST ──
         [HttpPost]
         public async Task<IActionResult> Create(InterviewSchedule schedule)
         {
@@ -113,19 +102,22 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Create");
             }
 
-            schedule.MemberId = resume.UserId;
-            schedule.JobId = resume.Position;
+            // 使用正確的欄位名稱
+            schedule.MemberId = resume.MembersId;   // MembersId
+            schedule.JobId = resume.JobsId; // JobsId
             schedule.ScheduledByEmployeeId = GetEmployeeId();
             schedule.CreatedAt = DateTime.Now;
             schedule.Status = "待確認";
 
+            // 未選擇房間則自動建立
             if (schedule.RoomId == null)
             {
                 var newRoom = new Room
                 {
                     RoomName = $"面試-{DateTime.Now:yyyyMMdd-HHmm}",
                     CreatedTime = DateTime.Now,
-                    JitsiRoomName = Guid.NewGuid().ToString("N")[..10]
+                    JitsiRoomName = Guid.NewGuid().ToString("N")[..10],
+                    IsActive = true
                 };
                 _db.Rooms.Add(newRoom);
                 await _db.SaveChangesAsync();
@@ -140,9 +132,7 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Index");
         }
 
-        // ─────────────────────────────────────────────
-        //  【HR / 主管】編輯排程 GET
-        // ─────────────────────────────────────────────
+        // ── HR/主管：編輯排程 GET ──
         [HttpGet]
         public async Task<IActionResult> Edit(int id)
         {
@@ -160,9 +150,7 @@ namespace InterviewProject.Controllers
             return View("~/Views/Interview/Edit.cshtml", schedule);
         }
 
-        // ─────────────────────────────────────────────
-        //  【HR / 主管】編輯排程 POST
-        // ─────────────────────────────────────────────
+        // ── HR/主管：編輯排程 POST ──
         [HttpPost]
         public async Task<IActionResult> Edit(InterviewSchedule model)
         {
@@ -175,56 +163,41 @@ namespace InterviewProject.Controllers
             existing.Notes = model.Notes;
             existing.Status = model.Status;
             existing.ResultNote = model.ResultNote;
-
-            if (model.RoomId.HasValue)
-                existing.RoomId = model.RoomId;
+            if (model.RoomId.HasValue) existing.RoomId = model.RoomId;
 
             await _db.SaveChangesAsync();
-
             TempData["Success"] = "排程已更新";
             return RedirectToAction("Index");
         }
 
-        // ─────────────────────────────────────────────
-        //  【HR / 主管】取消排程
-        // ─────────────────────────────────────────────
+        // ── HR/主管：取消排程 ──
         [HttpPost]
         public async Task<IActionResult> Cancel(int id)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
-
-            var schedule = await _db.InterviewSchedules.FindAsync(id);
-            if (schedule == null) return NotFound();
-
-            schedule.Status = "已取消";
+            var s = await _db.InterviewSchedules.FindAsync(id);
+            if (s == null) return NotFound();
+            s.Status = "已取消";
             await _db.SaveChangesAsync();
-
             TempData["Success"] = "面試排程已取消";
             return RedirectToAction("Index");
         }
 
-        // ─────────────────────────────────────────────
-        //  【HR / 主管】標記完成
-        // ─────────────────────────────────────────────
+        // ── HR/主管：標記完成 ──
         [HttpPost]
         public async Task<IActionResult> Complete(int id, string? resultNote)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
-
-            var schedule = await _db.InterviewSchedules.FindAsync(id);
-            if (schedule == null) return NotFound();
-
-            schedule.Status = "已完成";
-            schedule.ResultNote = resultNote;
+            var s = await _db.InterviewSchedules.FindAsync(id);
+            if (s == null) return NotFound();
+            s.Status = "已完成";
+            s.ResultNote = resultNote;
             await _db.SaveChangesAsync();
-
             TempData["Success"] = "面試已標記為完成";
             return RedirectToAction("Index");
         }
 
-        // ─────────────────────────────────────────────
-        //  【求職者】查看自己的面試通知
-        // ─────────────────────────────────────────────
+        // ── 求職者：我的面試通知 ──
         public async Task<IActionResult> MyInterviews()
         {
             int memberId = GetMemberId();
@@ -241,27 +214,19 @@ namespace InterviewProject.Controllers
             return View("~/Views/Interview/MyInterviews.cshtml", schedules);
         }
 
-        // ─────────────────────────────────────────────
-        //  【共用】AJAX：根據 resumeId 取得求職者資訊
-        // ─────────────────────────────────────────────
+        // ── AJAX：依 resumeId 取得求職者資訊 ──
         [HttpGet]
         public async Task<IActionResult> GetResumeInfo(int resumeId)
         {
-            var resume = await _db.Resumes
-                .Include(r => r.Job)
-                .FirstOrDefaultAsync(r => r.Id == resumeId);
+            var resume = await _db.Resumes.Include(r => r.Job).FirstOrDefaultAsync(r => r.Id == resumeId);
+            if (resume == null) return Json(new { success = false });
 
-            if (resume == null)
-                return Json(new { success = false });
-
-            var member = await _db.Members.FindAsync(resume.UserId);
-
+            var member = await _db.Members.FindAsync(resume.MembersId);
             return Json(new
             {
                 success = true,
                 memberName = member?.Name ?? "未知",
-                jobTitle = resume.Job?.Title ?? "未知",
-                jobId = resume.Position
+                jobTitle = resume.Job?.Title ?? "未知"
             });
         }
     }
