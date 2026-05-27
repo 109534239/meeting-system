@@ -11,7 +11,7 @@ namespace InterviewProject.Models
         public int Id { get; set; }
 
         [Required]
-        public int UserId { get; set; }
+        public int MembersId { get; set; }
         public string? MaritalStatus { get; set; }
         public string? MilitaryService { get; set; }
         public string? Phone1 { get; set; }
@@ -31,6 +31,8 @@ namespace InterviewProject.Models
         public string? JobDescription { get; set; }
 
         // 這些欄位將接收 JavaScript 串接後的長字串
+
+        [NotMapped] // 🎯 關鍵！告訴 EF：這個屬性在資料庫裡「沒有」對應欄位，不要去 SQL 撈它
         public string? LanguageSkills { get; set; }
         public string? DriverLicense { get; set; }
         public string? Specialty { get; set; }
@@ -39,9 +41,9 @@ namespace InterviewProject.Models
         public string? Autobiography { get; set; }
         public DateTime ResumeTime { get; set; }
 
-        // 🎯 核心修正一：將 Position 的型態由 string? 改為 int，並聲明它是 Job 的外鍵
+        // 🎯 核心修正一：將 JobsId 的型態由 string? 改為 int，並聲明它是 Job 的外鍵
         [ForeignKey("Job")]
-        public int Position { get; set; }
+        public int JobsId { get; set; }
 
         // 🎯 核心修正二：建立與 Job 模型實體的虛擬關聯，供前端 @Model.Job?.Title 撈取名稱
         public virtual Job? Job { get; set; }

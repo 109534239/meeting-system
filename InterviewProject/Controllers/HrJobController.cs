@@ -38,11 +38,11 @@ namespace InterviewProject.Controllers
                 // 🎯 核心修正：r.Position 已經是 int，必須與同為 int 的 job.Id 做對比，解決 CS0019 報錯
                 // 總應徵人數：計算 Resume 的 Position 等於目前職缺 Id 的總數量
                 job.TotalApplicationsCount = await _db.Resumes
-                    .CountAsync(r => r.Position == job.Id);
+                    .CountAsync(r => r.JobsId == job.Id);
 
                 // 新應徵人數：計算 Position 符合，且 Status 狀態為 "待審核" 的數量
                 job.NewApplicationsCount = await _db.Resumes
-                    .CountAsync(r => r.Position == job.Id && r.Status == "待審核");
+                    .CountAsync(r => r.JobsId == job.Id && r.Status == "待審核");
             }
 
             return View("~/Views/Job_hr/Index.cshtml", jobs);

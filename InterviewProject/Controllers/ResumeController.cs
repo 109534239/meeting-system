@@ -45,7 +45,7 @@ namespace InterviewProject.Controllers
             // 3. 建立新的 Resume 物件，僅賦值資料庫有的欄位
             var resume = new Resume
             {
-                UserId = userId,
+                MembersId = userId,
             };
 
             // 返回 View
@@ -76,8 +76,8 @@ namespace InterviewProject.Controllers
             if (userId == 0) return Json(new List<int>());
 
             var positions = await _db.Resumes
-                .Where(r => r.UserId == userId)
-                .Select(r => r.Position)
+                .Where(r => r.MembersId == userId)
+                .Select(r => r.JobsId)
                 .Distinct()
                 .ToListAsync();
 
@@ -91,56 +91,64 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            // 1. 抓取「目前點擊」的新職缺資料 (用於顯示：應徵職位)
+            // 1. 抓取目前要應徵的職缺 (不論模式為何，畫面都要顯示這個 Job Title)
             var targetJob = await _db.Jobs.FindAsync(jobId);
             if (targetJob == null) return Content("找不到目標職缺");
 
             Resume model = null;
 
-            // 2. 判斷模式
+            // 2. 處理「套用」模式 (從 A 職位拷貝到 B 職位)
             if (mode == "apply" && fromJobId.HasValue)
             {
-                // 🌟 核心邏輯：套用現有履歷
-                // 抓取該使用者在「另一個職位(fromJobId)」所填寫的履歷內容
                 var existingResume = await _db.Resumes
-                    .AsNoTracking() // 使用 AsNoTracking 避免 EF 追蹤，方便我們修改 ID 後存為新紀錄
-                    .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == fromJobId.Value);
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == fromJobId.Value);
 
                 if (existingResume != null)
                 {
                     model = existingResume;
-                    model.Id = 0;           // 重置 Id，確保儲存時是新增紀錄
-                    model.Position = jobId; // 🎯 關鍵：將職位 ID 改成目前點擊的這個新職缺
-                    model.Job = targetJob;  // 關聯目前的新職缺物件 (供 View 顯示 Title)
-                    model.ResumeTime = DateTime.Now;
+                    model.Id = 0;           // 重置為新紀錄
+                    model.JobsId = jobId;   // 綁定到新職位
+                    model.Job = targetJob;  // 賦值 Job 物件供 View 顯示
                     model.Status = "待審核";
+
+                    // 從「舊履歷」的關聯表抓取語言並組合
+                    var sourceLangs = await _db.LanguageProficiency
+                        .Where(l => l.ResumeId == existingResume.Id)
+                        .ToListAsync();
+                    model.LanguageSkills = FormatLanguageString(sourceLangs);
                 }
             }
 
-            // 3. 如果不是套用模式，或是找不到舊履歷，則嘗試抓取該職位是否已有暫存，或建立全新品
+            // 3. 一般模式：讀取該職位已存在的暫存紀錄，或新建一個
             if (model == null)
             {
                 model = await _db.Resumes
                     .Include(r => r.Job)
-                    .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == jobId);
+                    .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == jobId);
 
                 if (model == null)
                 {
+                    // 全新品
                     model = new Resume
                     {
-                        UserId = userId,
-                        Position = jobId,
-                        // 🎯 核心修正：預設值為 -1，View 將判斷此值不勾選 Radio
+                        MembersId = userId,
+                        JobsId = jobId,
                         WorkExperienceYears = -1,
-                        Job = targetJob,
-                        CompanyName = null,     // 確保建立時為空
-                        JobTitle = null,
-                        JobDescription = null
+                        Job = targetJob
                     };
+                }
+                else
+                {
+                    // 已存在的紀錄，從關聯表抓取語言並組合
+                    var langs = await _db.LanguageProficiency
+                        .Where(l => l.ResumeId == model.Id)
+                        .ToListAsync();
+                    model.LanguageSkills = FormatLanguageString(langs);
                 }
             }
 
-            // 4. 抓取會員基本資料 (用於 View 顯示姓名、性別等)
+            // 4. 抓取會員基本資料 (ViewBag 部分保持不變)
             var member = await _db.Members.FindAsync(userId);
             ViewBag.UserName = member?.Name;
             ViewBag.UserGender = member?.Gender;
@@ -152,54 +160,95 @@ namespace InterviewProject.Controllers
             return View(model);
         }
 
+        // 🎯 輔助方法：統一格式化邏輯
+        // 方法 A：負責「把 List 變成字串」 (你已經有了)
+        private string FormatLanguageString(List<LanguageProficiency> langs)
+        {
+            if (langs == null || !langs.Any()) return "";
+            return string.Join(", ", langs.Select(l =>
+                l.Language == "不具外文能力" ? l.Language : $"{l.Language}({l.Degree})"));
+        }
+
+        // 方法 B：負責「去資料庫抓資料並呼叫方法 A」 (補上這個)
+        private async Task<string> GetFormattedLanguageSkills(int resumeId)
+        {
+            var langs = await _db.LanguageProficiency
+                .Where(l => l.ResumeId == resumeId)
+                .ToListAsync();
+            return FormatLanguageString(langs);
+        }
+
         // 3. 儲存邏輯
         [HttpPost]
         public async Task<IActionResult> SaveResume(Resume model)
         {
-            // 移除不需驗證的欄位
             ModelState.Remove("ResumeTime");
             ModelState.Remove("Job");
-            ModelState.Remove("Status"); // 狀態由後端控制
+            ModelState.Remove("Status");
 
             int userId = GetCurrentUserId();
-            model.UserId = userId;
+            model.MembersId = userId;
 
             if (!ModelState.IsValid)
             {
-                // 🎯 偵錯技巧：如果資料沒存進去，可以在這行打斷點
-                // 檢查 ModelState.Values.SelectMany(v => v.Errors) 看是哪個欄位報錯
-                model.Job = await _db.Jobs.FindAsync(model.Position);
+                model.Job = await _db.Jobs.FindAsync(model.JobsId);
                 return View("Resume", model);
             }
 
             var existing = await _db.Resumes
-    .FirstOrDefaultAsync(r => r.UserId == userId && r.Position == model.Position);
+                .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == model.JobsId);
 
             DateTime now = DateTime.Now;
+            int finalResumeId;
 
             if (existing == null)
             {
-                model.Id = 0;
                 model.ResumeTime = now;
                 model.Status = "待審核";
                 _db.Resumes.Add(model);
+                await _db.SaveChangesAsync();
+                finalResumeId = model.Id;
             }
             else
             {
-                // 更新現有資料
-                model.Id = existing.Id;
                 model.ResumeTime = now;
                 model.Status = existing.Status ?? "待審核";
                 _db.Entry(existing).CurrentValues.SetValues(model);
+                await _db.SaveChangesAsync();
+                finalResumeId = existing.Id;
             }
 
-            await _db.SaveChangesAsync();
+            // 🎯 這裡會把前端傳來的 model.LanguageSkills 字串拆解存入 LanguageProficiency 表
+            await UpdateLanguageProficiency(finalResumeId, model.LanguageSkills);
 
-            // 🎯 儲存成功後，設定 TempData 訊息
             TempData["ShowSuccessAlert"] = "履歷已送出！";
+            return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
+        }
 
-            // 🎯 跳轉回 Job_detail，需要傳入 jobId (即 model.Position)
-            return RedirectToAction("Job_detail", "Job", new { id = model.Position });
+        // 輔助方法：解析字串並更新資料表
+        private async Task UpdateLanguageProficiency(int resumeId, string? languageSkills)
+        {
+            var oldItems = _db.LanguageProficiency.Where(l => l.ResumeId == resumeId);
+            _db.LanguageProficiency.RemoveRange(oldItems);
+
+            if (!string.IsNullOrEmpty(languageSkills))
+            {
+                var parts = languageSkills.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var p in parts)
+                {
+                    if (p == "不具外文能力")
+                    {
+                        _db.LanguageProficiency.Add(new LanguageProficiency { ResumeId = resumeId, Language = p, Degree = "無" });
+                    }
+                    else if (p.Contains("(") && p.Contains(")"))
+                    {
+                        var langName = p.Split('(')[0];
+                        var degreeName = p.Split('(', ')')[1];
+                        _db.LanguageProficiency.Add(new LanguageProficiency { ResumeId = resumeId, Language = langName, Degree = degreeName });
+                    }
+                }
+            }
+            await _db.SaveChangesAsync();
         }
 
         // 按鈕：匯出 PDF
@@ -207,8 +256,11 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> ExportToPdf(Resume model)
         {
             // 1. 驗證姓名
-            var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == model.UserId);
+            var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == model.MembersId);
             if (member == null) return Content("找不到會員資料");
+
+            // 🎯 直接呼叫方法 B，一行搞定！
+            model.LanguageSkills = await GetFormattedLanguageSkills(model.Id);
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
@@ -229,7 +281,7 @@ namespace InterviewProject.Controllers
             string ck = "■";
             string un = "□";
 
-            // 取得串接字串
+            // 取得串接字串 (此時 model.LanguageSkills 已經被我們補上了)
             string lang = model.LanguageSkills ?? "";
             string[] knownLangs = { "英語", "日語", "台語", "客語", "不具外文能力" };
 

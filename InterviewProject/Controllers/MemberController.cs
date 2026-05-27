@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using System;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Collections.Generic;
 
 namespace InterviewProject.Controllers
 {
@@ -21,6 +22,24 @@ namespace InterviewProject.Controllers
         private int GetCurrentUserId()
         {
             return HttpContext.Session.GetInt32("MemberId") ?? 0;
+        }
+
+        // --- 🎯 新增的語文處理輔助方法 (從 ResumeController 拷貝過來) ---
+        // 方法 A：把資料表 List 轉成字串
+        private string FormatLanguageString(List<LanguageProficiency> langs)
+        {
+            if (langs == null || !langs.Any()) return "";
+            return string.Join(", ", langs.Select(l =>
+                l.Language == "不具外文能力" ? l.Language : $"{l.Language}({l.Degree})"));
+        }
+
+        // 方法 B：去資料庫抓資料並呼叫方法 A
+        private async Task<string> GetFormattedLanguageSkills(int resumeId)
+        {
+            var langs = await _db.LanguageProficiency
+                .Where(l => l.ResumeId == resumeId)
+                .ToListAsync();
+            return FormatLanguageString(langs);
         }
 
         // GET: 基本資料
@@ -124,9 +143,9 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            var resumeList = await _db.Resume
+            var resumeList = await _db.Resumes
                 .Include(r => r.Job)
-                .Where(r => r.UserId == userId)
+                .Where(r => r.MembersId == userId)
                 .OrderByDescending(r => r.ResumeTime)
                 .ToListAsync();
 
@@ -139,17 +158,23 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            var resume = await _db.Resume
+            var resume = await _db.Resumes
                 .Include(r => r.Job)
-                .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId);
+                .FirstOrDefaultAsync(r => r.Id == id && r.MembersId == userId);
 
             if (resume == null) return NotFound();
+
+            // 🎯 這裡現在有輔助方法支撐了，可以正確抓取副表語言
+            resume.LanguageSkills = await GetFormattedLanguageSkills(resume.Id);
 
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);
             if (member != null)
             {
                 ViewBag.UserName = member.Name;
                 ViewBag.UserGender = member.Gender;
+                ViewBag.UserIdNumber = member.IdNumber;
+                ViewBag.UserBirthday = member.Birthday;
+                ViewBag.UserAddress = member.Address;
                 ViewBag.UserEmail = member.Email;
             }
 
@@ -163,9 +188,9 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            var applications = await _db.Resume
+            var applications = await _db.Resumes
                 .Include(r => r.Job)
-                .Where(r => r.UserId == userId)
+                .Where(r => r.MembersId == userId)
                 .OrderByDescending(r => r.ResumeTime)
                 .ToListAsync();
 
