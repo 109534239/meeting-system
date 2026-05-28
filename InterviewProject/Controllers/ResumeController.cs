@@ -106,17 +106,20 @@ namespace InterviewProject.Controllers
 
                 if (existingResume != null)
                 {
-                    model = existingResume;
-                    model.Id = 0;           // 重置為新紀錄
-                    model.JobsId = jobId;   // 綁定到新職位
-                    model.Job = targetJob;  // 賦值 Job 物件供 View 顯示
-                    model.Status = "待審核";
-
-                    // 從「舊履歷」的關聯表抓取語言並組合
+                    // 🎯 修正：在重置 ID 之前，先用 existingResume.Id 去抓語言
                     var sourceLangs = await _db.LanguageProficiency
                         .Where(l => l.ResumeId == existingResume.Id)
                         .ToListAsync();
+
+                    model = existingResume;
+                    // 🎯 先賦值字串，這時候 FormatLanguageString 拿得到資料
                     model.LanguageSkills = FormatLanguageString(sourceLangs);
+
+                    // 🎯 最後才重置 ID 為 0 (準備存成新紀錄)
+                    model.Id = 0;
+                    model.JobsId = jobId;
+                    model.Job = targetJob;
+                    model.Status = "待審核";
                 }
             }
 
@@ -172,10 +175,21 @@ namespace InterviewProject.Controllers
         // 方法 B：負責「去資料庫抓資料並呼叫方法 A」 (補上這個)
         private async Task<string> GetFormattedLanguageSkills(int resumeId)
         {
-            var langs = await _db.LanguageProficiency
-                .Where(l => l.ResumeId == resumeId)
+            var skills = await _db.LanguageProficiency
+                .Where(lp => lp.ResumeId == resumeId)
                 .ToListAsync();
-            return FormatLanguageString(langs);
+
+            if (skills == null || !skills.Any()) return "";
+
+            // 格式化為：語言(程度), 語言(程度)
+            // 特別注意：如果是「不具外文能力」，則不加括號
+            var formatted = skills.Select(lp =>
+                lp.Language == "不具外文能力"
+                ? lp.Language
+                : $"{lp.Language}({lp.Degree})"
+            );
+
+            return string.Join(", ", formatted);
         }
 
         // 3. 儲存邏輯
@@ -255,19 +269,22 @@ namespace InterviewProject.Controllers
         [HttpPost]
         public async Task<IActionResult> ExportToPdf(Resume model)
         {
+            // 🎯 重要：檢查 ID 是否有傳進來
+            if (model.Id == 0) return Content("ID 依舊為 0，請檢查 View 是否有 <input type='hidden' asp-for='Id' />");
+
             // 1. 驗證姓名
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == model.MembersId);
             if (member == null) return Content("找不到會員資料");
 
-            // 🎯 直接呼叫方法 B，一行搞定！
-            model.LanguageSkills = await GetFormattedLanguageSkills(model.Id);
+            // 🎯 直接從資料庫抓取該履歷的所有語言資料
+            var dbLangs = await _db.LanguageProficiency
+                .Where(l => l.ResumeId == model.Id)
+                .ToListAsync();
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
             string realIdNumber = member.IdNumber ?? "";
-            // 格式化為 yyyy/MM/dd，若為空則回傳空字串
             string realBirthday = member.Birthday.ToString("yyyy/MM/dd");
-          
             string realEmail = member.Email ?? "";
             string realAddress = member.Address ?? "";
 
@@ -281,9 +298,13 @@ namespace InterviewProject.Controllers
             string ck = "■";
             string un = "□";
 
-            // 取得串接字串 (此時 model.LanguageSkills 已經被我們補上了)
-            string lang = model.LanguageSkills ?? "";
+            // 定義比對小工具：判斷資料庫是否有這筆「語言+程度」
+            Func<string, string, string> checkLang = (name, degree) =>
+                dbLangs.Any(x => x.Language == name && x.Degree == degree) ? ck : un;
+
+            // 找出「其他」語言 (排除已知四類)
             string[] knownLangs = { "英語", "日語", "台語", "客語", "不具外文能力" };
+            var otherLang = dbLangs.FirstOrDefault(x => !knownLangs.Contains(x.Language));
 
             string lic = model.DriverLicense ?? "";
             string comp = model.ComputerSkills ?? "";
@@ -347,26 +368,35 @@ namespace InterviewProject.Controllers
                 ["Autobiography"] = model.Autobiography ?? "",
 
                 //背景及專長
-                ["L_None"] = lang.Contains("不具外文能力") ? ck : un,
-                ["L_Eng_1"] = lang.Contains("英語(精通)") ? ck : un,
-                ["L_Eng_2"] = lang.Contains("英語(良好)") ? ck : un,
-                ["L_Eng_3"] = lang.Contains("英語(普通)") ? ck : un,
-                ["L_Eng_4"] = lang.Contains("英語(稍懂)") ? ck : un,
+                //語言能力
+                ["L_None"] = dbLangs.Any(x => x.Language == "不具外文能力") ? ck : un,
 
-                ["L_Jap_1"] = lang.Contains("日語(精通)") ? ck : un,
-                ["L_Jap_2"] = lang.Contains("日語(良好)") ? ck : un,
-                ["L_Jap_3"] = lang.Contains("日語(普通)") ? ck : un,
-                ["L_Jap_4"] = lang.Contains("日語(稍懂)") ? ck : un,
+                ["L_Eng_1"] = checkLang("英語", "精通"),
+                ["L_Eng_2"] = checkLang("英語", "良好"),
+                ["L_Eng_3"] = checkLang("英語", "普通"), // 截圖中的英語(普通)會中這條
+                ["L_Eng_4"] = checkLang("英語", "稍懂"),
 
-                ["L_Twn_1"] = lang.Contains("台語(精通)") ? ck : un,
-                ["L_Twn_2"] = lang.Contains("台語(良好)") ? ck : un,
-                ["L_Twn_3"] = lang.Contains("台語(普通)") ? ck : un,
-                ["L_Twn_4"] = lang.Contains("台語(稍懂)") ? ck : un,
+                ["L_Jap_1"] = checkLang("日語", "精通"),
+                ["L_Jap_2"] = checkLang("日語", "良好"),
+                ["L_Jap_3"] = checkLang("日語", "普通"),
+                ["L_Jap_4"] = checkLang("日語", "稍懂"), // 截圖中的日語(稍懂)會中這條
 
-                ["L_Hakka_1"] = lang.Contains("客語(精通)") ? ck : un,
-                ["L_Hakka_2"] = lang.Contains("客語(良好)") ? ck : un,
-                ["L_Hakka_3"] = lang.Contains("客語(普通)") ? ck : un,
-                ["L_Hakka_4"] = lang.Contains("客語(稍懂)") ? ck : un,
+                ["L_Twn_1"] = checkLang("台語", "精通"),
+                ["L_Twn_2"] = checkLang("台語", "良好"),
+                ["L_Twn_3"] = checkLang("台語", "普通"),
+                ["L_Twn_4"] = checkLang("台語", "稍懂"),
+
+                ["L_Hakka_1"] = checkLang("客語", "精通"),
+                ["L_Hakka_2"] = checkLang("客語", "良好"),
+                ["L_Hakka_3"] = checkLang("客語", "普通"),
+                ["L_Hakka_4"] = checkLang("客語", "稍懂"),
+
+                // 🎯 5. 其他語言處理 (如：韓語、法語)
+                ["L_Other_Name"] = otherLang?.Language ?? "",
+                ["L_Other_1"] = (otherLang?.Degree == "精通") ? ck : un,
+                ["L_Other_2"] = (otherLang?.Degree == "良好") ? ck : un,
+                ["L_Other_3"] = (otherLang?.Degree == "普通") ? ck : un,
+                ["L_Other_4"] = (otherLang?.Degree == "稍懂") ? ck : un,
 
                 //駕照種類
                 ["D_Self_S"] = lic.Contains("自用(小)") ? ck : un,
@@ -395,27 +425,6 @@ namespace InterviewProject.Controllers
                 ["C_Prog"] = comp.Contains("程式設計") ? ck : un,
                 ["C_Other"] = comp.Contains("其他:") ? ck : un
             };
-
-            // 1. 找出不屬於已知語言的項目 (例如：韓語(普通))
-            var otherLangItem = lang.Split(", ")
-                .FirstOrDefault(s => !knownLangs.Any(k => s.StartsWith(k)) && s.Contains("("));
-
-            string otherLevel = "";
-            string otherName = "";
-
-            if (otherLangItem != null)
-            {
-                otherName = otherLangItem.Split('(')[0];
-                otherLevel = otherLangItem.Split('(', ')')[1];
-            }
-
-            // 2. 填入 Dictionary
-            value["L_Other_Name"] = otherName;
-
-            value["L_Other_1"] = (otherLevel == "精通") ? ck : un;
-            value["L_Other_2"] = (otherLevel == "良好") ? ck : un;
-            value["L_Other_3"] = (otherLevel == "普通") ? ck : un;
-            value["L_Other_4"] = (otherLevel == "稍懂") ? ck : un;
 
             // 證照級別解析邏輯
             var certList = cert.Split(", ").ToList();

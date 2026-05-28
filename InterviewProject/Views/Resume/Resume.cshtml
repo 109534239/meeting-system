@@ -54,6 +54,7 @@
         </span>
     </div>
     <form method="post" asp-action="SaveResume">
+        <input type="hidden" asp-for="Id" />
         <input type="hidden" asp-for="JobsId" />
         <input type="hidden" asp-for="MembersId" />
 
@@ -176,7 +177,8 @@
                             @* 🎯 顯示邏輯：如果是 -1 就顯示空字串，避免畫面出現 -1 *@
                             <input asp-for="WorkExperienceYears" id="workYearsInput"
                                    type="number" class="input-inline" style="width:50px"
-                                   value="@(Model.WorkExperienceYears == -1 ? "" : Model.WorkExperienceYears.ToString())"
+                                   @* 🎯 修改這行：只要小於等於 0，一律顯示空字串 *@
+                                   value="@(Model.WorkExperienceYears <= 0 ? "" : Model.WorkExperienceYears.ToString())"
                                    readonly="@(Model.WorkExperienceYears <= 0)" /> 年
                         </label>
                     </div>
@@ -470,6 +472,12 @@
             });
         }
 
+        // 額外確保：如果進場時工作年資是 0 或 -1，將輸入框設為空白
+        const workYearsInput = document.getElementById('workYearsInput');
+        if (workYearsInput && parseInt(workYearsInput.value) <= 0) {
+            workYearsInput.value = "";
+        }
+
         // --- 限制邏輯 ---
         document.querySelectorAll('.lang-row').forEach(row => {
             const lvs = row.querySelectorAll('.lang-lv');
@@ -502,11 +510,48 @@
     };
 
     // --- Submit 邏輯 ---
+        // --- 修改後的 Submit & 驗證邏輯 ---
     document.querySelector('form').addEventListener('submit', function (e) {
+        const workYearsInput = document.getElementById('workYearsInput');
+        const workExpType = document.querySelector('input[name="workExpType"]:checked');
+
+        // 1. 驗證是否有選 Radio
+        if (!workExpType) {
+            Swal.fire('提示', '請選擇是否有工作經歷', 'warning');
+            e.preventDefault();
+            return false;
+        }
+
+        // 2. 判斷是選「無(0)」還是「有(1)」
+        // 這裡改用 value 或 onclick 判斷都可以，建議統一邏輯
+        const isHaveExp = workExpType.getAttribute('onclick').includes('1');
+        const yearsValue = workYearsInput.value.trim();
+
+        if (isHaveExp) {
+            // --- 有經歷的驗證 ---
+            const years = parseInt(yearsValue);
+            if (!yearsValue || isNaN(years) || years <= 0) {
+                Swal.fire('提示', '請輸入正確的工作年資', 'warning');
+                e.preventDefault();
+                return false;
+            }
+            if (!document.getElementById('CompanyName').value.trim() ||
+                !document.getElementById('JobTitle').value.trim()) {
+                Swal.fire('提示', '您已填寫年資，請完整填寫公司名稱與職稱', 'warning');
+                e.preventDefault();
+                return false;
+            }
+        } else {
+            // --- 無經歷的處理 ---
+            // 🎯 核心修改：送出前把空白補回 0，後端才收得到資料
+            workYearsInput.value = 0;
+        }
+        // --- 驗證邏輯結束 ---
+
+        // 1. 處理其他教育程度
         const otherEduInput = document.getElementById('otherEduLevel');
         const radioOther = document.getElementById('radioOther');
         const otherVal = otherEduInput.value.trim();
-
         const now = new Date();
         document.getElementById('finalResumeTime').value = now.toISOString();
 
@@ -515,19 +560,18 @@
             radioOther.value = otherVal;
         }
 
-        // 1. 語文能力串接
+        // 2. 語文能力串接
         let langResults = [];
         if (document.querySelector('.lang-node:checked')) langResults.push("不具外文能力");
         document.querySelectorAll('.lang-row').forEach(row => {
             let label = row.querySelector('.lang-label') ? row.querySelector('.lang-label').innerText : "";
-            if (label === "其他") label = document.getElementById('otherLangName').value;
-
+            if (label.includes("其他")) label = document.getElementById('otherLangName').value;
             let lv = row.querySelector('.lang-lv:checked');
-            if (lv && label) langResults.push(`${label}(${lv.value})`);
+            if (lv && label) langResults.push(`${label.replace('：','')}(${lv.value})`);
         });
         document.getElementById('finalLanguageSkills').value = langResults.join(', ');
 
-        // 2. 駕照種類
+        // 3. 駕照種類
         let licenseResults = [];
         document.querySelectorAll('.license-row').forEach(row => {
             let type = row.getAttribute('data-type');
@@ -540,60 +584,50 @@
         });
         document.getElementById('finalDriverLicense').value = licenseResults.join(', ');
 
-        // 3. 專長
+        // 4. 專長
         let specResults = [];
         document.querySelectorAll('.spec-input').forEach(input => {
             if(input.value) specResults.push(input.value);
         });
         document.getElementById('finalSpecialty').value = specResults.join('; ');
 
-        // 4. 證照
+        // 5. 證照
         let certResults = [];
         document.querySelectorAll('.cert-item').forEach((item, index) => {
             let nameInput = item.querySelector('.cert-name');
             let name = nameInput ? nameInput.value.trim() : "";
-
-            if (index === 2) {
-                name = document.getElementById('othercert-name').value.trim();
-            }
+            if (index === 2) name = document.getElementById('othercert-name').value.trim();
 
             if (name) {
                 let selectedLvs = [];
-                item.querySelectorAll('.cert-lv:checked').forEach(lv => {
-                    selectedLvs.push(lv.value);
-                });
-
-                if (selectedLvs.length > 0) {
-                    certResults.push(`${name}(${selectedLvs.join(',')})`);
-                } else {
-                    certResults.push(name);
-                }
+                item.querySelectorAll('.cert-lv:checked').forEach(lv => selectedLvs.push(lv.value));
+                certResults.push(selectedLvs.length > 0 ? `${name}(${selectedLvs.join(',')})` : name);
             }
         });
         document.getElementById('finalCertificates').value = certResults.join(', ');
 
-        // 5.電腦能力
+        // 6. 電腦能力
         let compResults = [];
         document.querySelectorAll('.comp-chk:checked').forEach(chk => {
             if (chk.value === "其他") {
-                let val = document.getElementById('otherCompName').value;
-                compResults.push("其他:" + val);
+                compResults.push("其他:" + document.getElementById('otherCompName').value);
             } else {
                 compResults.push(chk.value);
             }
         });
         document.getElementById('finalComputerSkills').value = compResults.join(', ');
 
-        // 6. 學歷狀況
+        // 7. 學歷狀況
         let selectedEdu = document.querySelector('.edu-chk:checked');
         document.getElementById('finalEduStatus').value = selectedEdu ? selectedEdu.value : "";
     });
 
+    // 其他教育程度 Focus 處理
     document.getElementById('otherEduLevel').addEventListener('focus', function() {
         document.getElementById('radioOther').checked = true;
     });
 
-
+    // 修改過的 setWorkExp
     function setWorkExp(val) {
         const input = document.getElementById('workYearsInput');
         const company = document.getElementById('CompanyName');
@@ -601,15 +635,16 @@
         const desc = document.getElementById('JobDescription');
 
         if (val === 0) {
-            input.value = 0;
+            input.value = ""; // 🎯 點擊「無」時清空顯示，避免出現 0
             input.readOnly = true;
-            // 選擇無工作經驗時，自動清空內容
-            company.value = "";
-            title.value = "";
-            desc.value = "";
+            if(company) company.value = "";
+            if(title) title.value = "";
+            if(desc) desc.value = "";
         } else {
-            // 點擊「有年資」時，若原為 -1 或 0，預設給 1 年
-            if(input.value <= 0) input.value = 1;
+            // 點擊「有」時，如果原本是空的，預設給 1
+            if(input.value === "" || parseInt(input.value) <= 0) {
+                input.value = 1;
+            }
             input.readOnly = false;
         }
     }
