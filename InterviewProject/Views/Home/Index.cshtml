@@ -29,7 +29,8 @@
                     {
                         foreach (var a in (IEnumerable<InterviewProject.Models.Announcement>)ViewBag.Announcements)
                         {
-                            <li class="announce-item">
+                            @* 🎯 點擊事件精準綁定，並用 JavaScriptStringEncode 安全處理字串，避免單雙引號或斷行造成 JS 報錯 *@
+                            <li class="announce-item" onclick="openAnnounceModal('@a.Date.ToString("yyyy-MM-dd")', '@a.Category', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Title)', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Content)')">
                                 <span class="announce-date">@a.Date.ToString("yyyy-MM-dd")</span>
                                 <span class="announce-badge">@a.Category</span>
                                 <span class="announce-title">@a.Title</span>
@@ -55,21 +56,13 @@
                     @foreach (var job in Model)
                     {
                         <a asp-controller="Job" asp-action="Job_detail" asp-route-id="@job.Id" class="job-card">
-
-                            @* A. 職缺所屬部門 *@
                             <div class="job-dept">@job.Department</div>
-
-                            @* B. 職缺詳細名稱 *@
                             <div class="job-title">@job.Title</div>
-
-                            @* C. 標籤列 (工作地點、性質類型、年資要求) *@
                             <div class="job-tags">
                                 <span class="tag">@job.Location</span>
-
                                 <span class="tag">
                                     @(job.JobType == "fulltime" ? "全職" : job.JobType == "parttime" ? "兼職" : "實習")
                                 </span>
-
                                 <span class="tag">
                                     @(string.IsNullOrEmpty(job.ExperienceRequired) ? "不限" : job.ExperienceRequired)
                                 </span>
@@ -89,8 +82,37 @@
     </div>
 </main>
 
+@* ── 🎯 隱藏的彈出視窗 HTML 結構 ── *@
+<div id="announceModal" class="announce-modal" onclick="closeAnnounceModal(event)">
+    <div class="announce-modal-card" onclick="event.stopPropagation()">
+        <button class="modal-close-btn" onclick="document.getElementById('announceModal').style.display = 'none'">&times;</button>
+        <div class="modal-meta">
+            <span id="modalDate" class="modal-date"></span>
+            <span id="modalBadge" class="modal-badge"></span>
+        </div>
+        <div id="modalTitle" class="modal-title"></div>
+        <div id="modalContent" class="modal-content"></div>
+    </div>
+</div>
+
 @section Scripts {
     <script>
-        
+        // 🎯 開啟公告視窗並寫入內容
+        function openAnnounceModal(date, category, title, content) {
+            document.getElementById('modalDate').innerText = date;
+            document.getElementById('modalBadge').innerText = category;
+            document.getElementById('modalTitle').innerText = title;
+            document.getElementById('modalContent').innerText = content;
+            
+            // 顯示視窗（樣式已由 Home.css 的 flex 進行垂直水平置中控制）
+            document.getElementById('announceModal').style.display = 'flex';
+        }
+
+        // 🎯 點擊半透明遮罩區塊時可關閉視窗
+        function closeAnnounceModal(event) {
+            if (event.target.id === 'announceModal') {
+                document.getElementById('announceModal').style.display = 'none';
+            }
+        }
     </script>
 }
