@@ -1,7 +1,7 @@
 @model IEnumerable<InterviewProject.Models.Resume>
 
 @{
-    ViewData["Title"] = "我的履歷管理";
+    ViewData["Title"] = "我的履歷";
     // 檢查是否為唯讀模式
     bool isReadOnly = ViewBag.IsReadOnly ?? false;
 }
@@ -14,7 +14,7 @@
 <div class="app-wrapper">
     <div class="page-header">
         <div class="page-header-inner">
-            <h1>我的履歷管理</h1>
+            <h1>我的履歷</h1>
             <p>Resume Management</p>
         </div>
     </div>
@@ -73,6 +73,7 @@
                                 列印 PDF
                             </button> *@
                         </div>
+                
                     </div>
                 }
             }
