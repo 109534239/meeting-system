@@ -19,47 +19,38 @@ namespace InterviewProject.Controllers
             _env = env;
         }
 
-        // ── HR/主管：房間列表 ──
-        public IActionResult Index()
+        private bool IsEmployee()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
-                return RedirectToAction("Index", "Login");
+            return role == "hr" || role == "manager" || role == "director";
+        }
 
+        public IActionResult Index()
+        {
+            if (!IsEmployee()) return RedirectToAction("Index", "Login");
             var rooms = _context.Rooms.OrderByDescending(r => r.CreatedTime).ToList();
             return View(rooms);
         }
 
-        // ── HR/主管：建立房間 GET ──
         [HttpGet]
         public IActionResult Create()
         {
-            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
-                return RedirectToAction("Index", "Login");
+            if (!IsEmployee()) return RedirectToAction("Index", "Login");
             return View();
         }
 
-        // ── HR/主管：建立房間 POST ──
         [HttpPost]
         public async Task<IActionResult> Create(string roomName, DateTime? startAt, DateTime? endAt,
                                                  int maxParticipants = 20, string? description = null)
         {
-            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
-                return RedirectToAction("Index", "Login");
-
-            if (string.IsNullOrWhiteSpace(roomName))
-            {
-                ModelState.AddModelError("", "房間名稱不能為空");
-                return View();
-            }
+            if (!IsEmployee()) return RedirectToAction("Index", "Login");
+            if (string.IsNullOrWhiteSpace(roomName)) { ModelState.AddModelError("", "房間名稱不能為空"); return View(); }
 
             var room = new Room
             {
                 RoomName = roomName,
                 CreatedTime = DateTime.Now,
-                JitsiRoomName = Guid.NewGuid().ToString("N")[..12],
+                JitsiRoomName = Guid.NewGuid().ToString("N")[..10],
                 StartAt = startAt,
                 EndAt = endAt,
                 MaxParticipants = maxParticipants,
@@ -69,33 +60,24 @@ namespace InterviewProject.Controllers
 
             _context.Rooms.Add(room);
             await _context.SaveChangesAsync();
-
             TempData["Success"] = $"房間「{roomName}」已建立，代碼：{room.JitsiRoomName}";
             return RedirectToAction("Index");
         }
 
-        // ── HR/主管：編輯房間 GET ──
         [HttpGet]
         public async Task<IActionResult> Edit(int id)
         {
-            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
-                return RedirectToAction("Index", "Login");
-
+            if (!IsEmployee()) return RedirectToAction("Index", "Login");
             var room = await _context.Rooms.FindAsync(id);
             if (room == null) return NotFound();
             return View(room);
         }
 
-        // ── HR/主管：編輯房間 POST ──
         [HttpPost]
         public async Task<IActionResult> Edit(int id, string roomName, DateTime? startAt, DateTime? endAt,
                                                int maxParticipants, bool isActive, string? description)
         {
-            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
-                return RedirectToAction("Index", "Login");
-
+            if (!IsEmployee()) return RedirectToAction("Index", "Login");
             var room = await _context.Rooms.FindAsync(id);
             if (room == null) return NotFound();
 
@@ -111,32 +93,17 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Index");
         }
 
-        // ── 輸入房間代碼 GET ──
         [HttpGet]
-        public IActionResult EnterCode()
-        {
-            return View();
-        }
+        public IActionResult EnterCode() => View();
 
-        // ── 輸入房間代碼 POST ──
         [HttpPost]
         public IActionResult EnterCode(string roomCode)
         {
-            if (string.IsNullOrWhiteSpace(roomCode))
-            {
-                ViewBag.ErrorMessage = "請輸入房間代碼";
-                return View();
-            }
+            if (string.IsNullOrWhiteSpace(roomCode)) { ViewBag.ErrorMessage = "請輸入房間代碼"; return View(); }
 
             var room = _context.Rooms.FirstOrDefault(x => x.JitsiRoomName == roomCode.Trim());
+            if (room == null) { ViewBag.ErrorMessage = "找不到此房間代碼"; return View(); }
 
-            if (room == null)
-            {
-                ViewBag.ErrorMessage = "找不到該房間代碼，請確認是否輸入正確。";
-                return View();
-            }
-
-            // ✅ 時間閘：未到開放時間或已結束，顯示提示頁
             if (!room.CanEnter())
             {
                 ViewBag.Room = room;
@@ -147,13 +114,11 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Join", new { code = room.JitsiRoomName });
         }
 
-        // ── 進入會議室 ──
         public IActionResult Join(string code)
         {
             var room = _context.Rooms.FirstOrDefault(x => x.JitsiRoomName == code);
             if (room == null) return Content("房間不存在");
 
-            // 時間閘
             if (!room.CanEnter())
             {
                 ViewBag.Room = room;
@@ -165,7 +130,6 @@ namespace InterviewProject.Controllers
             return View();
         }
 
-        // ── API：取得房間狀態（輪詢用）──
         [HttpGet]
         public IActionResult RoomStatus(string code)
         {

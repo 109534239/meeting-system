@@ -1,11 +1,13 @@
 ﻿@{
-    Layout = null; // 全螢幕，不用導覽列
+    Layout = null;
     var room = ViewBag.Room as InterviewProject.Models.Room;
     var memberName = Context.Session.GetString("MemberName") ?? "訪客";
     var memberRole = Context.Session.GetString("MemberRole")?.ToLower() ?? "";
     var isStaff = memberRole == "hr" || memberRole == "manager" || memberRole == "director";
-    var displayName = isStaff ? $"面試官：{memberName}" : $"求職者：{memberName}";
-    var jitsiRoom = $"MeetingRoom-{room.JitsiRoomName}";
+    var displayName = isStaff ? "面試官：" + memberName : "求職者：" + memberName;
+    // Jitsi External API 方式（不用 iframe src，用 JS 建立）
+    // 這樣不受 meet.jit.si 5分鐘限制，因為限制只針對 iframe embed
+    var jitsiRoom   = "InterviewRoom-" + room.JitsiRoomName;
     var encodedName = Uri.EscapeDataString(displayName);
 }
 <!DOCTYPE html>
@@ -25,28 +27,27 @@
             height: 100%;
             background: #0d1117;
             font-family: 'Segoe UI',sans-serif;
-            overflow: hidden;
-            color: #e6edf3
+            color: #e6edf3;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden
         }
 
-        /* ── 頂部工具列 ── */
         .topbar {
-            height: 52px;
+            height: 50px;
             background: #161b22;
             border-bottom: 1px solid #30363d;
             display: flex;
             align-items: center;
-            padding: 0 16px;
-            gap: 12px;
-            flex-shrink: 0;
-            z-index: 100;
-            position: relative
+            padding: 0 12px;
+            gap: 8px;
+            flex-shrink: 0
         }
 
         .room-name {
             font-weight: 700;
-            font-size: 14px;
-            color: #e6edf3
+            font-size: 13px;
+            white-space: nowrap
         }
 
         .room-code {
@@ -55,116 +56,148 @@
             background: #21262d;
             color: #79c0ff;
             padding: 2px 8px;
-            border-radius: 12px;
-            letter-spacing: .5px
+            border-radius: 10px;
+            cursor: pointer;
+            user-select: all
         }
 
-        .topbar-center {
+        .topbar-mid {
             flex: 1;
             display: flex;
             justify-content: center;
-            gap: 8px;
-            flex-wrap: wrap
+            align-items: center;
+            gap: 6px
         }
 
         .topbar-right {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             flex-shrink: 0
         }
 
-        /* 控制按鈕 */
-        .ctrl-btn {
+        .btn {
             padding: 5px 12px;
             border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
+            font-size: 11px;
+            font-weight: 700;
             border: 1px solid transparent;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 5px;
+            gap: 4px;
+            white-space: nowrap;
             transition: all .15s;
-            white-space: nowrap
+            font-family: inherit
         }
 
-            .ctrl-btn.rec-off {
-                background: #21262d;
-                border-color: #30363d;
-                color: #8b949e
-            }
+        .btn-gray {
+            background: #21262d;
+            border-color: #30363d;
+            color: #8b949e
+        }
 
-            .ctrl-btn.rec-on {
-                background: #3d1a1a;
-                border-color: #f85149;
-                color: #f85149;
-                animation: rec-pulse 1.5s ease-in-out infinite
-            }
+        .btn-green {
+            background: #1a3d1a;
+            border-color: #3fb950;
+            color: #3fb950
+        }
 
-            .ctrl-btn.copy {
-                background: #21262d;
-                border-color: #30363d;
-                color: #8b949e
-            }
+        .btn-orange {
+            background: #3d2800;
+            border-color: #f0883e;
+            color: #f0883e
+        }
 
-                .ctrl-btn.copy.done {
-                    background: #1a3d1a;
-                    border-color: #3fb950;
-                    color: #3fb950
-                }
-
-            .ctrl-btn.dl {
-                background: #1a2d3d;
-                border-color: #388bfd;
-                color: #79c0ff
-            }
-
-            .ctrl-btn.analyze {
-                background: #2d1a3d;
-                border-color: #a371f7;
-                color: #d2a8ff
-            }
-
-                .ctrl-btn.analyze.loading {
-                    opacity: .6;
-                    cursor: not-allowed
-                }
+        .btn-red {
+            background: #3d1a1a;
+            border-color: #f85149;
+            color: #f85149
+        }
 
         .user-badge {
-            font-size: 12px;
-            padding: 4px 10px;
-            border-radius: 12px;
+            font-size: 11px;
+            padding: 3px 9px;
+            border-radius: 10px;
             background: #21262d;
             color: #8b949e
         }
 
-        @@keyframes rec-pulse {
-            0%, 100% {
-                opacity: 1
-            }
-
-            50% {
-                opacity: .6
-            }
+        .rec-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+            background: #484f58
         }
 
-        /* ── 主要區域 ── */
-        .main-layout {
-            display: flex;
-            height: calc(100vh - 52px)
+        .banner {
+            padding: 5px 16px;
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+            flex-shrink: 0
         }
 
-        /* iframe 會議區 */
-        #meet-iframe {
+            .banner.wait {
+                background: #3d2800;
+                color: #f0883e
+            }
+
+            .banner.live {
+                background: #1a3d1a;
+                color: #3fb950
+            }
+
+            .banner.done {
+                background: #3d1a1a;
+                color: #f85149
+            }
+
+        .main {
             flex: 1;
-            border: none;
-            min-width: 0
+            display: flex;
+            min-height: 0
         }
 
-        /* ── AI 面試官側欄 ── */
+        .video-wrap {
+            flex: 1;
+            position: relative;
+            min-width: 0;
+            background: #000
+        }
+
+        .video-wrap iframe {
+            width: 100%;
+            height: 100%;
+            border: none
+        }
+
+        /* 「會議未開始」提示彈跳視窗 */
+        .not-started-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.75);
+            z-index: 9997;
+            display: flex;
+            align-items: center;
+            justify-content: center
+        }
+        .not-started-box {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 16px;
+            padding: 36px 40px;
+            text-align: center;
+            max-width: 420px;
+            width: 90%
+        }
+        .not-started-box .ns-icon { font-size: 48px; margin-bottom: 14px }
+        .not-started-box h3 { font-size: 18px; font-weight: 700; margin-bottom: 10px }
+        .not-started-box p { font-size: 13px; color: #8b949e; line-height: 1.6; margin-bottom: 22px }
+
         .ai-panel {
-            width: 260px;
+            width: 240px;
             flex-shrink: 0;
             background: #161b22;
             border-left: 1px solid #30363d;
@@ -173,22 +206,22 @@
             overflow: hidden
         }
 
-        .ai-header {
-            padding: 14px 14px 10px;
+        .ai-head {
+            padding: 10px;
             border-bottom: 1px solid #30363d;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 8px
+            gap: 6px
         }
 
-        .ai-avatar-wrap {
+        .avw {
             position: relative;
-            width: 80px;
-            height: 80px
+            width: 66px;
+            height: 66px
         }
 
-        .speaking-ring {
+        .sring {
             position: absolute;
             inset: -5px;
             border-radius: 50%;
@@ -197,12 +230,12 @@
             transition: opacity .3s
         }
 
-            .speaking-ring.on {
+            .sring.on {
                 opacity: 1;
-                animation: ring-pulse 1s ease-in-out infinite
+                animation: rp 1s ease-in-out infinite
             }
 
-        @@keyframes ring-pulse {
+        @@keyframes rp {
             0%, 100% {
                 transform: scale(1);
                 opacity: .9
@@ -215,41 +248,45 @@
         }
 
         .ai-svg {
-            width: 80px;
-            height: 80px;
+            width: 66px;
+            height: 66px;
             border-radius: 50%;
             border: 2px solid #30363d
         }
 
-        .ai-name {
-            font-size: 14px;
-            font-weight: 700;
-            color: #e6edf3
+        .ai-nm {
+            font-size: 13px;
+            font-weight: 700
         }
 
-        .ai-role {
-            font-size: 11px;
+        .ai-rl {
+            font-size: 10px;
             color: #8b949e
         }
 
-        .ai-status-badge {
-            font-size: 11px;
-            padding: 3px 10px;
-            border-radius: 12px;
+        .ai-st {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 10px;
             font-weight: 600
         }
 
-            .ai-status-badge.listening {
+            .ai-st.wa {
+                background: #3d2800;
+                color: #f0883e
+            }
+
+            .ai-st.li {
                 background: #1a3d1a;
                 color: #3fb950
             }
 
-            .ai-status-badge.speaking {
+            .ai-st.sp {
                 background: #1a2d3d;
                 color: #79c0ff
             }
 
-            .ai-status-badge.thinking {
+            .ai-st.th {
                 background: #3d2d00;
                 color: #d29922
             }
@@ -258,36 +295,36 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            padding: 12px;
-            gap: 10px;
+            padding: 8px;
+            gap: 7px;
             overflow-y: auto
         }
 
         .ai-msg {
             background: #21262d;
-            border-radius: 10px;
-            padding: 12px;
-            font-size: 12px;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 11px;
             line-height: 1.6;
             color: #c9d1d9;
-            min-height: 60px
+            min-height: 44px
         }
 
-        .typing-dot {
+        .tdot {
             display: inline-block;
-            width: 5px;
-            height: 5px;
+            width: 4px;
+            height: 4px;
             border-radius: 50%;
             background: #79c0ff;
-            margin: 0 2px;
+            margin: 0 1.5px;
             animation: tdot 1.2s ease-in-out infinite
         }
 
-            .typing-dot:nth-child(2) {
+            .tdot:nth-child(2) {
                 animation-delay: .2s
             }
 
-            .typing-dot:nth-child(3) {
+            .tdot:nth-child(3) {
                 animation-delay: .4s
             }
 
@@ -297,30 +334,30 @@
             }
 
             40% {
-                transform: translateY(-5px)
+                transform: translateY(-4px)
             }
         }
 
-        .silence-section {
+        .si-wrap {
             background: #0d1117;
-            border-radius: 8px;
-            padding: 10px
+            border-radius: 6px;
+            padding: 7px
         }
 
-        .silence-label {
-            font-size: 10px;
+        .si-lbl {
+            font-size: 9px;
             color: #484f58;
-            margin-bottom: 5px
+            margin-bottom: 3px
         }
 
-        .silence-bar {
+        .si-bar {
             height: 3px;
             background: #21262d;
             border-radius: 2px;
             overflow: hidden
         }
 
-        .silence-fill {
+        .si-fill {
             height: 100%;
             width: 0%;
             background: #388bfd;
@@ -328,636 +365,692 @@
             border-radius: 2px
         }
 
-            .silence-fill.warn {
+            .si-fill.w {
                 background: #d29922
             }
 
-            .silence-fill.hot {
+            .si-fill.h {
                 background: #f85149
             }
 
-        /* ── 逐字稿區域 ── */
-        .transcript-panel {
-            height: 180px;
-            flex-shrink: 0;
-            background: #0d1117;
-            border-top: 1px solid #30363d;
-            display: flex;
-            flex-direction: column
-        }
-
-        .transcript-header {
-            padding: 6px 14px;
-            font-size: 11px;
-            font-weight: 700;
-            color: #8b949e;
-            border-bottom: 1px solid #21262d;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-shrink: 0
-        }
-
-        .transcript-body {
-            flex: 1;
-            overflow-y: auto;
-            padding: 8px 14px;
-            font-size: 12px;
-            line-height: 1.6
-        }
-
-        .transcript-line {
-            margin-bottom: 4px
-        }
-
-            .transcript-line .speaker {
-                font-weight: 700;
-                color: #79c0ff;
-                margin-right: 6px
-            }
-
-                .transcript-line .speaker.ai {
-                    color: #a371f7
-                }
-
-            .transcript-line .speech {
-                color: #c9d1d9
-            }
-
-        /* 分析 Modal */
-        .modal-bg {
+        .overlay {
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,.7);
-            z-index: 9999;
-            display: flex;
+            background: rgba(0,0,0,.82);
+            z-index: 9998;
+            display: none;
             align-items: center;
-            justify-content: center;
-            padding: 20px
+            justify-content: center
         }
 
-        .modal-box {
+            .overlay.show {
+                display: flex
+            }
+
+        .ol-box {
             background: #161b22;
             border: 1px solid #30363d;
             border-radius: 14px;
             padding: 28px;
-            max-width: 640px;
-            width: 100%;
-            max-height: 80vh;
-            overflow-y: auto
+            max-width: 440px;
+            width: 90%;
+            text-align: center
         }
 
-            .modal-box h3 {
-                font-size: 18px;
+            .ol-box h3 {
+                font-size: 17px;
                 font-weight: 700;
-                margin-bottom: 16px;
-                color: #e6edf3
-            }
-
-        .analysis-section {
-            margin-bottom: 20px;
-            background: #21262d;
-            border-radius: 10px;
-            padding: 16px
-        }
-
-            .analysis-section h4 {
-                font-size: 14px;
-                font-weight: 700;
-                color: #79c0ff;
                 margin-bottom: 10px
             }
 
-            .analysis-section p {
-                font-size: 13px;
-                color: #c9d1d9;
-                line-height: 1.7
+            .ol-box p {
+                font-size: 12px;
+                color: #8b949e;
+                margin-bottom: 18px;
+                line-height: 1.6
             }
 
-        .modal-actions {
+        .ol-acts {
             display: flex;
             gap: 10px;
-            margin-top: 20px;
-            flex-wrap: wrap
+            justify-content: center
         }
 
-        .modal-close {
-            padding: 8px 18px;
-            background: #21262d;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            color: #8b949e;
-            cursor: pointer;
-            font-size: 13px
+        .ended-screen {
+            position: fixed;
+            inset: 0;
+            background: #0d1117;
+            z-index: 9999;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px
         }
+
+            .ended-screen.show {
+                display: flex
+            }
+
+            .ended-screen h2 {
+                font-size: 20px;
+                font-weight: 700
+            }
+
+        .dl-items {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            margin-top: 6px;
+            min-width: 280px
+        }
+
+        .dl-item {
+            font-size: 12px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px
+        }
+
+            .dl-item.ok {
+                background: #1a3d1a;
+                color: #3fb950
+            }
+
+            .dl-item.ng {
+                background: #3d1a1a;
+                color: #f85149
+            }
+
+            .dl-item.wait {
+                background: #3d2800;
+                color: #d29922
+            }
     </style>
 </head>
 <body>
 
-    <!-- ── 頂部工具列 ── -->
     <div class="topbar">
         <div class="room-name">🎥 @Html.Raw(room.RoomName)</div>
-        <span class="room-code">@room.JitsiRoomName</span>
-
-        <div class="topbar-center">
-            <!-- 錄影按鈕 -->
-            <button class="ctrl-btn rec-off" id="recBtn" onclick="toggleRecording()">
-                <span id="recIcon">⏺</span> <span id="recLabel">開始錄影</span>
-            </button>
-
-            <!-- 下載錄影 -->
-            <button class="ctrl-btn dl" id="dlVideoBtn" onclick="downloadVideo()" style="display:none">
-                ⬇ 下載錄影
-            </button>
-
-            <!-- 下載逐字稿 -->
-            <button class="ctrl-btn dl" onclick="downloadTranscript()">
-                📄 下載逐字稿
-            </button>
-
-            <!-- 分析所有求職者 -->
-            <button class="ctrl-btn analyze" id="analyzeBtn" onclick="analyzeAll()">
-                🔍 AI 分析面試
-            </button>
+        <span class="room-code" onclick="copyCode()" title="點擊複製">@room.JitsiRoomName</span>
+        <div class="topbar-mid">
+            <span class="btn btn-gray" id="recStatus">
+                <span class="rec-dot" id="recDot"></span>
+                <span id="recTxt">等待開始</span>
+            </span>
+            @if (isStaff)
+            {
+                <button class="btn btn-green" id="startBtn" onclick="hostStart()">▶ 開始會議</button>
+                <button class="btn btn-orange" id="endBtn" onclick="showEndConfirm()" style="display:none">⏹ 結束會議</button>
+            }
         </div>
-
         <div class="topbar-right">
             <span class="user-badge">👤 @Html.Raw(displayName)</span>
-            <button class="ctrl-btn copy" id="copyBtn" onclick="copyCode()">複製代碼</button>
+            <button class="btn btn-gray" onclick="copyCode()">複製代碼</button>
         </div>
     </div>
 
-    <!-- ── 主區域 ── -->
-    <div class="main-layout">
+    <div class="banner wait" id="banner">⏳ 等待主管開始會議...</div>
 
-        <!-- 會議 iframe：直接開完整 Jitsi 頁面，無 5 分鐘限制 -->
-        <iframe id="meet-iframe"
-                allow="camera;microphone;display-capture;autoplay;clipboard-write"
-                allowfullscreen
-                src="https://meet.jit.si/@jitsiRoom#userInfo.displayName=%22@encodedName%22&config.prejoinPageEnabled=false&config.lobby.enableLobby=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.MOBILE_APP_PROMO=false&interfaceConfig.TOOLBAR_ALWAYS_VISIBLE=true">
-        </iframe>
+    <div class="main">
+        <div class="video-wrap">
+            <!-- Jitsi External API 容器，由 JS 動態初始化 -->
+            <div id="jitsi-container" style="width:100%;height:100%"></div>
+        </div>
 
-        <!-- AI 面試官側欄 -->
         <div class="ai-panel">
-            <div class="ai-header">
-                <div class="ai-avatar-wrap">
-                    <div class="speaking-ring" id="speakRing"></div>
-                    <svg class="ai-svg" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
-                        <rect width="80" height="80" rx="40" fill="#21262d" />
-                        <circle cx="40" cy="30" r="16" fill="#388bfd" />
-                        <ellipse cx="40" cy="74" rx="26" ry="18" fill="#388bfd" />
-                        <rect x="34" y="46" width="12" height="16" rx="3" fill="#1f6feb" />
-                        <polygon points="40,48 37,55 40,53 43,55" fill="#1158c7" />
+            <div class="ai-head">
+                <div class="avw">
+                    <div class="sring" id="sring"></div>
+                    <svg class="ai-svg" viewBox="0 0 66 66" xmlns="http://www.w3.org/2000/svg">
+                        <rect width="66" height="66" rx="33" fill="#21262d" />
+                        <circle cx="33" cy="25" r="13" fill="#388bfd" />
+                        <ellipse cx="33" cy="61" rx="21" ry="14" fill="#388bfd" />
+                        <rect x="27" y="38" width="12" height="13" rx="3" fill="#1f6feb" />
+                        <polygon points="33,40 30,46 33,44 36,46" fill="#1158c7" />
                     </svg>
                 </div>
-                <div class="ai-name">王大明</div>
-                <div class="ai-role">部門主管 · AI 面試官</div>
-                <div class="ai-status-badge listening" id="aiStatusBadge">👂 聆聽中</div>
+                <div class="ai-nm">王大明</div>
+                <div class="ai-rl">部門主管 · AI 面試官</div>
+                <div class="ai-st wa" id="aiSt">⏳ 等待開始</div>
             </div>
-
             <div class="ai-body">
-                <div class="ai-msg" id="aiMsg">
-                    歡迎參加今天的面試！<br><br>
-                    請先做個自我介紹，告訴我您的背景與應徵動機。
+                <div class="ai-msg" id="aiMsg">等待主管開始會議。<br><br>會議開始後，我會在冷場時適時提問。</div>
+                <div class="si-wrap">
+                    <div class="si-lbl" id="siLbl">冷場偵測（會議開始後啟動）</div>
+                    <div class="si-bar"><div class="si-fill" id="siFill"></div></div>
                 </div>
-                <div class="silence-section">
-                    <div class="silence-label" id="silenceLabel">冷場偵測</div>
-                    <div class="silence-bar">
-                        <div class="silence-fill" id="silenceFill"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- ── 逐字稿列 ── -->
-    <div class="transcript-panel">
-        <div class="transcript-header">
-            <span>📝 即時逐字稿（含說話者識別）</span>
-            <span id="transcriptStatus" style="color:#3fb950;font-size:10px">● 錄製中</span>
-        </div>
-        <div class="transcript-body" id="transcriptBody">
-            <!-- 由 JS 動態填入 -->
-        </div>
-    </div>
-
-    <!-- 分析結果 Modal -->
-    <div class="modal-bg" id="analyzeModal" style="display:none">
-        <div class="modal-box">
-            <h3>🔍 面試分析報告</h3>
-            <div id="analyzeContent">
-                <div style="text-align:center;padding:40px;color:#8b949e">
-                    <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
-                    <div style="margin-top:12px">Claude AI 正在分析面試內容...</div>
-                </div>
-            </div>
-            <div class="modal-actions">
-                <button class="modal-close" onclick="closeAnalyzeModal()">關閉</button>
-                <button class="ctrl-btn dl" id="dlReportBtn" onclick="downloadReport()" style="display:none">
-                    ⬇ 下載分析報告
-                </button>
             </div>
         </div>
     </div>
 
+    <div class="overlay" id="endOverlay">
+        <div class="ol-box">
+            <h3>⏹ 確認結束會議</h3>
+            <p>結束後所有人的錄音將自動停止，逐字稿與分析報告將自動下載儲存。</p>
+            <div class="ol-acts">
+                <button class="btn btn-red" onclick="hostEndExecute()">確認結束</button>
+                <button class="btn btn-gray" onclick="document.getElementById('endOverlay').classList.remove('show')">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 會議未開始 彈跳視窗（進入時若未開始顯示此） -->
+    <div class="not-started-modal" id="notStartedModal" style="display:none">
+        <div class="not-started-box">
+            <div class="ns-icon">⏳</div>
+            <h3>會議尚未開始</h3>
+            <p>請稍後再試，等待主管開始會議後即可進入。<br>頁面會自動偵測，無需重新整理。</p>
+            <button class="btn btn-gray" onclick="document.getElementById('notStartedModal').style.display='none'">我知道了</button>
+        </div>
+    </div>
+
+    <div class="ended-screen" id="endedScreen">
+        <div style="font-size:44px">✅</div>
+        <h2>面試已結束</h2>
+        <p style="color:#8b949e;font-size:12px">檔案正在自動下載中...</p>
+        <div class="dl-items" id="dlItems"></div>
+        <button class="btn btn-gray" onclick="window.history.back()" style="margin-top:14px">← 返回</button>
+    </div>
+
+    <!-- Jitsi External API（不是 iframe src，不受 5 分鐘限制） -->
+    <script src="https://meet.jit.si/external_api.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
     <script>
-        // ════════════════════════════════════════════
-        //  狀態
-        // ════════════════════════════════════════════
-        const DISPLAY_NAME = "@Html.Raw(displayName.Replace("\"", "\\\""))";
-        const IS_STAFF     = @(isStaff ? "true" : "false");
-        const SILENCE_SEC  = 20;
+        // ══════════════════════════════════════════════
+        //  設定
+        // ══════════════════════════════════════════════
+        const IS_STAFF  = @(isStaff ? "true" : "false");
+        const MY_NAME   = "@Html.Raw(displayName.Replace("\"", "\\\""))";
+        const ROOM_CODE = "@room.JitsiRoomName";
+        const JITSI_ROOM = "@jitsiRoom";
+        const SIL_SEC   = 25;  // 冷場觸發秒數
 
-        let isRecording  = false;
-        let mediaRecorder = null;
-        let recordChunks  = [];
-        let recordBlob    = null;
-        let silenceTimer  = 0;
-        let isSpeaking    = false;
-        let questionIdx   = 0;
-        let transcriptLines = [];
-        let analysisText  = "";
-
-        // ════════════════════════════════════════════
-        //  逐字稿
-        // ════════════════════════════════════════════
+        // ══════════════════════════════════════════════
+        //  狀態變數
+        // ══════════════════════════════════════════════
+        let started = false, ended = false;
+        let silT = 0, isSp = false;
+        let audioStream = null, mediaRec = null, recChunks = [];
+        let recBlob = null;
         let recognition = null;
+        let trxLines = [];
+        let analysisText = "";
+        let lastSpeechMs = 0;
+        let recentSpeech = [];
+        let silInterval = null;
 
-        function initSpeechRecognition() {
+        // ══════════════════════════════════════════════
+        //  SignalR 連線（主管發令 → 所有電腦同步）
+        // ══════════════════════════════════════════════
+        const hub = new signalR.HubConnectionBuilder()
+            .withUrl("/meetingHub")
+            .withAutomaticReconnect()
+            .build();
+
+        hub.on("MeetingStarted", () => { if (!started) onMeetingStart(); });
+        hub.on("MeetingEnded",   () => { if (!ended)   onMeetingEnd(); });
+
+        async function connectHub() {
+            try {
+                await hub.start();
+                await hub.invoke("JoinRoom", ROOM_CODE);
+                console.log("SignalR 連線成功");
+            } catch (e) {
+                console.error("SignalR 失敗，改用輪詢：", e);
+                // fallback：每 2 秒輪詢 localStorage（同電腦測試用）
+                setInterval(() => {
+                    const s = localStorage.getItem("meet_" + ROOM_CODE);
+                    if (!started && s === "started") onMeetingStart();
+                    if (!ended   && s === "ended")   onMeetingEnd();
+                }, 2000);
+            }
+        }
+        connectHub();
+
+        // ══════════════════════════════════════════════
+        //  主管操作
+        // ══════════════════════════════════════════════
+        async function hostStart() {
+            try { await hub.invoke("StartMeeting", ROOM_CODE); }
+            catch { localStorage.setItem("meet_" + ROOM_CODE, "started"); onMeetingStart(); }
+        }
+
+        function showEndConfirm() {
+            document.getElementById('endOverlay').classList.add('show');
+        }
+
+        async function hostEndExecute() {
+            document.getElementById('endOverlay').classList.remove('show');
+            try { await hub.invoke("EndMeeting", ROOM_CODE); }
+            catch { localStorage.setItem("meet_" + ROOM_CODE, "ended"); onMeetingEnd(); }
+        }
+
+        // ══════════════════════════════════════════════
+        //  會議開始（所有人收到）
+        // ══════════════════════════════════════════════
+        function onMeetingStart() {
+            if (started) return;
+            started = true;
+
+            const b = document.getElementById('banner');
+            b.className = 'banner live';
+            b.textContent = '🔴 會議進行中';
+
+            if (IS_STAFF) {
+                document.getElementById('startBtn').style.display = 'none';
+                document.getElementById('endBtn').style.display = '';
+            }
+
+            document.getElementById('recDot').style.background = '#f85149';
+            document.getElementById('recTxt').textContent = '錄音中';
+            setSt('li', '👂 聆聽中');
+            showMsg('會議已開始。我會在冷場時適時提問。');
+
+            // 依序啟動：先取得麥克風串流，再啟動其他功能
+            initAudio().then(() => {
+                initSTT();
+                startSilenceDetect();
+            });
+        }
+
+        // ══════════════════════════════════════════════
+        //  會議結束（所有人收到）
+        // ══════════════════════════════════════════════
+        function onMeetingEnd() {
+            if (ended) return;
+            ended = true;
+
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            isSp = false;
+            if (recognition) { try { recognition.stop(); } catch {} }
+            if (silInterval)  { clearInterval(silInterval); }
+
+            if (mediaRec && mediaRec.state !== 'inactive') {
+                // onstop 會觸發 showEndedScreen
+                mediaRec.stop();
+            } else {
+                // 沒有錄音也顯示結束畫面
+                recBlob = null;
+                showEndedScreen();
+            }
+
+            setSt('wa', '✅ 面試結束');
+            showMsg('面試已結束，感謝所有人的參與！');
+
+            const b = document.getElementById('banner');
+            b.className = 'banner done';
+            b.textContent = '🔒 面試已結束';
+        }
+
+        // ══════════════════════════════════════════════
+        //  取得麥克風（錄音 + 音量偵測共用同一 stream）
+        // ══════════════════════════════════════════════
+        async function initAudio() {
+            try {
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+
+                const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+                let mime = '';
+                for (const t of types) {
+                    if (MediaRecorder.isTypeSupported(t)) { mime = t; break; }
+                }
+
+                mediaRec = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {});
+                recChunks = [];
+                mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+                mediaRec.onstop = () => {
+                    recBlob = new Blob(recChunks, { type: mime || 'audio/webm' });
+                    showEndedScreen();
+                };
+                mediaRec.start(1000);
+                console.log("錄音已啟動");
+            } catch (err) {
+                console.warn("無法取得麥克風：", err.message);
+                audioStream = null;
+                // 沒有麥克風仍繼續，用計時器做冷場偵測
+            }
+        }
+
+        // ══════════════════════════════════════════════
+        //  STT（後台靜默，不顯示在畫面上）
+        // ══════════════════════════════════════════════
+        function initSTT() {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SR) { console.warn("瀏覽器不支援 SpeechRecognition"); return; }
+            if (!SR) {
+                console.warn("不支援 SpeechRecognition，逐字稿停用");
+                return;
+            }
 
             recognition = new SR();
             recognition.lang = 'zh-TW';
             recognition.continuous = true;
             recognition.interimResults = true;
 
-            let interimTimeout = null;
-
-            recognition.onresult = (e) => {
-                let interim = '';
+            recognition.onresult = e => {
                 for (let i = e.resultIndex; i < e.results.length; i++) {
-                    const res = e.results[i];
-                    if (res.isFinal) {
-                        const text = res[0].transcript.trim();
-                        if (text.length > 1) {
-                            addTranscriptLine(DISPLAY_NAME, text);
-                            // 有聲音，重置冷場計時
-                            silenceTimer = 0;
-                            updateSilenceBar(0);
+                    if (e.results[i].isFinal) {
+                        const txt = e.results[i][0].transcript.trim();
+                        if (txt.length > 1) {
+                            addTrxSilent(MY_NAME, txt);
+                            recentSpeech.push({ name: MY_NAME, text: txt });
+                            if (recentSpeech.length > 6) recentSpeech.shift();
+                            lastSpeechMs = Date.now();
+                            silT = 0; setSilBar(0);
                         }
                     } else {
-                        interim += res[0].transcript;
+                        // 偵測到聲音，重置冷場
+                        lastSpeechMs = Date.now();
+                        silT = 0; setSilBar(0);
                     }
                 }
-                if (interim.length > 0) {
-                    silenceTimer = 0;
-                    updateSilenceBar(0);
-                }
             };
-
-            recognition.onerror = (e) => {
-                if (e.error !== 'no-speech') console.error('STT error:', e.error);
-            };
-
+            recognition.onerror = () => {};
             recognition.onend = () => {
-                // 自動重啟（確保持續錄製）
-                if (!isSpeaking) {
-                    setTimeout(() => { try { recognition.start(); } catch {} }, 300);
-                }
+                if (!ended && !isSp)
+                    setTimeout(() => { try { recognition.start(); } catch {} }, 500);
             };
-
             try { recognition.start(); } catch {}
         }
 
-        function addTranscriptLine(speaker, text, isAi = false) {
-            const line = { speaker, text, time: new Date().toLocaleTimeString('zh-TW', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) };
-            transcriptLines.push(line);
-
-            const div = document.createElement('div');
-            div.className = 'transcript-line';
-            div.innerHTML = `<span class="speaker ${isAi ? 'ai' : ''}">[${line.time}] ${speaker}：</span><span class="speech">${text}</span>`;
-            const body = document.getElementById('transcriptBody');
-            body.appendChild(div);
-            body.scrollTop = body.scrollHeight;
-        }
-
-        // ════════════════════════════════════════════
-        //  錄影（錄製整個頁面音訊）
-        // ════════════════════════════════════════════
-        async function toggleRecording() {
-            if (!isRecording) {
-                try {
-                    // 錄製頁面音訊（透過麥克風）
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-                    recordChunks = [];
-
-                    mediaRecorder.ondataavailable = (e) => {
-                        if (e.data.size > 0) recordChunks.push(e.data);
-                    };
-
-                    mediaRecorder.onstop = () => {
-                        recordBlob = new Blob(recordChunks, { type: 'audio/webm' });
-                        document.getElementById('dlVideoBtn').style.display = '';
-                    };
-
-                    mediaRecorder.start(1000);
-                    isRecording = true;
-
-                    const btn = document.getElementById('recBtn');
-                    btn.className = 'ctrl-btn rec-on';
-                    document.getElementById('recIcon').textContent = '⏹';
-                    document.getElementById('recLabel').textContent = '停止錄音';
-                } catch (err) {
-                    alert('無法取得麥克風權限：' + err.message);
-                }
-            } else {
-                mediaRecorder?.stop();
-                isRecording = false;
-
-                const btn = document.getElementById('recBtn');
-                btn.className = 'ctrl-btn rec-off';
-                document.getElementById('recIcon').textContent = '⏺';
-                document.getElementById('recLabel').textContent = '開始錄影';
-            }
-        }
-
-        function downloadVideo() {
-            if (!recordBlob) return;
-            const url = URL.createObjectURL(recordBlob);
-            const a = document.createElement('a'); a.href = url;
-            a.download = `面試錄音_${new Date().toISOString().slice(0,16).replace('T','-')}.webm`;
-            a.click();
-        }
-
-        // ════════════════════════════════════════════
-        //  下載逐字稿
-        // ════════════════════════════════════════════
-        function downloadTranscript() {
-            if (transcriptLines.length === 0) {
-                alert('目前尚無逐字稿內容。請確認麥克風已開啟。');
-                return;
-            }
-            const text = transcriptLines.map(l => `[${l.time}] ${l.speaker}：${l.text}`).join('\n');
-            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-            const url  = URL.createObjectURL(blob);
-            const a    = document.createElement('a'); a.href = url;
-            a.download = `逐字稿_${new Date().toISOString().slice(0,16).replace('T','-')}.txt`;
-            a.click();
-        }
-
-        // ════════════════════════════════════════════
-        //  AI 分析（呼叫 Claude API）
-        // ════════════════════════════════════════════
-        async function analyzeAll() {
-            if (transcriptLines.length < 3) {
-                alert('逐字稿內容太少，請進行一段對話後再分析。');
-                return;
-            }
-
-            document.getElementById('analyzeModal').style.display = 'flex';
-            document.getElementById('analyzeBtn').classList.add('loading');
-
-            const transcriptText = transcriptLines.map(l => `[${l.time}] ${l.speaker}：${l.text}`).join('\n');
-
-            const prompt = `以下是一份面試逐字稿，請分析每位求職者的表現。
-        面試逐字稿：
-        ${transcriptText}
-
-        請依照以下格式分析（繁體中文）：
-
-        1. 首先列出所有求職者名單
-        2. 對每位求職者分別分析：
-           - 語氣與表達能力（是否清晰、有自信、語速合適）
-           - 答題準確度與深度（回答是否切題、有邏輯）
-           - 整體表現評分（1-10分）及錄取建議
-        3. 最後給出整體面試摘要
-
-        請直接輸出分析，不需要前言。`;
-
-            try {
-                const res = await fetch("https://api.anthropic.com/v1/messages", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        model: "claude-sonnet-4-20250514",
-                        max_tokens: 2000,
-                        system: "你是專業的人資顧問，擅長面試分析。請用繁體中文回應，格式清晰易讀。",
-                        messages: [{ role: "user", content: prompt }]
-                    })
-                });
-
-                const data  = await res.json();
-                analysisText = data.content?.[0]?.text || "分析失敗，請稍後重試。";
-
-                document.getElementById('analyzeContent').innerHTML =
-                    analysisText.split('\n').map(line => {
-                        if (line.startsWith('#')) return `<h4 style="color:#79c0ff;margin:12px 0 6px">${line.replace(/^#+\s*/,'')}</h4>`;
-                        if (line.trim() === '') return '<br>';
-                        return `<p style="font-size:13px;color:#c9d1d9;line-height:1.7;margin-bottom:6px">${line}</p>`;
-                    }).join('');
-
-                document.getElementById('dlReportBtn').style.display = '';
-            } catch (err) {
-                document.getElementById('analyzeContent').innerHTML =
-                    `<p style="color:#f85149">分析失敗：${err.message}</p>`;
-            }
-
-            document.getElementById('analyzeBtn').classList.remove('loading');
-        }
-
-        function downloadReport() {
-            if (!analysisText) return;
-            const blob = new Blob([analysisText], { type: 'text/plain;charset=utf-8' });
-            const url  = URL.createObjectURL(blob);
-            const a    = document.createElement('a'); a.href = url;
-            a.download = `面試分析報告_${new Date().toISOString().slice(0,16).replace('T','-')}.txt`;
-            a.click();
-        }
-
-        function closeAnalyzeModal() {
-            document.getElementById('analyzeModal').style.display = 'none';
-        }
-
-        // ════════════════════════════════════════════
-        //  AI 面試官：冷場偵測 + 語音
-        // ════════════════════════════════════════════
-        const FALLBACK_Q = [
-            "請先做個自我介紹，包含您的背景與應徵動機。",
-            "您在上一份工作遇到最大的挑戰是什麼？您如何克服？",
-            "您認為自己最大的優點與缺點分別是什麼？",
-            "請描述一個展現團隊合作精神的具體經驗。",
-            "您對未來三到五年的職涯規劃是什麼？",
-            "工作上與同事意見不同時，您通常如何處理？",
-            "請談談您過去最有成就感的一個工作成果。",
-            "您為什麼想加入我們公司？",
-            "您有帶領過團隊的經驗嗎？可以分享一下嗎？",
-            "您如何在高壓環境下保持工作效率？",
-            "有沒有與不同部門合作的經驗？如何協調？",
-            "您最近學習了什麼新技能或知識？"
-        ];
-
-        function nextQ() { return FALLBACK_Q[questionIdx++ % FALLBACK_Q.length]; }
-
-        function setAiStatus(cls, text) {
-            const el = document.getElementById('aiStatusBadge');
-            el.className = 'ai-status-badge ' + cls;
-            el.textContent = text;
-        }
-
-        function setRing(on) {
-            document.getElementById('speakRing').classList.toggle('on', on);
-        }
-
-        function showAiTyping() {
-            document.getElementById('aiMsg').innerHTML =
-                '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
-        }
-
-        function showAiMsg(text) {
-            document.getElementById('aiMsg').innerHTML = text.replace(/\n/g, '<br>');
-        }
-
-        function aiSpeak(text) {
-            if (isSpeaking) return;
-            if (!window.speechSynthesis) { showAiMsg(text); addTranscriptLine("AI 面試官（王大明）", text, true); return; }
-
-            window.speechSynthesis.cancel();
-            isSpeaking = true;
-            silenceTimer = 0;
-            if (recognition) try { recognition.stop(); } catch {}
-
-            setAiStatus('speaking', '🗣️ 說話中');
-            setRing(true);
-            showAiTyping();
-
-            const utter = new SpeechSynthesisUtterance(text);
-            const voices = window.speechSynthesis.getVoices();
-            const zh = voices.find(v => v.lang?.startsWith('zh')) || voices[0];
-            if (zh) utter.voice = zh;
-            utter.lang = 'zh-TW'; utter.rate = 0.88; utter.pitch = 1; utter.volume = 1;
-
-            utter.onstart = () => {
-                showAiMsg(text);
-                addTranscriptLine("AI 面試官（王大明）", text, true);
-            };
-            utter.onend = utter.onerror = () => {
-                isSpeaking = false; silenceTimer = 0;
-                setAiStatus('listening', '👂 聆聽中');
-                setRing(false);
-                // 重啟 STT
-                if (recognition) setTimeout(() => { try { recognition.start(); } catch {} }, 300);
-            };
-
-            setTimeout(() => window.speechSynthesis.speak(utter), 200);
-        }
-
-        async function getClaudeQ() {
-            try {
-                const ctx = questionIdx === 0 ? "面試剛開始，尚未自我介紹"
-                          : `已進行 ${questionIdx} 題，最近逐字稿：${transcriptLines.slice(-3).map(l=>l.speaker+'說：'+l.text).join('；')}`;
-                const r = await fetch("https://api.anthropic.com/v1/messages", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        model: "claude-sonnet-4-20250514",
-                        max_tokens: 80,
-                        system: "你是台灣企業面試主管王大明。說繁體中文，語氣專業親切。每次只說一個面試問題或打破冷場的話，不超過40字，不加前綴。",
-                        messages: [{ role: "user", content: `面試出現冷場。背景：${ctx}。請說一句話。` }]
-                    })
-                });
-                const d = await r.json();
-                const t = d.content?.[0]?.text?.trim();
-                return (t && t.length > 4) ? t : null;
-            } catch { return null; }
-        }
-
-        async function triggerAI() {
-            if (isSpeaking) return;
-            setAiStatus('thinking', '💭 思考中...');
-            let q = await getClaudeQ();
-            if (!q) q = nextQ();
-            aiSpeak(q);
-        }
-
-        function updateSilenceBar(pct) {
-            const f = document.getElementById('silenceFill');
-            f.style.width = pct + '%';
-            f.className = 'silence-fill' + (pct > 80 ? ' hot' : pct > 50 ? ' warn' : '');
-            document.getElementById('silenceLabel').textContent =
-                pct > 0 ? `冷場偵測 ${Math.round(pct)}%` : '冷場偵測';
-        }
-
-        // ════════════════════════════════════════════
-        //  麥克風音量偵測（獨立於 STT）
-        // ════════════════════════════════════════════
-        async function startSilenceDetection() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                const ctx    = new (window.AudioContext || window.webkitAudioContext)();
-                const an     = ctx.createAnalyser();
-                an.fftSize   = 256;
-                ctx.createMediaStreamSource(stream).connect(an);
+        // ══════════════════════════════════════════════
+        //  冷場偵測（音量 or 純計時）
+        // ══════════════════════════════════════════════
+        function startSilenceDetect() {
+            if (audioStream) {
+                // 有麥克風：用音量偵測
+                const ac = new (window.AudioContext || window.webkitAudioContext)();
+                const an = ac.createAnalyser(); an.fftSize = 256;
+                ac.createMediaStreamSource(audioStream).connect(an);
                 const buf = new Uint8Array(an.frequencyBinCount);
 
-                setInterval(() => {
-                    if (isSpeaking) { updateSilenceBar(0); return; }
+                silInterval = setInterval(() => {
+                    if (!started || ended || isSp) { setSilBar(0); return; }
                     an.getByteFrequencyData(buf);
                     const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
                     if (avg > 8) {
-                        silenceTimer = 0; updateSilenceBar(0);
-                        setAiStatus('listening', '👂 聆聽中');
+                        silT = 0; setSilBar(0);
+                        setSt('li', '👂 聆聽中');
+                        lastSpeechMs = Date.now();
                     } else {
-                        silenceTimer++;
-                        const pct = Math.min((silenceTimer / SILENCE_SEC) * 100, 100);
-                        updateSilenceBar(pct);
-                        if (silenceTimer >= SILENCE_SEC) { silenceTimer = 0; triggerAI(); }
+                        silT++;
+                        setSilBar(Math.min((silT / SIL_SEC) * 100, 100));
+                        if (silT >= SIL_SEC) { silT = 0; triggerAI(); }
                     }
                 }, 1000);
-            } catch {
-                // 無麥克風時改用純計時
-                setInterval(() => {
-                    if (isSpeaking) return;
-                    silenceTimer++;
-                    updateSilenceBar(Math.min((silenceTimer / SILENCE_SEC) * 100, 100));
-                    if (silenceTimer >= SILENCE_SEC) { silenceTimer = 0; triggerAI(); }
+            } else {
+                // 無麥克風：純計時 fallback
+                silInterval = setInterval(() => {
+                    if (!started || ended || isSp) return;
+                    // 用 lastSpeechMs 計算距離上次 STT 結果的時間
+                    const secSince = (Date.now() - (lastSpeechMs || Date.now())) / 1000;
+                    const pct = Math.min((secSince / SIL_SEC) * 100, 100);
+                    setSilBar(pct);
+                    if (secSince >= SIL_SEC) { lastSpeechMs = Date.now(); triggerAI(); }
                 }, 1000);
             }
         }
 
-        // ════════════════════════════════════════════
-        //  複製代碼
-        // ════════════════════════════════════════════
+        // ══════════════════════════════════════════════
+        //  AI 面試官
+        // ══════════════════════════════════════════════
+        const FQ = [
+            "現在安靜了一下，請問有人想補充什麼嗎？",
+            "說到這裡，有沒有具體的例子可以分享？",
+            "好，我想多了解一下你的工作方式？",
+            "你認為自己最大的優點是什麼？",
+            "如果加入我們，你最想在哪個方面發揮？",
+            "你有帶領過團隊的經驗嗎？",
+            "遇到工作困難，你通常怎麼處理？",
+            "你對這份職位有什麼期待？",
+            "其他人有想補充的嗎？",
+            "有沒有想問我們的問題？"
+        ];
+        let fqIdx = 0;
+        function getFQ() { return FQ[fqIdx++ % FQ.length]; }
+
+        async function triggerAI() {
+            if (isSp || ended || !started) return;
+            // 最近 3 秒有聲音就不說
+            if (Date.now() - lastSpeechMs < 3000) return;
+
+            setSt('th', '💭 思考中...');
+
+            const ctx = recentSpeech.slice(-3).map(s => `${s.name}：${s.text}`).join('；') || "面試進行中";
+            const prompt = `你是面試主管王大明，主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場（${SIL_SEC}秒無人說話）。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
+
+            let q = null;
+            try {
+                const r = await fetch('/Claude/Ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, system: "你是台灣企業面試主管，說繁體中文，語氣自然。", maxTokens: 80 })
+                });
+                if (r.ok) {
+                    const d = await r.json();
+                    if (d.text && d.text.length > 3) q = d.text.trim();
+                }
+            } catch {}
+
+            if (!q) q = getFQ();
+            aiSpeak(q);
+        }
+
+        function aiSpeak(text) {
+            if (isSp || ended || !started) return;
+
+            if (!window.speechSynthesis) {
+                addTrxSilent("AI 面試官（王大明）", text, true);
+                showMsg(text);
+                return;
+            }
+
+            window.speechSynthesis.cancel();
+            isSp = true; silT = 0;
+            if (recognition) { try { recognition.stop(); } catch {} }
+
+            setSt('sp', '🗣️ 說話中'); setRing(true); showDots();
+
+            const u = new SpeechSynthesisUtterance(text);
+            const vs = window.speechSynthesis.getVoices();
+            const zh = vs.find(v => v.lang?.startsWith('zh')) || vs[0];
+            if (zh) u.voice = zh;
+            u.lang = 'zh-TW'; u.rate = 0.85; u.pitch = 1.0; u.volume = 1.0;
+
+            u.onstart = () => {
+                showMsg(text);
+                addTrxSilent("AI 面試官（王大明）", text, true);
+            };
+            u.onend = u.onerror = () => {
+                isSp = false; silT = 0; lastSpeechMs = Date.now();
+                setSt('li', '👂 聆聽中'); setRing(false);
+                if (!ended && recognition)
+                    setTimeout(() => { try { recognition.start(); } catch {} }, 400);
+            };
+
+            setTimeout(() => window.speechSynthesis.speak(u), 150);
+        }
+
+        // ══════════════════════════════════════════════
+        //  結束後自動下載畫面
+        // ══════════════════════════════════════════════
+        async function showEndedScreen() {
+            document.getElementById('endedScreen').classList.add('show');
+            const dl = document.getElementById('dlItems');
+
+            // 1. 逐字稿
+            if (trxLines.length > 0) {
+                const trxTxt = trxLines.map(l => `[${l.time}] ${l.sp}：${l.tx}`).join('\n');
+                dlFile(trxTxt, `逐字稿_${ts()}.txt`, 'text/plain;charset=utf-8');
+                dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿（${trxLines.length} 條）已下載</div>`;
+            } else {
+                dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿為空（麥克風可能未開啟）</div>`;
+            }
+
+            // 2. 錄音
+            if (recBlob) {
+                const url = URL.createObjectURL(recBlob);
+                const a = document.createElement('a'); a.href = url;
+                a.download = `面試錄音_${ts()}.webm`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                dl.innerHTML += `<div class="dl-item ok">✅ 錄音檔已下載</div>`;
+            } else {
+                dl.innerHTML += `<div class="dl-item ng">⚠️ 無錄音（麥克風未授權）</div>`;
+            }
+
+            // 3. AI 分析（後台呼叫）
+            dl.innerHTML += `<div class="dl-item wait" id="analyzeStatus">⏳ AI 分析中，請稍候...</div>`;
+            const analysis = await runAnalysis();
+            if (analysis) {
+                dlFile(analysis, `面試分析_${ts()}.txt`, 'text/plain;charset=utf-8');
+                document.getElementById('analyzeStatus').className = 'dl-item ok';
+                document.getElementById('analyzeStatus').textContent = '✅ 面試分析報告已下載';
+            } else {
+                document.getElementById('analyzeStatus').className = 'dl-item ng';
+                document.getElementById('analyzeStatus').textContent = '⚠️ AI 分析失敗（可能未設定 Gemini API Key）';
+            }
+        }
+
+        async function runAnalysis() {
+            if (trxLines.length < 3) return null;
+            const transcript = trxLines.map(l => `[${l.time}] ${l.sp}：${l.tx}`).join('\n');
+            const prompt = `以下是面試逐字稿，請分析每位求職者表現（繁體中文）：\n\n${transcript}\n\n請提供：1.求職者名單 2.每人：語氣表達、答題品質、評分(1-10)、錄取建議 3.整體摘要`;
+            try {
+                const r = await fetch('/Claude/Ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, system: "你是專業人資顧問，說繁體中文，格式清晰。", maxTokens: 2000 })
+                });
+                if (!r.ok) return null;
+                const d = await r.json();
+                return d.text || null;
+            } catch { return null; }
+        }
+
+        // ══════════════════════════════════════════════
+        //  工具函式
+        // ══════════════════════════════════════════════
+        function addTrxSilent(sp, tx) {
+            const now = new Date().toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+            trxLines.push({ sp, tx, time: now });
+        }
+
+        function dlFile(content, name, type) {
+            const b = new Blob([content], { type });
+            const u = URL.createObjectURL(b);
+            const a = document.createElement('a'); a.href = u; a.download = name;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(u), 5000);
+        }
+
+        function ts() { return new Date().toISOString().slice(0, 16).replace('T', '-'); }
+
+        function setSt(cls, txt) {
+            const e = document.getElementById('aiSt');
+            e.className = 'ai-st ' + cls; e.textContent = txt;
+        }
+        function setRing(on) { document.getElementById('sring').classList.toggle('on', on); }
+        function showDots() {
+            document.getElementById('aiMsg').innerHTML = '<span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>';
+        }
+        function showMsg(t) { document.getElementById('aiMsg').innerHTML = t.replace(/\n/g, '<br>'); }
+        function setSilBar(pct) {
+            const f = document.getElementById('siFill');
+            f.style.width = pct + '%';
+            f.className = 'si-fill' + (pct > 80 ? ' h' : pct > 50 ? ' w' : '');
+            document.getElementById('siLbl').textContent = pct > 0 ? `冷場偵測 ${Math.round(pct)}%` : '冷場偵測';
+        }
+
         function copyCode() {
-            navigator.clipboard.writeText('@room.JitsiRoomName').then(() => {
-                const b = document.getElementById('copyBtn');
-                b.textContent = '✅ 已複製';
-                b.classList.add('done');
-                setTimeout(() => { b.textContent = '複製代碼'; b.classList.remove('done'); }, 2000);
+            navigator.clipboard.writeText(ROOM_CODE).then(() => {
+                const tip = document.createElement('div');
+                tip.textContent = '✅ 已複製';
+                tip.style.cssText = 'position:fixed;top:60px;right:20px;background:#1a3d1a;color:#3fb950;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;z-index:99999';
+                document.body.appendChild(tip);
+                setTimeout(() => tip.remove(), 2000);
             });
         }
 
-        // ════════════════════════════════════════════
+        // ══════════════════════════════════════════════
         //  初始化
-        // ════════════════════════════════════════════
+        // ══════════════════════════════════════════════
+        let jitsiApi = null;
+
+        function initJitsi() {
+            if (jitsiApi) return; // 避免重複初始化
+
+            const container = document.getElementById('jitsi-container');
+            const domain    = 'meet.jit.si';
+            const options   = {
+                roomName:   JITSI_ROOM,
+                parentNode: container,
+                width:      '100%',
+                height:     '100%',
+                userInfo: {
+                    displayName: MY_NAME
+                },
+                configOverwrite: {
+                    prejoinPageEnabled:      false,
+                    disableDeepLinking:      true,
+                    startWithAudioMuted:     false,
+                    startWithVideoMuted:     false,
+                    enableNoAudioDetection:  false,
+                    enableNoisyMicDetection: false,
+                    // 停用字幕功能（避免畫面顯示文字）
+                    transcription: { enabled: false },
+                    liveStreaming: { enabled: false },
+                },
+                interfaceConfigOverwrite: {
+                    SHOW_JITSI_WATERMARK:         false,
+                    SHOW_BRAND_WATERMARK:          false,
+                    SHOW_POWERED_BY:               false,
+                    MOBILE_APP_PROMO:              false,
+                    TOOLBAR_ALWAYS_VISIBLE:        true,
+                    // 停用字幕 UI
+                    DISABLE_TRANSCRIPTION_SUBTITLES: true,
+                }
+            };
+
+            jitsiApi = new JitsiMeetExternalAPI(domain, options);
+
+            // 監聽離開事件（不強制結束，讓主管控制）
+            jitsiApi.addEventListener('videoConferenceLeft', () => {
+                console.log('使用者離開 Jitsi 視訊');
+            });
+        }
+
         window.addEventListener('load', () => {
             if (window.speechSynthesis) {
                 window.speechSynthesis.getVoices();
                 window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
             }
 
-            // 開場問候（7秒後）
-            setTimeout(() => {
-                aiSpeak("您好，歡迎參加今天的面試！我是王大明，今天擔任面試主管。請先做個自我介紹，告訴我您的背景與應徵這份職位的動機。");
-            }, 7000);
+            // ✅ 立即初始化 Jitsi（讓所有人都能進入視訊房間）
+            // 視訊房間和我們的「會議狀態」是分開的概念：
+            // - 視訊：任何時候都可以進入
+            // - 會議狀態（錄音/AI/逐字稿）：等主管按開始才啟動
+            if (typeof JitsiMeetExternalAPI !== 'undefined') {
+                initJitsi();
+            } else {
+                // external_api.js 尚未載入，稍後重試
+                setTimeout(() => {
+                    if (typeof JitsiMeetExternalAPI !== 'undefined') initJitsi();
+                    else console.error('Jitsi External API 載入失敗');
+                }, 2000);
+            }
 
-            // 啟動麥克風偵測
-            setTimeout(() => {
-                startSilenceDetection();
-                initSpeechRecognition();
-            }, 4000);
+            // 求職者首次進入時，若會議尚未開始，顯示彈跳提示
+            // （不擋頁面，只是提示）
+            if (!IS_STAFF) {
+                // 等 SignalR 連線後 500ms 再判斷，確保如果已開始會先收到訊號
+                setTimeout(() => {
+                    if (!started) {
+                        document.getElementById('notStartedModal').style.display = 'flex';
+                    }
+                }, 500);
+            }
         });
     </script>
 </body>

@@ -64,14 +64,14 @@ namespace InterviewProject.Controllers
 
                 if (resume != null)
                 {
-                    // UserId → DB 欄位 MembersId
                     var member = await _db.Members.FindAsync(resume.MembersId);
-                    ViewBag.PrefilledResume = resume;
+                    ViewBag.PrefilledResumeId = resume.Id;
                     ViewBag.PrefilledMember = member;
+                    ViewBag.PrefilledJob = resume.Job?.Title;
                 }
             }
 
-            // 書審通過或待審核的履歷才能排面試
+            // 可排面試的履歷
             var pendingResumes = await _db.Resumes
                 .Include(r => r.Job)
                 .Where(r => r.Status == "待審核" || r.Status == "書審通過" || r.Status == "通過")
@@ -89,28 +89,25 @@ namespace InterviewProject.Controllers
             return View("~/Views/Interview/Create.cshtml");
         }
 
-        // ── HR/主管：新增排程 POST ──
+        // ── HR/主管：新增排程 POST（支援多位求職者）──
         [HttpPost]
-        public async Task<IActionResult> Create(InterviewSchedule schedule)
+        public async Task<IActionResult> Create(
+            List<int> resumeIds,        // 複選：多位求職者的履歷 ID
+            DateTime scheduledAt,
+            int? roomId,
+            string? notes)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
-            var resume = await _db.Resumes.FindAsync(schedule.ResumeId);
-            if (resume == null)
+            if (resumeIds == null || !resumeIds.Any())
             {
-                TempData["Error"] = "找不到對應的履歷";
+                TempData["Error"] = "請至少選擇一位求職者";
                 return RedirectToAction("Create");
             }
 
-            // 使用正確的欄位名稱
-            schedule.MemberId = resume.MembersId;   // MembersId
-            schedule.JobId = resume.JobsId; // JobsId
-            schedule.ScheduledByEmployeeId = GetEmployeeId();
-            schedule.CreatedAt = DateTime.Now;
-            schedule.Status = "待確認";
-
-            // 未選擇房間則自動建立
-            if (schedule.RoomId == null)
+            // 若未選擇房間則統一建立一個新房間（所有求職者共用同一房間）
+            int targetRoomId;
+            if (roomId == null)
             {
                 var newRoom = new Room
                 {
@@ -121,14 +118,42 @@ namespace InterviewProject.Controllers
                 };
                 _db.Rooms.Add(newRoom);
                 await _db.SaveChangesAsync();
-                schedule.RoomId = newRoom.Id;
+                targetRoomId = newRoom.Id;
+            }
+            else
+            {
+                targetRoomId = roomId.Value;
             }
 
-            resume.Status = "已排面試";
-            _db.InterviewSchedules.Add(schedule);
+            int empId = GetEmployeeId();
+            int addedCount = 0;
+
+            foreach (var rid in resumeIds.Distinct())
+            {
+                var resume = await _db.Resumes.FindAsync(rid);
+                if (resume == null) continue;
+
+                var schedule = new InterviewSchedule
+                {
+                    MemberId = resume.MembersId,
+                    ResumeId = resume.Id,
+                    JobId = resume.JobsId,
+                    ScheduledByEmployeeId = empId,
+                    ScheduledAt = scheduledAt,
+                    Notes = notes,
+                    RoomId = targetRoomId,
+                    Status = "待確認",
+                    CreatedAt = DateTime.Now
+                };
+
+                resume.Status = "已排面試";
+                _db.InterviewSchedules.Add(schedule);
+                addedCount++;
+            }
+
             await _db.SaveChangesAsync();
 
-            TempData["Success"] = "面試已成功排程！";
+            TempData["Success"] = $"已成功排程 {addedCount} 位求職者的面試！";
             return RedirectToAction("Index");
         }
 

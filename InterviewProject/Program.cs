@@ -1,7 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using InterviewProject.Data;
+﻿using InterviewProject.Data;
+using InterviewProject.Hubs;
 using InterviewProject.Services; // 🚀 1. 確保引入 Service 的命名空間
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 // 🌟 關鍵修正：解決 PostgreSQL timestamp with time zone (timestamptz) 的 Local / UTC 衝突問題
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
@@ -16,6 +17,9 @@ builder.Services.AddSingleton<JitsiBotService>();
 
 //註冊 SignalR 服務
 builder.Services.AddSignalR();
+
+//✅ 新增：HttpClient（供 ClaudeProxyController 呼叫 Gemini API 用）
+builder.Services.AddHttpClient();
 
 // 加入 Session
 builder.Services.AddDistributedMemoryCache(); // 💡 新增：Session 需要的記憶體儲存體
@@ -77,5 +81,8 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+
+// ✅ 新增：SignalR Hub 路由
+app.MapHub<MeetingHub>("/meetingHub");
 
 app.Run();

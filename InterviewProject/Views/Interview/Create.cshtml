@@ -3,19 +3,100 @@
     var rooms = ViewBag.Rooms as List<InterviewProject.Models.Room>;
     var pendingResumes = ViewBag.PendingResumes as List<InterviewProject.Models.Resume>;
     var memberNames = ViewBag.MemberNames as Dictionary<int, string>;
-    var prefilledResume = ViewBag.PrefilledResume as InterviewProject.Models.Resume;
-    var prefilledMember = ViewBag.PrefilledMember as InterviewProject.Models.Member;
+    var prefilledId = ViewBag.PrefilledResumeId as int?;
 }
 
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+    <style>
+        .resume-checkbox-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 320px;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
+
+        .resume-checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border: 1.5px solid #e8eaed;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all .15s;
+        }
+
+            .resume-checkbox-item:hover {
+                border-color: var(--primary);
+                background: #f0f7ff;
+            }
+
+            .resume-checkbox-item input[type=checkbox] {
+                width: 16px;
+                height: 16px;
+                accent-color: var(--primary);
+                flex-shrink: 0;
+            }
+
+            .resume-checkbox-item.checked {
+                border-color: var(--primary);
+                background: #f0f7ff;
+            }
+
+        .resume-item-info {
+            flex: 1;
+        }
+
+        .resume-item-name {
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--text-main);
+        }
+
+        .resume-item-job {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .selected-count {
+            font-size: 13px;
+            color: var(--primary);
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .select-actions {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .select-btn {
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            border: 1px solid #ccc;
+            background: white;
+            cursor: pointer;
+        }
+
+            .select-btn:hover {
+                border-color: var(--primary);
+                color: var(--primary);
+            }
+    </style>
 }
 
 <div class="page-header">
     <div class="page-header-inner">
         <h1>新增面試排程</h1>
-        <p>Schedule a New Interview</p>
+        <p>Schedule a New Interview — 支援一次加入多位求職者至同一會議</p>
     </div>
 </div>
 
@@ -23,68 +104,65 @@
     <div class="form-card">
         <form asp-controller="Interview" asp-action="Create" method="post">
 
-            <!-- 選擇履歷（求職者） -->
+            <!-- ① 選擇求職者（複選） -->
             <div class="form-section">
-                <h3 class="section-title">📄 選擇應徵履歷</h3>
-                <div class="form-group">
-                    <label for="ResumeId">應徵者 / 職缺 <span class="required">*</span></label>
-                    <select name="ResumeId" id="ResumeId" class="form-control" required
-                            onchange="loadResumeInfo(this.value)">
-                        <option value="">— 請選擇 —</option>
-                        @foreach (var r in pendingResumes ?? new List<InterviewProject.Models.Resume>())
-                        {
-                            var name = memberNames != null && memberNames.ContainsKey(r.MembersId)
-                            ? memberNames[r.MembersId] : "未知";
-                            var isSelected = prefilledResume != null && prefilledResume.Id == r.Id;
-                            <option value="@r.Id" selected="@(isSelected ? "selected" : null)">
-                                @name — @(r.Job?.Title ?? "未知職缺")（ID: @r.Id）
-                            </option>
-                        }
-                    </select>
+                <h3 class="section-title">👥 選擇應徵者（可複選，共用同一會議室）</h3>
+
+                <div class="select-actions">
+                    <button type="button" class="select-btn" onclick="selectAll()">全選</button>
+                    <button type="button" class="select-btn" onclick="deselectAll()">取消全選</button>
                 </div>
 
-                <!-- 動態顯示求職者資訊 -->
-                <div class="applicant-info-box" id="applicantInfoBox" style="display:@(prefilledResume != null ? "flex" : "none")">
-                    <div class="info-item">
-                        <span class="info-label">求職者姓名</span>
-                        <span class="info-value" id="infoMemberName">@(prefilledMember?.Name ?? "")</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">應徵職缺</span>
-                        <span class="info-value" id="infoJobTitle">@(prefilledResume?.Job?.Title ?? "")</span>
-                    </div>
+                <div class="selected-count" id="selectedCount">已選 0 位</div>
+
+                <div class="resume-checkbox-list" id="resumeList">
+                    @foreach (var r in pendingResumes ?? new List<InterviewProject.Models.Resume>())
+                    {
+                        var name = memberNames != null && memberNames.ContainsKey(r.MembersId)
+                        ? memberNames[r.MembersId] : "未知";
+                        var isPreChecked = prefilledId.HasValue && prefilledId.Value == r.Id;
+                        <label class="resume-checkbox-item @(isPreChecked ? "checked" : "")"
+                               onclick="updateCount()">
+                            <input type="checkbox" name="resumeIds" value="@r.Id"
+                                   @(isPreChecked ? "checked" : "") onchange="toggleStyle(this)" />
+                            <div class="resume-item-info">
+                                <div class="resume-item-name">@name</div>
+                                <div class="resume-item-job">@(r.Job?.Title ?? "未知職缺") · 履歷 #@r.Id · 狀態：@r.Status</div>
+                            </div>
+                        </label>
+                    }
+
+                    @if (!(pendingResumes ?? new List<InterviewProject.Models.Resume>()).Any())
+                    {
+                        <div style="padding:20px;color:#999;text-align:center">
+                            目前沒有待審核或書審通過的履歷
+                        </div>
+                    }
                 </div>
             </div>
 
-            <!-- 面試時間 -->
+            <!-- ② 面試時間 -->
             <div class="form-section">
                 <h3 class="section-title">🕐 面試時間</h3>
                 <div class="form-group">
-                    <label for="ScheduledAt">面試日期與時間 <span class="required">*</span></label>
-                    <input type="datetime-local" name="ScheduledAt" id="ScheduledAt"
-                           class="form-control" required
+                    <label>面試日期與時間 <span class="required">*</span></label>
+                    <input type="datetime-local" name="scheduledAt" class="form-control" required
                            min="@DateTime.Now.ToString("yyyy-MM-ddTHH:mm")" />
                 </div>
             </div>
 
-            <!-- 選擇會議室 -->
+            <!-- ③ 選擇會議室 -->
             <div class="form-section">
-                <h3 class="section-title">🎥 面試會議室</h3>
+                <h3 class="section-title">🎥 面試會議室（所有選取的求職者共用同一房間）</h3>
                 <div class="room-choice-tabs">
-                    <button type="button" class="room-tab active" id="tabExisting"
-                            onclick="switchRoomTab('existing')">
-                        使用既有房間
-                    </button>
-                    <button type="button" class="room-tab" id="tabNew"
-                            onclick="switchRoomTab('new')">
-                        自動建立新房間
-                    </button>
+                    <button type="button" class="room-tab active" id="tabExisting" onclick="switchRoomTab('existing')">使用既有房間</button>
+                    <button type="button" class="room-tab" id="tabNew" onclick="switchRoomTab('new')">自動建立新房間</button>
                 </div>
 
                 <div id="existingRoomPanel">
                     <div class="form-group">
-                        <label for="RoomId">選擇房間</label>
-                        <select name="RoomId" id="RoomId" class="form-control">
+                        <label>選擇房間</label>
+                        <select name="roomId" id="roomIdSelect" class="form-control">
                             <option value="">— 請選擇 —</option>
                             @foreach (var room in rooms ?? new List<InterviewProject.Models.Room>())
                             {
@@ -96,23 +174,22 @@
 
                 <div id="newRoomPanel" style="display:none">
                     <div class="info-hint">
-                        💡 系統將自動建立一個全新的視訊會議房間，並將連結通知給求職者。
+                        💡 系統將自動建立一個全新的視訊會議房間，所有選取的求職者和面試官使用相同的代碼進入。
                     </div>
                 </div>
             </div>
 
-            <!-- 備註 -->
+            <!-- ④ 備註 -->
             <div class="form-section">
-                <h3 class="section-title">📝 面試備註</h3>
+                <h3 class="section-title">📝 備註（選填）</h3>
                 <div class="form-group">
-                    <label for="Notes">備註（選填）</label>
-                    <textarea name="Notes" id="Notes" class="form-control" rows="3"
+                    <textarea name="notes" class="form-control" rows="3"
                               placeholder="例如：請攜帶作品集、線上面試請確保網路順暢..."></textarea>
                 </div>
             </div>
 
             <div class="form-actions">
-                <button type="submit" class="btn-primary-action">✅ 確認排程</button>
+                <button type="submit" class="btn-primary-action" id="submitBtn">✅ 確認排程</button>
                 <a asp-controller="Interview" asp-action="Index" class="btn-secondary">取消</a>
             </div>
         </form>
@@ -121,37 +198,43 @@
 
 @section Scripts {
     <script>
-        function switchRoomTab(mode) {
-            if (mode === 'existing') {
-                document.getElementById('tabExisting').classList.add('active');
-                document.getElementById('tabNew').classList.remove('active');
-                document.getElementById('existingRoomPanel').style.display = '';
-                document.getElementById('newRoomPanel').style.display = 'none';
-                document.getElementById('RoomId').required = false;
-            } else {
-                document.getElementById('tabNew').classList.add('active');
-                document.getElementById('tabExisting').classList.remove('active');
-                document.getElementById('existingRoomPanel').style.display = 'none';
-                document.getElementById('newRoomPanel').style.display = '';
-                document.getElementById('RoomId').value = '';
-                document.getElementById('RoomId').required = false;
-            }
+        function updateCount() {
+            const n = document.querySelectorAll('input[name="resumeIds"]:checked').length;
+            document.getElementById('selectedCount').textContent = `已選 ${n} 位`;
+            document.getElementById('submitBtn').textContent = n > 0 ? `✅ 確認排程（${n} 位求職者）` : '✅ 確認排程';
         }
 
-        function loadResumeInfo(resumeId) {
-            if (!resumeId) {
-                document.getElementById('applicantInfoBox').style.display = 'none';
-                return;
-            }
-            fetch(`/Interview/GetResumeInfo?resumeId=${resumeId}`)
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById('infoMemberName').textContent = data.memberName;
-                        document.getElementById('infoJobTitle').textContent = data.jobTitle;
-                        document.getElementById('applicantInfoBox').style.display = 'flex';
-                    }
-                });
+        function toggleStyle(cb) {
+            cb.closest('.resume-checkbox-item').classList.toggle('checked', cb.checked);
+            updateCount();
         }
+
+        function selectAll() {
+            document.querySelectorAll('input[name="resumeIds"]').forEach(cb => {
+                cb.checked = true;
+                cb.closest('.resume-checkbox-item').classList.add('checked');
+            });
+            updateCount();
+        }
+
+        function deselectAll() {
+            document.querySelectorAll('input[name="resumeIds"]').forEach(cb => {
+                cb.checked = false;
+                cb.closest('.resume-checkbox-item').classList.remove('checked');
+            });
+            updateCount();
+        }
+
+        function switchRoomTab(mode) {
+            const isExisting = mode === 'existing';
+            document.getElementById('tabExisting').classList.toggle('active', isExisting);
+            document.getElementById('tabNew').classList.toggle('active', !isExisting);
+            document.getElementById('existingRoomPanel').style.display = isExisting ? '' : 'none';
+            document.getElementById('newRoomPanel').style.display      = isExisting ? 'none' : '';
+            if (!isExisting) document.getElementById('roomIdSelect').value = '';
+        }
+
+        // 初始計數
+        updateCount();
     </script>
 }
