@@ -22,10 +22,17 @@
 
         <div class="profile-sidebar">
             <div class="profile-avatar" id="avatar-preview">
-                <svg width="54" height="54" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="8" r="4" fill="#fff" />
-                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>
-                </svg>
+                @if (!string.IsNullOrEmpty(Model.ProfileImagePath))
+                {
+                    <img src="@Model.ProfileImagePath" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
+                }
+                else
+                {
+                    <svg width="54" height="54" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="8" r="4" fill="#fff" />
+                        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>
+                    </svg>
+                }
             </div>
             <div class="sidebar-name">@Model.Name</div>
             <div class="sidebar-role">@roleLabel</div>
@@ -36,7 +43,7 @@
                     <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 </svg>
                 更換大頭照
-                <input type="file" accept="image/*" style="display:none" onchange="previewAvatar(event)" />
+                <input type="file" id="avatar-file-input" accept="image/*" style="display:none" onchange="previewAvatar(event)" />
             </label>
         </div>
 
@@ -51,9 +58,17 @@
                 {
                     <div class="alert-success">個人資訊已儲存！</div>
                 }
+                @if (TempData["SaveError"] != null)
+                {
+                    <div class="pw-error" style="background-color: #ffebee; color: #c62828; padding: 10px; border-radius: 4px; margin-bottom: 15px;">@TempData["SaveError"]</div>
+                }
 
                 <form method="post" asp-controller="Member" asp-action="ProfileSave">
                     @Html.AntiForgeryToken()
+                    
+                    <input type="hidden" id="profileImageBase64" name="profileImageBase64" value="@Model.ProfileImagePath" />
+                    <input type="hidden" name="idNumber" value="@Model.IdNumber" />
+
                     <div class="fields-grid">
 
                         <div class="field-item">
@@ -74,7 +89,7 @@
                                     {
                                         <option value="" disabled>-- 請選擇 --</option>
                                     }
-                                    var genders = new[] { "男", "女", "不透露" };
+                                    var genders = new[] { "男", "女" };
                                     foreach (var g in genders)
                                     {
                                         if (Model.Gender == g)
@@ -92,8 +107,7 @@
 
                         <div class="field-item">
                             <label class="field-label">身分證字號</label>
-                            <input class="field-input field-readonly" type="text"
-                                   value="@Model.IdNumber" readonly />
+                            <input class="field-input field-readonly" type="text" value="@Model.IdNumber" readonly />
                         </div>
 
                         <div class="field-item">
@@ -104,14 +118,12 @@
 
                         <div class="field-item">
                             <label class="field-label">手機號碼</label>
-                            <input class="field-input field-readonly" type="tel"
-                                   value="@Model.Phone" readonly />
+                            <input class="field-input field-readonly" name="phone" type="tel" value="@Model.Phone" readonly />
                         </div>
 
                         <div class="field-item field-item--full">
                             <label class="field-label">電子郵件</label>
-                            <input class="field-input field-readonly" type="email"
-                                   value="@Model.Email" readonly />
+                            <input class="field-input field-readonly" name="email" type="email" value="@Model.Email" readonly />
                         </div>
 
                         <div class="field-item field-item--full">
@@ -200,8 +212,12 @@
         if (!file) return;
         const reader = new FileReader();
         reader.onload = e => {
+            // 1. 更新大頭照即時預覽
             const av = document.getElementById('avatar-preview');
             av.innerHTML = `<img src="${e.target.result}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`;
+            
+            // 2. 將大頭照的 Base64 填入表單內的隱藏輸入框
+            document.getElementById('profileImageBase64').value = e.target.result;
         };
         reader.readAsDataURL(file);
     }

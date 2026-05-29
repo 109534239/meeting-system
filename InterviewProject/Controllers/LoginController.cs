@@ -188,19 +188,20 @@ namespace InterviewProject.Controllers
             return Json(new { success = true, message = "密碼重設成功" });
         }
 
-        // POST: 註冊（🎯 修正點：讓參數接收 string idNumber，並確實寫入實體物件）
+        // POST: 註冊（🎯 修正點：接收圖片檔案並將其轉換成 Base64 字串存入資料庫）
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Register(string email, string phone, string password,
-            string name, string gender, string idNumber, DateOnly birthday, string address)
+            string name, string gender, string idNumber, IFormFile? profileImage, DateOnly birthday, string address)
         {
-            // 1. 後端必填防線：包含新加的 idNumber
+            // 1. 後端必填防線：包含新加的 idNumber 與 profileImage
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(phone) ||
                 string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(name) ||
                 string.IsNullOrWhiteSpace(gender) || string.IsNullOrWhiteSpace(idNumber) ||
+                profileImage == null || profileImage.Length == 0 ||
                 string.IsNullOrWhiteSpace(address))
             {
-                TempData["RegisterError"] = "所有欄位皆為必填項目，請勿留空！";
+                TempData["RegisterError"] = "所有欄位皆為必填項目，且必須上傳大頭照！";
                 return RedirectToAction("Register");
             }
 
@@ -211,7 +212,26 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Register");
             }
 
-            // 🎯 3. 實例化物件：將接收到的 idNumber 指派給資料模型的 IdNumber 欄位
+            // 🎯 核心變更：將上傳的實體圖片轉為 Base64 資料字串
+            string base64ImageString = "";
+            try
+            {
+                using (var ms = new MemoryStream())
+                {
+                    await profileImage.CopyToAsync(ms);
+                    byte[] fileBytes = ms.ToArray();
+
+                    // 串接成瀏覽器可以直接解析的資料格式標準：data:[MIME型態];base64,[資料碼]
+                    base64ImageString = $"data:{profileImage.ContentType};base64,{Convert.ToBase64String(fileBytes)}";
+                }
+            }
+            catch (Exception)
+            {
+                TempData["RegisterError"] = "大頭照轉換失敗，請重新選擇相片再試。";
+                return RedirectToAction("Register");
+            }
+
+            // 3. 實例化物件：將完整的 Base64 字串指派給 ProfileImagePath 屬性
             var member = new Member
             {
                 Email = email.Trim(),
@@ -219,7 +239,8 @@ namespace InterviewProject.Controllers
                 PasswordHash = HashPassword(password),
                 Name = name.Trim(),
                 Gender = gender,
-                IdNumber = idNumber.Trim().ToUpper(), // 這裡就是之前漏掉的靈魂關鍵！
+                IdNumber = idNumber.Trim().ToUpper(),
+                ProfileImagePath = base64ImageString, // 🎯 這裡改存一長串圖片編碼
                 Birthday = birthday,
                 Address = address.Trim(),
                 CreatedAt = DateTime.UtcNow

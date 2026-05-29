@@ -24,8 +24,7 @@ namespace InterviewProject.Controllers
             return HttpContext.Session.GetInt32("MemberId") ?? 0;
         }
 
-        // --- 🎯 新增的語文處理輔助方法 (從 ResumeController 拷貝過來) ---
-        // 方法 A：把資料表 List 轉成字串
+        // 語文處理輔助方法 (從 ResumeController 拷貝過來)
         private string FormatLanguageString(List<LanguageProficiency> langs)
         {
             if (langs == null || !langs.Any()) return "";
@@ -33,7 +32,6 @@ namespace InterviewProject.Controllers
                 l.Language == "不具外文能力" ? l.Language : $"{l.Language}({l.Degree})"));
         }
 
-        // 方法 B：去資料庫抓資料並呼叫方法 A
         private async Task<string> GetFormattedLanguageSkills(int resumeId)
         {
             var langs = await _db.LanguageProficiency
@@ -54,14 +52,14 @@ namespace InterviewProject.Controllers
             return View(member);
         }
 
-        // POST: 儲存基本資料（🎯 已完全納入必填 IdNumber）
+        // POST: 儲存基本資料
         [HttpPost]
-        public async Task<IActionResult> ProfileSave(string name, string gender, string idNumber, DateOnly birthday, string address)
+        public async Task<IActionResult> ProfileSave(string name, string gender, string idNumber, DateOnly birthday, string address, string? profileImageBase64)
         {
             var id = HttpContext.Session.GetInt32("MemberId");
             if (id == null) return RedirectToAction("Index", "Login");
 
-            // 後端嚴格驗證：防堵任何惡意繞過前端而傳入空字串的情況
+            // 後端強烈驗證：只針對純文字輸入框欄位檢查，防範前端漏洞留空
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(gender) ||
                 string.IsNullOrWhiteSpace(idNumber) || string.IsNullOrWhiteSpace(address))
             {
@@ -80,12 +78,18 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Profile");
             }
 
-            // 更新資料
+            // 更新資料欄位
             member.Name = name.Trim();
             member.Gender = gender;
             member.IdNumber = idNumber.Trim().ToUpper();
             member.Birthday = birthday;
             member.Address = address.Trim();
+
+            // 🎯 核心防呆處理：只有當前端傳送過來的 Base64 為有效圖片資料時，才覆蓋寫入資料庫
+            if (!string.IsNullOrEmpty(profileImageBase64) && profileImageBase64.StartsWith("data:image"))
+            {
+                member.ProfileImagePath = profileImageBase64;
+            }
 
             await _db.SaveChangesAsync();
 
@@ -164,7 +168,6 @@ namespace InterviewProject.Controllers
 
             if (resume == null) return NotFound();
 
-            // 🎯 這裡現在有輔助方法支撐了，可以正確抓取副表語言
             resume.LanguageSkills = await GetFormattedLanguageSkills(resume.Id);
 
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);

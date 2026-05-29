@@ -16,6 +16,7 @@
 
         <form id="register-form" method="post"
               asp-controller="Login" asp-action="Register"
+              enctype="multipart/form-data"
               onsubmit="return validateForm(event)">
             @Html.AntiForgeryToken()
 
@@ -62,13 +63,17 @@
                         <option value="">-- 請選擇 --</option>
                         <option value="男">男</option>
                         <option value="女">女</option>
-                        <option value="不透露">不透露</option>
-                    </select>
+                        </select>
                 </div>
 
                 <div class="form-group">
                     <label>身分證字號 <span class="required">*</span></label>
                     <input type="text" id="idNumber" name="idNumber" class="form-control" placeholder="請輸入身分證字號" required />
+                </div>
+
+                <div class="form-group">
+                    <label>上傳大頭照 <span class="required">*</span></label>
+                    <input type="file" id="profileImage" name="profileImage" class="form-control" accept="image/*" required />
                 </div>
 
                 <div class="form-group">
@@ -161,11 +166,13 @@
             const name = document.getElementById('name').value.trim();
             const gender = document.getElementById('gender').value;
             const idNumber = document.getElementById('idNumber').value.trim();
+            const profileImage = document.getElementById('profileImage').files[0]; // 🎯 取得上傳的相片檔案
             const birthday = document.getElementById('birthday').value;
             const address = document.getElementById('address').value.trim();
 
-            if (!name || !gender || !idNumber || !birthday || !address) {
-                alert('請完整填寫個人詳細資料欄位');
+            // 🎯 驗證條件加入 profileImage 判斷
+            if (!name || !gender || !idNumber || !profileImage || !birthday || !address) {
+                alert('請完整填寫個人詳細資料欄位並上傳大頭照');
                 return false;
             }
 

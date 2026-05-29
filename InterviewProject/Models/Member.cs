@@ -17,6 +17,9 @@ namespace InterviewProject.Models
         // 🎯 成功新增：身分證字號（順序在性別後面，且為必填）
         public string IdNumber { get; set; } = "";
 
+        // 🎯 新增：儲存照片於伺服器上的路徑或檔名
+        public string ProfileImagePath { get; set; } = "";
+
         public DateOnly Birthday { get; set; }
         public string Address { get; set; } = "";
 
