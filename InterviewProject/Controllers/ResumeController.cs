@@ -41,6 +41,8 @@ namespace InterviewProject.Controllers
             ViewBag.UserBirthday = member.Birthday;
             ViewBag.UserAddress = member.Address;
             ViewBag.UserEmail = member.Email;
+            // 照片
+            ViewBag.UserPhotoBase64 = member?.ProfileImagePath;
 
             // 3. 建立新的 Resume 物件，僅賦值資料庫有的欄位
             var resume = new Resume
@@ -106,17 +108,17 @@ namespace InterviewProject.Controllers
 
                 if (existingResume != null)
                 {
-                    // 🎯 修正：在重置 ID 之前，先用 existingResume.Id 去抓語言
-                    var sourceLangs = await _db.LanguageProficiency
-                        .Where(l => l.ResumeId == existingResume.Id)
-                        .ToListAsync();
+                    // 抓取關聯資料
+                    //語言能力
+                    var sourceLangs = await _db.LanguageProficiency.Where(l => l.ResumeId == existingResume.Id).ToListAsync();
+                    //駕照
+                    var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == existingResume.Id).ToListAsync();
 
                     model = existingResume;
-                    // 🎯 先賦值字串，這時候 FormatLanguageString 拿得到資料
                     model.LanguageSkills = FormatLanguageString(sourceLangs);
+                    model.DriverLicense = FormatDriverLicenseString(dbLicenses);
 
-                    // 🎯 最後才重置 ID 為 0 (準備存成新紀錄)
-                    model.Id = 0;
+                    model.Id = 0; // 重置為新紀錄
                     model.JobsId = jobId;
                     model.Job = targetJob;
                     model.Status = "待審核";
@@ -132,22 +134,14 @@ namespace InterviewProject.Controllers
 
                 if (model == null)
                 {
-                    // 全新品
-                    model = new Resume
-                    {
-                        MembersId = userId,
-                        JobsId = jobId,
-                        WorkExperienceYears = -1,
-                        Job = targetJob
-                    };
+                    model = new Resume { MembersId = userId, JobsId = jobId, WorkExperienceYears = -1, Job = targetJob };
                 }
                 else
                 {
-                    // 已存在的紀錄，從關聯表抓取語言並組合
-                    var langs = await _db.LanguageProficiency
-                        .Where(l => l.ResumeId == model.Id)
-                        .ToListAsync();
+                    var langs = await _db.LanguageProficiency.Where(l => l.ResumeId == model.Id).ToListAsync();
                     model.LanguageSkills = FormatLanguageString(langs);
+                    var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == model.Id).ToListAsync();
+                    model.DriverLicense = FormatDriverLicenseString(dbLicenses);
                 }
             }
 
@@ -159,12 +153,13 @@ namespace InterviewProject.Controllers
             ViewBag.UserBirthday = member?.Birthday;
             ViewBag.UserAddress = member?.Address;
             ViewBag.UserEmail = member?.Email;
+            // 照片
+            ViewBag.UserPhotoBase64 = member?.ProfileImagePath;
 
             return View(model);
         }
 
-        // 🎯 輔助方法：統一格式化邏輯
-        // 方法 A：負責「把 List 變成字串」 (你已經有了)
+        // 🎯語言能力方法 A：負責「把 List 變成字串」
         private string FormatLanguageString(List<LanguageProficiency> langs)
         {
             if (langs == null || !langs.Any()) return "";
@@ -172,7 +167,7 @@ namespace InterviewProject.Controllers
                 l.Language == "不具外文能力" ? l.Language : $"{l.Language}({l.Degree})"));
         }
 
-        // 方法 B：負責「去資料庫抓資料並呼叫方法 A」 (補上這個)
+        // 🎯語言能力方法 B：負責「去資料庫抓資料並呼叫方法 A」
         private async Task<string> GetFormattedLanguageSkills(int resumeId)
         {
             var skills = await _db.LanguageProficiency
@@ -190,6 +185,31 @@ namespace InterviewProject.Controllers
             );
 
             return string.Join(", ", formatted);
+        }
+        // 🎯 駕照：將 List<DriverLicense> 轉回字串供前端 Checkbox 反填
+        private string FormatDriverLicenseString(List<DriverLicense> licenses)
+        {
+            if (licenses == null || !licenses.Any()) return "";
+
+            var result = new List<string>();
+
+            // 按 Driver 分組 (自用、職業、機車)
+            var grouped = licenses.Where(l => l.Driver != "汽(機)車")
+                                  .GroupBy(l => l.Driver);
+
+            foreach (var g in grouped)
+            {
+                result.Add($"{g.Key}({string.Join("/", g.Select(x => x.Type))})");
+            }
+
+            // 處理汽(機)車 (無、自備)
+            var status = licenses.Where(l => l.Driver == "汽(機)車").Select(x => x.Type);
+            if (status.Any())
+            {
+                result.Add(string.Join("/", status));
+            }
+
+            return string.Join(", ", result);
         }
 
         // 3. 儲存邏輯
@@ -232,14 +252,17 @@ namespace InterviewProject.Controllers
                 finalResumeId = existing.Id;
             }
 
-            // 🎯 這裡會把前端傳來的 model.LanguageSkills 字串拆解存入 LanguageProficiency 表
+            // 🎯語言能力儲存後取得 finalResumeId
             await UpdateLanguageProficiency(finalResumeId, model.LanguageSkills);
+
+            // 🎯駕照儲存後取得 finalResumeId
+            await UpdateDriverLicense(finalResumeId, model.DriverLicense);
 
             TempData["ShowSuccessAlert"] = "履歷已送出！";
             return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
         }
 
-        // 輔助方法：解析字串並更新資料表
+        // 🎯語言能力解析字串並更新資料表
         private async Task UpdateLanguageProficiency(int resumeId, string? languageSkills)
         {
             var oldItems = _db.LanguageProficiency.Where(l => l.ResumeId == resumeId);
@@ -264,22 +287,62 @@ namespace InterviewProject.Controllers
             }
             await _db.SaveChangesAsync();
         }
+        // 🎯駕照解析字串並更新資料表
+        private async Task UpdateDriverLicense(int resumeId, string? driverLicense)
+        {
+            // 1. 刪除舊資料
+            var oldItems = _db.DriverLicense.Where(d => d.ResumeId == resumeId);
+            _db.DriverLicense.RemoveRange(oldItems);
 
+            if (!string.IsNullOrEmpty(driverLicense))
+            {
+                // 假設字串格式為: 自用(小/大), 職業(小/大/客), 機車(輕型/重型), 無/自備
+                var parts = driverLicense.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var p in parts)
+                {
+                    if (p.Contains("(") && p.Contains(")"))
+                    {
+                        // 處理帶括號的類型：自用(小/大)
+                        var driver = p.Split('(')[0]; // 自用
+                        var types = p.Split('(', ')')[1].Split('/'); // [小, 大]
+                        foreach (var t in types)
+                        {
+                            _db.DriverLicense.Add(new DriverLicense
+                            {
+                                ResumeId = resumeId,
+                                Driver = driver,
+                                Type = t
+                            });
+                        }
+                    }
+                    else
+                    {
+                        // 處理不帶括號的：無、自備
+                        // 依照您的需求，這屬於「汽(機)車」分類 (畫面上 data-type="汽(機)車")
+                        _db.DriverLicense.Add(new DriverLicense
+                        {
+                            ResumeId = resumeId,
+                            Driver = "汽(機)車",
+                            Type = p
+                        });
+                    }
+                }
+            }
+            await _db.SaveChangesAsync();
+        }
         // 按鈕：匯出 PDF
         [HttpPost]
         public async Task<IActionResult> ExportToPdf(Resume model)
         {
-            // 🎯 重要：檢查 ID 是否有傳進來
-            if (model.Id == 0) return Content("ID 依舊為 0，請檢查 View 是否有 <input type='hidden' asp-for='Id' />");
+            if (model.Id == 0) return Content("請先儲存履歷後再匯出");
 
             // 1. 驗證姓名
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == model.MembersId);
             if (member == null) return Content("找不到會員資料");
 
             // 🎯 直接從資料庫抓取該履歷的所有語言資料
-            var dbLangs = await _db.LanguageProficiency
-                .Where(l => l.ResumeId == model.Id)
-                .ToListAsync();
+            var dbLangs = await _db.LanguageProficiency.Where(l => l.ResumeId == model.Id).ToListAsync();
+            var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == model.Id).ToListAsync();
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
@@ -287,6 +350,37 @@ namespace InterviewProject.Controllers
             string realBirthday = member.Birthday.ToString("yyyy/MM/dd");
             string realEmail = member.Email ?? "";
             string realAddress = member.Address ?? "";
+
+            // 2. 🎯 照片防呆處理：預設必須是空字串，絕不能是 null
+            object photoData = "";
+            if (!string.IsNullOrEmpty(member.ProfileImagePath) && member.ProfileImagePath.Contains(","))
+            {
+                try
+                {
+                    // 1. 取得副檔名 (例如從 data:image/jpeg;base64 中取出 jpeg)
+                    // 也可以保險起見直接設為 "jpg" 或 "png"
+                    string extension = "jpg";
+                    if (member.ProfileImagePath.Contains("image/png")) extension = "png";
+                    else if (member.ProfileImagePath.Contains("image/gif")) extension = "gif";
+
+                    // 2. 取得純 Base64 字串並轉碼
+                    string base64Data = member.ProfileImagePath.Split(',')[1];
+                    byte[] imageBytes = Convert.FromBase64String(base64Data);
+
+                    // 3. 🎯 修正處：明確給予 Extension 屬性
+                    photoData = new MiniSoftware.MiniWordPicture
+                    {
+                        Bytes = imageBytes,
+                        Width = 120,
+                        Height = 150,
+                        Extension = extension // 加上這一行，解決 get_Extension() 的報錯
+                    };
+                }
+                catch
+                {
+                    photoData = "";
+                }
+            }
 
             string templatePath = Path.Combine(_env.WebRootPath, "file", "履歷表.docx");
             if (!System.IO.File.Exists(templatePath))
@@ -301,6 +395,8 @@ namespace InterviewProject.Controllers
             // 定義比對小工具：判斷資料庫是否有這筆「語言+程度」
             Func<string, string, string> checkLang = (name, degree) =>
                 dbLangs.Any(x => x.Language == name && x.Degree == degree) ? ck : un;
+            // 定義駕照比對工具
+            Func<string, string, string> checkLic = (driver, type) => dbLicenses.Any(x => x.Driver == driver && x.Type == type) ? ck : un;
 
             // 找出「其他」語言 (排除已知四類)
             string[] knownLangs = { "英語", "日語", "台語", "客語", "不具外文能力" };
@@ -321,6 +417,8 @@ namespace InterviewProject.Controllers
                 ["IdNumber"] = realIdNumber,
                 ["Birthday"] = realBirthday,
                 ["Address"] = realAddress,
+                ["ProfileImagePath"] = photoData,
+
                 ["M_M"] = (model.MaritalStatus == "已婚") ? ck : un,
                 ["M_S"] = (model.MaritalStatus == "單身") ? ck : un,
                 ["MS_1"] = (model.MilitaryService == "免役") ? ck : un,
@@ -399,15 +497,15 @@ namespace InterviewProject.Controllers
                 ["L_Other_4"] = (otherLang?.Degree == "稍懂") ? ck : un,
 
                 //駕照種類
-                ["D_Self_S"] = lic.Contains("自用(小)") ? ck : un,
-                ["D_Self_B"] = lic.Contains("自用(大)") ? ck : un,
-                ["D_Pro_S"] = lic.Contains("職業(小)") ? ck : un,
-                ["D_Pro_B"] = lic.Contains("職業(大)") ? ck : un,
-                ["D_Pro_K"] = lic.Contains("職業(客)") ? ck : un,
-                ["D_Moto_L"] = lic.Contains("機車(輕型)") ? ck : un,
-                ["D_Moto_H"] = lic.Contains("機車(重型)") ? ck : un,
-                ["D_None"] = lic.Contains("無") ? ck : un,
-                ["D_Own"] = lic.Contains("自備") ? ck : un,
+                ["D_Self_S"] = checkLic("自用", "小"),
+                ["D_Self_B"] = checkLic("自用", "大"),
+                ["D_Pro_S"] = checkLic("職業", "小"),
+                ["D_Pro_B"] = checkLic("職業", "大"),
+                ["D_Pro_K"] = checkLic("職業", "客"),
+                ["D_Moto_L"] = checkLic("機車", "輕型"),
+                ["D_Moto_H"] = checkLic("機車", "重型"),
+                ["D_None"] = checkLic("汽(機)車", "無"),
+                ["D_Own"] = checkLic("汽(機)車", "自備"),
 
                 //專長
                 ["Spec1"] = spec.Split(new[] { "; " }, StringSplitOptions.None).ElementAtOrDefault(0) ?? "",
@@ -468,7 +566,7 @@ namespace InterviewProject.Controllers
 
             try
             {
-                using (MemoryStream ms = new MemoryStream())
+                using (var ms = new MemoryStream())
                 {
                     ms.SaveAsByTemplate(templatePath, value);
                     ms.Position = 0;
@@ -485,7 +583,7 @@ namespace InterviewProject.Controllers
             }
             catch (System.Exception ex)
             {
-                return Content($"導出 PDF 過程發生錯誤：{ex.Message}");
+                return Content($"導出 PDF 過程發生錯誤：{ex.Message}\n 堆疊追蹤：{ex.StackTrace}");
             }
         }
     }

@@ -61,9 +61,20 @@ textarea {
 
 .photo-cell {
     width: 120px;
-    text-align: center;
-    color: #999;
+    height: 150px;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1); /* 立體陰影 */
+    overflow: hidden;
+    border-radius: 8px; /* 圓角更柔和 */
 }
+
+    .photo-cell img {
+        width: 100%;
+        height: 100%;
+        object-fit: fill; /* 強制拉伸填充，消除空白 */
+        display: block;
+    }
+
 /* 針對巢狀表格的間距處理 */
 .sub-table td {
     background: transparent !important;

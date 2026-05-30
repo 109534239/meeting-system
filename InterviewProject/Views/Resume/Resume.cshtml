@@ -73,7 +73,16 @@
                     <input type="radio" name="Gender" value="男" @(ViewBag.UserGender == "男" ? "checked" : "") disabled />男
                     <input type="radio" name="Gender" value="女" @(ViewBag.UserGender == "女" ? "checked" : "") disabled />女
                 </td>
-                <td rowspan="4" class="photo-cell">請貼照片</td>
+                <td rowspan="4" class="photo-cell">
+                    @if (!string.IsNullOrEmpty(ViewBag.UserPhotoBase64))
+                    {
+                        <img src="@ViewBag.UserPhotoBase64" alt="個人照" />
+                    }
+                    else
+                    {
+                        <span>無照片</span>
+                    }
+                </td>
             </tr>
             <tr>
                 <td>身分證號碼</td>
@@ -268,7 +277,7 @@
                             <input type="checkbox" class="license-chk" value="輕型" />輕型
                             <input type="checkbox" class="license-chk" value="重型" />重型
                         </div>
-                        <div class="license-row" data-type="車輛狀態">
+                        <div class="license-row" data-type="汽(機)車">
                             汽(機)車：
                             <input type="checkbox" class="license-chk" value="無" />無
                             <input type="checkbox" class="license-chk" value="自備" />自備
@@ -402,13 +411,41 @@
         });
     }
 
-        // 2. 處理駕照種類
-        const licenseData = "@Html.Raw(Model.DriverLicense)";
-        if (licenseData) {
-            document.querySelectorAll('.license-chk').forEach(chk => {
-                if (licenseData.includes(chk.value)) chk.checked = true;
-            });
-        }
+            // 2. 處理駕照種類 (精確還原)
+    const licenseData = "@Html.Raw(Model.DriverLicense)";
+    if (licenseData) {
+        // 先用逗號拆分不同類別，例如 ["自用(小/大)", "機車(重型)", "無"]
+        const parts = licenseData.split(', ');
+
+        parts.forEach(p => {
+            if (p.includes('(')) {
+                // 處理帶括號的類別：如 "自用(小/大)"
+                const typeName = p.split('(')[0].trim(); // "自用"
+                const subValues = p.split('(')[1].replace(')', '').split('/'); // ["小", "大"]
+
+                // 找到對應 data-type 的那一列
+                const row = document.querySelector(`.license-row[data-type="${typeName}"]`);
+                if (row) {
+                    subValues.forEach(v => {
+                        // 僅在該列中尋找並勾選
+                        const chk = row.querySelector(`.license-chk[value="${v}"]`);
+                        if (chk) chk.checked = true;
+                    });
+                }
+            } else {
+                // 處理不帶括號的：如 "無" 或 "自備"
+                // 這類通常屬於你的最後一列 data-type="汽(機)車"
+                const row = document.querySelector(`.license-row[data-type="汽(機)車"]`);
+                if (row) {
+                    const subValues = p.split('/'); // 處理 "無/自備" 的情況
+                    subValues.forEach(v => {
+                        const chk = row.querySelector(`.license-chk[value="${v}"]`);
+                        if (chk) chk.checked = true;
+                    });
+                }
+            }
+        });
+    }
 
         // 3. 處理專長
         const specData = "@Html.Raw(Model.Specialty)";
@@ -571,18 +608,23 @@
         });
         document.getElementById('finalLanguageSkills').value = langResults.join(', ');
 
-        // 3. 駕照種類
-        let licenseResults = [];
-        document.querySelectorAll('.license-row').forEach(row => {
-            let type = row.getAttribute('data-type');
-            let selected = [];
-            row.querySelectorAll('.license-chk:checked').forEach(chk => selected.push(chk.value));
-            if (selected.length > 0) {
-                if (type === "車輛狀態") licenseResults.push(selected.join('/'));
-                else licenseResults.push(`${type}(${selected.join('/')})`);
+            // 3. 駕照種類
+    let licenseResults = [];
+    document.querySelectorAll('.license-row').forEach(row => {
+        let type = row.getAttribute('data-type');
+        let selected = [];
+        row.querySelectorAll('.license-chk:checked').forEach(chk => selected.push(chk.value));
+
+        if (selected.length > 0) {
+            // 🎯 修正：這裡的判斷要跟你的 HTML data-type 一致
+            if (type === "汽(機)車") {
+                licenseResults.push(selected.join('/')); // 存入 "無/自備"
+            } else {
+                licenseResults.push(`${type}(${selected.join('/')})`); // 存入 "自用(小/大)"
             }
-        });
-        document.getElementById('finalDriverLicense').value = licenseResults.join(', ');
+        }
+    });
+    document.getElementById('finalDriverLicense').value = licenseResults.join(', ');
 
         // 4. 專長
         let specResults = [];

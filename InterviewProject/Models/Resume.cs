@@ -34,6 +34,7 @@ namespace InterviewProject.Models
 
         [NotMapped] // 🎯 關鍵！告訴 EF：這個屬性在資料庫裡「沒有」對應欄位，不要去 SQL 撈它
         public string? LanguageSkills { get; set; }
+        [NotMapped]
         public string? DriverLicense { get; set; }
         public string? Specialty { get; set; }
         public string? Certificates { get; set; }

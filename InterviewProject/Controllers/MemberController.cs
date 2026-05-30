@@ -24,14 +24,14 @@ namespace InterviewProject.Controllers
             return HttpContext.Session.GetInt32("MemberId") ?? 0;
         }
 
-        // 語文處理輔助方法 (從 ResumeController 拷貝過來)
+        // 🎯語言能力
         private string FormatLanguageString(List<LanguageProficiency> langs)
         {
             if (langs == null || !langs.Any()) return "";
             return string.Join(", ", langs.Select(l =>
                 l.Language == "不具外文能力" ? l.Language : $"{l.Language}({l.Degree})"));
         }
-
+        
         private async Task<string> GetFormattedLanguageSkills(int resumeId)
         {
             var langs = await _db.LanguageProficiency
@@ -40,6 +40,31 @@ namespace InterviewProject.Controllers
             return FormatLanguageString(langs);
         }
 
+        // 🎯駕照
+        private string FormatDriverLicenseString(List<DriverLicense> licenses)
+        {
+            if (licenses == null || !licenses.Any()) return "";
+
+            var result = new List<string>();
+
+            // 按 Driver 分組 (自用、職業、機車)
+            var grouped = licenses.Where(l => l.Driver != "汽(機)車")
+                                  .GroupBy(l => l.Driver);
+
+            foreach (var g in grouped)
+            {
+                result.Add($"{g.Key}({string.Join("/", g.Select(x => x.Type))})");
+            }
+
+            // 處理汽(機)車 (無、自備)
+            var status = licenses.Where(l => l.Driver == "汽(機)車").Select(x => x.Type);
+            if (status.Any())
+            {
+                result.Add(string.Join("/", status));
+            }
+
+            return string.Join(", ", result);
+        }
         // GET: 基本資料
         public async Task<IActionResult> Profile()
         {
@@ -170,6 +195,12 @@ namespace InterviewProject.Controllers
 
             resume.LanguageSkills = await GetFormattedLanguageSkills(resume.Id);
 
+            // 🎯 修正 2：抓取並格式化駕照資料 (原本漏掉這段)
+            var dbLicenses = await _db.DriverLicense
+                .Where(d => d.ResumeId == resume.Id)
+                .ToListAsync();
+            resume.DriverLicense = FormatDriverLicenseString(dbLicenses);
+
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);
             if (member != null)
             {
@@ -179,6 +210,8 @@ namespace InterviewProject.Controllers
                 ViewBag.UserBirthday = member.Birthday;
                 ViewBag.UserAddress = member.Address;
                 ViewBag.UserEmail = member.Email;
+                // 照片
+                ViewBag.UserPhotoBase64 = member?.ProfileImagePath;
             }
 
             ViewBag.IsReadOnly = true;
