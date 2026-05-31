@@ -113,10 +113,13 @@ namespace InterviewProject.Controllers
                     var sourceLangs = await _db.LanguageProficiency.Where(l => l.ResumeId == existingResume.Id).ToListAsync();
                     //駕照
                     var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == existingResume.Id).ToListAsync();
+                    //電腦能力
+                    var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == existingResume.Id).ToListAsync();
 
                     model = existingResume;
                     model.LanguageSkills = FormatLanguageString(sourceLangs);
                     model.DriverLicense = FormatDriverLicenseString(dbLicenses);
+                    model.ComputerSkills = FormatComputerSkillString(dbCompSkills);
 
                     model.Id = 0; // 重置為新紀錄
                     model.JobsId = jobId;
@@ -142,6 +145,8 @@ namespace InterviewProject.Controllers
                     model.LanguageSkills = FormatLanguageString(langs);
                     var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == model.Id).ToListAsync();
                     model.DriverLicense = FormatDriverLicenseString(dbLicenses);
+                    var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == model.Id).ToListAsync();
+                    model.ComputerSkills = FormatComputerSkillString(dbCompSkills);
                 }
             }
 
@@ -212,6 +217,23 @@ namespace InterviewProject.Controllers
             return string.Join(", ", result);
         }
 
+        // 🎯電腦能力方法 A：負責「把 List 變成字串」供前端 hidden 欄位與匯出邏輯使用
+        private string FormatComputerSkillString(List<ComputerSkills> skills)
+        {
+            if (skills == null || !skills.Any()) return "";
+            // 直接取出 ComputerSkill 欄位的文字並用逗號隔開
+            return string.Join(", ", skills.Select(s => s.ComputerSkill));
+        }
+
+        // 🎯電腦能力方法 B：負責「去資料庫抓資料並呼叫方法 A」
+        private async Task<string> GetFormattedComputerSkills(int resumeId)
+        {
+            var skills = await _db.ComputerSkills
+                .Where(s => s.ResumeId == resumeId)
+                .ToListAsync();
+            return FormatComputerSkillString(skills);
+        }
+
         // 3. 儲存邏輯
         [HttpPost]
         public async Task<IActionResult> SaveResume(Resume model)
@@ -257,6 +279,9 @@ namespace InterviewProject.Controllers
 
             // 🎯駕照儲存後取得 finalResumeId
             await UpdateDriverLicense(finalResumeId, model.DriverLicense);
+
+            // 🎯電腦能力儲存
+            await UpdateComputerSkills(finalResumeId, model.ComputerSkills);
 
             TempData["ShowSuccessAlert"] = "履歷已送出！";
             return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
@@ -330,6 +355,38 @@ namespace InterviewProject.Controllers
             }
             await _db.SaveChangesAsync();
         }
+
+        // 🎯電腦能力解析字串並更新資料表
+        private async Task UpdateComputerSkills(int resumeId, string? computerSkills)
+        {
+            // 1. 取得舊資料 (加上 ToList 確保先執行查詢)
+            var oldItems = await _db.ComputerSkills
+                                    .Where(s => s.ResumeId == resumeId)
+                                    .ToListAsync();
+
+            if (oldItems.Any())
+            {
+                _db.ComputerSkills.RemoveRange(oldItems);
+                // 先儲存一次，確保舊的刪乾淨，避免主鍵衝突
+                await _db.SaveChangesAsync();
+            }
+
+            if (!string.IsNullOrEmpty(computerSkills))
+            {
+                // 這裡的切割符號要跟前端一致，通常是 ", "
+                var parts = computerSkills.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var p in parts)
+                {
+                    _db.ComputerSkills.Add(new ComputerSkills
+                    {
+                        ResumeId = resumeId,
+                        ComputerSkill = p
+                    });
+                }
+                await _db.SaveChangesAsync();
+            }
+        }
+
         // 按鈕：匯出 PDF
         [HttpPost]
         public async Task<IActionResult> ExportToPdf(Resume model)
@@ -340,9 +397,10 @@ namespace InterviewProject.Controllers
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == model.MembersId);
             if (member == null) return Content("找不到會員資料");
 
-            // 🎯 直接從資料庫抓取該履歷的所有語言資料
+            // 🎯 直接從資料庫抓取該履歷的所有資料
             var dbLangs = await _db.LanguageProficiency.Where(l => l.ResumeId == model.Id).ToListAsync();
             var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == model.Id).ToListAsync();
+            var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == model.Id).ToListAsync();
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
@@ -397,6 +455,10 @@ namespace InterviewProject.Controllers
                 dbLangs.Any(x => x.Language == name && x.Degree == degree) ? ck : un;
             // 定義駕照比對工具
             Func<string, string, string> checkLic = (driver, type) => dbLicenses.Any(x => x.Driver == driver && x.Type == type) ? ck : un;
+
+            // 定義駕照電腦能力比對工具
+            Func<string, string> checkcomp = (skillName) =>
+        dbCompSkills.Any(x => x.ComputerSkill == skillName) ? ck : un;
 
             // 找出「其他」語言 (排除已知四類)
             string[] knownLangs = { "英語", "日語", "台語", "客語", "不具外文能力" };
@@ -515,13 +577,12 @@ namespace InterviewProject.Controllers
                 ["Cert"] = cert,
 
                 //電腦能力
-                ["C_Base"] = comp.Contains("電腦基本操作") ? ck : un,
-                ["C_Doc"] = comp.Contains("文書處理") ? ck : un,
-                ["C_Net"] = comp.Contains("網際網路") ? ck : un,
-                ["C_Web"] = comp.Contains("網頁編輯") ? ck : un,
-                ["C_Biz"] = comp.Contains("商業軟體") ? ck : un,
-                ["C_Prog"] = comp.Contains("程式設計") ? ck : un,
-                ["C_Other"] = comp.Contains("其他:") ? ck : un
+                ["C_Base"] = checkcomp("電腦基本操作"),
+                ["C_Doc"] = checkcomp("文書處理"),
+                ["C_Net"] = checkcomp("網際網路"),
+                ["C_Web"] = checkcomp("網頁編輯"),
+                ["C_Biz"] = checkcomp("商業軟體"),
+                ["C_Prog"] = checkcomp("程式設計"),
             };
 
             // 證照級別解析邏輯
@@ -550,13 +611,11 @@ namespace InterviewProject.Controllers
             }
 
             // 處理電腦能力「其他」
-            if (comp.Contains("其他:"))
+            var otherComp = dbCompSkills.FirstOrDefault(s => s.ComputerSkill.StartsWith("其他:"));
+            if (otherComp != null)
             {
                 value["C_Other"] = ck;
-                int startIndex = comp.IndexOf("其他:") + 3;
-                string remainingStr = comp.Substring(startIndex);
-                string otherText = remainingStr.Split(',')[0].Trim();
-                value["C_Other_Text"] = otherText;
+                value["C_Other_Text"] = otherComp.ComputerSkill.Replace("其他:", "").Trim();
             }
             else
             {

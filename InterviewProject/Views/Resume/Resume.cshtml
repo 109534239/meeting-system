@@ -412,7 +412,7 @@
     }
 
             // 2. 處理駕照種類 (精確還原)
-    const licenseData = "@Html.Raw(Model.DriverLicense)";
+    const licenseData = "@Html.Raw(Model?.DriverLicense)";
     if (licenseData) {
         // 先用逗號拆分不同類別，例如 ["自用(小/大)", "機車(重型)", "無"]
         const parts = licenseData.split(', ');
@@ -448,7 +448,7 @@
     }
 
         // 3. 處理專長
-        const specData = "@Html.Raw(Model.Specialty)";
+        const specData = "@Html.Raw(Model?.Specialty)";
         if (specData) {
             const specs = specData.split('; ');
             const specInputs = document.querySelectorAll('.spec-input');
@@ -458,7 +458,7 @@
         }
 
         // 4. 處理證照
-        const certData = "@Html.Raw(Model.Certificates)";
+        const certData = "@Html.Raw(Model?.Certificates)";
         if (certData) {
             const certs = certData.split(', ');
             document.querySelectorAll('.cert-item').forEach((item, index) => {
@@ -483,13 +483,11 @@
             });
         }
 
-        //5. 處理電腦能力反填
-        const compData = "@Html.Raw(Model.ComputerSkills)";
+        // --- 5. 處理電腦能力 ---
+        const compData = "@Html.Raw(Model?.ComputerSkills ?? "")";
         if (compData) {
             document.querySelectorAll('.comp-chk').forEach(chk => {
-                if (compData.split(',').map(s => s.trim()).includes(chk.value)) {
-                    chk.checked = true;
-                }
+                if (compData.split(',').map(s => s.trim()).includes(chk.value)) chk.checked = true;
             });
             if (compData.includes("其他:")) {
                 const match = compData.match(/其他:([^,]+)/);
@@ -502,7 +500,7 @@
         }
 
         // 6. 處理學歷狀況
-        const eduData = "@Html.Raw(Model.EduStatus)";
+        const eduData = "@Html.Raw(Model?.EduStatus)";
         if (eduData) {
             document.querySelectorAll('#eduStatusArea .edu-chk').forEach(chk => {
                 if (eduData.includes(chk.value)) chk.checked = true;
@@ -651,13 +649,12 @@
         // 6. 電腦能力
         let compResults = [];
         document.querySelectorAll('.comp-chk:checked').forEach(chk => {
-            if (chk.value === "其他") {
-                compResults.push("其他:" + document.getElementById('otherCompName').value);
-            } else {
-                compResults.push(chk.value);
-            }
+            if (chk.value === "其他") compResults.push("其他:" + document.getElementById('otherCompName').value);
+            else compResults.push(chk.value);
         });
         document.getElementById('finalComputerSkills').value = compResults.join(', ');
+
+        return true;
 
         // 7. 學歷狀況
         let selectedEdu = document.querySelector('.edu-chk:checked');

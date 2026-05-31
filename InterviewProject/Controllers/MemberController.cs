@@ -65,6 +65,26 @@ namespace InterviewProject.Controllers
 
             return string.Join(", ", result);
         }
+
+
+
+        // 🎯電腦能力方法 A：負責「把 List 變成字串」供前端 hidden 欄位與匯出邏輯使用
+        private string FormatComputerSkillString(List<ComputerSkills> skills)
+        {
+            if (skills == null || !skills.Any()) return "";
+            // 直接取出 ComputerSkill 欄位的文字並用逗號隔開
+            return string.Join(", ", skills.Select(s => s.ComputerSkill));
+        }
+
+        // 🎯電腦能力方法 B：負責「去資料庫抓資料並呼叫方法 A」
+        private async Task<string> GetFormattedComputerSkills(int resumeId)
+        {
+            var skills = await _db.ComputerSkills
+                .Where(s => s.ResumeId == resumeId)
+                .ToListAsync();
+            return FormatComputerSkillString(skills);
+        }
+
         // GET: 基本資料
         public async Task<IActionResult> Profile()
         {
@@ -194,6 +214,7 @@ namespace InterviewProject.Controllers
             if (resume == null) return NotFound();
 
             resume.LanguageSkills = await GetFormattedLanguageSkills(resume.Id);
+            resume.ComputerSkills = await GetFormattedComputerSkills(resume.Id);
 
             // 🎯 修正 2：抓取並格式化駕照資料 (原本漏掉這段)
             var dbLicenses = await _db.DriverLicense
