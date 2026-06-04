@@ -1,16 +1,225 @@
+@model List<InterviewProject.Models.Resume>
+
 @{
-    ViewData["Title"] = "應徵管理";
+    ViewData["Title"] = "應徵履歷管理";
+    string currentFilter = ViewBag.CurrentFilter ?? "全部";
+    var aiScores = ViewBag.AiScores as Dictionary<int, int>;
+    var aiComments = ViewBag.AiComments as Dictionary<int, string>;
 }
 
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/HrJob.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/AdminApplication.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <style>
+        /* 🎯 新增提示樣式：讓整橫列在滑鼠移上去時有手指游標，提示 HR 可以點擊進去 */
+        .hrapp-list .hrapp-row {
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .hrapp-list .hrapp-row:hover {
+            transform: scale(1.002);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+        }
+    </style>
 }
 
-<div class="page-header">
-    <div class="page-header-inner">
-        <h1>應徵管理</h1>
-        <p>Application Management</p>
+<div class="hrapp-container">
+
+    <div class="page-header" style="padding: 0; margin-bottom: 24px;">
+        <div class="page-header-inner">
+            <div class="back-to-jobs">
+                <a asp-controller="HrJob" asp-action="Index" class="btn-back">← 返回職缺管理</a>
+            </div>
+            <h1 style="font-size: 28px; font-weight: 700; color: var(--primary); margin: 8px 0;">@ViewBag.JobTitle</h1>
+            <p style="color: var(--text-muted); margin: 0;">應徵名單管理 / Resume Management</p>
+        </div>
+    </div>
+
+    @* ── 篩選切換區 (Tabs) ── *@
+    <div class="hrapp-filter-tabs">
+        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="全部" 
+           class="tab-item @(currentFilter == "全部" ? "active" : "")">
+            全部履歷
+        </a>
+        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="未處理" 
+           class="tab-item @(currentFilter == "未處理" ? "active" : "")">
+            未處理 (待審核)
+        </a>
+        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="已處理" 
+           class="tab-item @(currentFilter == "已處理" ? "active" : "")">
+            已處理 (已排面試/錄取等)
+        </a>
+    </div>
+
+    @* ── 履歷列表 Grid 標頭 ── *@
+    <div class="hrapp-cols hrapp-grid-head">
+        <div>應徵時間</div>
+        <div>應徵者姓名</div>
+        <div>聯絡電話</div>
+        <div>最高學歷 / 科系</div>
+        <div>工作經驗</div>
+        <div class="text-center">目前狀態</div>
+        <div class="text-center">AI 智慧篩選</div>
+        <div class="text-center">操作</div>
+    </div>
+
+    @* ── 履歷列表資料列 ── *@
+    <div class="hrapp-list">
+        @if (!Model.Any())
+        {
+            <div class="hrapp-empty">目前沒有符合篩選條件的履歷。</div>
+        }
+        else
+        {
+            foreach (var item in Model)
+            {
+                bool isUnhandled = (item.Status == "待審核");
+                string rowClass = isUnhandled ? "row-unhandled" : "row-handled";
+
+                int score = aiScores != null && aiScores.ContainsKey(item.Id) ? aiScores[item.Id] : 0;
+                string comment = aiComments != null && aiComments.ContainsKey(item.Id) ? aiComments[item.Id] : "暫無評語";
+
+                @* 🎯 核心修改：在整橫列加上 onclick 點擊事件，當點擊時直接導向 Details 完整履歷頁面 *@
+                <div class="hrapp-row hrapp-cols @rowClass" 
+                     onclick="location.href='@Url.Action("Details", "AdminApplication", new { id = item.Id })'">
+
+                    @* 1. 應徵時間 *@
+                    <div class="apply-time-cell">
+                        @item.ResumeTime.ToLocalTime().ToString("yyyy/MM/dd HH:mm")
+                    </div>
+
+                    @* 2. 應徵者姓名 *@
+                    <div class="user-main-info">
+                        <span class="user-name">@item.Phone2</span>
+                    </div>
+
+                    @* 3. 聯絡電話 *@
+                    <div class="user-phone">@item.Mobile</div>
+
+                    @* 4. 學歷與科系 *@
+                    <div class="user-edu">
+                        <div class="edu-school">@item.SchoolName</div>
+                        <div class="edu-major">@item.Major (@item.EduLevel)</div>
+                    </div>
+
+                    @* 5. 工作經驗 *@
+                    <div class="user-exp">
+                        @if (!item.WorkExperienceYears.HasValue || item.WorkExperienceYears.Value <= 0)
+                        {
+                            <span class="exp-none">(無)</span>
+                        }
+                        else
+                        {
+                            <div class="exp-company">@item.CompanyName</div>
+                            <div class="exp-title">@item.JobTitle (@(item.WorkExperienceYears.Value)年)</div>
+                        }
+                    </div>
+
+                    @* 6. 目前狀態 *@
+                    <div class="text-center">
+                        <span class="status-badge @(isUnhandled ? "badge-wait" : "badge-done")">
+                            @item.Status
+                        </span>
+                    </div>
+
+                    @* 7. AI 評分及彈跳視窗 ── *@
+                    <div class="text-center ai-score-cell">
+                        <div class="ai-score-box">
+                            <span class="ai-num @(score >= 80 ? "high" : score >= 60 ? "mid" : "low")">
+                                @score<span class="ai-pt">分</span>
+                            </span>
+                            @* 🎯 核心修改：加上 event.stopPropagation() 防止點擊查看評語時同時觸發整列點擊跳轉 *@
+                            <button type="button" class="btn-ai-view open-ai-modal" 
+                                    data-name="@item.Phone2"
+                                    data-score="@score"
+                                    data-comment="@comment"
+                                    onclick="event.stopPropagation();">
+                                查看評語
+                            </button>
+                        </div>
+                    </div>
+
+                    @* 8. 操作按鈕 *@
+                    <div class="action-btns">
+                        @* 這裡也可以加上 stopPropagation 確保語意安全 *@
+                        <a asp-action="Details" asp-route-id="@item.Id" class="btn-detail" onclick="event.stopPropagation();">審查履歷</a>
+                    </div>
+
+                </div>
+            }
+        }
     </div>
 </div>
+
+@* ── AI 評語獨立彈跳視窗 (Modal) HTML 結構 ── *@
+<div id="aiCommentModal" class="ai-modal-overlay">
+    <div class="ai-modal-window">
+        <div class="ai-modal-header">
+            <div class="ai-modal-title-group">
+                <span class="ai-modal-icon">🧠</span>
+                <div>
+                    <h3 id="modalCandidateName">應徵者</h3>
+                    <p class="ai-modal-subtitle">AI 智慧適配度報告</p>
+                </div>
+            </div>
+            <button type="button" class="ai-modal-close" id="closeAiModal">&times;</button>
+        </div>
+        <div class="ai-modal-body">
+            <div class="ai-modal-score-badge">
+                <span class="score-lbl">AI 綜合評分</span>
+                <span id="modalAiScore" class="score-v">0</span>
+                <span class="score-unit">分</span>
+            </div>
+            <div class="ai-modal-comment-card">
+                <h4>分析評語回饋：</h4>
+                <div id="modalAiComment" class="comment-text-content"></div>
+            </div>
+        </div>
+        <div class="ai-modal-footer">
+            <button type="button" class="btn-modal-confirm" id="confirmAiModal">關閉視窗</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const modal = document.getElementById("aiCommentModal");
+            const closeBtn = document.getElementById("closeAiModal");
+            const confirmBtn = document.getElementById("confirmAiModal");
+            
+            const modalName = document.getElementById("modalCandidateName");
+            const modalScore = document.getElementById("modalAiScore");
+            const modalComment = document.getElementById("modalAiComment");
+
+            document.querySelectorAll(".open-ai-modal").forEach(button => {
+                button.addEventListener("click", function () {
+                    const name = this.getAttribute("data-name");
+                    const score = parseInt(this.getAttribute("data-score") || "0");
+                    const comment = this.getAttribute("data-comment") || "暫無評語。";
+
+                    modalName.textContent = name + " 的評估報告";
+                    modalScore.textContent = score;
+
+                    modalScore.className = "score-v " + (score >= 80 ? "high" : score >= 60 ? "mid" : "low");
+                    modalComment.innerHTML = comment.replace(/\n/g, "<br />");
+                    modal.classList.add("show");
+                });
+            });
+
+            function hideModal() {
+                modal.classList.remove("show");
+            }
+
+            closeBtn.addEventListener("click", hideModal);
+            confirmBtn.addEventListener("click", hideModal);
+
+            modal.addEventListener("click", function (e) {
+                if (e.target === modal) {
+                    hideModal();
+                }
+            });
+        });
+    </script>
+}

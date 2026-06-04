@@ -1,7 +1,9 @@
 @model List<InterviewProject.Models.Job>
+@using InterviewProject.Controllers @* 引入統計類別命名空間 *@
 
 @{
     ViewData["Title"] = "職缺管理";
+    var statsDict = ViewBag.JobStats as Dictionary<int, JobStatsViewModel>;
 }
 
 @section Styles {
@@ -34,7 +36,7 @@
         <div>部門</div>
         <div>職缺名稱</div>
         <div>部門主管 / 隸屬</div>
-        <div>應徵人數 (新/總)</div>
+        <div>招募進度 (未處理 / 錄取 / 需求 / 總數)</div>
         <div class="text-center">狀態</div>
         <div class="text-center">上架 / 下架日期</div>
         <div class="text-center">操作</div>
@@ -44,6 +46,11 @@
     <div class="hrjob-list">
         @foreach (var job in Model)
         {
+            // 取得當前職缺的統計數據，若無則預設為 0
+            var stat = statsDict != null && statsDict.ContainsKey(job.Id) 
+                       ? statsDict[job.Id] 
+                       : new JobStatsViewModel { UnhandledCount = 0, HiredCount = 0, TotalCount = 0 };
+
             <div class="hrjob-row hrjob-cols">
 
                 @* 1. 部門 *@
@@ -63,14 +70,35 @@
                     <div class="hrjob-manager-sub">職稱：@job.ReportToName</div>
                 </div>
 
-                @* 4. 應徵人數 (✨ 已完美連結動態資料庫計數) *@
-                <div>
-                    <a asp-controller="HrApplication"
-                       asp-action="Index"
-                       asp-route-jobId="@job.Id"
-                       class="hrjob-count-link">
-                        <span class="hrjob-count-num">@job.NewApplicationsCount</span>
-                        <span class="hrjob-count-total">/ @job.TotalApplicationsCount 人</span>
+                @* 4. 應徵四大項指標四大區塊 (未處理 / 已錄取 / 需求人數 / 總履歷) *@
+                <div class="hrjob-stats-cell">
+                    <a asp-controller="AdminApplication" 
+                        asp-action="Index"
+                        asp-route-jobId="@job.Id"
+                        class="hrjob-stats-link"
+                        title="點擊管理此職缺履歷">
+                        
+                        <div class="stat-badge-grid">
+                            <div class="stat-item unhandled">
+                                <span class="stat-label">未處理</span>
+                                <span class="stat-v">@stat.UnhandledCount</span>
+                            </div>
+                            
+                            <div class="stat-item hired">
+                                <span class="stat-label">已錄取</span>
+                                <span class="stat-v">@stat.HiredCount</span>
+                            </div>
+                            
+                            <div class="stat-item needed">
+                                <span class="stat-label">需求</span>
+                                <span class="stat-v">@(string.IsNullOrEmpty(job.HeadCount) ? "0" : job.HeadCount)</span>
+                            </div>
+                            
+                            <div class="stat-item total">
+                                <span class="stat-label">總履歷</span>
+                                <span class="stat-v">@stat.TotalCount</span>
+                            </div>
+                        </div>
                     </a>
                 </div>
 
@@ -109,5 +137,4 @@
             </div>
         }
     </div>
-
 </div>

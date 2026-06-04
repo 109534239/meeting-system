@@ -32,18 +32,27 @@ namespace InterviewProject.Controllers
                 .OrderByDescending(j => j.CreatedAt)
                 .ToListAsync();
 
-            // 2. ✨ 動態統計：根據 Resume 資料表計算每個職缺的應徵人數 (新/總)
+            // 2. ✨ 高效能動態統計：精確分類「待審核」與「錄取」
+            var statsDict = new Dictionary<int, JobStatsViewModel>();
+
             foreach (var job in jobs)
             {
-                // 🎯 核心修正：r.Position 已經是 int，必須與同為 int 的 job.Id 做對比，解決 CS0019 報錯
-                // 總應徵人數：計算 Resume 的 Position 等於目前職缺 Id 的總數量
-                job.TotalApplicationsCount = await _db.Resumes
-                    .CountAsync(r => r.JobsId == job.Id);
+                // 撈出該職缺的所有履歷狀態列表
+                var statuses = await _db.Resumes
+                    .Where(r => r.JobsId == job.Id)
+                    .Select(r => r.Status)
+                    .ToListAsync();
 
-                // 新應徵人數：計算 Position 符合，且 Status 狀態為 "待審核" 的數量
-                job.NewApplicationsCount = await _db.Resumes
-                    .CountAsync(r => r.JobsId == job.Id && r.Status == "待審核");
+                statsDict[job.Id] = new JobStatsViewModel
+                {
+                    UnhandledCount = statuses.Count(s => s == "待審核"), // 🎯 確保對應資料庫的「待審核」
+                    HiredCount = statuses.Count(s => s == "錄取"),       // 🎯 為未來的「錄取」狀態做準備
+                    TotalCount = statuses.Count
+                };
             }
+
+            // 將統計資料透過 ViewBag 傳遞給前端 View
+            ViewBag.JobStats = statsDict;
 
             return View("~/Views/Job_hr/Index.cshtml", jobs);
         }
@@ -160,5 +169,13 @@ namespace InterviewProject.Controllers
 
             return RedirectToAction("Index");
         }
+    }
+
+    // 💡 用於前端綁定的強型別統計模型
+    public class JobStatsViewModel
+    {
+        public int UnhandledCount { get; set; }
+        public int HiredCount { get; set; }
+        public int TotalCount { get; set; }
     }
 }
