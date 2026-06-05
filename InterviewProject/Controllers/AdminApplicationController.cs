@@ -2,6 +2,10 @@ using InterviewProject.Data;
 using InterviewProject.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace InterviewProject.Controllers
 {
@@ -33,15 +37,17 @@ namespace InterviewProject.Controllers
             ViewBag.JobId = jobId;
             ViewBag.CurrentFilter = statusFilter;
 
+            // 🎯 這裡同步把 AiScore 與 AiComment 從資料庫 Resume 表內撈出來
+            // 🎯 修正後的 LINQ 查詢區塊
             var query = from r in _db.Resumes
                         join m in _db.Members on r.MembersId equals m.Id
                         where r.JobsId == jobId
-                        select new Resume
+                        select new InterviewProject.Models.Resume  // 👈 這裡明確指定專案的 Model
                         {
                             Id = r.Id,
                             ResumeTime = r.ResumeTime,
-                            Phone2 = m.Name,              // 將真實姓名塞入 Phone2 輸出
-                            Mobile = m.Phone,              // 將 Members 的註冊電話塞入 Mobile 輸出
+                            Phone2 = m.Name,
+                            Mobile = m.Phone,
                             SchoolName = r.SchoolName,
                             Major = r.Major,
                             EduLevel = r.EduLevel,
@@ -49,7 +55,9 @@ namespace InterviewProject.Controllers
                             CompanyName = r.CompanyName,
                             JobTitle = r.JobTitle,
                             Status = r.Status,
-                            JobsId = r.JobsId
+                            JobsId = r.JobsId,
+                            AiScore = r.AiScore,          // 👈 這樣編譯器就能正確認到了
+                            AiComment = r.AiComment
                         };
 
             if (statusFilter == "未處理")
@@ -68,8 +76,9 @@ namespace InterviewProject.Controllers
 
             foreach (var r in resumesList)
             {
-                aiScores[r.Id] = 85;
-                aiComments[r.Id] = "【AI 智慧初審報告】\n1. 專業技能：該求職者在相關領域具備良好基礎，且學歷科系完全契合職務需求。\n2. 工作經驗：具備適當的實務經驗，能快速融入團隊開發。\n3. 綜合評估：高度推薦面試。";
+                // 🎯 優先使用資料庫內存的 Gemini 真實數據，如果沒有才給予預設值
+                aiScores[r.Id] = r.AiScore ?? 0;
+                aiComments[r.Id] = !string.IsNullOrEmpty(r.AiComment) ? r.AiComment : "暫無初審評語。";
             }
 
             ViewBag.AiScores = aiScores;
@@ -78,8 +87,7 @@ namespace InterviewProject.Controllers
             return View("~/Views/AdminApplication/Index.cshtml", resumesList);
         }
 
-        // 2. ✨ 新增：HR 點擊「審查履歷」按鈕進到這裡
-        // GET: AdminApplication/Details/5
+        // 2. HR 點擊整列或「審查履歷」按鈕進入細節頁面
         // GET: AdminApplication/Details/5
         public async Task<IActionResult> Details(int id)
         {
@@ -91,6 +99,16 @@ namespace InterviewProject.Controllers
 
             if (resume == null) return NotFound();
 
+            // 🎯 【關鍵修正】：手動去關聯子資料表把資料撈出來
+            var dblangs = await _db.LanguageProficiency.Where(l => l.ResumeId == resume.Id).ToListAsync();
+            var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == resume.Id).ToListAsync();
+            var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == resume.Id).ToListAsync();
+
+            // 🎯 將子資料表集合重新壓製回前端 JavaScript 需要解析的 [NotMapped] 長字串中
+            resume.LanguageSkills = FormatLanguageString(dblangs);
+            resume.DriverLicense = FormatDriverLicenseString(dbLicenses);
+            resume.ComputerSkills = FormatComputerSkillString(dbCompSkills);
+
             var member = await _db.Members.FindAsync(resume.MembersId);
             if (member != null)
             {
@@ -100,13 +118,42 @@ namespace InterviewProject.Controllers
                 ViewBag.UserBirthday = member.Birthday.ToString("yyyy/MM/dd");
                 ViewBag.UserAddress = member.Address;
                 ViewBag.UserEmail = member.Email;
-
-                // 🎯 核心修正：將 ProfileImagePat 改為正確的 ProfileImagePath (帶有 h)
                 ViewBag.UserPhotoBase64 = member.ProfileImagePath;
             }
 
             ViewBag.IsReadOnly = true;
             return View("~/Views/Resume/Resume.cshtml", resume);
+        }
+
+        // ─── 貼心保留：字串格式轉換家族方法 ───
+        private string FormatLanguageString(List<LanguageProficiency> langs)
+        {
+            if (langs == null || !langs.Any()) return "";
+            return string.Join(", ", langs.Select(l =>
+                l.Language == "不具外文能力" ? l.Language : $"{l.Language}({l.Degree})"));
+        }
+
+        private string FormatDriverLicenseString(List<DriverLicense> licenses)
+        {
+            if (licenses == null || !licenses.Any()) return "";
+            var result = new List<string>();
+            var grouped = licenses.Where(l => l.Driver != "汽(機)車").GroupBy(l => l.Driver);
+            foreach (var g in grouped)
+            {
+                result.Add($"{g.Key}({string.Join("/", g.Select(x => x.Type))})");
+            }
+            var status = licenses.Where(l => l.Driver == "汽(機)車").Select(x => x.Type);
+            if (status.Any())
+            {
+                result.Add(string.Join("/", status));
+            }
+            return string.Join(", ", result);
+        }
+
+        private string FormatComputerSkillString(List<ComputerSkills> skills)
+        {
+            if (skills == null || !skills.Any()) return "";
+            return string.Join(", ", skills.Select(s => s.ComputerSkill));
         }
     }
 }

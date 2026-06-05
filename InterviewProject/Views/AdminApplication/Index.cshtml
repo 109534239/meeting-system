@@ -80,7 +80,7 @@
                 int score = aiScores != null && aiScores.ContainsKey(item.Id) ? aiScores[item.Id] : 0;
                 string comment = aiComments != null && aiComments.ContainsKey(item.Id) ? aiComments[item.Id] : "暫無評語";
 
-                @* 🎯 核心修改：在整橫列加上 onclick 點擊事件，當點擊時直接導向 Details 完整履歷頁面 *@
+                @* 🎯 在整橫列加上 onclick 點擊事件，當點擊時直接導向 Details 完整履歷頁面 *@
                 <div class="hrapp-row hrapp-cols @rowClass" 
                      onclick="location.href='@Url.Action("Details", "AdminApplication", new { id = item.Id })'">
 
@@ -129,7 +129,7 @@
                             <span class="ai-num @(score >= 80 ? "high" : score >= 60 ? "mid" : "low")">
                                 @score<span class="ai-pt">分</span>
                             </span>
-                            @* 🎯 核心修改：加上 event.stopPropagation() 防止點擊查看評語時同時觸發整列點擊跳轉 *@
+                            @* 🎯 加上 event.stopPropagation() 防止點擊查看評語時同時觸發整列點擊跳轉 *@
                             <button type="button" class="btn-ai-view open-ai-modal" 
                                     data-name="@item.Phone2"
                                     data-score="@score"
@@ -142,7 +142,6 @@
 
                     @* 8. 操作按鈕 *@
                     <div class="action-btns">
-                        @* 這裡也可以加上 stopPropagation 確保語意安全 *@
                         <a asp-action="Details" asp-route-id="@item.Id" class="btn-detail" onclick="event.stopPropagation();">審查履歷</a>
                     </div>
 

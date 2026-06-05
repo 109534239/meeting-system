@@ -51,5 +51,8 @@ namespace InterviewProject.Models
         public virtual Job? Job { get; set; }
 
         public string Status { get; set; } = "待審核";
+
+        public int? AiScore { get; set; }
+        public string? AiComment { get; set; }
     }
 }
