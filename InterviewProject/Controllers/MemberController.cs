@@ -85,6 +85,22 @@ namespace InterviewProject.Controllers
             return FormatComputerSkillString(skills);
         }
 
+        // 🎯專長方法 A：負責「把專長 List 變成用分號相隔的字串」供前端反填
+        private string FormatSpecialtyString(List<Specialties> specs)
+        {
+            if (specs == null || !specs.Any()) return "";
+            // 依排序撈出 Specialty，並用分號與空格串接 "; "
+            return string.Join("; ", specs.OrderBy(s => s.SortOrder).Select(s => s.Specialty));
+        }
+
+        // 🎯專長方法 B：負責「去 Specialties 資料表抓 ResumeId 對應的資料，再丟給 A」
+        private async Task<string> GetFormattedSpecialties(int resumeId)
+        {
+            var specs = await _db.Specialties
+                .Where(s => s.ResumeId == resumeId)
+                .ToListAsync();
+            return FormatSpecialtyString(specs);
+        }
         // GET: 基本資料
         public async Task<IActionResult> Profile()
         {
@@ -222,6 +238,9 @@ namespace InterviewProject.Controllers
                 .ToListAsync();
             resume.DriverLicense = FormatDriverLicenseString(dbLicenses);
 
+            // 🎯 這裡加上去 Specialties 抓取並格式化專長資料
+            resume.Specialty = await GetFormattedSpecialties(resume.Id);
+            
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);
             if (member != null)
             {

@@ -4,13 +4,14 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace InterviewProject.Models
 {
-    [Table("ComputerSkills")]
-    public class ComputerSkills
+    [Table("Specialties")]
+    public class Specialties
     {
         [Key]
         public int Id { get; set; } // 檢查這個名稱是否與資料庫一致
         public int ResumeId { get; set; }
-        public string ComputerSkill { get; set; } = string.Empty;
+        public string Specialty { get; set; } = string.Empty;
+        public int SortOrder { get; set; }
 
         // 導覽屬性 (選填)
         [ForeignKey("ResumeId")]

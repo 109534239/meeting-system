@@ -43,6 +43,25 @@
     background-color: transparent;
 }
 
+.autobiography-textarea {
+    width: 100%;
+    height: 260px;
+    max-height: 400px;
+    overflow-y: auto !important; /* 🎯 強制開啟垂直滾動 */
+    resize: vertical;
+    border: 1px solid #ccc;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+    /* 🎯 當它是唯讀狀態時的特殊處理 */
+    .autobiography-textarea[readonly] {
+        background-color: #f5f5f5; /* 變成淡灰色，看起來像 disabled */
+        color: #555; /* 文字顏色稍微變淡 */
+        cursor: default; /* 滑鼠游標保持一般箭頭，不顯示輸入 I 游標 */
+        pointer-events: auto; /* 🎯 這是核心！強制瀏覽器必須接收這個區塊的滾輪與滑鼠事件 */
+    }
+
 .full-input {
     width: 95%;
     border: none;
@@ -51,6 +70,20 @@
     padding: 2px 5px;
     background-color: transparent;
 }
+/* 必填紅星樣式 */
+.required-mark {
+    color: #ff4d4f; /* 亮眼的警示紅 */
+    font-weight: bold; /* 加粗更加明顯 */
+    margin-left: 4px; /* 與前方文字保持微小間距 */
+    text-decoration: none; /* 移除 <a> 標籤預設的底線 */
+    cursor: default; /* 讓滑鼠移上去時保持一般箭頭，不要變成手指（因為它不是超連結） */
+}
+
+    /* 選擇性：如果滑鼠移上去怕被瀏覽器變色，強制鎖定顏色 */
+    .required-mark:hover {
+        color: #ff4d4f;
+        text-decoration: none;
+    }
 
 textarea {
     width: 100%;

@@ -93,18 +93,18 @@
                 <td><input class="full-input" value="@ViewBag.UserBirthday" readonly /></td>
             </tr>
             <tr>
-                <td>聯絡地址</td>
+                <td><a class="required-mark">*</a>聯絡地址</td>
                 <td colspan="3">
                     <input class="full-input" value="@ViewBag.UserAddress" readonly />
                 </td>
             </tr>
             <tr>
-                <td>婚姻狀況</td>
+                <td><a class="required-mark">*</a>婚姻狀況</td>
                 <td>
                     <input type="radio" asp-for="MaritalStatus" value="已婚" required />已婚
                     <input type="radio" asp-for="MaritalStatus" value="單身" required />單身
                 </td>
-                <td>兵役狀況</td>
+                <td><a class="required-mark">*</a>兵役狀況</td>
                 <td>
                     <input type="radio" asp-for="MilitaryService" value="免役" required />免役
                     <input type="radio" asp-for="MilitaryService" value="役畢" required />役畢<br />
@@ -117,15 +117,15 @@
                 <td>聯絡電話</td>
                 <td colspan="5">
                     <div style="display:flex; flex-wrap:wrap; gap: 10px;">
-                        <span>電話1：<input asp-for="Phone1" class="input-inline" style="width:150px" required /></span>
+                        <span><a class="required-mark">*</a>電話1：<input asp-for="Phone1" class="input-inline" style="width:150px" required /></span>
                         <span>電話2：<input asp-for="Phone2" class="input-inline" style="width:150px" /></span>
-                        <span>行動：<input asp-for="Mobile" class="input-inline" style="width:150px" required /></span>
+                        <span><a class="required-mark">*</a>行動：<input asp-for="Mobile" class="input-inline" style="width:150px" required /></span>
                     </div>
                 </td>
             </tr>
 
             <tr>
-                <td>學歷</td>
+                <td><a class="required-mark">*</a>學歷</td>
                 <td colspan="5">
                     <div style="margin-bottom: 10px; padding-left: 10px;">
                         <input type="radio" asp-for="EduLevel" value="博士" />博士
@@ -167,7 +167,7 @@
             </tr>
 
             <tr>
-                <td class="label-bg">工作<br />經歷</td>
+                <td class="label-bg"><a class="required-mark">*</a>工作<br />經歷</td>
                 <td colspan="5">
                     <div style="padding: 10px;">
                         <label>
@@ -186,7 +186,6 @@
                             @* 🎯 顯示邏輯：如果是 -1 就顯示空字串，避免畫面出現 -1 *@
                             <input asp-for="WorkExperienceYears" id="workYearsInput"
                                    type="number" class="input-inline" style="width:50px"
-                                   @* 🎯 修改這行：只要小於等於 0，一律顯示空字串 *@
                                    value="@(Model.WorkExperienceYears <= 0 ? "" : Model.WorkExperienceYears.ToString())"
                                    readonly="@(Model.WorkExperienceYears <= 0)" /> 年
                         </label>
@@ -337,9 +336,13 @@
             </tr>
 
             <tr>
-                <td class="label-bg">自傳</td>
+                <td class="label-bg"><a class="required-mark">*</a>自傳</td>
                 <td colspan="5">
-                    <textarea asp-for="Autobiography" rows="12" style="width:100%" required></textarea>
+                    <textarea asp-for="Autobiography"
+                              rows="12"
+                              class="autobiography-textarea"
+                              required
+                              readonly="@(ViewBag.IsReadOnly == true ? "readonly" : null)"></textarea>
                 </td>
             </tr>
         </table>
@@ -370,8 +373,7 @@
 <script>
     // --- 頁面載入後，根據後端資料反勾選 Checkbox ---
     window.onload = function() {
-        //1. 處理語文能力反填
-            // --- 修改後的語文能力反填邏輯 ---
+    //1. 處理語文能力反填
     const langData = `@Html.Raw(Model?.LanguageSkills ?? "")`; // 加上空值處理
     if (langData && langData.trim() !== "") {
         const items = langData.split(', ');
@@ -411,7 +413,7 @@
         });
     }
 
-            // 2. 處理駕照種類 (精確還原)
+    // 2. 處理駕照種類 (精確還原)
     const licenseData = "@Html.Raw(Model?.DriverLicense)";
     if (licenseData) {
         // 先用逗號拆分不同類別，例如 ["自用(小/大)", "機車(重型)", "無"]
@@ -447,18 +449,18 @@
         });
     }
 
-        // 3. 處理專長
-        const specData = "@Html.Raw(Model?.Specialty)";
-        if (specData) {
-            const specs = specData.split('; ');
-            const specInputs = document.querySelectorAll('.spec-input');
-            specs.forEach((val, index) => {
-                if(specInputs[index]) specInputs[index].value = val;
-            });
-        }
+    // 3. 處理專長
+    const specData = "@Html.Raw(Model?.Specialty)";
+    if (specData) {
+        const specs = specData.split('; ');
+        const specInputs = document.querySelectorAll('.spec-input');
+        specs.forEach((val, index) => {
+             if(specInputs[index]) specInputs[index].value = val;
+        });
+    }
 
-        // 4. 處理證照
-        const certData = "@Html.Raw(Model?.Certificates)";
+    // 4. 處理證照
+    const certData = "@Html.Raw(Model?.Certificates)";
         if (certData) {
             const certs = certData.split(', ');
             document.querySelectorAll('.cert-item').forEach((item, index) => {
@@ -483,7 +485,7 @@
             });
         }
 
-        // --- 5. 處理電腦能力 ---
+        // 5. 處理電腦能力
         const compData = "@Html.Raw(Model?.ComputerSkills ?? "")";
         if (compData) {
             document.querySelectorAll('.comp-chk').forEach(chk => {
@@ -534,7 +536,7 @@
             });
         });
 
-        const eduLevelValue = "@Html.Raw(Model.EduLevel)";
+        const eduLevelValue = "@Html.Raw(Model?.EduLevel)";
         const presetLevels = ["博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小"];
 
         if (eduLevelValue && !presetLevels.includes(eduLevelValue)) {
@@ -542,10 +544,15 @@
             document.getElementById('radioOther').checked = true;
             document.getElementById('radioOther').value = eduLevelValue;
         }
+        @if (ViewBag.IsReadOnly == true)
+        {
+                <text>
+                $('textarea').prop('readonly', true);
+                </text>
+        }
     };
 
     // --- Submit 邏輯 ---
-        // --- 修改後的 Submit & 驗證邏輯 ---
     document.querySelector('form').addEventListener('submit', function (e) {
         const workYearsInput = document.getElementById('workYearsInput');
         const workExpType = document.querySelector('input[name="workExpType"]:checked');

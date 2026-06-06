@@ -115,11 +115,14 @@ namespace InterviewProject.Controllers
                     var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == existingResume.Id).ToListAsync();
                     //電腦能力
                     var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == existingResume.Id).ToListAsync();
+                    // 🎯 專長新表載入 (套用模式)
+                    var dbSpecs = await _db.Specialties.Where(s => s.ResumeId == existingResume.Id).OrderBy(s => s.SortOrder).ToListAsync();
 
                     model = existingResume;
                     model.LanguageSkills = FormatLanguageString(sourceLangs);
                     model.DriverLicense = FormatDriverLicenseString(dbLicenses);
                     model.ComputerSkills = FormatComputerSkillString(dbCompSkills);
+                    model.Specialty = string.Join("; ", dbSpecs.Select(s => s.Specialty));
 
                     model.Id = 0; // 重置為新紀錄
                     model.JobsId = jobId;
@@ -147,6 +150,8 @@ namespace InterviewProject.Controllers
                     model.DriverLicense = FormatDriverLicenseString(dbLicenses);
                     var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == model.Id).ToListAsync();
                     model.ComputerSkills = FormatComputerSkillString(dbCompSkills);
+                    var dbSpecs = await _db.Specialties.Where(s => s.ResumeId == model.Id).OrderBy(s => s.SortOrder).ToListAsync();
+                    model.Specialty = string.Join("; ", dbSpecs.Select(s => s.Specialty));
                 }
             }
 
@@ -283,6 +288,9 @@ namespace InterviewProject.Controllers
             // 🎯電腦能力儲存
             await UpdateComputerSkills(finalResumeId, model.ComputerSkills);
 
+            // 🎯 專長儲存：呼叫全新解析與寫入 Specialties 獨立表的方法
+            await UpdateSpecialties(finalResumeId, model.Specialty);
+
             TempData["ShowSuccessAlert"] = "履歷已送出！";
             return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
         }
@@ -387,6 +395,40 @@ namespace InterviewProject.Controllers
             }
         }
 
+        // 🎯 專長獨立表 (包含排序順序 SortOrder)
+        private async Task UpdateSpecialties(int resumeId, string? specialtyString)
+        {
+            // 1. 刪除該履歷舊的專長紀錄
+            var oldItems = await _db.Specialties.Where(s => s.ResumeId == resumeId).ToListAsync();
+            if (oldItems.Any())
+            {
+                _db.Specialties.RemoveRange(oldItems);
+                await _db.SaveChangesAsync();
+            }
+
+            if (!string.IsNullOrEmpty(specialtyString))
+            {
+                // 前端用 "; " 拼接，這裏按分號拆開
+                var parts = specialtyString.Split(new[] { "; " }, StringSplitOptions.None);
+
+                // 依序存入格子 1, 2, 3，並賦予對應的 SortOrder
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    string specValue = parts[i].Trim();
+                    if (!string.IsNullOrEmpty(specValue))
+                    {
+                        _db.Specialties.Add(new Specialties
+                        {
+                            ResumeId = resumeId,
+                            Specialty = specValue,
+                            SortOrder = i + 1 // 第一個欄位是 1，第二個是 2，第三個是 3
+                        });
+                    }
+                }
+                await _db.SaveChangesAsync();
+            }
+        }
+
         // 按鈕：匯出 PDF
         [HttpPost]
         public async Task<IActionResult> ExportToPdf(Resume model)
@@ -401,6 +443,7 @@ namespace InterviewProject.Controllers
             var dbLangs = await _db.LanguageProficiency.Where(l => l.ResumeId == model.Id).ToListAsync();
             var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == model.Id).ToListAsync();
             var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == model.Id).ToListAsync();
+            var dbSpecs = await _db.Specialties.Where(s => s.ResumeId == model.Id).OrderBy(s => s.SortOrder).ToListAsync();
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
@@ -570,9 +613,9 @@ namespace InterviewProject.Controllers
                 ["D_Own"] = checkLic("汽(機)車", "自備"),
 
                 //專長
-                ["Spec1"] = spec.Split(new[] { "; " }, StringSplitOptions.None).ElementAtOrDefault(0) ?? "",
-                ["Spec2"] = spec.Split(new[] { "; " }, StringSplitOptions.None).ElementAtOrDefault(1) ?? "",
-                ["Spec3"] = spec.Split(new[] { "; " }, StringSplitOptions.None).ElementAtOrDefault(2) ?? "",
+                ["Spec1"] = dbSpecs.FirstOrDefault(s => s.SortOrder == 1)?.Specialty ?? "",
+                ["Spec2"] = dbSpecs.FirstOrDefault(s => s.SortOrder == 2)?.Specialty ?? "",
+                ["Spec3"] = dbSpecs.FirstOrDefault(s => s.SortOrder == 3)?.Specialty ?? "",
 
                 ["Cert"] = cert,
 
