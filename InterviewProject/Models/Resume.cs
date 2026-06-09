@@ -51,7 +51,10 @@ namespace InterviewProject.Models
         // 🎯 核心修正二：建立與 Job 模型實體的虛擬關聯，供前端 @Model.Job?.Title 撈取名稱
         public virtual Job? Job { get; set; }
 
-        public string Status { get; set; } = "待審核";
+        public string? Status { get; set; }
+        // 🎯 核心關鍵：加入對應面試資料表的導覽屬性
+        // 假設你的面試模型叫 Interview，一筆履歷對應一場面試（或是多場，這裡用單數為例）
+        //public virtual Interview? Interview { get; set; }
 
         public int? AiScore { get; set; }
         public string? AiComment { get; set; }

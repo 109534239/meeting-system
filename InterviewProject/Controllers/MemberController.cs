@@ -266,6 +266,7 @@ namespace InterviewProject.Controllers
 
             var applications = await _db.Resumes
                 .Include(r => r.Job)
+                //.Include(r => r.Interview) // 🎯 關鍵：把面試資料表也 Join 進來！
                 .Where(r => r.MembersId == userId)
                 .OrderByDescending(r => r.ResumeTime)
                 .ToListAsync();

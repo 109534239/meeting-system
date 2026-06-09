@@ -52,31 +52,66 @@
             {
                 @foreach (var item in Model)
                 {
-                    // 判斷是否顯示詳細資訊的邏輯
                     bool isPassed = item.Status == "通過";
 
+                    @* 💡 加上 app-row-wrap 容器，解決 JS toggle 找不到外層的問題 *@
+                    <div class="app-row-wrap">
                         <div class="app-row">
-                        @* 1. 投遞時間 *@
-                        <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm:ss")</div>
+                            @* 1. 投遞時間 *@
+                            <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm:ss")</div>
 
-                        @* 2. 職缺名稱 *@
-                        <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>
+                            @* 2. 職缺名稱 *@
+                            <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>
 
-                        @* 3. 審核狀態 (整合 GetStatusClass 並置中) *@
-                        <div class="row-status text-center">
-                            <span class="@GetStatusClass(item.Status ?? "待審核") status-label">
-                                @(string.IsNullOrEmpty(item.Status) ? "待審核" : item.Status)
-                            </span>
-                        </div>
+                            @* 3. 審核狀態 *@
+                            <div class="row-status text-center">
+                                <span class="@GetStatusClass(item.Status ?? "待審核") status-label">
+                                    @(string.IsNullOrEmpty(item.Status) ? "待審核" : item.Status)
+                                </span>
+                            </div>
 
-                            @* 4. 面試狀態 (根據條件顯示) *@
-                            <div>@(isPassed ? "待面試" : "")</div>
+                            @* 4. 面試狀態 (動態套用對應標籤樣式) *@
+                            <div class="text-center">
+                                @if (isPassed)
+                                {
+                                    @* 💡 預設抓取資料庫面試狀態，若無則顯示 "等待安排面試" *@
+                                    var interviewStatus = item.Status ?? "等待安排面試";
+                                    <span class="@GetInterviewStatusClass(interviewStatus) status-label">
+                                        @interviewStatus
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span>-</span>
+                                }
+                            </div>
 
                             @* 5. 錄取/未錄取 *@
-                            <div></div>
+                            <div class="text-center">
+                                @* {
+                                    // 先取得當前的面試狀態（防呆 Null）
+                                    var currentInterviewStatus = item.Interview?.Status ?? "等待安排面試";
+                                    // 取得當前的資料庫錄取結果（假設欄位叫 AdmissionResult，可依你實際的改，如 item.Interview?.Result）
+                                    var dbResult = item.Interview?.AdmissionResult ?? "";
+
+                                    // 呼叫動態判斷方法
+                                    var admission = GetAdmissionStatus(item.Status ?? "待審核", currentInterviewStatus, dbResult);
+                                }
+
+                                @if (admission.Text != "-")
+                                {
+                                    <span class="@admission.Class status-label">
+                                        @admission.Text
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span>-</span>
+                                }*@
+                            </div>
 
                             @* 6. 查看詳細按鈕 *@
-                            <div>
+                            <div class="text-center">
                                 @if (isPassed)
                                 {
                                     <button class="btn-view" onclick="toggleDetail(this)">
@@ -85,7 +120,7 @@
                                 }
                             </div>
                         </div>
-                       
+
                         @if (isPassed)
                         {
                             <div class="app-detail" style="display: none;">
@@ -128,7 +163,7 @@
                                                 </svg>
                                                 面試資訊
                                             </span>
-                                            <span class="detail-badge badge-waiting">待面試</span>
+                                            <span class="detail-badge badge-waiting">@(item.Status ?? "等待安排面試")</span>
                                         </div>
                                         <div class="detail-card">
                                             <div class="detail-notice-box">
@@ -153,6 +188,7 @@
                                 </div>
                             </div>
                         }
+                    </div>
                 }
             }
             else
@@ -163,28 +199,65 @@
     </div>
 </div>
 @functions {
-    // 輔助邏輯：根據文字內容回傳 CSS Class
+    // 1. 履歷審核狀態
     public string GetStatusClass(string status)
     {
         return status switch
         {
             "待審核" => "status-review",
-            "未通過" => "status-fail",
+            "不通過" => "status-fail",
             "通過" => "status-pass",
             _ => ""
         };
     }
+
+    // 2. 面試狀態
+    public string GetInterviewStatusClass(string status)
+    {
+        return status switch
+        {
+            "等待安排面試" => "status-waiting",
+            "已安排面試" => "status-scheduled",
+            "面試中" => "status-processing",
+            "面試結束" => "status-finished",
+            _ => "status-review"
+        };
+    }
+
+    // 🎯 3. 錄取結果狀態（依據面試狀態動態改變）
+    public (string Text, string Class) GetAdmissionStatus(string resumeStatus, string interviewStatus, string dbAdmissionResult)
+    {
+        // 情況 A：履歷根本沒通過審核
+        if (resumeStatus == "不通過") {
+            return ("未錄取", "status-fail");
+        }
+        if (resumeStatus == "待審核") {
+            return ("-", "");
+        }
+
+        // 情況 B：履歷通過了，但面試還沒到最後階段
+        if (interviewStatus == "等待安排面試" || interviewStatus == "已安排面試" || interviewStatus == "面試中") {
+            return ("等待結果中", "status-pending-result");
+        }
+
+        // 情況 C：面試結束了，顯示真正的結果（例如資料庫存的 "錄取" / "未錄取"）
+        if (interviewStatus == "面試結束") {
+            if (dbAdmissionResult == "錄取") return ("錄取", "status-pass");
+            if (dbAdmissionResult == "未錄取") return ("未錄取", "status-fail");
+            return ("等待結果中", "status-pending-result"); // 防呆：面試結束但主管還沒點選結果
+        }
+
+        return ("-", "");
+    }
 }
 @section Scripts {
-<script>
-            function toggleDetail(btn) {
-            // 找到按鈕所在的 app-row-wrap 容器
+    <script>
+        function toggleDetail(btn) {
             const wrap = btn.closest('.app-row-wrap');
-            // 找到該容器下的詳細內容區塊
             const detail = wrap.querySelector('.app-detail');
             const icon = btn.querySelector('i');
 
-            if (detail.style.display === 'none') {
+            if (detail.style.display === 'none' || detail.style.display === '') {
                 detail.style.display = 'block';
                 btn.classList.add('active');
                 if(icon) icon.className = 'fa fa-chevron-up';
@@ -194,5 +267,5 @@
                 if(icon) icon.className = 'fa fa-chevron-down';
             }
         }
-</script>
+    </script>
 }

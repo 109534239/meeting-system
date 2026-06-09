@@ -60,8 +60,7 @@
                             string statusClass = item.Status switch
                             {
                                 "通過" => "status-pass",
-                                "未通過" => "status-fail",
-                                "面試中" => "status-waiting",
+                                "不通過" => "status-fail",
                                 _ => "status-review"
                             };
                         }
