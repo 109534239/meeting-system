@@ -21,7 +21,7 @@ namespace InterviewProject.Controllers
     public class ResumeController : Controller
     {
         // 🎯 您的付費版無限速超級金鑰（RWlA 正式付費帳戶通道）
-        private const string GeminiApiKey = "";
+        private const string GeminiApiKey = "AQ.Ab8RN6Lp5oYpvuL5DnmMDsitdyH98ecEJbu6zIJyxUfAYXRWlA";
 
         private readonly IWebHostEnvironment _env;
         private readonly AppDbContext _db;
@@ -131,6 +131,7 @@ namespace InterviewProject.Controllers
         }
 
         [HttpPost]
+        [HttpPost]
         public async Task<IActionResult> SaveResume(Resume model)
         {
             ModelState.Remove("ResumeTime");
@@ -140,17 +141,16 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             model.MembersId = userId;
 
-            // 🎯【安全性防禦】：如果前端忘記加隱藏欄位導致 JobsId 為 0，主動拦截阻擋
             if (model.JobsId <= 0)
             {
-                TempData["ApiError"] = "❌ 系統錯誤：未接收到職缺編號(JobsId)，請確認表單中是否包含職缺隱藏欄位。";
+                TempData["ApiError"] = "❌ 系統錯誤：未接收到職缺編號(JobsId)。";
                 model.Job = await _db.Jobs.FindAsync(model.JobsId);
                 return View("Resume", model);
             }
 
             if (!ModelState.IsValid)
             {
-                TempData["ApiError"] = "❌ 填寫欄位格式不正確或有必填未填（如自傳），請檢查後再試一次。";
+                TempData["ApiError"] = "❌ 填寫欄位格式不正確或有必填未填，請檢查後再試一次。";
                 model.Job = await _db.Jobs.FindAsync(model.JobsId);
                 return View("Resume", model);
             }
@@ -177,7 +177,6 @@ namespace InterviewProject.Controllers
                     {
                         model.ResumeTime = now;
                         model.Status = existing.Status ?? "待審核";
-
                         model.AiScore = existing.AiScore;
                         model.AiComment = existing.AiComment;
 
@@ -186,41 +185,24 @@ namespace InterviewProject.Controllers
                         finalResumeId = existing.Id;
                     }
 
+                    // 儲存獨立關聯表 (語文、駕照、電腦能力)
                     await UpdateLanguageProficiency(finalResumeId, model.LanguageSkills);
                     await UpdateDriverLicense(finalResumeId, model.DriverLicense);
                     await UpdateComputerSkills(finalResumeId, model.ComputerSkills);
 
-                    var fullResume = await _db.Resumes
-                        .Include(r => r.Job)
-                        .FirstOrDefaultAsync(r => r.Id == finalResumeId);
+                    // 🎯 【關鍵核心】：呼叫全新拆解並將專長寫入 Specialties 獨立表的邏輯
+                    await UpdateSpecialties(finalResumeId, model.Specialty);
 
-                    if (fullResume != null)
-                    {
-                        fullResume.LanguageSkills = model.LanguageSkills;
-                        fullResume.DriverLicense = model.DriverLicense;
-                        fullResume.ComputerSkills = model.ComputerSkills;
-
-                        // 呼叫 AI 審查
+                    /* 🤖 暫時忽略 AI 履歷審查部分
+                    var fullResume = await _db.Resumes.Include(r => r.Job).FirstOrDefaultAsync(r => r.Id == finalResumeId);
+                    if (fullResume != null) {
                         var apiResult = await CallGeminiApiAndUpdateAsync(fullResume);
-
-                        if (!apiResult.IsSuccess)
-                        {
-                            await transaction.RollbackAsync();
-                            TempData["ApiError"] = apiResult.Message;
-                            model.Job = await _db.Jobs.FindAsync(model.JobsId);
-                            return View("Resume", model);
-                        }
+                        // ...原 AI 錯誤判定
                     }
-                    else
-                    {
-                        await transaction.RollbackAsync();
-                        TempData["ApiError"] = "❌ 系統在儲存中發生編號衝突，請重新整理頁面再試一次。";
-                        model.Job = await _db.Jobs.FindAsync(model.JobsId);
-                        return View("Resume", model);
-                    }
+                    */
 
                     await transaction.CommitAsync();
-                    TempData["ShowSuccessAlert"] = "履歷已送出！";
+                    TempData["ShowSuccessAlert"] = "履歷已成功送出與儲存！";
                     return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
                 }
                 catch (Exception ex)
@@ -230,6 +212,40 @@ namespace InterviewProject.Controllers
                     model.Job = await _db.Jobs.FindAsync(model.JobsId);
                     return View("Resume", model);
                 }
+            }
+        }
+
+        // 🎯 新增專長拆解與寫入資料庫實體表方法 (含 SortOrder 權重自動編號)
+        private async Task UpdateSpecialties(int resumeId, string? specialtyString)
+        {
+            // 1. 先清除舊有這筆履歷的專長資料，避免重複累加
+            var oldItems = await _db.Specialties.Where(s => s.ResumeId == resumeId).ToListAsync();
+            if (oldItems.Any())
+            {
+                _db.Specialties.RemoveRange(oldItems);
+                await _db.SaveChangesAsync();
+            }
+
+            // 2. 如果前端傳入的專長不為空，開始解析
+            if (!string.IsNullOrEmpty(specialtyString))
+            {
+                // 前端使用 "; " 進行拼接，此處使用相同規則切開字串
+                var parts = specialtyString.Split(new[] { "; " }, StringSplitOptions.RemoveEmptyEntries);
+
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    string specValue = parts[i].Trim();
+                    if (!string.IsNullOrEmpty(specValue))
+                    {
+                        _db.Specialties.Add(new Specialties
+                        {
+                            ResumeId = resumeId,
+                            Specialty = specValue,
+                            SortOrder = i + 1 // 第一個框輸入的存為 1，第二個為 2，第三個為 3
+                        });
+                    }
+                }
+                await _db.SaveChangesAsync();
             }
         }
 

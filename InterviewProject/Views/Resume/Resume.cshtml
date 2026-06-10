@@ -373,94 +373,85 @@
 <script>
     // --- 頁面載入後，根據後端資料反勾選 Checkbox ---
     window.onload = function() {
-    //1. 處理語文能力反填
-    const langData = `@Html.Raw(Model?.LanguageSkills ?? "")`; // 加上空值處理
-    if (langData && langData.trim() !== "") {
-        const items = langData.split(', ');
-        const knownLangs = ["英語", "日語", "台語", "客語"];
+        // 1. 處理語文能力反填
+        const langData = `@Html.Raw(Model?.LanguageSkills ?? "")`;
+        if (langData && langData.trim() !== "") {
+            const items = langData.split(', ');
+            const knownLangs = ["英語", "日語", "台語", "客語"];
 
-        items.forEach(item => {
-            if (item === "不具外文能力") {
-                const node = document.querySelector('.lang-node');
-                if(node) node.checked = true;
-                return;
-            }
+            items.forEach(item => {
+                if (item === "不具外文能力") {
+                    const node = document.querySelector('.lang-node');
+                    if(node) node.checked = true;
+                    return;
+                }
 
-            const name = item.split('(')[0];
-            const lvMatch = item.match(/\(([^)]+)\)/);
-            const lvValue = lvMatch ? lvMatch[1] : "";
+                const name = item.split('(')[0];
+                const lvMatch = item.match(/\(([^)]+)\)/);
+                const lvValue = lvMatch ? lvMatch[1] : "";
 
-            if (knownLangs.includes(name)) {
-                document.querySelectorAll('.lang-row').forEach(row => {
-                    const labelElement = row.querySelector('.lang-label');
-                    if (labelElement && labelElement.innerText.includes(name)) { // 使用 includes
-                        const lvChk = Array.from(row.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
+                if (knownLangs.includes(name)) {
+                    document.querySelectorAll('.lang-row').forEach(row => {
+                        const labelElement = row.querySelector('.lang-label');
+                        if (labelElement && labelElement.innerText.includes(name)) {
+                            const lvChk = Array.from(row.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
+                            if (lvChk) lvChk.checked = true;
+                        }
+                    });
+                } else {
+                    const otherRow = Array.from(document.querySelectorAll('.lang-row')).find(row => {
+                        const lbl = row.querySelector('.lang-label');
+                        return lbl && lbl.innerText.includes("其他");
+                    });
+                    if (otherRow) {
+                        document.getElementById('otherLangName').value = name;
+                        const lvChk = Array.from(otherRow.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
                         if (lvChk) lvChk.checked = true;
                     }
-                });
-            } else {
-                // 處理「其他」
-                const otherRow = Array.from(document.querySelectorAll('.lang-row')).find(row => {
-                    const lbl = row.querySelector('.lang-label');
-                    return lbl && lbl.innerText.includes("其他");
-                });
-                if (otherRow) {
-                    document.getElementById('otherLangName').value = name;
-                    const lvChk = Array.from(otherRow.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
-                    if (lvChk) lvChk.checked = true;
                 }
-            }
-        });
-    }
+            });
+        }
 
-    // 2. 處理駕照種類 (精確還原)
-    const licenseData = "@Html.Raw(Model?.DriverLicense)";
-    if (licenseData) {
-        // 先用逗號拆分不同類別，例如 ["自用(小/大)", "機車(重型)", "無"]
-        const parts = licenseData.split(', ');
-
-        parts.forEach(p => {
-            if (p.includes('(')) {
-                // 處理帶括號的類別：如 "自用(小/大)"
-                const typeName = p.split('(')[0].trim(); // "自用"
-                const subValues = p.split('(')[1].replace(')', '').split('/'); // ["小", "大"]
-
-                // 找到對應 data-type 的那一列
-                const row = document.querySelector(`.license-row[data-type="${typeName}"]`);
-                if (row) {
-                    subValues.forEach(v => {
-                        // 僅在該列中尋找並勾選
-                        const chk = row.querySelector(`.license-chk[value="${v}"]`);
-                        if (chk) chk.checked = true;
-                    });
+        // 2. 處理駕照種類
+        const licenseData = "@Html.Raw(Model?.DriverLicense ?? "")";
+        if (licenseData) {
+            const parts = licenseData.split(', ');
+            parts.forEach(p => {
+                if (p.includes('(')) {
+                    const typeName = p.split('(')[0].trim();
+                    const subValues = p.split('(')[1].replace(')', '').split('/');
+                    const row = document.querySelector(`.license-row[data-type="${typeName}"]`);
+                    if (row) {
+                        subValues.forEach(v => {
+                            const chk = row.querySelector(`.license-chk[value="${v}"]`);
+                            if (chk) chk.checked = true;
+                        });
+                    }
+                } else {
+                    const row = document.querySelector(`.license-row[data-type="汽(機)車"]`);
+                    if (row) {
+                        const subValues = p.split('/');
+                        subValues.forEach(v => {
+                            const chk = row.querySelector(`.license-chk[value="${v}"]`);
+                            if (chk) chk.checked = true;
+                        });
+                    }
                 }
-            } else {
-                // 處理不帶括號的：如 "無" 或 "自備"
-                // 這類通常屬於你的最後一列 data-type="汽(機)車"
-                const row = document.querySelector(`.license-row[data-type="汽(機)車"]`);
-                if (row) {
-                    const subValues = p.split('/'); // 處理 "無/自備" 的情況
-                    subValues.forEach(v => {
-                        const chk = row.querySelector(`.license-chk[value="${v}"]`);
-                        if (chk) chk.checked = true;
-                    });
-                }
-            }
-        });
-    }
+            });
+        }
 
-    // 3. 處理專長
-    const specData = "@Html.Raw(Model?.Specialty)";
-    if (specData) {
-        const specs = specData.split('; ');
-        const specInputs = document.querySelectorAll('.spec-input');
-        specs.forEach((val, index) => {
-             if(specInputs[index]) specInputs[index].value = val;
-        });
-    }
+        // 3. 處理專長反填
+        const specData = "@Html.Raw(Model?.Specialty ?? "")";
+        if (specData) {
+            const specs = specData.split('; ');
+            const specInputs = document.querySelectorAll('.spec-input');
+            specs.forEach((val, index) => {
+                 if(specInputs[index]) specInputs[index].value = val;
+            });
+        }
 
-    // 4. 處理證照
-    const certData = "@Html.Raw(Model?.Certificates)";
+        // 4. 處理證照
+        const certData = "@Html.Raw(Model?.Certificates ?? "")";
         if (certData) {
             const certs = certData.split(', ');
             document.querySelectorAll('.cert-item').forEach((item, index) => {
@@ -502,20 +493,20 @@
         }
 
         // 6. 處理學歷狀況
-        const eduData = "@Html.Raw(Model?.EduStatus)";
+        const eduData = "@Html.Raw(Model?.EduStatus ?? "")";
         if (eduData) {
             document.querySelectorAll('#eduStatusArea .edu-chk').forEach(chk => {
                 if (eduData.includes(chk.value)) chk.checked = true;
             });
         }
 
-        // 額外確保：如果進場時工作年資是 0 或 -1，將輸入框設為空白
+        // 7. 年資欄位初始化
         const workYearsInput = document.getElementById('workYearsInput');
         if (workYearsInput && parseInt(workYearsInput.value) <= 0) {
             workYearsInput.value = "";
         }
 
-        // --- 限制邏輯 ---
+        // --- 互斥限制邏輯 ---
         document.querySelectorAll('.lang-row').forEach(row => {
             const lvs = row.querySelectorAll('.lang-lv');
             lvs.forEach(chk => {
@@ -536,7 +527,7 @@
             });
         });
 
-        const eduLevelValue = "@Html.Raw(Model?.EduLevel)";
+        const eduLevelValue = "@Html.Raw(Model?.EduLevel ?? "")";
         const presetLevels = ["博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小"];
 
         if (eduLevelValue && !presetLevels.includes(eduLevelValue)) {
@@ -544,34 +535,49 @@
             document.getElementById('radioOther').checked = true;
             document.getElementById('radioOther').value = eduLevelValue;
         }
-        @*
-        @if (ViewBag.IsReadOnly == true)
-        {
-                <text>
-                $('textarea').prop('readonly', true);
-                </text>
-        }*@
     };
 
-    // --- Submit 邏輯 ---
+    // 其他教育程度 Focus 處理
+    document.getElementById('otherEduLevel').addEventListener('focus', function() {
+        document.getElementById('radioOther').checked = true;
+    });
+
+    function setWorkExp(val) {
+        const input = document.getElementById('workYearsInput');
+        const company = document.getElementById('CompanyName');
+        const title = document.getElementById('JobTitle');
+        const desc = document.getElementById('JobDescription');
+
+        if (val === 0) {
+            input.value = "";
+            input.readOnly = true;
+            if(company) company.value = "";
+            if(title) title.value = "";
+            if(desc) desc.value = "";
+        } else {
+            if(input.value === "" || parseInt(input.value) <= 0) {
+                input.value = 1;
+            }
+            input.readOnly = false;
+        }
+    }
+
+    // 🎯 統一改用標準事件接管，移除舊程式碼中會覆蓋邏輯的 .onsubmit
     document.querySelector('form').addEventListener('submit', function (e) {
         const workYearsInput = document.getElementById('workYearsInput');
         const workExpType = document.querySelector('input[name="workExpType"]:checked');
 
-        // 1. 驗證是否有選 Radio
+        // 1. 驗證是否有選工作經歷 Radio
         if (!workExpType) {
             Swal.fire('提示', '請選擇是否有工作經歷', 'warning');
             e.preventDefault();
             return false;
         }
 
-        // 2. 判斷是選「無(0)」還是「有(1)」
-        // 這裡改用 value 或 onclick 判斷都可以，建議統一邏輯
         const isHaveExp = workExpType.getAttribute('onclick').includes('1');
         const yearsValue = workYearsInput.value.trim();
 
         if (isHaveExp) {
-            // --- 有經歷的驗證 ---
             const years = parseInt(yearsValue);
             if (!yearsValue || isNaN(years) || years <= 0) {
                 Swal.fire('提示', '請輸入正確的工作年資', 'warning');
@@ -585,25 +591,23 @@
                 return false;
             }
         } else {
-            // --- 無經歷的處理 ---
-            // 🎯 核心修改：送出前把空白補回 0，後端才收得到資料
             workYearsInput.value = 0;
         }
-        // --- 驗證邏輯結束 ---
 
-        // 1. 處理其他教育程度
+        // 2. 其他教育程度
         const otherEduInput = document.getElementById('otherEduLevel');
         const radioOther = document.getElementById('radioOther');
         const otherVal = otherEduInput.value.trim();
-        const now = new Date();
-        document.getElementById('finalResumeTime').value = now.toISOString();
-
         if (otherVal !== "") {
             radioOther.checked = true;
             radioOther.value = otherVal;
         }
 
-        // 2. 語文能力串接
+        // 3. 紀錄時間
+        const now = new Date();
+        document.getElementById('finalResumeTime').value = now.toISOString();
+
+        // 4. 語文能力串接
         let langResults = [];
         if (document.querySelector('.lang-node:checked')) langResults.push("不具外文能力");
         document.querySelectorAll('.lang-row').forEach(row => {
@@ -614,32 +618,31 @@
         });
         document.getElementById('finalLanguageSkills').value = langResults.join(', ');
 
-            // 3. 駕照種類
-    let licenseResults = [];
-    document.querySelectorAll('.license-row').forEach(row => {
-        let type = row.getAttribute('data-type');
-        let selected = [];
-        row.querySelectorAll('.license-chk:checked').forEach(chk => selected.push(chk.value));
+        // 5. 駕照種類
+        let licenseResults = [];
+        document.querySelectorAll('.license-row').forEach(row => {
+            let type = row.getAttribute('data-type');
+            let selected = [];
+            row.querySelectorAll('.license-chk:checked').forEach(chk => selected.push(chk.value));
 
-        if (selected.length > 0) {
-            // 🎯 修正：這裡的判斷要跟你的 HTML data-type 一致
-            if (type === "汽(機)車") {
-                licenseResults.push(selected.join('/')); // 存入 "無/自備"
-            } else {
-                licenseResults.push(`${type}(${selected.join('/')})`); // 存入 "自用(小/大)"
+            if (selected.length > 0) {
+                if (type === "汽(機)車") {
+                    licenseResults.push(selected.join('/'));
+                } else {
+                    licenseResults.push(`${type}(${selected.join('/')})`);
+                }
             }
-        }
-    });
-    document.getElementById('finalDriverLicense').value = licenseResults.join(', ');
+        });
+        document.getElementById('finalDriverLicense').value = licenseResults.join(', ');
 
-        // 4. 專長
+        // 6. 專長串接 (用分號與空格隔開：如 "技能A; 技能B")
         let specResults = [];
         document.querySelectorAll('.spec-input').forEach(input => {
-            if(input.value) specResults.push(input.value);
+            if(input.value.trim()) specResults.push(input.value.trim());
         });
         document.getElementById('finalSpecialty').value = specResults.join('; ');
 
-        // 5. 證照
+        // 7. 證照
         let certResults = [];
         document.querySelectorAll('.cert-item').forEach((item, index) => {
             let nameInput = item.querySelector('.cert-name');
@@ -654,66 +657,19 @@
         });
         document.getElementById('finalCertificates').value = certResults.join(', ');
 
-        // 6. 電腦能力
+        // 8. 電腦能力
         let compResults = [];
         document.querySelectorAll('.comp-chk:checked').forEach(chk => {
-            if (chk.value === "其他") compResults.push("其他:" + document.getElementById('otherCompName').value);
+            if (chk.value === "城市設計" || chk.value === "程式設計") compResults.push(chk.value);
+            else if (chk.value === "其他") compResults.push("其他:" + document.getElementById('otherCompName').value);
             else compResults.push(chk.value);
         });
         document.getElementById('finalComputerSkills').value = compResults.join(', ');
 
-        return true;
-
-        // 7. 學歷狀況
-        let selectedEdu = document.querySelector('.edu-chk:checked');
+        // 9. 學歷狀況狀況反填 (修正原本寫在 return true 後方讀不到的致命傷)
+        let selectedEdu = document.querySelector('#eduStatusArea .edu-chk:checked');
         document.getElementById('finalEduStatus').value = selectedEdu ? selectedEdu.value : "";
-    });
 
-    // 其他教育程度 Focus 處理
-    document.getElementById('otherEduLevel').addEventListener('focus', function() {
-        document.getElementById('radioOther').checked = true;
-    });
-
-    // 修改過的 setWorkExp
-    function setWorkExp(val) {
-        const input = document.getElementById('workYearsInput');
-        const company = document.getElementById('CompanyName');
-        const title = document.getElementById('JobTitle');
-        const desc = document.getElementById('JobDescription');
-
-        if (val === 0) {
-            input.value = ""; // 🎯 點擊「無」時清空顯示，避免出現 0
-            input.readOnly = true;
-            if(company) company.value = "";
-            if(title) title.value = "";
-            if(desc) desc.value = "";
-        } else {
-            // 點擊「有」時，如果原本是空的，預設給 1
-            if(input.value === "" || parseInt(input.value) <= 0) {
-                input.value = 1;
-            }
-            input.readOnly = false;
-        }
-    }
-
-    // 在表單送出前進行驗證
-    document.querySelector('form').onsubmit = function() {
-        const years = parseInt(document.getElementById('workYearsInput').value);
-
-        // 檢查是否有選 Radio
-        if (isNaN(years)) {
-            Swal.fire('提示', '請選擇是否有工作經歷', 'warning');
-            return false;
-        }
-
-        // 如果年資 > 0，強制要求填寫經歷
-        if (years > 0) {
-            if (!document.getElementById('CompanyName').value.trim() ||
-                !document.getElementById('JobTitle').value.trim()) {
-                Swal.fire('提示', '您已填寫年資，請完整填寫公司名稱與職稱', 'warning');
-                return false;
-            }
-        }
         return true;
-    };
+    });
 </script>
