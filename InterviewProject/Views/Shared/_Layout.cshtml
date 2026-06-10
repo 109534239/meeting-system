@@ -111,6 +111,10 @@
                         @* ✅ 新增：面試排程（Director） *@
                         <a class="nav-btn @(controller == "Interview" ? "active" : "")"
                            asp-controller="Interview" asp-action="Index">面試排程</a>
+
+                        @* ✅ 新增：主管管理 *@
+                        <a class="nav-btn @(controller == "DirectorManager" ? "active" : "")"
+                           asp-controller="DirectorManager" asp-action="Index">權限管理</a>
                     }
 
                     @* ==============================

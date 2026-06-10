@@ -1,0 +1,53 @@
+@{
+    ViewData["Title"] = "新增主管";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/AdminAnnouncement.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>新增主管</h1>
+        <p>Add Manager</p>
+    </div>
+</div>
+
+<div class="announce-form-wrap">
+    @if (TempData["Error"] != null)
+    {
+        <div class="pw-error" style="margin-bottom:16px;">@TempData["Error"]</div>
+    }
+    <form asp-controller="DirectorManager" asp-action="Create" method="post">
+        <div class="form-card">
+
+            <div class="field-item">
+                <label class="field-label">姓名</label>
+                <input class="field-input" type="text" name="name" required />
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">帳號</label>
+                <input class="field-input" type="text" name="account" required />
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">部門</label>
+                <input class="field-input field-readonly" type="text"
+                        value="@ViewBag.MyDepartment" readonly />
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">密碼</label>
+                <input class="field-input" type="password" name="password" required />
+            </div>
+
+            <div class="form-actions">
+                <a asp-controller="DirectorManager" asp-action="Index" class="btn-cancel">取消</a>
+                <button type="submit" class="btn-save">新增主管</button>
+            </div>
+
+        </div>
+    </form>
+</div>

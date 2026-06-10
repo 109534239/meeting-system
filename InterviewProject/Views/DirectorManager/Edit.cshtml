@@ -1,0 +1,54 @@
+@model InterviewProject.Models.Employee
+
+@{
+    ViewData["Title"] = "編輯主管";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/AdminAnnouncement.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>編輯主管</h1>
+        <p>Edit Manager</p>
+    </div>
+</div>
+
+<div class="announce-form-wrap">
+    <form asp-controller="DirectorManager" asp-action="Edit"
+          asp-route-id="@Model.Id" method="post">
+        <div class="form-card">
+
+            <div class="field-item">
+                <label class="field-label">姓名</label>
+                <input class="field-input" type="text" name="name"
+                       value="@Model.Name" required />
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">帳號（不可修改）</label>
+                <input class="field-input field-readonly" type="text"
+                       value="@Model.Account" readonly />
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">部門</label>
+                <input class="field-input field-readonly" type="text"
+                        value="@Model.Department" readonly />
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">新密碼（不修改請留空）</label>
+                <input class="field-input" type="password" name="newPassword" />
+            </div>
+
+            <div class="form-actions">
+                <a asp-controller="DirectorManager" asp-action="Index" class="btn-cancel">取消</a>
+                <button type="submit" class="btn-save">儲存變更</button>
+            </div>
+
+        </div>
+    </form>
+</div>

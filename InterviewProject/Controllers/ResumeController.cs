@@ -21,7 +21,7 @@ namespace InterviewProject.Controllers
     public class ResumeController : Controller
     {
         // 🎯 您的付費版無限速超級金鑰（RWlA 正式付費帳戶通道）
-        private const string GeminiApiKey = "";
+        private const string GeminiApiKey = "AQ.Ab8RN6Lp5oYpvuL5DnmMDsitdyH98ecEJbu6zIJyxUfAYXRWlA";
 
         private readonly IWebHostEnvironment _env;
         private readonly AppDbContext _db;

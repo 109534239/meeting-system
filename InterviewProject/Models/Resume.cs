@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace InterviewProject.Models
 {
-    [Table("Resume")] // 確保對應 PostgreSQL 的 Resume 資料表
+    [Table("Resume")]
     public class Resume
     {
         [Key]
@@ -12,51 +12,50 @@ namespace InterviewProject.Models
 
         [Required]
         public int MembersId { get; set; }
-
-        // ── 基本聯絡資訊 ──
         public string? MaritalStatus { get; set; }
         public string? MilitaryService { get; set; }
         public string? Phone1 { get; set; }
         public string? Phone2 { get; set; }
         public string? Mobile { get; set; }
-
-        // ── 學歷學群 ──
         public string? EduLevel { get; set; }
         public string? SchoolName { get; set; }
         public string? Major { get; set; }
         public string? EduStatus { get; set; }
+
+        // 🎯 貼心修正：將型態由 string? 改為 DateTime?，才能完美接收前端 input type="month" 的日期
         public DateTime? EduDate { get; set; }
 
-        // ── 工作經歷 ──
         public int? WorkExperienceYears { get; set; }
         public string? CompanyName { get; set; }
         public string? JobTitle { get; set; }
         public string? JobDescription { get; set; }
 
-        // ── 專長與自傳 ──
+        // 這些欄位將接收 JavaScript 串接後的長字串
 
-        // 🎯 核心修正：加上 [NotMapped]，這樣 EF Core 就不會去 PostgreSQL 撈這個欄位，徹底解決 42703 錯誤！
+        [NotMapped] // 🎯 關鍵！告訴 EF：這個屬性在資料庫裡「沒有」對應欄位，不要去 SQL 撈它
+        public string? LanguageSkills { get; set; }
+        [NotMapped]
+        public string? DriverLicense { get; set; }
         [NotMapped]
         public string? Specialty { get; set; }
-
         public string? Certificates { get; set; }
+        [NotMapped]
+        public string? ComputerSkills { get; set; }
         public string? Autobiography { get; set; }
         public DateTime ResumeTime { get; set; }
 
-        // ── 串接前台 JavaScript 長字串的非資料庫暫存欄位 ──
-        [NotMapped] public string? LanguageSkills { get; set; }
-        [NotMapped] public string? DriverLicense { get; set; }
-        [NotMapped] public string? ComputerSkills { get; set; }
-
-        // ── 核心外鍵關聯：對齊你提供的 Job 實體 ──
+        // 🎯 核心修正一：將 JobsId 的型態由 string? 改為 int，並聲明它是 Job 的外鍵
         [ForeignKey("Job")]
         public int JobsId { get; set; }
 
-        // 🔗 導覽屬性：讓控制器中的 .Include(r => r.Job) 能夠完美發揮 JOIN 作用
+        // 🎯 核心修正二：建立與 Job 模型實體的虛擬關聯，供前端 @Model.Job?.Title 撈取名稱
         public virtual Job? Job { get; set; }
 
-        // ── AI 評審與狀態欄位 ──
-        public string Status { get; set; } = "待審核";
+        public string? Status { get; set; }
+        // 🎯 核心關鍵：加入對應面試資料表的導覽屬性
+        // 假設你的面試模型叫 Interview，一筆履歷對應一場面試（或是多場，這裡用單數為例）
+        //public virtual Interview? Interview { get; set; }
+
         public int? AiScore { get; set; }
         public string? AiComment { get; set; }
     }

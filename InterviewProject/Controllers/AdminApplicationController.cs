@@ -103,11 +103,13 @@ namespace InterviewProject.Controllers
             var dblangs = await _db.LanguageProficiency.Where(l => l.ResumeId == resume.Id).ToListAsync();
             var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == resume.Id).ToListAsync();
             var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == resume.Id).ToListAsync();
+            var dbSpecs = await _db.Specialties.Where(s => s.ResumeId == resume.Id).OrderBy(s => s.SortOrder).ToListAsync();
 
             // 🎯 將子資料表集合重新壓製回前端 JavaScript 需要解析的 [NotMapped] 長字串中
             resume.LanguageSkills = FormatLanguageString(dblangs);
             resume.DriverLicense = FormatDriverLicenseString(dbLicenses);
             resume.ComputerSkills = FormatComputerSkillString(dbCompSkills);
+            resume.Specialty = FormatSpecialtyString(dbSpecs);
 
             var member = await _db.Members.FindAsync(resume.MembersId);
             if (member != null)
@@ -154,6 +156,13 @@ namespace InterviewProject.Controllers
         {
             if (skills == null || !skills.Any()) return "";
             return string.Join(", ", skills.Select(s => s.ComputerSkill));
+        }
+
+        private string FormatSpecialtyString(List<Specialties> specs)
+        {
+            if (specs == null || !specs.Any()) return "";
+            // 依排序撈出 Specialty，並用分號與空格串接 "; "
+            return string.Join("; ", specs.OrderBy(s => s.SortOrder).Select(s => s.Specialty));
         }
     }
 }

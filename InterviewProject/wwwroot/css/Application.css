@@ -100,39 +100,71 @@
     padding-left: 10px;
 }
 
-/* ── 狀態標籤 ── */
-.status-pass {
-    color: #10b981;
+/* ── 基礎標籤樣式 ── */
+.status-label {
+    display: inline-block;
     font-weight: 700;
-    background: #ecfdf5;
     padding: 4px 12px;
     border-radius: 20px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+/* ── 履歷與錄取審核狀態 ── */
+.status-pass {
+    color: #10b981;
+    background: #ecfdf5;
 }
 
 .status-fail {
     color: #ef4444;
-    font-weight: 700;
     background: #fef2f2;
-    padding: 4px 12px;
-    border-radius: 20px;
-}
-
-.status-waiting {
-    color: #3b82f6;
-    font-weight: 700;
-    background: #eff6ff;
-    padding: 4px 12px;
-    border-radius: 20px;
 }
 
 .status-review {
     color: #64748b;
-    font-weight: 700;
     background: #f1f5f9;
-    padding: 4px 12px;
-    border-radius: 20px;
 }
 
+/* ── 面試狀態 ── */
+/* 等待安排面試 */
+.status-waiting {
+    color: #3b82f6;
+    background: #eff6ff;
+}
+
+/* 已安排面試 */
+.status-scheduled {
+    color: #8b5cf6;
+    background: #f5f3ff;
+}
+
+/* 面試中 */
+.status-processing {
+    color: #f59e0b;
+    background: #fffbeb;
+}
+
+/* 面試結束 */
+.status-finished {
+    color: #06b6d4;
+    background: #ecfeff;
+}
+
+/* ── 錄取結果狀態 ── */
+/* 等待結果中 */
+.status-pending-result {
+    color: #f97316;
+    background: #fff7ed;
+}
+
+/* 置中樣式修正 */
+.text-center {
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
 /* ── VIEW BUTTON ── */
 .btn-view {
     padding: 7px 20px;
