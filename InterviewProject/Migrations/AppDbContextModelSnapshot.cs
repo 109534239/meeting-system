@@ -53,7 +53,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Announcements");
+                    b.ToTable("Announcements", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Attendance", b =>
@@ -83,9 +83,8 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Attendances");
+                    b.ToTable("Attendances", (string)null);
                 });
-
 
             modelBuilder.Entity("InterviewProject.Models.Employee", b =>
                 {
@@ -116,61 +115,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Employees");
-                });
-
-            modelBuilder.Entity("InterviewProject.Models.InterviewSchedule", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<int>("JobId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("MemberId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ResultNote")
-                        .HasColumnType("text");
-
-                    b.Property<int>("ResumeId")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("RoomId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("ScheduledAt")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<int>("ScheduledByEmployeeId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("JobId");
-
-                    b.HasIndex("MemberId");
-
-                    b.HasIndex("ResumeId");
-
-                    b.HasIndex("RoomId");
-
-                    b.HasIndex("ScheduledByEmployeeId");
-
-                    b.ToTable("InterviewSchedules");
+                    b.ToTable("Employees", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Job", b =>
@@ -282,7 +227,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("CreatedBy");
 
-                    b.ToTable("Jobs");
+                    b.ToTable("Jobs", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Member", b =>
@@ -327,7 +272,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Members");
+                    b.ToTable("Members", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Resume", b =>
@@ -427,7 +372,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("Position");
 
-                    b.ToTable("Resume");
+                    b.ToTable("Resume", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Room", b =>
@@ -451,7 +396,47 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Rooms");
+                    b.ToTable("Rooms", (string)null);
+                });
+
+            modelBuilder.Entity("InterviewProject.Models.RoomMember", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("RoomId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("RoomMembers", (string)null);
+                });
+
+            modelBuilder.Entity("InterviewProject.Models.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Account")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Password")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.VerificationCode", b =>
@@ -476,73 +461,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("VerificationCodes");
-                });
-
-            modelBuilder.Entity("InterviewProject.Models.InterviewSchedule", b =>
-                {
-                    b.HasOne("InterviewProject.Models.Job", "Job")
-                        .WithMany()
-                        .HasForeignKey("JobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("InterviewProject.Models.Member", "Member")
-                        .WithMany()
-                        .HasForeignKey("MemberId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("InterviewProject.Models.Resume", "Resume")
-                        .WithMany()
-                        .HasForeignKey("ResumeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("InterviewProject.Models.Room", "Room")
-                        .WithMany()
-                        .HasForeignKey("RoomId");
-
-                    b.HasOne("InterviewProject.Models.Employee", "ScheduledByEmployee")
-                        .WithMany()
-                        .HasForeignKey("ScheduledByEmployeeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Job");
-
-                    b.Navigation("Member");
-
-                    b.Navigation("Resume");
-
-                    b.Navigation("Room");
-
-                    b.Navigation("ScheduledByEmployee");
-                });
-
-            modelBuilder.Entity("InterviewProject.Models.VerificationCode", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Code")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("ExpireTime")
-                        .HasColumnType("timestamp without time zone");
-
-                    b.Property<bool>("IsUsed")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("MemberId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("VerificationCodes");
+                    b.ToTable("VerificationCodes", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Job", b =>
