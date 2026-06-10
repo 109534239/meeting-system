@@ -53,13 +53,12 @@
             }
         </span>
     </div>
-    <form method="post" asp-action="SaveResume">
+
+    @* 🎯 修改重點：加入 id="resumeForm" 確保下方腳本綁定正確表單 *@
+    <form id="resumeForm" method="post" asp-action="SaveResume">
         <input type="hidden" asp-for="Id" />
         <input type="hidden" asp-for="JobsId" />
         <input type="hidden" asp-for="MembersId" />
-
-        @* 🎯 保持隱藏傳遞：這行會自動把 JobId 數字（如 1, 2）安全地送回後端 Controller *@
-        <input type="hidden" asp-for="JobsId" />
 
         <table class="main-table">
             <tr>
@@ -128,7 +127,7 @@
                 <td><a class="required-mark">*</a>學歷</td>
                 <td colspan="5">
                     <div style="margin-bottom: 10px; padding-left: 10px;">
-                        <input type="radio" asp-for="EduLevel" value="博士" />博士
+                        <input type="radio" asp-for="EduLevel" value="博士" required />博士
                         <input type="radio" asp-for="EduLevel" value="碩士" />碩士
                         <input type="radio" asp-for="EduLevel" value="大學" />大學
                         <input type="radio" asp-for="EduLevel" value="專科" />專科
@@ -171,19 +170,16 @@
                 <td colspan="5">
                     <div style="padding: 10px;">
                         <label>
-                            @* 🎯 只有當值明確為 0 才勾選 *@
                             <input type="radio" name="workExpType"
                                    checked="@(Model.WorkExperienceYears == 0)"
                                    onclick="setWorkExp(0)" /> 無工作經歷
                         </label>
 
                         <label style="margin-left: 20px;">
-                            @* 🎯 只有當值 > 0 才勾選 *@
                             <input type="radio" name="workExpType"
                                    checked="@(Model.WorkExperienceYears > 0)"
                                    onclick="setWorkExp(1)" /> 工作總年資：
 
-                            @* 🎯 顯示邏輯：如果是 -1 就顯示空字串，避免畫面出現 -1 *@
                             <input asp-for="WorkExperienceYears" id="workYearsInput"
                                    type="number" class="input-inline" style="width:50px"
                                    value="@(Model.WorkExperienceYears <= 0 ? "" : Model.WorkExperienceYears.ToString())"
@@ -197,7 +193,6 @@
                             <td style="border:1px solid black; width:33%;">工作說明</td>
                         </tr>
                         <tr>
-                            @* 🎯 移除 required，由 JavaScript 根據年資判斷是否必填 *@
                             <td style="border:1px solid black"><input asp-for="CompanyName" id="CompanyName" class="full-input" /></td>
                             <td style="border:1px solid black"><input asp-for="JobTitle" id="JobTitle" class="full-input" /></td>
                             <td style="border:1px solid black"><input asp-for="JobDescription" id="JobDescription" class="full-input" /></td>
@@ -366,7 +361,6 @@
                 </button>
             }
         </div>
-
     </form>
 </div>
 
@@ -562,8 +556,8 @@
         }
     }
 
-    // 🎯 統一改用標準事件接管，移除舊程式碼中會覆蓋邏輯的 .onsubmit
-    document.querySelector('form').addEventListener('submit', function (e) {
+    // 🎯 綁定明確的表單 ID
+    document.getElementById('resumeForm').addEventListener('submit', function (e) {
         const workYearsInput = document.getElementById('workYearsInput');
         const workExpType = document.querySelector('input[name="workExpType"]:checked');
 
@@ -635,7 +629,7 @@
         });
         document.getElementById('finalDriverLicense').value = licenseResults.join(', ');
 
-        // 6. 專長串接 (用分號與空格隔開：如 "技能A; 技能B")
+        // 6. 專長串接
         let specResults = [];
         document.querySelectorAll('.spec-input').forEach(input => {
             if(input.value.trim()) specResults.push(input.value.trim());
@@ -666,10 +660,45 @@
         });
         document.getElementById('finalComputerSkills').value = compResults.join(', ');
 
-        // 9. 學歷狀況狀況反填 (修正原本寫在 return true 後方讀不到的致命傷)
+        // 9. 學歷狀況狀況反填
         let selectedEdu = document.querySelector('#eduStatusArea .edu-chk:checked');
         document.getElementById('finalEduStatus').value = selectedEdu ? selectedEdu.value : "";
 
         return true;
     });
 </script>
+
+@* 🚨 負責攔截後端 TempData 錯誤並顯示的 SweetAlert 腳本 🚨 *@
+@if (TempData["ApiError"] != null)
+{
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'error',
+                    title: '儲存失敗',
+                    html: '@Html.Raw(TempData["ApiError"].ToString()?.Replace("\n", "<br>").Replace("\r", ""))'
+                });
+            } else {
+                alert('@Html.Raw(TempData["ApiError"].ToString()?.Replace("\n", "\\n").Replace("\r", ""))');
+            }
+        });
+    </script>
+}
+
+@if (TempData["ShowSuccessAlert"] != null)
+{
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'success',
+                    title: '成功',
+                    text: '@Html.Raw(TempData["ShowSuccessAlert"].ToString()?.Replace("\n", "\\n").Replace("\r", ""))'
+                });
+            } else {
+                alert('@Html.Raw(TempData["ShowSuccessAlert"].ToString()?.Replace("\n", "\\n").Replace("\r", ""))');
+            }
+        });
+    </script>
+}
