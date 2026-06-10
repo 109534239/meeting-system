@@ -21,7 +21,7 @@ namespace InterviewProject.Controllers
     public class ResumeController : Controller
     {
         // 🚨 替換為你真實的 API Key
-        private const string GeminiApiKey = "AQ.Ab8RN6IsrzxR2gJbgTIlKezUEUY4tU_1z26lWto37bbR0G0EFw";
+        private const string GeminiApiKey = "";
 
         private readonly IWebHostEnvironment _env;
         private readonly AppDbContext _db;
