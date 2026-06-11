@@ -12,15 +12,59 @@
     <link rel="stylesheet" href="~/css/HrJob.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/AdminApplication.css" asp-append-version="true" />
     <style>
-        /* 🎯 新增提示樣式：讓整橫列在滑鼠移上去時有手指游標，提示 HR 可以點擊進去 */
+        /* 🎯 提示樣式：讓整橫列在滑鼠移上去時有手指游標 */
         .hrapp-list .hrapp-row {
             cursor: pointer;
             transition: background-color 0.2s, transform 0.1s;
         }
-        .hrapp-list .hrapp-row:hover {
-            transform: scale(1.002);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+
+            .hrapp-list .hrapp-row:hover {
+                transform: scale(1.002);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+            }
+
+        /* 🎯 下拉選單的通用基礎樣式 */
+        .status-select {
+            padding: 6px 12px;
+            border-radius: 20px; /* 圓角膠囊狀 */
+            font-size: 14px;
+            font-weight: 700 !important;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.15s ease-in-out;
+            text-align: center;
+            border: 1px solid transparent !important;
+            display: inline-block;
+            appearance: auto; /* 確保下拉箭頭正常顯示 */
         }
+
+            /* 🎯 未處理（待審核）：顯眼的實心底色 */
+            .status-select.select-wait {
+                color: #ffffff !important;
+                background-color: #f39c12 !important; /* 實心橘黃色 */
+                border-color: #d68910 !important;
+            }
+
+            /* 🎯 已處理（已通過）：清新淡綠色底 */
+            .status-select.select-pass {
+                color: #15803d !important;
+                background-color: #dcfce7 !important; /* 淺綠色 */
+                border-color: #bbf7d0 !important;
+            }
+
+            /* 🎯 已處理（未通過）：微醺淡紅色底 */
+            .status-select.select-fail {
+                color: #b91c1c !important;
+                background-color: #fee2e2 !important; /* 淺紅色 */
+                border-color: #fecaca !important;
+            }
+
+            /* 讓下拉選單內的選項清單維持乾淨的白底黑字 */
+            .status-select option {
+                color: #333333 !important;
+                background-color: #ffffff !important;
+                font-weight: normal;
+            }
     </style>
 }
 
@@ -38,15 +82,15 @@
 
     @* ── 篩選切換區 (Tabs) ── *@
     <div class="hrapp-filter-tabs">
-        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="全部" 
+        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="全部"
            class="tab-item @(currentFilter == "全部" ? "active" : "")">
             全部履歷
         </a>
-        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="未處理" 
+        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="未處理"
            class="tab-item @(currentFilter == "未處理" ? "active" : "")">
             未處理 (待審核)
         </a>
-        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="已處理" 
+        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="已處理"
            class="tab-item @(currentFilter == "已處理" ? "active" : "")">
             已處理 (已排面試/錄取等)
         </a>
@@ -80,8 +124,9 @@
                 int score = aiScores != null && aiScores.ContainsKey(item.Id) ? aiScores[item.Id] : 0;
                 string comment = aiComments != null && aiComments.ContainsKey(item.Id) ? aiComments[item.Id] : "暫無評語";
 
-                @* 🎯 在整橫列加上 onclick 點擊事件，當點擊時直接導向 Details 完整履歷頁面 *@
-                <div class="hrapp-row hrapp-cols @rowClass" 
+                @* 🎯 在整橫列加上 data-row-id 方便 JavaScript 動態變更整列的 row-unhandled / row-handled 樣式 *@
+                <div class="hrapp-row hrapp-cols @rowClass"
+                     data-row-id="@item.Id"
                      onclick="location.href='@Url.Action("Details", "AdminApplication", new { id = item.Id })'">
 
                     @* 1. 應徵時間 *@
@@ -116,11 +161,15 @@
                         }
                     </div>
 
-                    @* 6. 目前狀態 *@
+                    @* 6. 目前狀態 ── 下拉選單區 *@
                     <div class="text-center">
-                        <span class="status-badge @(isUnhandled ? "badge-wait" : "badge-done")">
-                            @item.Status
-                        </span>
+                        <select class="status-select @(item.Status == "待審核" ? "select-wait" : item.Status == "已通過" ? "select-pass" : "select-fail")"
+                                data-resume-id="@item.Id"
+                                onclick="event.stopPropagation();">
+                            <option value="待審核" selected="@(item.Status == "待審核")">待審核</option>
+                            <option value="已通過" selected="@(item.Status == "已通過")">已通過</option>
+                            <option value="未通過" selected="@(item.Status == "未通過")">未通過</option>
+                        </select>
                     </div>
 
                     @* 7. AI 評分及彈跳視窗 ── *@
@@ -129,8 +178,7 @@
                             <span class="ai-num @(score >= 80 ? "high" : score >= 60 ? "mid" : "low")">
                                 @score<span class="ai-pt">分</span>
                             </span>
-                            @* 🎯 加上 event.stopPropagation() 防止點擊查看評語時同時觸發整列點擊跳轉 *@
-                            <button type="button" class="btn-ai-view open-ai-modal" 
+                            <button type="button" class="btn-ai-view open-ai-modal"
                                     data-name="@item.Phone2"
                                     data-score="@score"
                                     data-comment="@comment"
@@ -184,10 +232,11 @@
 @section Scripts {
     <script>
         document.addEventListener("DOMContentLoaded", function () {
+            // === 1. AI 評語彈跳視窗邏輯 ===
             const modal = document.getElementById("aiCommentModal");
             const closeBtn = document.getElementById("closeAiModal");
             const confirmBtn = document.getElementById("confirmAiModal");
-            
+
             const modalName = document.getElementById("modalCandidateName");
             const modalScore = document.getElementById("modalAiScore");
             const modalComment = document.getElementById("modalAiComment");
@@ -218,6 +267,61 @@
                 if (e.target === modal) {
                     hideModal();
                 }
+            });
+
+            // === 2. 下拉選單非同步更新資料庫狀態 (AJAX) ===
+            document.querySelectorAll(".status-select").forEach(select => {
+                select.addEventListener("change", function () {
+                    const resumeId = this.getAttribute("data-resume-id");
+                    const newStatus = this.value;
+                    const currentSelect = this;
+
+                    // 🎯 找尋外層的整橫列容器元素
+                    const parentRow = document.querySelector(`.hrapp-row[data-row-id="${resumeId}"]`);
+
+                    // 🎯 【關鍵修正】在使用者點擊完的「第一時間」立刻變更下拉選單與整列的外觀 Class
+                    currentSelect.classList.remove("select-wait", "select-pass", "select-fail");
+
+                    if (parentRow) {
+                        parentRow.classList.remove("row-unhandled", "row-handled");
+                    }
+
+                    if (newStatus === "待審核") {
+                        currentSelect.classList.add("select-wait");
+                        if (parentRow) parentRow.classList.add("row-unhandled");
+                    } else {
+                        // 只要改為已通過或未通過，下拉選單換色，並且整列改為 row-handled 底色
+                        if (newStatus === "已通過") currentSelect.classList.add("select-pass");
+                        if (newStatus === "未通過") currentSelect.classList.add("select-fail");
+                        if (parentRow) parentRow.classList.add("row-handled");
+                    }
+
+                    // 發送非同步 POST 請求至後端儲存
+                    fetch('@Url.Action("UpdateStatus", "AdminApplication")', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            id: parseInt(resumeId),
+                            status: newStatus
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log(`[成功] 履歷編號 ${resumeId} 狀態已儲存：${newStatus}`);
+                        } else {
+                            alert("狀態更新失敗：" + data.message);
+                            location.reload();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert("連線發生錯誤，無法成功儲存狀態。");
+                        location.reload();
+                    });
+                });
             });
         });
     </script>

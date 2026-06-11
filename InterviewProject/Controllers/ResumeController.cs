@@ -20,8 +20,8 @@ namespace InterviewProject.Controllers
 {
     public class ResumeController : Controller
     {
-        // 🚨 替換為你真實的 API Key
-        private const string GeminiApiKey = "";
+        // 🚨 替換為你真實的 API Key
+        private const string GeminiApiKey = "";
 
         private readonly IWebHostEnvironment _env;
         private readonly AppDbContext _db;
@@ -42,8 +42,8 @@ namespace InterviewProject.Controllers
             return userId ?? 0;
         }
 
-        // 綁定基礎會員資料到 ViewBag，避免驗證失敗時畫面資料遺失
-        private async Task PopulateViewBagData(int userId)
+        // 綁定基礎會員資料到 ViewBag，避免驗證失敗時畫面資料遺失
+        private async Task PopulateViewBagData(int userId)
         {
             var member = await _db.Members.FindAsync(userId);
             ViewBag.UserName = member?.Name;
@@ -62,15 +62,15 @@ namespace InterviewProject.Controllers
             if (userId == 0) return Json(new List<object>());
 
             var positions = await _db.Resumes
-                .Where(r => r.MembersId == userId)
-                .Include(r => r.Job)
-                .Select(r => new
-                {
-                    id = r.JobsId,
-                    title = r.Job != null ? r.Job.Title : "未知職缺"
-                })
-                .Distinct()
-                .ToListAsync();
+              .Where(r => r.MembersId == userId)
+              .Include(r => r.Job)
+              .Select(r => new
+              {
+                  id = r.JobsId,
+                  title = r.Job != null ? r.Job.Title : "未知職缺"
+              })
+              .Distinct()
+              .ToListAsync();
 
             return Json(positions);
         }
@@ -88,8 +88,8 @@ namespace InterviewProject.Controllers
             if (mode == "apply" && fromJobId.HasValue)
             {
                 var existingResume = await _db.Resumes
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == fromJobId.Value);
+                  .AsNoTracking()
+                  .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == fromJobId.Value);
 
                 if (existingResume != null)
                 {
@@ -112,8 +112,8 @@ namespace InterviewProject.Controllers
             if (model == null)
             {
                 model = await _db.Resumes
-                    .Include(r => r.Job)
-                    .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == jobId);
+                  .Include(r => r.Job)
+                  .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == jobId);
 
                 if (model == null)
                 {
@@ -137,8 +137,8 @@ namespace InterviewProject.Controllers
         [HttpPost]
         public async Task<IActionResult> SaveResume(Resume model)
         {
-            // 排除系統與導航屬性驗證
-            ModelState.Remove("ResumeTime");
+            // 排除系統與導航屬性驗證
+            ModelState.Remove("ResumeTime");
             ModelState.Remove("Job");
             ModelState.Remove("Status");
             ModelState.Remove("AiScore");
@@ -168,8 +168,8 @@ namespace InterviewProject.Controllers
             if (!ModelState.IsValid)
             {
                 var errorDetails = string.Join(" | ", ModelState
-                    .Where(x => x.Value.Errors.Count > 0)
-                    .Select(x => $"[{x.Key}]: {string.Join(", ", x.Value.Errors.Select(e => e.ErrorMessage))}"));
+                  .Where(x => x.Value.Errors.Count > 0)
+                  .Select(x => $"[{x.Key}]: {string.Join(", ", x.Value.Errors.Select(e => e.ErrorMessage))}"));
 
                 TempData["ApiError"] = $"❌ 表單驗證失敗：{errorDetails}";
                 model.Job = await _db.Jobs.FindAsync(model.JobsId);
@@ -177,74 +177,74 @@ namespace InterviewProject.Controllers
                 return View("Resume", model);
             }
 
-            // 🌟 開啟資料庫交易 (Transaction)，確保履歷與 AI 評分同進同退
-            using (var transaction = await _db.Database.BeginTransactionAsync())
+            // 🌟 開啟資料庫交易 (Transaction)，確保履歷與 AI 評分同進同退
+            using (var transaction = await _db.Database.BeginTransactionAsync())
             {
                 try
                 {
                     var existing = await _db.Resumes
-                        .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == model.JobsId);
+                      .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == model.JobsId);
 
                     DateTime now = DateTime.Now;
                     Resume trackedResume;
 
-                    // 1. 將基本履歷資料寫入資料庫 (尚未正式 Commit)
-                    if (existing == null)
+                    // 1. 將基本履歷資料寫入資料庫 (尚未正式 Commit)
+                    if (existing == null)
                     {
                         model.ResumeTime = now;
                         model.Status = "待審核";
                         _db.Resumes.Add(model);
                         await _db.SaveChangesAsync(); // 產生 ID
-                        trackedResume = model;
+                        trackedResume = model;
                     }
                     else
                     {
                         model.ResumeTime = now;
                         model.Status = existing.Status ?? "待審核";
                         model.AiScore = existing.AiScore; // 暫時保留舊分數
-                        model.AiComment = existing.AiComment;
+                        model.AiComment = existing.AiComment;
 
                         _db.Entry(existing).CurrentValues.SetValues(model);
                         await _db.SaveChangesAsync();
                         trackedResume = existing;
                     }
 
-                    // 2. 寫入關聯資料表
-                    await UpdateLanguageProficiency(trackedResume.Id, model.LanguageSkills);
+                    // 2. 寫入關聯資料表
+                    await UpdateLanguageProficiency(trackedResume.Id, model.LanguageSkills);
                     await UpdateDriverLicense(trackedResume.Id, model.DriverLicense);
                     await UpdateComputerSkills(trackedResume.Id, model.ComputerSkills);
                     await UpdateSpecialties(trackedResume.Id, model.Specialty);
 
-                    // 補齊供 AI 審查的完整資訊
-                    trackedResume.Job = await _db.Jobs.FindAsync(trackedResume.JobsId);
+                    // 補齊供 AI 審查的完整資訊
+                    trackedResume.Job = await _db.Jobs.FindAsync(trackedResume.JobsId);
                     trackedResume.LanguageSkills = model.LanguageSkills;
                     trackedResume.DriverLicense = model.DriverLicense;
                     trackedResume.ComputerSkills = model.ComputerSkills;
 
-                    // 🌟 3. 呼叫 AI API 進行審核
-                    var apiResult = await GetGeminiReviewAsync(trackedResume);
+                    // 🌟 3. 呼叫 AI API 進行審核
+                    var apiResult = await GetGeminiReviewAsync(trackedResume);
 
-                    // 🚨 4. 如果 AI 連線失敗或格式錯誤 -> 取消寫入並 Alert
-                    if (!apiResult.IsSuccess)
+                    // 🚨 4. 如果 AI 連線失敗或格式錯誤 -> 取消寫入並 Alert
+                    if (!apiResult.IsSuccess)
                     {
                         await transaction.RollbackAsync(); // 🛑 取消所有資料庫寫入動作！
-                        TempData["ApiError"] = $"無法儲存履歷！\nAI 審查連線異常或失敗，原因：\n{apiResult.Message}";
+                        TempData["ApiError"] = $"無法儲存履歷！\nAI 審查連線異常或失敗，原因：\n{apiResult.Message}";
 
                         model.Job = trackedResume.Job;
                         await PopulateViewBagData(userId);
                         return View("Resume", model); // 返回畫面讓使用者重試
-                    }
+                    }
 
-                    // 🌟 5. 如果 AI 成功，將分數寫入欄位
-                    trackedResume.AiScore = apiResult.Score;
+                    // 🌟 5. 如果 AI 成功，將分數寫入欄位
+                    trackedResume.AiScore = apiResult.Score;
                     trackedResume.AiComment = apiResult.Comment;
 
                     _db.Entry(trackedResume).Property(r => r.AiScore).IsModified = true;
                     _db.Entry(trackedResume).Property(r => r.AiComment).IsModified = true;
                     await _db.SaveChangesAsync();
 
-                    // 🌟 6. 一切順利，正式提交進資料庫
-                    await transaction.CommitAsync();
+                    // 🌟 6. 一切順利，正式提交進資料庫
+                    await transaction.CommitAsync();
 
                     TempData["ShowSuccessAlert"] = "履歷已成功送出，AI 審核完成！";
                     return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
@@ -260,8 +260,8 @@ namespace InterviewProject.Controllers
             }
         }
 
-        // 獨立出只負責「拿 AI 結果」的方法，不再處理資料庫寫入
-        private async Task<(bool IsSuccess, string Message, int Score, string Comment)> GetGeminiReviewAsync(Resume resume)
+        // 獨立出只負責「拿 AI 結果」的方法，不再處理資料庫寫入
+        private async Task<(bool IsSuccess, string Message, int Score, string Comment)> GetGeminiReviewAsync(Resume resume)
         {
             try
             {
@@ -315,14 +315,14 @@ namespace InterviewProject.Controllers
 
                 using var doc = JsonDocument.Parse(respBody);
                 var rawText = doc.RootElement
-                    .GetProperty("candidates")[0]
-                    .GetProperty("content")
-                    .GetProperty("parts")[0]
-                    .GetProperty("text")
-                    .GetString() ?? "";
+                  .GetProperty("candidates")[0]
+                  .GetProperty("content")
+                  .GetProperty("parts")[0]
+                  .GetProperty("text")
+                  .GetString() ?? "";
 
-                // 🚨 嚴格擷取分數與評語
-                var scoreMatch = Regex.Match(rawText, @"\[SCORE\]\s*(\d+)", RegexOptions.IgnoreCase);
+                // 🚨 嚴格擷取分數與評語
+                var scoreMatch = Regex.Match(rawText, @"\[SCORE\]\s*(\d+)", RegexOptions.IgnoreCase);
                 var commentMatch = Regex.Match(rawText, @"\[COMMENT\]\s*([\s\S]*)", RegexOptions.IgnoreCase);
 
                 if (!scoreMatch.Success || !commentMatch.Success)
