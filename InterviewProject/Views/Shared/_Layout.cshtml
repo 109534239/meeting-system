@@ -9,7 +9,7 @@
     var isLoggedIn = memberId.HasValue;
     var isHr = memberRole == "hr";
     var isManager = memberRole == "manager";
-    var isDirector = memberRole == "director";  // 💡 新增：部門最高管理員
+    var isDirector = memberRole == "director";  // 💡 新增：部門最高主管
     var isApplicant = isLoggedIn && !isHr && !isManager && !isDirector;
 
     var roleLabel = isDirector ? "最高主管"
@@ -98,7 +98,7 @@
                     }
 
                     @* ==============================
-                       部門最高管理員：招募數據 / 應徵管理 / 面試排程（含錄取決定權）
+                       部門最高主管：招募數據 / 應徵管理 / 面試排程（含錄取決定權）
                        ============================== *@
                     else if (isDirector)
                     {

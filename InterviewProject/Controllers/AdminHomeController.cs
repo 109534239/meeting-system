@@ -35,7 +35,7 @@ namespace InterviewProject.Controllers
             }
 
             ViewData["EmployeeName"] = memberName;
-            ViewData["RoleLabel"] = role == "director" ? "部門最高管理員" : role == "manager" ? "部門主管" : "人資系統管理員";
+            ViewData["RoleLabel"] = role == "director" ? "部門最高主管" : role == "manager" ? "部門主管" : "人資系統管理員";
 
             // 🎯 核心分流邏輯
             if (role == "hr")

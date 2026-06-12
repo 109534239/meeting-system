@@ -8,6 +8,7 @@ namespace InterviewProject.Models
         public string Name { get; set; } = "";         // 顯示名稱
         public string Role { get; set; } = "hr";       // hr / manager
         public string Department { get; set; } = "";   // 員工所屬部門
+        public string JobTitle { get; set; } = "";     // 職稱
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }

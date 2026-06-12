@@ -30,7 +30,7 @@
             </div>
             <div class="sidebar-name">@Model.Name</div>
             <div class="sidebar-role">
-                @(Model.Role == "director" ? "部門最高管理員"
+                @(Model.Role == "director" ? "部門最高主管"
                     : Model.Role == "manager"  ? "部門主管"
                     : "人資")
             </div>
@@ -63,10 +63,18 @@
                         <label class="field-label">帳號</label>
                         <input type="text" class="field-input field-readonly" value="@Model.Account" readonly />
                     </div>
-                    <div class="field-item field-item--full">
-                        <label class="field-label">職稱／角色</label>
-                        <input type="text" class="field-input field-readonly" 
-                               value="@(Model.Role == "director" ? "部門最高管理員" : Model.Role == "manager" ? "部門主管" : "人資")" readonly />
+                    <div class="field-item">
+                        <label class="field-label">部門</label>
+                        <input type="text" class="field-input field-readonly" value="@Model.Department" readonly />
+                    </div>
+                    <div class="field-item">
+                        <label class="field-label">職稱</label>
+                        <input type="text" class="field-input field-readonly" value="@Model.JobTitle" readonly />
+                    </div>
+                    <div class="field-item">
+                        <label class="field-label">系統權限</label>
+                        <input type="text" class="field-input field-readonly"
+                            value="@(Model.Role == "director" ? "部門最高主管" : Model.Role == "manager" ? "部門主管" : "人資")" readonly />
                     </div>
                 </div>
             </div>
