@@ -364,7 +364,6 @@
     </form>
 </div>
 
-<!-- 暫時停用 JS 
 <script>
     // --- 頁面載入後，根據後端資料反勾選 Checkbox ---
     window.onload = function() {
@@ -667,12 +666,11 @@
 
         return true;
     });
-</script>-->
+</script>
 
 @* 🚨 負責攔截後端 TempData 錯誤並顯示的 SweetAlert 腳本 🚨 *@
 @if (TempData["ApiError"] != null)
 {
-    <!-- 暫時停用 JS
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             if (typeof Swal !== 'undefined') {
@@ -685,12 +683,12 @@
                 alert('@Html.Raw(TempData["ApiError"].ToString()?.Replace("\n", "\\n").Replace("\r", ""))');
             }
         });
-    </script>-->
+    </script>
 }
 
 @if (TempData["ShowSuccessAlert"] != null)
 {
-    <!-- 暫時停用 JS
+  
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             if (typeof Swal !== 'undefined') {
@@ -703,5 +701,5 @@
                 alert('@Html.Raw(TempData["ShowSuccessAlert"].ToString()?.Replace("\n", "\\n").Replace("\r", ""))');
             }
         });
-    </script>-->
+    </script>
 }
