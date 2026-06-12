@@ -13,7 +13,6 @@
         public DbSet<Room> Rooms { get; set; }
         public DbSet<Member> Members { get; set; }
         public DbSet<Job> Jobs { get; set; }
-        public DbSet<Resume> Resume { get; set; }
         public DbSet<LanguageProficiency> LanguageProficiency { get; set; }
         public DbSet<DriverLicense> DriverLicense { get; set; }
         public DbSet<ComputerSkills> ComputerSkills { get; set; }
