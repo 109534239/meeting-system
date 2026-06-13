@@ -1,4 +1,5 @@
-﻿using System;
+﻿using DocumentFormat.OpenXml.Spreadsheet;
+using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -11,7 +12,10 @@ namespace InterviewProject.Models
         public int Id { get; set; }
 
         [Required]
-        public int MembersId { get; set; }
+        public int MembersId { get; set; } // 這是實際在資料庫的欄位
+
+        [ForeignKey("MembersId")]
+        public virtual Member? Member { get; set; } // 這是導覽屬性
         public string? MaritalStatus { get; set; }
         public string? MilitaryService { get; set; }
         public string? Phone1 { get; set; }

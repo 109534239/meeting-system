@@ -1,177 +1,121 @@
-﻿@model List<InterviewProject.Models.InterviewSchedule>
+﻿@model IEnumerable<InterviewProject.Models.InterviewSchedule>
+
 @{
     ViewData["Title"] = "面試排程管理";
 }
 
-@section Styles {
-    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
-}
-
-<div class="page-header">
-    <div class="page-header-inner">
-        <h1>面試排程管理</h1>
-        <p>Interview Schedule Management</p>
-    </div>
-</div>
-
-<div class="interview-container">
+<div class="container mt-4">
+    <h2>面試排程管理</h2>
 
     @if (TempData["Success"] != null)
     {
-        <div class="alert-success">✅ @TempData["Success"]</div>
+        <div class="alert alert-success">@TempData["Success"]</div>
     }
     @if (TempData["Error"] != null)
     {
-        <div class="alert-error">⚠️ @TempData["Error"]</div>
+        <div class="alert alert-danger">@TempData["Error"]</div>
     }
 
-    <div class="toolbar">
-        <a asp-controller="Interview" asp-action="Create" class="btn-primary-action">
-            ＋ 新增面試排程
-        </a>
-
-        <!-- 狀態篩選 -->
-        <div class="filter-tabs" id="filterTabs">
-            <button class="filter-tab active" data-status="all">全部</button>
-            <button class="filter-tab" data-status="待確認">待確認</button>
-            <button class="filter-tab" data-status="已確認">已確認</button>
-            <button class="filter-tab" data-status="已完成">已完成</button>
-            <button class="filter-tab" data-status="已取消">已取消</button>
-        </div>
+    <div class="mb-3">
+        <a asp-action="Create" class="btn btn-primary">新增面試排程</a>
     </div>
 
-    @if (!Model.Any())
-    {
-        <div class="empty-state">
-            <div class="empty-icon">📅</div>
-            <p>尚無任何面試排程</p>
-            <a asp-controller="Interview" asp-action="Create" class="btn-primary-action">立即新增</a>
-        </div>
-    }
-    else
-    {
-        <div class="schedule-table-wrap">
-            <table class="schedule-table" id="scheduleTable">
-                <thead>
-                    <tr>
-                        <th>求職者</th>
-                        <th>應徵職缺</th>
-                        <th>面試時間</th>
-                        <th>會議室</th>
-                        <th>狀態</th>
-                        <th>排程人</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var s in Model)
-                    {
-                        var statusClass = s.Status switch
+    <table class="table table-bordered table-striped">
+        <thead>
+            <tr>
+                <th>應徵者姓名</th>
+                <th>應徵職缺</th>
+                <th>面試房間</th>
+                <th>面試時間</th>
+                <th>目前狀態</th>
+                <th>面試分數</th>
+                <th>評語備註</th>
+                <th>操作動作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Model)
+            {
+                <tr>
+                    <td>@(item.Resume?.Member?.Name ?? "未知")</td>
+                    <td>@(item.Resume?.Job?.Title ?? "未知")</td>
+                    <td>@(item.Room?.RoomName ?? "未指派房間")</td>
+                    <td>
+                        @if (item.Room?.StartAt != null && item.Room?.EndAt != null)
                         {
-                            "已確認" => "status-confirmed",
-                            "已完成" => "status-done",
-                            "已取消" => "status-cancelled",
-                            _ => "status-pending"
-                        };
-                        <tr data-status="@s.Status">
-                            <td class="td-name">@(s.Member?.Name ?? "—")</td>
-                            <td>@(s.Job?.Title ?? "—")</td>
-                            <td class="td-time">
-                                <span class="date">@s.ScheduledAt.ToString("yyyy/MM/dd")</span>
-                                <span class="time">@s.ScheduledAt.ToString("HH:mm")</span>
-                            </td>
-                            <td>
-                                @if (s.Room != null)
-                                {
-                                    <a asp-controller="Room" asp-action="Join"
-                                       asp-route-code="@s.Room.JitsiRoomName"
-                                       class="room-link" target="_blank">
-                                        🎥 @s.Room.RoomName
-                                    </a>
-                                    <br />
-                                    <span class="room-code">代碼：@s.Room.JitsiRoomName</span>
-                                }
-                                else
-                                {
-                                    <span class="text-muted">—</span>
-                                }
-                            </td>
-                            <td><span class="status-badge @statusClass">@s.Status</span></td>
-                            <td>@(s.ScheduledByEmployee?.Name ?? "—")</td>
-                            <td class="td-actions">
-                                <a asp-controller="Interview" asp-action="Edit"
-                                   asp-route-id="@s.Id" class="btn-edit">編輯</a>
+                            <span>@item.Room.StartAt.Value.ToString("yyyy-MM-dd HH:mm") ~ @item.Room.EndAt.Value.ToString("HH:mm")</span>
+                        }
+                        else
+                        {
+                            <span class="text-muted">未設定時間</span>
+                        }
+                    </td>
+                    <td>
+                        <span class="badge bg-info text-dark">@(item.Resume?.Status ?? "無狀態")</span>
+                    </td>
+                    <td>
+                        @(item.ResultScore.HasValue? item.ResultScore.Value + " 分" : "尚未評分")
+                    </td>
+                    <td>@(string.IsNullOrEmpty(item.ResultNote) ? "無" : item.ResultNote)</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a asp-action="Edit" asp-route-id="@item.Id" class="btn btn-warning">編輯</a>
 
-                                @if (s.Status != "已取消" && s.Status != "已完成")
-                                {
-                                    <form asp-controller="Interview" asp-action="Cancel"
-                                          asp-route-id="@s.Id" method="post" style="display:inline"
-                                          onsubmit="return confirm('確定取消此面試排程？')">
-                                        <button type="submit" class="btn-cancel">取消</button>
+                            @if (item.Resume?.Status == "已安排面試" || item.Resume?.Status == "面試中")
+                            {
+                                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#completeModal-@item.Id">
+                                    面試完成
+                                </button>
+
+                                <form asp-action="Cancel" asp-route-id="@item.Id" method="post" style="display:inline;" onsubmit="return confirm('確定要取消此面試嗎？求職者狀態將改為不通過');">
+                                    <button type="submit" class="btn btn-danger">取消</button>
+                                </form>
+                            }
+                        </div>
+
+                        <div class="modal fade" id="completeModal-@item.Id" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <form asp-action="Complete" method="post">
+
+                                        <input type="hidden" name="id" value="@item.Id" />
+
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">填寫面試結果 - @(item.Resume?.Member?.Name ?? "未知")</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+
+                                        <div class="modal-body">
+                                            <div class="mb-3">
+                                                <label class="form-label">面試分數 (0-100) <span class="text-danger">*</span></label>
+                                                <input type="number" name="resultScore" class="form-control" min="0" max="100" required placeholder="請打分數" />
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">面試評語</label>
+                                                <textarea name="resultNote" class="form-control" rows="3" placeholder="請輸入面試評語..."></textarea>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">變更履歷狀態至</label>
+                                                <select name="nextStatus" class="form-select">
+                                                    <option value="面試結束">面試結束</option>
+                                                    <option value="等待結果中">等待結果中</option>
+                                                    <option value="錄取">錄取</option>
+                                                    <option value="不錄取">不錄取</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+                                            <button type="submit" class="btn btn-success">提交結果</button>
+                                        </div>
                                     </form>
-                                }
-
-                                @if (s.Status == "已確認")
-                                {
-                                    <button class="btn-complete"
-                                            onclick="openCompleteModal(@s.Id)">
-                                        完成
-                                    </button>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    }
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
 </div>
-
-<!-- 完成面試 Modal -->
-<div class="modal-overlay" id="completeModal" style="display:none">
-    <div class="modal-box">
-        <h3>📋 記錄面試結果</h3>
-        <form asp-controller="Interview" asp-action="Complete" method="post">
-            <input type="hidden" id="completeScheduleId" name="id" />
-            <div class="form-group">
-                <label>結果備註（選填）</label>
-                <textarea name="resultNote" rows="4" placeholder="例如：表現良好，建議進行下一輪..."></textarea>
-            </div>
-            <div class="modal-actions">
-                <button type="submit" class="btn-primary-action">確認完成</button>
-                <button type="button" class="btn-secondary" onclick="closeModal()">取消</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-@section Scripts {
-    <script>
-        // 篩選標籤
-        document.querySelectorAll('.filter-tab').forEach(tab => {
-            tab.addEventListener('click', function () {
-                document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-                this.classList.add('active');
-
-                const status = this.dataset.status;
-                document.querySelectorAll('#scheduleTable tbody tr').forEach(row => {
-                    if (status === 'all' || row.dataset.status === status) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-            });
-        });
-
-        function openCompleteModal(id) {
-            document.getElementById('completeScheduleId').value = id;
-            document.getElementById('completeModal').style.display = 'flex';
-        }
-
-        function closeModal() {
-            document.getElementById('completeModal').style.display = 'none';
-        }
-    </script>
-}

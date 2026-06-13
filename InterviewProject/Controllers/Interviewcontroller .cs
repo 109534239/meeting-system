@@ -2,6 +2,10 @@
 using InterviewProject.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace InterviewProject.Controllers
 {
@@ -31,17 +35,24 @@ namespace InterviewProject.Controllers
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
             int empId = GetEmployeeId();
 
+            // 🎯 修正關鍵：將舊有的 .Include(s => s.Member) 改為經由 Resume 的點出關聯
             var query = _db.InterviewSchedules
-                .Include(s => s.Member)
-                .Include(s => s.Job)
                 .Include(s => s.Room)
                 .Include(s => s.ScheduledByEmployee)
+                .Include(s => s.Resume)
+                    .ThenInclude(r => r.Job)
+                .Include(s => s.Resume)
+                    .ThenInclude(r => r.Member) // 🎯 補上這行，確保前端 item.Resume.Member 有資料！
                 .AsQueryable();
 
             if (role == "manager")
                 query = query.Where(s => s.ScheduledByEmployeeId == empId);
 
-            var schedules = await query.OrderByDescending(s => s.ScheduledAt).ToListAsync();
+            // 🎯 修正關鍵：排序由舊欄位 ScheduledAt 改用房間的 StartAt
+            var schedules = await query
+                .OrderByDescending(s => s.Room != null ? s.Room.StartAt : s.CreatedAt)
+                .ToListAsync();
+
             return View("~/Views/Interview/Index.cshtml", schedules);
         }
 
@@ -71,10 +82,9 @@ namespace InterviewProject.Controllers
                 }
             }
 
-            // 可排面試的履歷
             var pendingResumes = await _db.Resumes
                 .Include(r => r.Job)
-                .Where(r => r.Status == "待審核" || r.Status == "書審通過" || r.Status == "通過")
+                .Where(r => r.Status == "待審核" || r.Status == "通過" || r.Status == "已安排面試")
                 .OrderByDescending(r => r.ResumeTime)
                 .ToListAsync();
 
@@ -89,13 +99,9 @@ namespace InterviewProject.Controllers
             return View("~/Views/Interview/Create.cshtml");
         }
 
-        // ── HR/主管：新增排程 POST（支援多位求職者）──
+        // ── HR/主管：新增排程 POST ──
         [HttpPost]
-        public async Task<IActionResult> Create(
-            List<int> resumeIds,        // 複選：多位求職者的履歷 ID
-            DateTime scheduledAt,
-            int? roomId,
-            string? notes)
+        public async Task<IActionResult> Create(List<int> resumeIds, int? roomId)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
@@ -105,7 +111,6 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Create");
             }
 
-            // 若未選擇房間則統一建立一個新房間（所有求職者共用同一房間）
             int targetRoomId;
             if (roomId == null)
             {
@@ -114,6 +119,8 @@ namespace InterviewProject.Controllers
                     RoomName = $"面試-{DateTime.Now:yyyyMMdd-HHmm}",
                     CreatedTime = DateTime.Now,
                     JitsiRoomName = Guid.NewGuid().ToString("N")[..10],
+                    StartAt = DateTime.Now.AddDays(1),
+                    EndAt = DateTime.Now.AddDays(1).AddHours(1),
                     IsActive = true
                 };
                 _db.Rooms.Add(newRoom);
@@ -133,27 +140,24 @@ namespace InterviewProject.Controllers
                 var resume = await _db.Resumes.FindAsync(rid);
                 if (resume == null) continue;
 
+                // 🎯 修正關鍵：建立排程物件時，移除已不存在的欄位，僅傳入核心資料
                 var schedule = new InterviewSchedule
                 {
-                    MemberId = resume.MembersId,
                     ResumeId = resume.Id,
-                    JobId = resume.JobsId,
                     ScheduledByEmployeeId = empId,
-                    ScheduledAt = scheduledAt,
-                    Notes = notes,
                     RoomId = targetRoomId,
-                    Status = "待確認",
                     CreatedAt = DateTime.Now
                 };
 
-                resume.Status = "已排面試";
+                // 將狀態更動直接寫在 Resume 表的 Status 上
+                resume.Status = "已安排面試";
+
                 _db.InterviewSchedules.Add(schedule);
                 addedCount++;
             }
 
             await _db.SaveChangesAsync();
-
-            TempData["Success"] = $"已成功排程 {addedCount} 位求職者的面試！";
+            TempData["Success"] = $"已成功排程 {addedCount} 位求職者！";
             return RedirectToAction("Index");
         }
 
@@ -164,9 +168,11 @@ namespace InterviewProject.Controllers
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
             var schedule = await _db.InterviewSchedules
-                .Include(s => s.Member)
-                .Include(s => s.Job)
                 .Include(s => s.Room)
+                .Include(s => s.Resume)
+                    .ThenInclude(r => r.Member)
+                .Include(s => s.Resume)
+                    .ThenInclude(r => r.Job)
                 .FirstOrDefaultAsync(s => s.Id == id);
 
             if (schedule == null) return NotFound();
@@ -177,18 +183,25 @@ namespace InterviewProject.Controllers
 
         // ── HR/主管：編輯排程 POST ──
         [HttpPost]
-        public async Task<IActionResult> Edit(InterviewSchedule model)
+        public async Task<IActionResult> Edit(int id, int? roomId, string? resultNote, int? resultScore, string? resumeStatus)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
-            var existing = await _db.InterviewSchedules.FindAsync(model.Id);
+            var existing = await _db.InterviewSchedules
+                .Include(s => s.Resume)
+                .FirstOrDefaultAsync(s => s.Id == id);
+
             if (existing == null) return NotFound();
 
-            existing.ScheduledAt = model.ScheduledAt;
-            existing.Notes = model.Notes;
-            existing.Status = model.Status;
-            existing.ResultNote = model.ResultNote;
-            if (model.RoomId.HasValue) existing.RoomId = model.RoomId;
+            existing.ResultNote = resultNote;
+            existing.ResultScore = resultScore;
+
+            if (roomId.HasValue) existing.RoomId = roomId;
+
+            if (existing.Resume != null && !string.IsNullOrEmpty(resumeStatus))
+            {
+                existing.Resume.Status = resumeStatus;
+            }
 
             await _db.SaveChangesAsync();
             TempData["Success"] = "排程已更新";
@@ -200,25 +213,45 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> Cancel(int id)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
-            var s = await _db.InterviewSchedules.FindAsync(id);
+
+            var s = await _db.InterviewSchedules
+                .Include(x => x.Resume)
+                .FirstOrDefaultAsync(x => x.Id == id);
+
             if (s == null) return NotFound();
-            s.Status = "已取消";
+
+            if (s.Resume != null)
+            {
+                s.Resume.Status = "不通過";
+            }
+
             await _db.SaveChangesAsync();
-            TempData["Success"] = "面試排程已取消";
+            TempData["Success"] = "面試排程已取消，求職者狀態更新為不通過";
             return RedirectToAction("Index");
         }
 
         // ── HR/主管：標記完成 ──
         [HttpPost]
-        public async Task<IActionResult> Complete(int id, string? resultNote)
+        public async Task<IActionResult> Complete(int id, string? resultNote, int resultScore, string nextStatus = "面試結束")
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
-            var s = await _db.InterviewSchedules.FindAsync(id);
+
+            var s = await _db.InterviewSchedules
+                .Include(x => x.Resume)
+                .FirstOrDefaultAsync(x => x.Id == id);
+
             if (s == null) return NotFound();
-            s.Status = "已完成";
+
             s.ResultNote = resultNote;
+            s.ResultScore = resultScore;
+
+            if (s.Resume != null)
+            {
+                s.Resume.Status = nextStatus;
+            }
+
             await _db.SaveChangesAsync();
-            TempData["Success"] = "面試已標記為完成";
+            TempData["Success"] = "面試已標記為完成，分數與評語已儲存";
             return RedirectToAction("Index");
         }
 
@@ -228,12 +261,16 @@ namespace InterviewProject.Controllers
             int memberId = GetMemberId();
             if (memberId == 0) return RedirectToAction("Index", "Login");
 
+            // 🎯 修正關鍵：全面補齊關聯鏈，特別是 Resume -> Member 絕對不能漏
             var schedules = await _db.InterviewSchedules
-                .Include(s => s.Job)
                 .Include(s => s.Room)
                 .Include(s => s.ScheduledByEmployee)
-                .Where(s => s.MemberId == memberId)
-                .OrderByDescending(s => s.ScheduledAt)
+                .Include(s => s.Resume)
+                    .ThenInclude(r => r.Job)
+                .Include(s => s.Resume)
+                    .ThenInclude(r => r.Member) // 🎯 核心補強：把 Resume 表裡的 Member 物件一併載入！
+                .Where(s => s.Resume != null && s.Resume.MembersId == memberId)
+                .OrderByDescending(s => s.Room != null ? s.Room.StartAt : DateTime.MinValue)
                 .ToListAsync();
 
             return View("~/Views/Interview/MyInterviews.cshtml", schedules);

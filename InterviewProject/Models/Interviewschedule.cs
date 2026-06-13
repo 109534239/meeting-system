@@ -9,44 +9,26 @@ namespace InterviewProject.Models
         [Key]
         public int Id { get; set; }
 
-        // 關聯求職者（Members 表）
-        [Required]
-        public int MemberId { get; set; }
-        public virtual Member? Member { get; set; }
-
-        // 關聯履歷（Resume 表）
-        [Required]
+        // 需求 1：已刪除 MemberId 與 JobId，完全由 ResumeId 關聯取得
         public int ResumeId { get; set; }
+        public int ScheduledByEmployeeId { get; set; }
+
+        // 需求 2 & 4：已刪除 Notes 與 ScheduledAt
+        public int? RoomId { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public string? ResultNote { get; set; }
+
+        // 需求 6：新增分數欄位
+        public int? ResultScore { get; set; }
+
+        // 導覽屬性 (Navigation Properties)
+        [ForeignKey("ResumeId")]
         public virtual Resume? Resume { get; set; }
 
-        // 關聯職缺（Jobs 表）
-        [Required]
-        public int JobId { get; set; }
-        public virtual Job? Job { get; set; }
-
-        // 安排的 HR 或主管（Employees 表）
-        [Required]
-        public int ScheduledByEmployeeId { get; set; }
-        public virtual Employee? ScheduledByEmployee { get; set; }
-
-        // 面試時間
-        [Required]
-        public DateTime ScheduledAt { get; set; }
-
-        // 備註
-        public string? Notes { get; set; }
-
-        // 面試會議室（關聯 Rooms 表）
-        public int? RoomId { get; set; }
+        [ForeignKey("RoomId")]
         public virtual Room? Room { get; set; }
 
-        // 面試狀態：待確認 / 已確認 / 已完成 / 已取消
-        public string Status { get; set; } = "待確認";
-
-        // 建立時間
-        public DateTime CreatedAt { get; set; } = DateTime.Now;
-
-        // 結果備註（面試後填寫）
-        public string? ResultNote { get; set; }
+        [ForeignKey("ScheduledByEmployeeId")]
+        public virtual Member? ScheduledByEmployee { get; set; }
     }
 }

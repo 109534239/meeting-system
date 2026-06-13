@@ -5,9 +5,11 @@
     var memberRole = Context.Session.GetString("MemberRole")?.ToLower() ?? "";
     var isStaff = memberRole == "hr" || memberRole == "manager" || memberRole == "director";
     var displayName = isStaff ? "面試官：" + memberName : "求職者：" + memberName;
-    // Jitsi External API 方式（不用 iframe src，用 JS 建立）
-    // 這樣不受 meet.jit.si 5分鐘限制，因為限制只針對 iframe embed
-    var jitsiRoom   = "InterviewRoom-" + room.JitsiRoomName;
+    // Jitsi External API (JavaScript SDK)
+    // 使用 meet.jit.si - External API 不受 5 分鐘限制
+    // 自架版：把 jitsiDomain 改成 "你的IP:18080"（需要 HTTPS）
+    var jitsiDomain = "meet.jit.si";
+    var jitsiRoom = "InterviewRoom-" + room.JitsiRoomName;
     var encodedName = Uri.EscapeDataString(displayName);
 }
 <!DOCTYPE html>
@@ -41,7 +43,8 @@
             align-items: center;
             padding: 0 12px;
             gap: 8px;
-            flex-shrink: 0
+            flex-shrink: 0;
+            z-index: 10
         }
 
         .room-name {
@@ -57,8 +60,7 @@
             color: #79c0ff;
             padding: 2px 8px;
             border-radius: 10px;
-            cursor: pointer;
-            user-select: all
+            cursor: pointer
         }
 
         .topbar-mid {
@@ -88,7 +90,8 @@
             gap: 4px;
             white-space: nowrap;
             transition: all .15s;
-            font-family: inherit
+            font-family: inherit;
+            background: none
         }
 
         .btn-gray {
@@ -167,34 +170,13 @@
             background: #000
         }
 
-        .video-wrap iframe {
-            width: 100%;
-            height: 100%;
-            border: none
-        }
-
-        /* 「會議未開始」提示彈跳視窗 */
-        .not-started-modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,.75);
-            z-index: 9997;
-            display: flex;
-            align-items: center;
-            justify-content: center
-        }
-        .not-started-box {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 16px;
-            padding: 36px 40px;
-            text-align: center;
-            max-width: 420px;
-            width: 90%
-        }
-        .not-started-box .ns-icon { font-size: 48px; margin-bottom: 14px }
-        .not-started-box h3 { font-size: 18px; font-weight: 700; margin-bottom: 10px }
-        .not-started-box p { font-size: 13px; color: #8b949e; line-height: 1.6; margin-bottom: 22px }
+            .video-wrap iframe {
+                width: 100%;
+                height: 100%;
+                border: none;
+                position: absolute;
+                inset: 0
+            }
 
         .ai-panel {
             width: 240px;
@@ -372,50 +354,56 @@
             .si-fill.h {
                 background: #f85149
             }
-
-        .overlay {
+        /* 彈跳視窗 */
+        .modal-bg {
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,.82);
+            background: rgba(0,0,0,.78);
             z-index: 9998;
             display: none;
             align-items: center;
             justify-content: center
         }
 
-            .overlay.show {
+            .modal-bg.show {
                 display: flex
             }
 
-        .ol-box {
+        .modal-box {
             background: #161b22;
             border: 1px solid #30363d;
-            border-radius: 14px;
-            padding: 28px;
+            border-radius: 16px;
+            padding: 32px 36px;
+            text-align: center;
             max-width: 440px;
-            width: 90%;
-            text-align: center
+            width: 90%
         }
 
-            .ol-box h3 {
-                font-size: 17px;
+            .modal-box .m-icon {
+                font-size: 46px;
+                margin-bottom: 12px
+            }
+
+            .modal-box h3 {
+                font-size: 18px;
                 font-weight: 700;
                 margin-bottom: 10px
             }
 
-            .ol-box p {
-                font-size: 12px;
+            .modal-box p {
+                font-size: 13px;
                 color: #8b949e;
-                margin-bottom: 18px;
-                line-height: 1.6
+                line-height: 1.6;
+                margin-bottom: 20px
             }
 
-        .ol-acts {
+        .m-acts {
             display: flex;
             gap: 10px;
-            justify-content: center
+            justify-content: center;
+            flex-wrap: wrap
         }
-
+        /* 主管下載畫面 */
         .ended-screen {
             position: fixed;
             inset: 0;
@@ -442,12 +430,12 @@
             flex-direction: column;
             gap: 7px;
             margin-top: 6px;
-            min-width: 280px
+            min-width: 300px
         }
 
         .dl-item {
             font-size: 12px;
-            padding: 6px 12px;
+            padding: 8px 14px;
             border-radius: 8px;
             display: flex;
             align-items: center;
@@ -476,7 +464,7 @@
         <div class="room-name">🎥 @Html.Raw(room.RoomName)</div>
         <span class="room-code" onclick="copyCode()" title="點擊複製">@room.JitsiRoomName</span>
         <div class="topbar-mid">
-            <span class="btn btn-gray" id="recStatus">
+            <span class="btn btn-gray">
                 <span class="rec-dot" id="recDot"></span>
                 <span id="recTxt">等待開始</span>
             </span>
@@ -495,8 +483,7 @@
     <div class="banner wait" id="banner">⏳ 等待主管開始會議...</div>
 
     <div class="main">
-        <div class="video-wrap">
-            <!-- Jitsi External API 容器，由 JS 動態初始化 -->
+        <div class="video-wrap" id="videoWrap">
             <div id="jitsi-container" style="width:100%;height:100%"></div>
         </div>
 
@@ -526,65 +513,68 @@
         </div>
     </div>
 
-    <div class="overlay" id="endOverlay">
-        <div class="ol-box">
-            <h3>⏹ 確認結束會議</h3>
-            <p>結束後所有人的錄音將自動停止，逐字稿與分析報告將自動下載儲存。</p>
-            <div class="ol-acts">
+    <!-- 確認結束 -->
+    <div class="modal-bg" id="endModal">
+        <div class="modal-box">
+            <div class="m-icon">⏹</div>
+            <h3>確認結束會議</h3>
+            <p>結束後，主管端將自動下載錄音與分析報告，所有人的分頁將自動關閉。</p>
+            <div class="m-acts">
                 <button class="btn btn-red" onclick="hostEndExecute()">確認結束</button>
-                <button class="btn btn-gray" onclick="document.getElementById('endOverlay').classList.remove('show')">取消</button>
+                <button class="btn btn-gray" onclick="document.getElementById('endModal').classList.remove('show')">取消</button>
             </div>
         </div>
     </div>
 
-    <!-- 會議未開始 彈跳視窗（進入時若未開始顯示此） -->
-    <div class="not-started-modal" id="notStartedModal" style="display:none">
-        <div class="not-started-box">
-            <div class="ns-icon">⏳</div>
+    <!-- 會議尚未開始（求職者看到） -->
+    <div class="modal-bg" id="notStartedModal">
+        <div class="modal-box">
+            <div class="m-icon">⏳</div>
             <h3>會議尚未開始</h3>
-            <p>請稍後再試，等待主管開始會議後即可進入。<br>頁面會自動偵測，無需重新整理。</p>
-            <button class="btn btn-gray" onclick="document.getElementById('notStartedModal').style.display='none'">我知道了</button>
+            <p>請稍後再試，等待主管開始會議後即可進行。<br>頁面會自動偵測，無需重新整理。</p>
+            <div class="m-acts">
+                <button class="btn btn-gray" onclick="document.getElementById('notStartedModal').classList.remove('show')">我知道了</button>
+            </div>
         </div>
     </div>
 
+    <!-- 主管端：下載畫面（求職者只看到空白後關閉） -->
     <div class="ended-screen" id="endedScreen">
         <div style="font-size:44px">✅</div>
-        <h2>面試已結束</h2>
-        <p style="color:#8b949e;font-size:12px">檔案正在自動下載中...</p>
+        <h2 id="endTitle">面試已結束</h2>
+        <p style="color:#8b949e;font-size:12px" id="endSubtitle">正在處理...</p>
         <div class="dl-items" id="dlItems"></div>
-        <button class="btn btn-gray" onclick="window.history.back()" style="margin-top:14px">← 返回</button>
+        <button class="btn btn-gray" onclick="window.location.href='/Interview/Index'" style="margin-top:14px;display:none" id="backBtn">← 返回面試管理</button>
     </div>
 
-    <!-- Jitsi External API（不是 iframe src，不受 5 分鐘限制） -->
-    <script src="https://meet.jit.si/external_api.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script src="https://meet.jit.si/external_api.js"></script>
     <script>
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
         //  設定
-        // ══════════════════════════════════════════════
-        const IS_STAFF  = @(isStaff ? "true" : "false");
-        const MY_NAME   = "@Html.Raw(displayName.Replace("\"", "\\\""))";
-        const ROOM_CODE = "@room.JitsiRoomName";
+        // ══════════════════════════════════
+        const IS_STAFF   = @(isStaff ? "true" : "false");
+        const MY_NAME    = "@Html.Raw(displayName.Replace("\"", "\\\""))";
+        const ROOM_CODE  = "@room.JitsiRoomName";
         const JITSI_ROOM = "@jitsiRoom";
-        const SIL_SEC   = 25;  // 冷場觸發秒數
+        const SIL_SEC    = 22;  // 冷場觸發秒數
 
-        // ══════════════════════════════════════════════
-        //  狀態變數
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
+        //  狀態
+        // ══════════════════════════════════
         let started = false, ended = false;
         let silT = 0, isSp = false;
         let audioStream = null, mediaRec = null, recChunks = [];
         let recBlob = null;
         let recognition = null;
         let trxLines = [];
-        let analysisText = "";
         let lastSpeechMs = 0;
         let recentSpeech = [];
         let silInterval = null;
 
-        // ══════════════════════════════════════════════
-        //  SignalR 連線（主管發令 → 所有電腦同步）
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
+        //  SignalR
+        // ══════════════════════════════════
         const hub = new signalR.HubConnectionBuilder()
             .withUrl("/meetingHub")
             .withAutomaticReconnect()
@@ -593,47 +583,54 @@
         hub.on("MeetingStarted", () => { if (!started) onMeetingStart(); });
         hub.on("MeetingEnded",   () => { if (!ended)   onMeetingEnd(); });
 
-        async function connectHub() {
+        // 冷場同步：主管廣播給所有人「有聲音了」
+        hub.on("SpeechDetected", () => {
+            lastSpeechMs = Date.now();
+            silT = 0; setSilBar(0);
+            if (!isSp) setSt('li', '👂 聆聽中');
+        });
+
+        async function startHub() {
             try {
                 await hub.start();
                 await hub.invoke("JoinRoom", ROOM_CODE);
-                console.log("SignalR 連線成功");
             } catch (e) {
-                console.error("SignalR 失敗，改用輪詢：", e);
-                // fallback：每 2 秒輪詢 localStorage（同電腦測試用）
+                console.warn("SignalR 失敗，localStorage fallback");
                 setInterval(() => {
                     const s = localStorage.getItem("meet_" + ROOM_CODE);
                     if (!started && s === "started") onMeetingStart();
                     if (!ended   && s === "ended")   onMeetingEnd();
-                }, 2000);
+                }, 1500);
             }
         }
-        connectHub();
+        startHub();
 
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
         //  主管操作
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
         async function hostStart() {
             try { await hub.invoke("StartMeeting", ROOM_CODE); }
             catch { localStorage.setItem("meet_" + ROOM_CODE, "started"); onMeetingStart(); }
         }
 
         function showEndConfirm() {
-            document.getElementById('endOverlay').classList.add('show');
+            document.getElementById('endModal').classList.add('show');
         }
 
         async function hostEndExecute() {
-            document.getElementById('endOverlay').classList.remove('show');
+            document.getElementById('endModal').classList.remove('show');
             try { await hub.invoke("EndMeeting", ROOM_CODE); }
             catch { localStorage.setItem("meet_" + ROOM_CODE, "ended"); onMeetingEnd(); }
         }
 
-        // ══════════════════════════════════════════════
-        //  會議開始（所有人收到）
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
+        //  會議開始
+        // ══════════════════════════════════
         function onMeetingStart() {
             if (started) return;
             started = true;
+
+            document.getElementById('notStartedModal').classList.remove('show');
 
             const b = document.getElementById('banner');
             b.className = 'banner live';
@@ -648,17 +645,17 @@
             document.getElementById('recTxt').textContent = '錄音中';
             setSt('li', '👂 聆聽中');
             showMsg('會議已開始。我會在冷場時適時提問。');
+            lastSpeechMs = Date.now(); // 會議開始當下不算冷場
 
-            // 依序啟動：先取得麥克風串流，再啟動其他功能
             initAudio().then(() => {
                 initSTT();
                 startSilenceDetect();
             });
         }
 
-        // ══════════════════════════════════════════════
-        //  會議結束（所有人收到）
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
+        //  會議結束
+        // ══════════════════════════════════
         function onMeetingEnd() {
             if (ended) return;
             ended = true;
@@ -666,16 +663,7 @@
             if (window.speechSynthesis) window.speechSynthesis.cancel();
             isSp = false;
             if (recognition) { try { recognition.stop(); } catch {} }
-            if (silInterval)  { clearInterval(silInterval); }
-
-            if (mediaRec && mediaRec.state !== 'inactive') {
-                // onstop 會觸發 showEndedScreen
-                mediaRec.stop();
-            } else {
-                // 沒有錄音也顯示結束畫面
-                recBlob = null;
-                showEndedScreen();
-            }
+            if (silInterval) clearInterval(silInterval);
 
             setSt('wa', '✅ 面試結束');
             showMsg('面試已結束，感謝所有人的參與！');
@@ -683,44 +671,116 @@
             const b = document.getElementById('banner');
             b.className = 'banner done';
             b.textContent = '🔒 面試已結束';
-        }
 
-        // ══════════════════════════════════════════════
-        //  取得麥克風（錄音 + 音量偵測共用同一 stream）
-        // ══════════════════════════════════════════════
-        async function initAudio() {
-            try {
-                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-
-                const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
-                let mime = '';
-                for (const t of types) {
-                    if (MediaRecorder.isTypeSupported(t)) { mime = t; break; }
-                }
-
-                mediaRec = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {});
-                recChunks = [];
-                mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
-                mediaRec.onstop = () => {
-                    recBlob = new Blob(recChunks, { type: mime || 'audio/webm' });
+            if (IS_STAFF) {
+                // 主管：停止錄影，觸發下載流程
+                if (mediaRec && mediaRec.state !== 'inactive') {
+                    mediaRec.stop(); // onstop → showEndedScreen()
+                } else {
+                    recBlob = null;
                     showEndedScreen();
-                };
-                mediaRec.start(1000);
-                console.log("錄音已啟動");
-            } catch (err) {
-                console.warn("無法取得麥克風：", err.message);
-                audioStream = null;
-                // 沒有麥克風仍繼續，用計時器做冷場偵測
+                }
+            } else {
+                // ✅ 求職者：直接關閉面試會議分頁
+                setTimeout(() => {
+                    window.close(); // 若是從連結開啟的分頁可以關閉
+                    setTimeout(() => {
+                        window.location.href = '/Interview/MyInterviews';
+                    }, 500);
+                }, 1200);
             }
         }
 
-        // ══════════════════════════════════════════════
-        //  STT（後台靜默，不顯示在畫面上）
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
+        //  錄影（螢幕錄製，含畫面+聲音）— 僅主管端
+        // ══════════════════════════════════
+        async function initAudio() {
+            if (!IS_STAFF) {
+                // 求職者：只啟動 STT 用的麥克風，不錄影
+                try {
+                    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                } catch {
+                    audioStream = null;
+                }
+                return;
+            }
+
+            // 主管端：先嘗試螢幕錄製（含畫面+聲音）
+            try {
+                // 螢幕錄製：會要求使用者選擇要錄的視窗/分頁
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { frameRate: 15, width: 1280, height: 720 },
+                    audio: true  // 含系統聲音（需瀏覽器支援）
+                });
+
+                // 同時取麥克風（混音）
+                let micStream = null;
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                    audioStream = micStream; // 供 STT 和冷場偵測用
+                } catch {}
+
+                // 合併螢幕+麥克風
+                const tracks = [...screenStream.getTracks()];
+                if (micStream) {
+                    micStream.getAudioTracks().forEach(t => tracks.push(t));
+                }
+                const combined = new MediaStream(tracks);
+
+                const types = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'];
+                let mime = '';
+                for (const t of types) { if (MediaRecorder.isTypeSupported(t)) { mime=t; break; } }
+
+                mediaRec = new MediaRecorder(combined, mime ? { mimeType: mime, videoBitsPerSecond: 1500000 } : {});
+                recChunks = [];
+                mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+                mediaRec.onstop = () => {
+                    recBlob = new Blob(recChunks, { type: mime || 'video/webm' });
+                    showEndedScreen();
+                };
+
+                // 螢幕停止分享時同步停止錄製
+                screenStream.getVideoTracks()[0].onended = () => {
+                    if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
+                };
+
+                mediaRec.start(1000);
+                document.getElementById('recDot').style.background = '#f85149';
+                document.getElementById('recTxt').textContent = '🎬 錄影中';
+                console.log('螢幕錄影已啟動，格式：', mime);
+
+            } catch (err) {
+                console.warn('螢幕錄影失敗，改為純音訊：', err.message);
+                // fallback：純音訊錄音
+                try {
+                    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                    const types = ['audio/webm;codecs=opus','audio/webm','audio/ogg'];
+                    let mime = '';
+                    for (const t of types) { if (MediaRecorder.isTypeSupported(t)) { mime=t; break; } }
+                    mediaRec = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {});
+                    recChunks = [];
+                    mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+                    mediaRec.onstop = () => {
+                        recBlob = new Blob(recChunks, { type: mime || 'audio/webm' });
+                        showEndedScreen();
+                    };
+                    mediaRec.start(1000);
+                } catch (err2) {
+                    console.warn('純音訊也失敗：', err2.message);
+                    audioStream = null;
+                    showEndedScreen();
+                }
+            }
+        }
+
+        // ══════════════════════════════════
+        //  STT — 每個人偵測自己的聲音，廣播給全場
+        //  逐字稿在主管端整合（主管會看到所有人的聲音）
+        // ══════════════════════════════════
         function initSTT() {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SR) {
-                console.warn("不支援 SpeechRecognition，逐字稿停用");
+                console.warn('瀏覽器不支援 SpeechRecognition（建議用 Chrome）');
                 return;
             }
 
@@ -734,33 +794,40 @@
                     if (e.results[i].isFinal) {
                         const txt = e.results[i][0].transcript.trim();
                         if (txt.length > 1) {
-                            addTrxSilent(MY_NAME, txt);
+                            // ✅ 所有角色都記錄自己說的話
+                            const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                            trxLines.push({ sp: MY_NAME, tx: txt, time: now });
                             recentSpeech.push({ name: MY_NAME, text: txt });
                             if (recentSpeech.length > 6) recentSpeech.shift();
-                            lastSpeechMs = Date.now();
-                            silT = 0; setSilBar(0);
+
+                            // 廣播給所有人（主要給 AI 冷場偵測用）
+                            try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
                         }
-                    } else {
-                        // 偵測到聲音，重置冷場
-                        lastSpeechMs = Date.now();
-                        silT = 0; setSilBar(0);
                     }
+                    // 中間結果也重置冷場
+                    lastSpeechMs = Date.now();
+                    silT = 0; setSilBar(0);
                 }
             };
-            recognition.onerror = () => {};
+            recognition.onerror = e => {
+                if (e.error === 'not-allowed') {
+                    console.warn('麥克風被 Jitsi 佔用，改用 Jitsi 事件偵測');
+                }
+            };
             recognition.onend = () => {
                 if (!ended && !isSp)
                     setTimeout(() => { try { recognition.start(); } catch {} }, 500);
             };
-            try { recognition.start(); } catch {}
+            try { recognition.start(); } catch(e) {
+                console.warn('STT start 失敗：', e.message);
+            }
         }
 
-        // ══════════════════════════════════════════════
-        //  冷場偵測（音量 or 純計時）
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
+        //  冷場偵測（基於音量 + SignalR 同步）
+        // ══════════════════════════════════
         function startSilenceDetect() {
             if (audioStream) {
-                // 有麥克風：用音量偵測
                 const ac = new (window.AudioContext || window.webkitAudioContext)();
                 const an = ac.createAnalyser(); an.fftSize = 256;
                 ac.createMediaStreamSource(audioStream).connect(an);
@@ -769,33 +836,33 @@
                 silInterval = setInterval(() => {
                     if (!started || ended || isSp) { setSilBar(0); return; }
                     an.getByteFrequencyData(buf);
-                    const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+                    const avg = buf.reduce((a,b)=>a+b,0)/buf.length;
                     if (avg > 8) {
-                        silT = 0; setSilBar(0);
-                        setSt('li', '👂 聆聽中');
                         lastSpeechMs = Date.now();
+                        silT = 0; setSilBar(0);
+                        setSt('li','👂 聆聽中');
+                        try { hub.invoke("BroadcastSpeech", ROOM_CODE); } catch {}
                     } else {
-                        silT++;
-                        setSilBar(Math.min((silT / SIL_SEC) * 100, 100));
-                        if (silT >= SIL_SEC) { silT = 0; triggerAI(); }
+                        const secSince = (Date.now() - lastSpeechMs) / 1000;
+                        const pct = Math.min((secSince / SIL_SEC) * 100, 100);
+                        setSilBar(pct);
+                        if (secSince >= SIL_SEC) { lastSpeechMs = Date.now(); triggerAI(); }
                     }
-                }, 1000);
+                }, 800);
             } else {
-                // 無麥克風：純計時 fallback
+                // 無麥克風 fallback
                 silInterval = setInterval(() => {
                     if (!started || ended || isSp) return;
-                    // 用 lastSpeechMs 計算距離上次 STT 結果的時間
-                    const secSince = (Date.now() - (lastSpeechMs || Date.now())) / 1000;
-                    const pct = Math.min((secSince / SIL_SEC) * 100, 100);
-                    setSilBar(pct);
+                    const secSince = (Date.now() - lastSpeechMs) / 1000;
+                    setSilBar(Math.min((secSince / SIL_SEC) * 100, 100));
                     if (secSince >= SIL_SEC) { lastSpeechMs = Date.now(); triggerAI(); }
-                }, 1000);
+                }, 800);
             }
         }
 
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
         //  AI 面試官
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
         const FQ = [
             "現在安靜了一下，請問有人想補充什麼嗎？",
             "說到這裡，有沒有具體的例子可以分享？",
@@ -813,25 +880,19 @@
 
         async function triggerAI() {
             if (isSp || ended || !started) return;
-            // 最近 3 秒有聲音就不說
-            if (Date.now() - lastSpeechMs < 3000) return;
+            if ((Date.now() - lastSpeechMs) < 3000) return;
 
-            setSt('th', '💭 思考中...');
-
-            const ctx = recentSpeech.slice(-3).map(s => `${s.name}：${s.text}`).join('；') || "面試進行中";
+            setSt('th','💭 思考中...');
+            const ctx = recentSpeech.slice(-3).map(s=>`${s.name}：${s.text}`).join('；') || "面試進行中";
             const prompt = `你是面試主管王大明，主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場（${SIL_SEC}秒無人說話）。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
 
             let q = null;
             try {
                 const r = await fetch('/Claude/Ask', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt, system: "你是台灣企業面試主管，說繁體中文，語氣自然。", maxTokens: 80 })
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ prompt, system:"你是台灣企業面試主管，說繁體中文，語氣自然。", maxTokens:80 })
                 });
-                if (r.ok) {
-                    const d = await r.json();
-                    if (d.text && d.text.length > 3) q = d.text.trim();
-                }
+                if (r.ok) { const d = await r.json(); if (d.text?.length > 3) q = d.text.trim(); }
             } catch {}
 
             if (!q) q = getFQ();
@@ -840,216 +901,233 @@
 
         function aiSpeak(text) {
             if (isSp || ended || !started) return;
-
-            if (!window.speechSynthesis) {
-                addTrxSilent("AI 面試官（王大明）", text, true);
-                showMsg(text);
-                return;
-            }
+            if (!window.speechSynthesis) { showMsg(text); return; }
 
             window.speechSynthesis.cancel();
             isSp = true; silT = 0;
             if (recognition) { try { recognition.stop(); } catch {} }
 
-            setSt('sp', '🗣️ 說話中'); setRing(true); showDots();
+            setSt('sp','🗣️ 說話中'); setRing(true); showDots();
 
             const u = new SpeechSynthesisUtterance(text);
             const vs = window.speechSynthesis.getVoices();
-            const zh = vs.find(v => v.lang?.startsWith('zh')) || vs[0];
+            const zh = vs.find(v=>v.lang?.startsWith('zh')) || vs[0];
             if (zh) u.voice = zh;
-            u.lang = 'zh-TW'; u.rate = 0.85; u.pitch = 1.0; u.volume = 1.0;
+            u.lang='zh-TW'; u.rate=0.85; u.pitch=1; u.volume=1;
 
             u.onstart = () => {
                 showMsg(text);
-                addTrxSilent("AI 面試官（王大明）", text, true);
+                if (IS_STAFF) {
+                    const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                    trxLines.push({ sp:'AI 面試官（王大明）', tx:text, time:now });
+                }
             };
             u.onend = u.onerror = () => {
-                isSp = false; silT = 0; lastSpeechMs = Date.now();
-                setSt('li', '👂 聆聽中'); setRing(false);
+                isSp = false; lastSpeechMs = Date.now();
+                setSt('li','👂 聆聽中'); setRing(false);
                 if (!ended && recognition)
-                    setTimeout(() => { try { recognition.start(); } catch {} }, 400);
+                    setTimeout(()=>{ try{ recognition.start(); }catch{} }, 400);
             };
-
-            setTimeout(() => window.speechSynthesis.speak(u), 150);
+            setTimeout(()=>window.speechSynthesis.speak(u), 150);
         }
 
-        // ══════════════════════════════════════════════
-        //  結束後自動下載畫面
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
+        //  主管端：下載畫面
+        // ══════════════════════════════════
         async function showEndedScreen() {
-            document.getElementById('endedScreen').classList.add('show');
+            const scr = document.getElementById('endedScreen');
+            scr.classList.add('show');
             const dl = document.getElementById('dlItems');
+            document.getElementById('endSubtitle').textContent = '檔案正在自動下載中...';
+            dl.innerHTML = '';
 
             // 1. 逐字稿
             if (trxLines.length > 0) {
-                const trxTxt = trxLines.map(l => `[${l.time}] ${l.sp}：${l.tx}`).join('\n');
-                dlFile(trxTxt, `逐字稿_${ts()}.txt`, 'text/plain;charset=utf-8');
+                const txt = trxLines.map(l=>`[${l.time}] ${l.sp}：${l.tx}`).join('\n');
+                dlFile(txt, `逐字稿_${ts()}.txt`, 'text/plain;charset=utf-8');
                 dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿（${trxLines.length} 條）已下載</div>`;
             } else {
-                dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿為空（麥克風可能未開啟）</div>`;
+                dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿為空（請確認麥克風已授權給 Chrome）</div>`;
             }
 
-            // 2. 錄音
+            // 2. 錄影/錄音
             if (recBlob) {
-                const url = URL.createObjectURL(recBlob);
-                const a = document.createElement('a'); a.href = url;
-                a.download = `面試錄音_${ts()}.webm`;
+                const isVideo = recBlob.type.includes('video');
+                const ext = isVideo ? 'webm' : 'webm';
+                const label = isVideo ? '🎬 錄影檔' : '🎵 錄音檔';
+                const u = URL.createObjectURL(recBlob);
+                const a = document.createElement('a'); a.href = u;
+                a.download = `面試錄影_${ts()}.${ext}`;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                dl.innerHTML += `<div class="dl-item ok">✅ 錄音檔已下載</div>`;
+                setTimeout(()=>URL.revokeObjectURL(u),8000);
+                dl.innerHTML += `<div class="dl-item ok">✅ ${label}已下載（.webm 可用 VLC 播放）</div>`;
             } else {
-                dl.innerHTML += `<div class="dl-item ng">⚠️ 無錄音（麥克風未授權）</div>`;
+                dl.innerHTML += `<div class="dl-item ng">⚠️ 無錄影（螢幕錄製未授權或被取消）</div>`;
             }
 
-            // 3. AI 分析（後台呼叫）
-            dl.innerHTML += `<div class="dl-item wait" id="analyzeStatus">⏳ AI 分析中，請稍候...</div>`;
-            const analysis = await runAnalysis();
-            if (analysis) {
-                dlFile(analysis, `面試分析_${ts()}.txt`, 'text/plain;charset=utf-8');
-                document.getElementById('analyzeStatus').className = 'dl-item ok';
-                document.getElementById('analyzeStatus').textContent = '✅ 面試分析報告已下載';
+            // 3. AI 分析
+            if (trxLines.length >= 2) {
+                dl.innerHTML += `<div class="dl-item wait" id="aStatus">⏳ AI 分析中...</div>`;
+                const analysis = await runAnalysis();
+                const aEl = document.getElementById('aStatus');
+                if (analysis) {
+                    dlFile(analysis, `面試分析_${ts()}.txt`, 'text/plain;charset=utf-8');
+                    aEl.className = 'dl-item ok';
+                    aEl.textContent = '✅ 面試分析報告已下載';
+                } else {
+                    aEl.className = 'dl-item ng';
+                    aEl.textContent = '⚠️ AI 分析失敗（appsettings.json 中的 Gemini:ApiKey 是否正確？）';
+                }
             } else {
-                document.getElementById('analyzeStatus').className = 'dl-item ng';
-                document.getElementById('analyzeStatus').textContent = '⚠️ AI 分析失敗（可能未設定 Gemini API Key）';
+                dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿不足，跳過 AI 分析</div>`;
             }
+
+            document.getElementById('endSubtitle').textContent = '所有檔案已自動儲存至下載資料夾';
+            document.getElementById('backBtn').style.display = '';
         }
 
         async function runAnalysis() {
-            if (trxLines.length < 3) return null;
-            const transcript = trxLines.map(l => `[${l.time}] ${l.sp}：${l.tx}`).join('\n');
+            const transcript = trxLines.map(l=>`[${l.time}] ${l.sp}：${l.tx}`).join('\n');
             const prompt = `以下是面試逐字稿，請分析每位求職者表現（繁體中文）：\n\n${transcript}\n\n請提供：1.求職者名單 2.每人：語氣表達、答題品質、評分(1-10)、錄取建議 3.整體摘要`;
             try {
                 const r = await fetch('/Claude/Ask', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt, system: "你是專業人資顧問，說繁體中文，格式清晰。", maxTokens: 2000 })
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                        prompt,
+                        system: "你是專業人資顧問，說繁體中文，格式清晰條列。",
+                        maxTokens: 2000
+                    })
                 });
-                if (!r.ok) return null;
+                if (!r.ok) {
+                    const err = await r.text();
+                    console.error('AI 分析 HTTP 錯誤：', r.status, err);
+                    return null;
+                }
                 const d = await r.json();
                 return d.text || null;
-            } catch { return null; }
+            } catch(e) {
+                console.error('AI 分析失敗：', e);
+                return null;
+            }
         }
 
-        // ══════════════════════════════════════════════
-        //  工具函式
-        // ══════════════════════════════════════════════
-        function addTrxSilent(sp, tx) {
-            const now = new Date().toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
-            trxLines.push({ sp, tx, time: now });
-        }
-
+        // ══════════════════════════════════
+        //  工具
+        // ══════════════════════════════════
         function dlFile(content, name, type) {
-            const b = new Blob([content], { type });
+            const b = new Blob([content],{type});
             const u = URL.createObjectURL(b);
-            const a = document.createElement('a'); a.href = u; a.download = name;
+            const a = document.createElement('a'); a.href=u; a.download=name;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(u), 5000);
+            setTimeout(()=>URL.revokeObjectURL(u),5000);
         }
-
-        function ts() { return new Date().toISOString().slice(0, 16).replace('T', '-'); }
-
-        function setSt(cls, txt) {
-            const e = document.getElementById('aiSt');
-            e.className = 'ai-st ' + cls; e.textContent = txt;
+        function ts() { return new Date().toISOString().slice(0,16).replace('T','-'); }
+        function setSt(cls,txt){ const e=document.getElementById('aiSt'); e.className='ai-st '+cls; e.textContent=txt; }
+        function setRing(on){ document.getElementById('sring').classList.toggle('on',on); }
+        function showDots(){ document.getElementById('aiMsg').innerHTML='<span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>'; }
+        function showMsg(t){ document.getElementById('aiMsg').innerHTML=t.replace(/\n/g,'<br>'); }
+        function setSilBar(pct){
+            const f=document.getElementById('siFill');
+            f.style.width=pct+'%';
+            f.className='si-fill'+(pct>80?' h':pct>50?' w':'');
+            document.getElementById('siLbl').textContent=pct>0?`冷場偵測 ${Math.round(pct)}%`:'冷場偵測';
         }
-        function setRing(on) { document.getElementById('sring').classList.toggle('on', on); }
-        function showDots() {
-            document.getElementById('aiMsg').innerHTML = '<span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>';
-        }
-        function showMsg(t) { document.getElementById('aiMsg').innerHTML = t.replace(/\n/g, '<br>'); }
-        function setSilBar(pct) {
-            const f = document.getElementById('siFill');
-            f.style.width = pct + '%';
-            f.className = 'si-fill' + (pct > 80 ? ' h' : pct > 50 ? ' w' : '');
-            document.getElementById('siLbl').textContent = pct > 0 ? `冷場偵測 ${Math.round(pct)}%` : '冷場偵測';
-        }
-
-        function copyCode() {
-            navigator.clipboard.writeText(ROOM_CODE).then(() => {
-                const tip = document.createElement('div');
-                tip.textContent = '✅ 已複製';
-                tip.style.cssText = 'position:fixed;top:60px;right:20px;background:#1a3d1a;color:#3fb950;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;z-index:99999';
-                document.body.appendChild(tip);
-                setTimeout(() => tip.remove(), 2000);
+        function copyCode(){
+            navigator.clipboard.writeText(ROOM_CODE).then(()=>{
+                const t=document.createElement('div');
+                t.textContent='✅ 已複製';
+                t.style.cssText='position:fixed;top:60px;right:20px;background:#1a3d1a;color:#3fb950;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;z-index:99999';
+                document.body.appendChild(t); setTimeout(()=>t.remove(),2000);
             });
         }
 
-        // ══════════════════════════════════════════════
-        //  初始化
-        // ══════════════════════════════════════════════
+        // ══════════════════════════════════
+        //  Jitsi External API 初始化
+        // ══════════════════════════════════
         let jitsiApi = null;
 
         function initJitsi() {
-            if (jitsiApi) return; // 避免重複初始化
+            if (jitsiApi) return;
+            if (typeof JitsiMeetExternalAPI === 'undefined') {
+                console.error('Jitsi External API 尚未載入，2秒後重試');
+                setTimeout(initJitsi, 2000);
+                return;
+            }
 
-            const container = document.getElementById('jitsi-container');
-            const domain    = 'meet.jit.si';
-            const options   = {
+            jitsiApi = new JitsiMeetExternalAPI('meet.jit.si', {
                 roomName:   JITSI_ROOM,
-                parentNode: container,
+                parentNode: document.getElementById('jitsi-container'),
                 width:      '100%',
                 height:     '100%',
-                userInfo: {
-                    displayName: MY_NAME
-                },
+                userInfo: { displayName: MY_NAME },
                 configOverwrite: {
-                    prejoinPageEnabled:      false,
-                    disableDeepLinking:      true,
-                    startWithAudioMuted:     false,
-                    startWithVideoMuted:     false,
-                    enableNoAudioDetection:  false,
-                    enableNoisyMicDetection: false,
-                    // 停用字幕功能（避免畫面顯示文字）
-                    transcription: { enabled: false },
-                    liveStreaming: { enabled: false },
+                    prejoinPageEnabled:           false,
+                    startWithAudioMuted:          false,
+                    startWithVideoMuted:          false,
+                    disableDeepLinking:           true,
+                    enableNoAudioDetection:       false,
+                    enableNoisyMicDetection:      false,
+                    // ✅ 關閉大廳/主持人機制，任何人直接進入
+                    lobby:                        { enableLobby: false },
+                    securityUi:                   { hideLobbyButton: true, disableLobbyPassword: true },
+                    // ✅ 完全關閉需要主持人的設定
+                    requireDisplayName:           false,
+                    enableWelcomePage:            false,
+                    // ✅ 避免 5 分鐘限制：不使用嵌入模式的限制端點
+                    p2p:                          { enabled: false },
+                    toolbarButtons: [
+                        'microphone', 'camera', 'desktop', 'fullscreen',
+                        'fodeviceselection', 'hangup', 'chat', 'settings',
+                        'raisehand', 'videoquality', 'filmstrip', 'tileview', 'participants-pane'
+                    ]
                 },
                 interfaceConfigOverwrite: {
-                    SHOW_JITSI_WATERMARK:         false,
-                    SHOW_BRAND_WATERMARK:          false,
-                    SHOW_POWERED_BY:               false,
-                    MOBILE_APP_PROMO:              false,
-                    TOOLBAR_ALWAYS_VISIBLE:        true,
-                    // 停用字幕 UI
-                    DISABLE_TRANSCRIPTION_SUBTITLES: true,
+                    SHOW_JITSI_WATERMARK:             false,
+                    SHOW_BRAND_WATERMARK:             false,
+                    MOBILE_APP_PROMO:                 false,
+                    DISABLE_TRANSCRIPTION_SUBTITLES:  true,
+                    TOOLBAR_ALWAYS_VISIBLE:           true,
+                    // ✅ 隱藏主持人相關 UI
+                    SHOW_PROMOTIONAL_CLOSE_PAGE:      false,
                 }
-            };
-
-            jitsiApi = new JitsiMeetExternalAPI(domain, options);
-
-            // 監聽離開事件（不強制結束，讓主管控制）
-            jitsiApi.addEventListener('videoConferenceLeft', () => {
-                console.log('使用者離開 Jitsi 視訊');
             });
+
+            // ✅ 監聽 Jitsi 的音訊事件，直接用來做冷場偵測（不需另外取麥克風）
+            jitsiApi.addEventListener('audioMuteStatusChanged', e => {
+                if (!e.muted) {
+                    lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
+                    try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
+                }
+            });
+
+            // 監聽 Jitsi 的語音活動事件（誰在說話）
+            jitsiApi.addEventListener('dominantSpeakerChanged', e => {
+                lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
+                try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
+            });
+
+            console.log('Jitsi External API 初始化成功');
         }
 
-        window.addEventListener('load', () => {
-            if (window.speechSynthesis) {
+        // ══════════════════════════════════
+        //  初始化
+        // ══════════════════════════════════
+        window.addEventListener('load', ()=>{
+            if (window.speechSynthesis){
                 window.speechSynthesis.getVoices();
-                window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+                window.speechSynthesis.onvoiceschanged = ()=>window.speechSynthesis.getVoices();
             }
 
-            // ✅ 立即初始化 Jitsi（讓所有人都能進入視訊房間）
-            // 視訊房間和我們的「會議狀態」是分開的概念：
-            // - 視訊：任何時候都可以進入
-            // - 會議狀態（錄音/AI/逐字稿）：等主管按開始才啟動
-            if (typeof JitsiMeetExternalAPI !== 'undefined') {
-                initJitsi();
-            } else {
-                // external_api.js 尚未載入，稍後重試
-                setTimeout(() => {
-                    if (typeof JitsiMeetExternalAPI !== 'undefined') initJitsi();
-                    else console.error('Jitsi External API 載入失敗');
-                }, 2000);
-            }
+            // 立即初始化 Jitsi（進入視訊房間不需要等主管開始）
+            initJitsi();
 
-            // 求職者首次進入時，若會議尚未開始，顯示彈跳提示
-            // （不擋頁面，只是提示）
+            // 求職者進入：等 800ms 看是否收到 MeetingStarted，沒收到就顯示提示
             if (!IS_STAFF) {
-                // 等 SignalR 連線後 500ms 再判斷，確保如果已開始會先收到訊號
-                setTimeout(() => {
-                    if (!started) {
-                        document.getElementById('notStartedModal').style.display = 'flex';
-                    }
-                }, 500);
+                setTimeout(()=>{
+                    if (!started)
+                        document.getElementById('notStartedModal').classList.add('show');
+                }, 800);
             }
         });
     </script>

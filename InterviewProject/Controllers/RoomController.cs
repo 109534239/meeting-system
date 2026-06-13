@@ -3,6 +3,10 @@ using InterviewProject.Data;
 using InterviewProject.Models;
 using InterviewProject.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace InterviewProject.Controllers
 {
@@ -25,10 +29,12 @@ namespace InterviewProject.Controllers
             return role == "hr" || role == "manager" || role == "director";
         }
 
-        public IActionResult Index()
+        // 🎯 修正：將同步改成非同步，提升高並發時的效能
+        public async Task<IActionResult> Index()
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
-            var rooms = _context.Rooms.OrderByDescending(r => r.CreatedTime).ToList();
+
+            var rooms = await _context.Rooms.OrderByDescending(r => r.CreatedTime).ToListAsync();
             return View(rooms);
         }
 
@@ -41,10 +47,17 @@ namespace InterviewProject.Controllers
 
         [HttpPost]
         public async Task<IActionResult> Create(string roomName, DateTime? startAt, DateTime? endAt,
-                                                 int maxParticipants = 20, string? description = null)
+                                                int maxParticipants = 20, string? description = null)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
             if (string.IsNullOrWhiteSpace(roomName)) { ModelState.AddModelError("", "房間名稱不能為空"); return View(); }
+
+            // 🎯 防呆機制：防止排程時間前後顛倒
+            if (startAt.HasValue && endAt.HasValue && endAt.Value <= startAt.Value)
+            {
+                ModelState.AddModelError("", "面試結束時間必須晚於開始時間！");
+                return View();
+            }
 
             var room = new Room
             {
@@ -53,8 +66,6 @@ namespace InterviewProject.Controllers
                 JitsiRoomName = Guid.NewGuid().ToString("N")[..10],
                 StartAt = startAt,
                 EndAt = endAt,
-                MaxParticipants = maxParticipants,
-                Description = description,
                 IsActive = true
             };
 
@@ -75,18 +86,27 @@ namespace InterviewProject.Controllers
 
         [HttpPost]
         public async Task<IActionResult> Edit(int id, string roomName, DateTime? startAt, DateTime? endAt,
-                                               int maxParticipants, bool isActive, string? description)
+                                             int maxParticipants, bool isActive, string? description)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
+
+            if (string.IsNullOrWhiteSpace(roomName)) { ModelState.AddModelError("", "房間名稱不能為空"); return View(); }
+
+            // 🎯 防呆機制：編輯時也要防止時間顛倒
+            if (startAt.HasValue && endAt.HasValue && endAt.Value <= startAt.Value)
+            {
+                ModelState.AddModelError("", "面試結束時間必須晚於開始時間！");
+                var currentRoom = await _context.Rooms.FindAsync(id);
+                return View(currentRoom);
+            }
+
             var room = await _context.Rooms.FindAsync(id);
             if (room == null) return NotFound();
 
             room.RoomName = roomName;
             room.StartAt = startAt;
             room.EndAt = endAt;
-            room.MaxParticipants = maxParticipants;
             room.IsActive = isActive;
-            room.Description = description;
 
             await _context.SaveChangesAsync();
             TempData["Success"] = "房間設定已更新";
@@ -96,12 +116,13 @@ namespace InterviewProject.Controllers
         [HttpGet]
         public IActionResult EnterCode() => View();
 
+        // 🎯 修正：輸入房間代碼也改為非同步查詢，避免點擊加入時網頁卡死
         [HttpPost]
-        public IActionResult EnterCode(string roomCode)
+        public async Task<IActionResult> EnterCode(string roomCode)
         {
             if (string.IsNullOrWhiteSpace(roomCode)) { ViewBag.ErrorMessage = "請輸入房間代碼"; return View(); }
 
-            var room = _context.Rooms.FirstOrDefault(x => x.JitsiRoomName == roomCode.Trim());
+            var room = await _context.Rooms.FirstOrDefaultAsync(x => x.JitsiRoomName == roomCode.Trim());
             if (room == null) { ViewBag.ErrorMessage = "找不到此房間代碼"; return View(); }
 
             if (!room.CanEnter())
@@ -114,9 +135,14 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Join", new { code = room.JitsiRoomName });
         }
 
-        public IActionResult Join(string code)
+        // 🎯 修正：加入安全性阻擋與非同步優化
+        public async Task<IActionResult> Join(string code)
         {
-            var room = _context.Rooms.FirstOrDefault(x => x.JitsiRoomName == code);
+            // 安全限制：至少必須是登入的使用者（求職者或員工皆可）才可以進去
+            if (HttpContext.Session.GetInt32("MemberId") == null)
+                return RedirectToAction("Index", "Login");
+
+            var room = await _context.Rooms.FirstOrDefaultAsync(x => x.JitsiRoomName == code);
             if (room == null) return Content("房間不存在");
 
             if (!room.CanEnter())
@@ -131,9 +157,9 @@ namespace InterviewProject.Controllers
         }
 
         [HttpGet]
-        public IActionResult RoomStatus(string code)
+        public async Task<IActionResult> RoomStatus(string code)
         {
-            var room = _context.Rooms.FirstOrDefault(x => x.JitsiRoomName == code);
+            var room = await _context.Rooms.FirstOrDefaultAsync(x => x.JitsiRoomName == code);
             if (room == null) return Json(new { found = false });
 
             return Json(new

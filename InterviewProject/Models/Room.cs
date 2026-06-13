@@ -5,14 +5,12 @@
         public int Id { get; set; }
         public string RoomName { get; set; } = string.Empty;
         public string JitsiRoomName { get; set; } = string.Empty;
-        public DateTime CreatedTime { get; set; }
+        public DateTime CreatedTime { get; set; } = DateTime.Now;
 
         // ✅ 新增：會議時間控制
         public DateTime? StartAt { get; set; }          // 開放進入時間（null = 立即可用）
         public DateTime? EndAt { get; set; }            // 關閉時間（null = 不限）
         public bool IsActive { get; set; } = true;      // 手動開關
-        public int MaxParticipants { get; set; } = 20;  // 人數上限
-        public string? Description { get; set; }       // 備註說明
 
         // 判斷房間目前是否可進入
         public bool CanEnter()
