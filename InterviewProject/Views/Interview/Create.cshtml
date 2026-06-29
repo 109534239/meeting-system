@@ -5,64 +5,119 @@
     var rooms = ViewBag.Rooms as List<InterviewProject.Models.Room> ?? new List<InterviewProject.Models.Room>();
 }
 
-<div class="container mt-4" style="max-width: 700px;">
-    <h2>新增面試排程</h2>
-    <hr />
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+}
 
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>新增面試排程</h1>
+        <p>Create Interview Schedule</p>
+    </div>
+</div>
+
+<div class="interview-form-wrap">
+
+    @* 錯誤訊息 *@
     @if (TempData["Error"] != null)
     {
-        <div class="alert alert-danger">@TempData["Error"]</div>
+        <div class="alert-error">@TempData["Error"]</div>
     }
 
     <form asp-action="Create" method="post">
 
-        <div class="mb-4">
-            <label class="form-label d-block fw-bold">選擇要求職/面試的求職者 (可複選)</label>
-            <div class="border rounded p-3" style="max-height: 250px; overflow-y: auto;">
-                @if (ViewBag.PrefilledResumeId != null)
-                {
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="resumeIds" value="@ViewBag.PrefilledResumeId" id="prefilled" checked>
-                        <label class="form-check-label" for="prefilled">
-                            <strong>@(((InterviewProject.Models.Member)ViewBag.PrefilledMember)?.Name)</strong>
-                            - 應徵職缺: @ViewBag.PrefilledJob (直接指派)
-                        </label>
-                    </div>
-                }
+        <div class="form-card-grid">
 
-                @foreach (var r in pendingResumes.Where(x => x.Id != ViewBag.PrefilledResumeId))
-                {
-                    string name = memberNames.ContainsKey(r.MembersId) ? memberNames[r.MembersId] : "未知";
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="resumeIds" value="@r.Id" id="resume-@r.Id">
-                        <label class="form-check-label" for="resume-@r.Id">
-                            <strong>@name</strong> - 職缺: @(r.Job?.Title ?? "未知") [狀態: @r.Status]
-                        </label>
+            @* 選擇求職者卡片 *@
+            <div class="form-card">
+                <div class="section-title">選擇求職者</div>
+
+                <div class="field-item field-item--full">
+                    <label class="field-label">選擇要求職 / 面試的求職者（可複選）</label>
+
+                    <div class="resume-check-list">
+                        @if (ViewBag.PrefilledResumeId != null)
+                        {
+                            <label class="resume-check-item selected" for="prefilled">
+                                <input class="resume-check-input"
+                                       type="checkbox"
+                                       name="resumeIds"
+                                       value="@ViewBag.PrefilledResumeId"
+                                       id="prefilled"
+                                       checked />
+
+                                <span class="resume-check-content">
+                                    <strong>@(((InterviewProject.Models.Member)ViewBag.PrefilledMember)?.Name)</strong>
+                                    <span>應徵職缺：@ViewBag.PrefilledJob</span>
+                                    <em>直接指派</em>
+                                </span>
+                            </label>
+                        }
+
+                        @foreach (var r in pendingResumes.Where(x => x.Id != ViewBag.PrefilledResumeId))
+                        {
+                            string name = memberNames.ContainsKey(r.MembersId) ? memberNames[r.MembersId] : "未知";
+
+                            <label class="resume-check-item" for="resume-@r.Id">
+                                <input class="resume-check-input"
+                                       type="checkbox"
+                                       name="resumeIds"
+                                       value="@r.Id"
+                                       id="resume-@r.Id" />
+
+                                <span class="resume-check-content">
+                                    <strong>@name</strong>
+                                    <span>職缺：@(r.Job?.Title ?? "未知")</span>
+                                    <em>狀態：@r.Status</em>
+                                </span>
+                            </label>
+                        }
+
+                        @if (!pendingResumes.Any() && ViewBag.PrefilledResumeId == null)
+                        {
+                            <div class="interview-empty compact">
+                                目前沒有待審核或通過的履歷可安排面試。
+                            </div>
+                        }
                     </div>
-                }
-                @if (!pendingResumes.Any() && ViewBag.PrefilledResumeId == null)
-                {
-                    <span class="text-muted">目前沒有待審核或通過的履歷可安排面試。</span>
-                }
+                </div>
             </div>
+
+            @* 選擇面試會議室卡片 *@
+            <div class="form-card">
+                <div class="section-title">選擇面試會議室</div>
+
+                <div class="field-item field-item--full">
+                    <label class="field-label">面試會議室</label>
+
+                    <select name="roomId" class="field-input">
+                        <option value="">-- 自動隨機建立新會議室 --</option>
+                        @foreach (var room in rooms)
+                        {
+                            string timeStr = room.StartAt.HasValue ? $" ({room.StartAt.Value:yyyy-MM-dd HH:mm})" : "";
+                            <option value="@room.Id">@room.RoomName @timeStr</option>
+                        }
+                    </select>
+
+                    <div class="info-hint">
+                        注意：若選擇自動建立新房間，面試時間將自動同步為該房間的排定起訖時間。
+                    </div>
+                </div>
+            </div>
+
         </div>
 
-        <div class="mb-4">
-            <label class="form-label fw-bold">選擇面試會議室</label>
-            <select name="roomId" class="form-select">
-                <option value="">-- 自動隨機建立新會議室 --</option>
-                @foreach (var room in rooms)
-                {
-                    string timeStr = room.StartAt.HasValue ? $" ({room.StartAt.Value:yyyy-MM-dd HH:mm})" : "";
-                    <option value="@room.Id">@room.RoomName @timeStr</option>
-                }
-            </select>
-            <small class="text-muted">注意：若選擇自動建立新房間，面試時間將自動同步為該房間的排定起訖時間。</small>
-        </div>
+        @* 表單操作按鈕列 *@
+        <div class="form-actions">
+            <a asp-action="Index" class="btn-cancel">
+                返回列表
+            </a>
 
-        <div class="mt-4">
-            <button type="submit" class="btn btn-primary px-4">確認送出排程</button>
-            <a asp-action="Index" class="btn btn-secondary px-4 ms-2">返回列表</a>
+            <button type="submit" class="btn-save">
+                確認送出排程
+            </button>
         </div>
     </form>
 </div>

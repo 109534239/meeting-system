@@ -4,118 +4,169 @@
     ViewData["Title"] = "面試排程管理";
 }
 
-<div class="container mt-4">
-    <h2>面試排程管理</h2>
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+}
 
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>面試排程管理</h1>
+        <p>Interview Schedule Management</p>
+    </div>
+</div>
+
+<div class="interview-manage-wrap">
+
+    @* 成功訊息 *@
     @if (TempData["Success"] != null)
     {
-        <div class="alert alert-success">@TempData["Success"]</div>
+        <div class="alert-success">@TempData["Success"]</div>
     }
+
+    @* 錯誤訊息 *@
     @if (TempData["Error"] != null)
     {
-        <div class="alert alert-danger">@TempData["Error"]</div>
+        <div class="alert-error">@TempData["Error"]</div>
     }
 
-    <div class="mb-3">
-        <a asp-action="Create" class="btn btn-primary">新增面試排程</a>
+    @* 新增按鈕 *@
+    <div class="interview-toolbar">
+        <a asp-action="Create" class="btn-add">
+            ＋ 新增面試排程
+        </a>
     </div>
 
-    <table class="table table-bordered table-striped">
-        <thead>
-            <tr>
-                <th>應徵者姓名</th>
-                <th>應徵職缺</th>
-                <th>面試房間</th>
-                <th>面試時間</th>
-                <th>目前狀態</th>
-                <th>面試分數</th>
-                <th>評語備註</th>
-                <th>操作動作</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var item in Model)
+    @* 面試排程列表 *@
+    <div class="interview-table">
+        <div class="interview-table-head">
+            <div>應徵者</div>
+            <div>應徵職缺</div>
+            <div>面試房間</div>
+            <div>面試時間</div>
+            <div>狀態</div>
+            <div>分數</div>
+            <div>操作</div>
+        </div>
+
+        @if (Model != null && Model.Any())
+        {
+            foreach (var item in Model)
             {
-                <tr>
-                    <td>@(item.Resume?.Member?.Name ?? "未知")</td>
-                    <td>@(item.Resume?.Job?.Title ?? "未知")</td>
-                    <td>@(item.Room?.RoomName ?? "未指派房間")</td>
-                    <td>
+                var status = item.Resume?.Status ?? "無狀態";
+
+                var statusClass = status == "已安排面試" || status == "面試中"
+                    ? "status-confirmed"
+                    : status == "面試結束" || status == "等待結果中" || status == "錄取"
+                        ? "status-done"
+                        : status == "不錄取" || status == "未通過" || status == "不通過"
+                            ? "status-cancelled"
+                            : "status-pending";
+
+                <div class="interview-row">
+                    <div class="interview-name">
+                        @(item.Resume?.Member?.Name ?? "未知")
+                    </div>
+
+                    <div class="interview-title">
+                        @(item.Resume?.Job?.Title ?? "未知")
+                    </div>
+
+                    <div>
+                        @(item.Room?.RoomName ?? "未指派房間")
+                    </div>
+
+                    <div class="interview-time">
                         @if (item.Room?.StartAt != null && item.Room?.EndAt != null)
                         {
-                            <span>@item.Room.StartAt.Value.ToString("yyyy-MM-dd HH:mm") ~ @item.Room.EndAt.Value.ToString("HH:mm")</span>
+                            <span class="date">@item.Room.StartAt.Value.ToString("yyyy-MM-dd")</span>
+                            <span class="time">@item.Room.StartAt.Value.ToString("HH:mm") ~ @item.Room.EndAt.Value.ToString("HH:mm")</span>
                         }
                         else
                         {
                             <span class="text-muted">未設定時間</span>
                         }
-                    </td>
-                    <td>
-                        <span class="badge bg-info text-dark">@(item.Resume?.Status ?? "無狀態")</span>
-                    </td>
-                    <td>
-                        @(item.ResultScore.HasValue? item.ResultScore.Value + " 分" : "尚未評分")
-                    </td>
-                    <td>@(string.IsNullOrEmpty(item.ResultNote) ? "無" : item.ResultNote)</td>
-                    <td>
-                        <div class="btn-group btn-group-sm">
-                            <a asp-action="Edit" asp-route-id="@item.Id" class="btn btn-warning">編輯</a>
+                    </div>
 
-                            @if (item.Resume?.Status == "已安排面試" || item.Resume?.Status == "面試中")
-                            {
-                                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#completeModal-@item.Id">
-                                    面試完成
-                                </button>
+                    <div>
+                        <span class="status-badge @statusClass">@status</span>
+                    </div>
 
-                                <form asp-action="Cancel" asp-route-id="@item.Id" method="post" style="display:inline;" onsubmit="return confirm('確定要取消此面試嗎？求職者狀態將改為不通過');">
-                                    <button type="submit" class="btn btn-danger">取消</button>
-                                </form>
-                            }
-                        </div>
+                    <div>
+                        @(item.ResultScore.HasValue ? item.ResultScore.Value + " 分" : "尚未評分")
+                    </div>
 
-                        <div class="modal fade" id="completeModal-@item.Id" tabindex="-1" aria-hidden="true">
-                            <div class="modal-dialog">
-                                <div class="modal-content">
-                                    <form asp-action="Complete" method="post">
+                    <div class="interview-actions">
+                        <a asp-action="Edit"
+                           asp-route-id="@item.Id"
+                           class="btn-edit">編輯</a>
 
-                                        <input type="hidden" name="id" value="@item.Id" />
+                        @if (item.Resume?.Status == "已安排面試" || item.Resume?.Status == "面試中")
+                        {
+                            <button type="button"
+                                    class="btn-complete"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#completeModal-@item.Id">
+                                完成
+                            </button>
 
-                                        <div class="modal-header">
-                                            <h5 class="modal-title">填寫面試結果 - @(item.Resume?.Member?.Name ?? "未知")</h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                        </div>
+                            <form asp-action="Cancel"
+                                  asp-route-id="@item.Id"
+                                  method="post"
+                                  onsubmit="return confirm('確定要取消此面試嗎？求職者狀態將改為不通過');">
+                                <button type="submit" class="btn-delete">取消</button>
+                            </form>
+                        }
+                    </div>
+                </div>
 
-                                        <div class="modal-body">
-                                            <div class="mb-3">
-                                                <label class="form-label">面試分數 (0-100) <span class="text-danger">*</span></label>
-                                                <input type="number" name="resultScore" class="form-control" min="0" max="100" required placeholder="請打分數" />
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">面試評語</label>
-                                                <textarea name="resultNote" class="form-control" rows="3" placeholder="請輸入面試評語..."></textarea>
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">變更履歷狀態至</label>
-                                                <select name="nextStatus" class="form-select">
-                                                    <option value="面試結束">面試結束</option>
-                                                    <option value="等待結果中">等待結果中</option>
-                                                    <option value="錄取">錄取</option>
-                                                    <option value="不錄取">不錄取</option>
-                                                </select>
-                                            </div>
-                                        </div>
+                <div class="modal fade" id="completeModal-@item.Id" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <form asp-action="Complete" method="post">
+                                <input type="hidden" name="id" value="@item.Id" />
 
-                                        <div class="modal-footer">
-                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
-                                            <button type="submit" class="btn btn-success">提交結果</button>
-                                        </div>
-                                    </form>
+                                <div class="modal-header">
+                                    <h5 class="modal-title">填寫面試結果 - @(item.Resume?.Member?.Name ?? "未知")</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                 </div>
-                            </div>
+
+                                <div class="modal-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">面試分數 (0-100) <span class="text-danger">*</span></label>
+                                        <input type="number" name="resultScore" class="form-control" min="0" max="100" required placeholder="請打分數" />
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">面試評語</label>
+                                        <textarea name="resultNote" class="form-control" rows="3" placeholder="請輸入面試評語..."></textarea>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">變更履歷狀態至</label>
+                                        <select name="nextStatus" class="form-select">
+                                            <option value="面試結束">面試結束</option>
+                                            <option value="等待結果中">等待結果中</option>
+                                            <option value="錄取">錄取</option>
+                                            <option value="不錄取">不錄取</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+                                    <button type="submit" class="btn btn-success">提交結果</button>
+                                </div>
+                            </form>
                         </div>
-                    </td>
-                </tr>
+                    </div>
+                </div>
             }
-        </tbody>
-    </table>
+        }
+        else
+        {
+            <div class="interview-empty">目前沒有任何面試排程</div>
+        }
+    </div>
 </div>
