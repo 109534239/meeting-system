@@ -14,3 +14,91 @@
         <p>Recruitment Dashboard</p>
     </div>
 </div>
+
+<div class="dashboard-wrap">
+
+    <div class="dashboard-summary">
+        <div class="summary-card">
+            <span class="summary-label">總履歷數</span>
+            <strong>@ViewData["TotalResumes"]</strong>
+            <p>目前累積應徵履歷</p>
+        </div>
+
+        <div class="summary-card warning">
+            <span class="summary-label">待審核</span>
+            <strong>@ViewData["PendingResumes"]</strong>
+            <p>尚未處理的履歷</p>
+        </div>
+
+        <div class="summary-card blue">
+            <span class="summary-label">已安排面試</span>
+            <strong>@ViewData["InterviewCount"]</strong>
+            <p>已進入面試流程</p>
+        </div>
+
+        <div class="summary-card success">
+            <span class="summary-label">錄取率</span>
+            <strong>@ViewData["HireRate"]%</strong>
+            <p>錄取 / 總履歷</p>
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="dashboard-card">
+            <div class="card-title">履歷狀態分布</div>
+
+            <div class="status-list">
+                <div class="status-item">
+                    <span>待審核</span>
+                    <div class="bar"><i style="width:@ViewData["PendingPercent"]%"></i></div>
+                    <strong>@ViewData["PendingResumes"]</strong>
+                </div>
+
+                <div class="status-item">
+                    <span>已安排面試</span>
+                    <div class="bar"><i style="width:@ViewData["InterviewPercent"]%"></i></div>
+                    <strong>@ViewData["InterviewCount"]</strong>
+                </div>
+
+                <div class="status-item">
+                    <span>錄取</span>
+                    <div class="bar"><i style="width:@ViewData["HiredPercent"]%"></i></div>
+                    <strong>@ViewData["HiredCount"]</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-card">
+            <div class="card-title">權限範圍</div>
+
+            <div class="scope-box">
+                <span>@ViewData["RoleLabel"]</span>
+                <strong>@ViewData["ViewScope"]</strong>
+                <p>@ViewData["DepartmentInfo"]</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-card">
+        <div class="card-title">待處理提醒</div>
+
+        <div class="todo-list">
+            <div class="todo-item">
+                <span class="dot warning"></span>
+                <div>
+                    <strong>@ViewData["PendingResumes"] 份履歷待審核</strong>
+                    <p>請至應徵管理查看候選人資料。</p>
+                </div>
+            </div>
+
+            <div class="todo-item">
+                <span class="dot blue"></span>
+                <div>
+                    <strong>@ViewData["InterviewCount"] 場面試流程中</strong>
+                    <p>請確認面試排程與面試結果。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
