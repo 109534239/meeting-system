@@ -1,3 +1,15 @@
+/* ── 🎯 返回按鈕樣式：搭配 Job_search.css 的 page-header 使用 ── */
+.btn-back {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.btn-back:hover {
+    color: var(--primary);
+}
+
 /* ── 🎯 核心面寬控制：限定最大 1200px 且水平置中，與職缺管理同規格 ── */
 .hrapp-container {
     max-width: 1200px;
@@ -6,17 +18,6 @@
     box-sizing: border-box;
     width: 100%;
 }
-
-.btn-back {
-    color: var(--text-muted);
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-    .btn-back:hover {
-        color: var(--primary);
-    }
 
 /* ── 🎯 網格直欄寬度完美分配 (總共 8 欄) ── */
 .hrapp-cols {
@@ -47,18 +48,19 @@
     margin-bottom: -2px;
 }
 
-    .tab-item:hover {
-        color: var(--primary);
-        background-color: #f5f5f5;
-    }
+.tab-item:hover {
+    color: var(--primary);
+    background-color: #f5f5f5;
+}
 
-    .tab-item.active {
-        color: var(--primary);
-        border: 1px solid #e0e0e0;
-        border-bottom: 2px solid var(--primary);
-        background-color: #ffffff;
-    }
+.tab-item.active {
+    color: var(--primary);
+    border: 1px solid #e0e0e0;
+    border-bottom: 2px solid var(--primary);
+    background-color: #ffffff;
+}
 
+/* ── 履歷列表 Grid 標頭 ── */
 .hrapp-grid-head {
     padding: 12px 20px;
     font-size: 13px;
@@ -66,17 +68,25 @@
     font-weight: 600;
 }
 
+/* ── 履歷列表容器 ── */
 .hrapp-list {
     display: flex;
     flex-direction: column;
     gap: 12px;
 }
 
+/* 🎯 提示樣式：讓整橫列在滑鼠移上去時有手指游標 */
 .hrapp-row {
     border-radius: 8px;
     padding: 16px 20px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-    transition: all 0.2s;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
+}
+
+.hrapp-row:hover {
+    transform: scale(1.002);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
 }
 
 /* ── 狀態深淺背景辨識 ── */
@@ -85,9 +95,9 @@
     border-left: 5px solid #ffa000;
 }
 
-    .row-unhandled:hover {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.07);
-    }
+.row-unhandled:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+}
 
 .row-handled {
     background: #f7f7f9 !important;
@@ -142,23 +152,47 @@
     font-style: italic;
 }
 
-/* 狀態標籤 */
-.status-badge {
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 700;
+/* 🎯 下拉選單的通用基礎樣式 */
+.status-select {
+    padding: 6px 12px;
+    border-radius: 20px; /* 圓角膠囊狀 */
+    font-size: 14px;
+    font-weight: 700 !important;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.15s ease-in-out;
+    text-align: center;
+    border: 1px solid transparent !important;
     display: inline-block;
+    appearance: auto; /* 確保下拉箭頭正常顯示 */
 }
 
-.badge-wait {
-    background-color: #fff3e0;
-    color: #e65100;
+/* 🎯 未處理（待審核）：顯眼的實心底色 */
+.status-select.select-wait {
+    color: #ffffff !important;
+    background-color: #f39c12 !important; /* 實心橘黃色 */
+    border-color: #d68910 !important;
 }
 
-.badge-done {
-    background-color: #eceff1;
-    color: #455a64;
+/* 🎯 已處理（已通過）：清新淡綠色底 */
+.status-select.select-pass {
+    color: #15803d !important;
+    background-color: #dcfce7 !important; /* 淺綠色 */
+    border-color: #bbf7d0 !important;
+}
+
+/* 🎯 已處理（未通過）：微醺淡紅色底 */
+.status-select.select-fail {
+    color: #b91c1c !important;
+    background-color: #fee2e2 !important; /* 淺紅色 */
+    border-color: #fecaca !important;
+}
+
+/* 讓下拉選單內的選項清單維持乾淨的白底黑字 */
+.status-select option {
+    color: #333333 !important;
+    background-color: #ffffff !important;
+    font-weight: normal;
 }
 
 /* AI 評分區 */
@@ -203,11 +237,12 @@
     transition: all 0.2s;
 }
 
-    .btn-ai-view:hover {
-        background: var(--primary);
-        color: white;
-    }
+.btn-ai-view:hover {
+    background: var(--primary);
+    color: white;
+}
 
+/* ── 審查履歷按鈕 ── */
 .btn-detail {
     padding: 6px 10px;
     background: #e1f5fe;
@@ -220,11 +255,12 @@
     display: block;
 }
 
-    .btn-detail:hover {
-        background: #0288d1;
-        color: white;
-    }
+.btn-detail:hover {
+    background: #0288d1;
+    color: white;
+}
 
+/* ── 無資料提示 ── */
 .hrapp-empty {
     text-align: center;
     padding: 40px;
@@ -251,10 +287,10 @@
     transition: opacity 0.25s ease;
 }
 
-    .ai-modal-overlay.show {
-        opacity: 1;
-        pointer-events: auto;
-    }
+.ai-modal-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+}
 
 .ai-modal-window {
     background: #ffffff;
@@ -313,9 +349,9 @@
     cursor: pointer;
 }
 
-    .ai-modal-close:hover {
-        color: #333;
-    }
+.ai-modal-close:hover {
+    color: #333;
+}
 
 .ai-modal-body {
     padding: 20px 24px;
@@ -337,33 +373,33 @@
     align-self: flex-start;
 }
 
-    .ai-modal-score-badge .score-lbl {
-        font-size: 12px;
-        color: #666;
-        font-weight: 600;
-    }
+.ai-modal-score-badge .score-lbl {
+    font-size: 12px;
+    color: #666;
+    font-weight: 600;
+}
 
-    .ai-modal-score-badge .score-v {
-        font-size: 22px;
-        font-weight: 800;
-    }
+.ai-modal-score-badge .score-v {
+    font-size: 22px;
+    font-weight: 800;
+}
 
-        .ai-modal-score-badge .score-v.high {
-            color: #2e7d32;
-        }
+.ai-modal-score-badge .score-v.high {
+    color: #2e7d32;
+}
 
-        .ai-modal-score-badge .score-v.mid {
-            color: #ef6c00;
-        }
+.ai-modal-score-badge .score-v.mid {
+    color: #ef6c00;
+}
 
-        .ai-modal-score-badge .score-v.low {
-            color: #c62828;
-        }
+.ai-modal-score-badge .score-v.low {
+    color: #c62828;
+}
 
-    .ai-modal-score-badge .score-unit {
-        font-size: 11px;
-        color: #999;
-    }
+.ai-modal-score-badge .score-unit {
+    font-size: 11px;
+    color: #999;
+}
 
 .ai-modal-comment-card {
     background: #fbfbfe;
@@ -372,12 +408,12 @@
     padding: 14px 18px;
 }
 
-    .ai-modal-comment-card h4 {
-        margin: 0 0 8px 0;
-        font-size: 14px;
-        color: var(--primary-dark);
-        font-weight: 700;
-    }
+.ai-modal-comment-card h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: var(--primary-dark);
+    font-weight: 700;
+}
 
 .comment-text-content {
     font-size: 14px;
@@ -404,6 +440,6 @@
     cursor: pointer;
 }
 
-    .btn-modal-confirm:hover {
-        background: var(--primary-dark);
-    }
+.btn-modal-confirm:hover {
+    background: var(--primary-dark);
+}

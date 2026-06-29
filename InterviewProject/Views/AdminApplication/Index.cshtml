@@ -9,77 +9,19 @@
 
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/HrJob.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/AdminApplication.css" asp-append-version="true" />
-    <style>
-        /* 🎯 提示樣式：讓整橫列在滑鼠移上去時有手指游標 */
-        .hrapp-list .hrapp-row {
-            cursor: pointer;
-            transition: background-color 0.2s, transform 0.1s;
-        }
-
-            .hrapp-list .hrapp-row:hover {
-                transform: scale(1.002);
-                box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
-            }
-
-        /* 🎯 下拉選單的通用基礎樣式 */
-        .status-select {
-            padding: 6px 12px;
-            border-radius: 20px; /* 圓角膠囊狀 */
-            font-size: 14px;
-            font-weight: 700 !important;
-            cursor: pointer;
-            outline: none;
-            transition: all 0.15s ease-in-out;
-            text-align: center;
-            border: 1px solid transparent !important;
-            display: inline-block;
-            appearance: auto; /* 確保下拉箭頭正常顯示 */
-        }
-
-            /* 🎯 未處理（待審核）：顯眼的實心底色 */
-            .status-select.select-wait {
-                color: #ffffff !important;
-                background-color: #f39c12 !important; /* 實心橘黃色 */
-                border-color: #d68910 !important;
-            }
-
-            /* 🎯 已處理（已通過）：清新淡綠色底 */
-            .status-select.select-pass {
-                color: #15803d !important;
-                background-color: #dcfce7 !important; /* 淺綠色 */
-                border-color: #bbf7d0 !important;
-            }
-
-            /* 🎯 已處理（未通過）：微醺淡紅色底 */
-            .status-select.select-fail {
-                color: #b91c1c !important;
-                background-color: #fee2e2 !important; /* 淺紅色 */
-                border-color: #fecaca !important;
-            }
-
-            /* 讓下拉選單內的選項清單維持乾淨的白底黑字 */
-            .status-select option {
-                color: #333333 !important;
-                background-color: #ffffff !important;
-                font-weight: normal;
-            }
-    </style>
 }
 
-<div class="hrapp-container">
-
-    <div class="page-header" style="padding: 0; margin-bottom: 24px;">
-        <div class="page-header-inner">
-            <div class="back-to-jobs">
-                <a asp-controller="HrJob" asp-action="Index" class="btn-back">← 返回職缺管理</a>
-            </div>
-            <h1 style="font-size: 28px; font-weight: 700; color: var(--primary); margin: 8px 0;">@ViewBag.JobTitle</h1>
-            <p style="color: var(--text-muted); margin: 0;">應徵名單管理 / Resume Management</p>
-        </div>
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>@ViewBag.JobTitle</h1>
+        <p>應徵名單管理 / Resume Management</p>
     </div>
+</div>
 
+<div class="hrapp-container">
     @* ── 篩選切換區 (Tabs) ── *@
     <div class="hrapp-filter-tabs">
         <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="全部"

@@ -22,54 +22,142 @@ namespace InterviewProject.Controllers
         private bool IsEmployee()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            return role == "hr" || role == "manager" || role == "employee";
+            return role == "hr" || role == "manager" || role == "director" || role == "employee";
+        }
+
+        // 🎯 取得目前登入者角色
+        private string GetCurrentRole()
+        {
+            return HttpContext.Session.GetString("MemberRole")?.ToLower() ?? "";
+        }
+
+        // 🎯 取得目前登入者所屬部門
+        private async Task<string?> GetCurrentEmployeeDepartment()
+        {
+            var memberId = HttpContext.Session.GetInt32("MemberId");
+
+            if (!memberId.HasValue)
+            {
+                return null;
+            }
+
+            var employee = await _db.Employees.FirstOrDefaultAsync(e => e.Id == memberId.Value);
+
+            return employee?.Department;
+        }
+
+        // 🎯 判斷目前使用者是否有權限查看該職缺
+        private async Task<bool> CanAccessJob(Job job)
+        {
+            var role = GetCurrentRole();
+
+            // HR 可以查看全部職缺與全部應徵情況
+            if (role == "hr")
+            {
+                return true;
+            }
+
+            // Manager / Director 只能查看自己所屬部門的應徵情況
+            if (role == "manager" || role == "director" || role == "employee")
+            {
+                var department = await GetCurrentEmployeeDepartment();
+
+                if (string.IsNullOrEmpty(department))
+                {
+                    return false;
+                }
+
+                return job.Department == department;
+            }
+
+            return false;
         }
 
         // 1. 職缺的應徵履歷名單列表頁
         // GET: AdminApplication/Index?jobId=5&statusFilter=全部
-        public async Task<IActionResult> Index(int jobId, string statusFilter = "全部")
+        public async Task<IActionResult> Index(int? jobId, string statusFilter = "全部")
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
-            var job = await _db.Jobs.FindAsync(jobId);
-            if (job == null) return NotFound();
+            var role = GetCurrentRole();
+            var department = await GetCurrentEmployeeDepartment();
 
-            ViewBag.JobTitle = job.Title;
             ViewBag.JobId = jobId;
             ViewBag.CurrentFilter = statusFilter;
+
+            // 🎯 如果有帶 jobId，代表查看某一個職缺的履歷
+            if (jobId.HasValue)
+            {
+                var job = await _db.Jobs.FindAsync(jobId.Value);
+                if (job == null) return NotFound();
+
+                // 🎯 Manager / Director 只能查看自己部門的職缺
+                if (!await CanAccessJob(job))
+                {
+                    return Forbid();
+                }
+
+                ViewBag.JobTitle = job.Title;
+            }
+            else
+            {
+                // 🎯 如果沒有帶 jobId，HR 看全部；Manager / Director 看自己部門
+                ViewBag.JobTitle = role == "hr"
+                    ? "全部應徵履歷"
+                    : $"{department} 部門應徵履歷";
+            }
 
             // 🎯 同步把 AiScore 與 AiComment 從資料庫 Resume 表內撈出來
             var query = from r in _db.Resumes
                         join m in _db.Members on r.MembersId equals m.Id
-                        where r.JobsId == jobId
-                        select new InterviewProject.Models.Resume
+                        join j in _db.Jobs on r.JobsId equals j.Id
+                        where !jobId.HasValue || r.JobsId == jobId.Value
+                        select new
                         {
-                            Id = r.Id,
-                            ResumeTime = r.ResumeTime,
-                            Phone2 = m.Name,
-                            Mobile = m.Phone,
-                            SchoolName = r.SchoolName,
-                            Major = r.Major,
-                            EduLevel = r.EduLevel,
-                            WorkExperienceYears = r.WorkExperienceYears,
-                            CompanyName = r.CompanyName,
-                            JobTitle = r.JobTitle,
-                            Status = r.Status,
-                            JobsId = r.JobsId,
-                            AiScore = r.AiScore,
-                            AiComment = r.AiComment
+                            Resume = r,
+                            Member = m,
+                            Job = j
                         };
+
+            // 🎯 Manager / Director 只能看到自己所屬部門的履歷
+            if (role == "manager" || role == "director" || role == "employee")
+            {
+                if (string.IsNullOrEmpty(department))
+                {
+                    return Forbid();
+                }
+
+                query = query.Where(x => x.Job.Department == department);
+            }
+
+            var resultQuery = query.Select(x => new InterviewProject.Models.Resume
+            {
+                Id = x.Resume.Id,
+                ResumeTime = x.Resume.ResumeTime,
+                Phone2 = x.Member.Name,
+                Mobile = x.Member.Phone,
+                SchoolName = x.Resume.SchoolName,
+                Major = x.Resume.Major,
+                EduLevel = x.Resume.EduLevel,
+                WorkExperienceYears = x.Resume.WorkExperienceYears,
+                CompanyName = x.Resume.CompanyName,
+                JobTitle = x.Resume.JobTitle,
+                Status = x.Resume.Status,
+                JobsId = x.Resume.JobsId,
+                AiScore = x.Resume.AiScore,
+                AiComment = x.Resume.AiComment
+            });
 
             if (statusFilter == "未處理")
             {
-                query = query.Where(x => x.Status == "待審核");
+                resultQuery = resultQuery.Where(x => x.Status == "待審核");
             }
             else if (statusFilter == "已處理")
             {
-                query = query.Where(x => x.Status != "待審核");
+                resultQuery = resultQuery.Where(x => x.Status != "待審核");
             }
 
-            var resumesList = await query.OrderByDescending(x => x.ResumeTime).ToListAsync();
+            var resumesList = await resultQuery.OrderByDescending(x => x.ResumeTime).ToListAsync();
 
             var aiScores = new Dictionary<int, int>();
             var aiComments = new Dictionary<int, string>();
@@ -97,6 +185,12 @@ namespace InterviewProject.Controllers
                 .FirstOrDefaultAsync(r => r.Id == id);
 
             if (resume == null) return NotFound();
+
+            // 🎯 Manager / Director 只能查看自己部門的履歷詳細資料
+            if (resume.Job != null && !await CanAccessJob(resume.Job))
+            {
+                return Forbid();
+            }
 
             var dblangs = await _db.LanguageProficiency.Where(l => l.ResumeId == resume.Id).ToListAsync();
             var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == resume.Id).ToListAsync();
@@ -151,10 +245,19 @@ namespace InterviewProject.Controllers
             try
             {
                 // 從資料庫找出該筆履歷紀錄
-                var resume = await _db.Resumes.FindAsync(model.Id);
+                var resume = await _db.Resumes
+                    .Include(r => r.Job)
+                    .FirstOrDefaultAsync(r => r.Id == model.Id);
+
                 if (resume == null)
                 {
                     return Json(new { success = false, message = "找不到對應的履歷紀錄。" });
+                }
+
+                // 🎯 Manager / Director 只能更新自己部門的履歷狀態
+                if (resume.Job != null && !await CanAccessJob(resume.Job))
+                {
+                    return Json(new { success = false, message = "您沒有權限修改其他部門的履歷狀態。" });
                 }
 
                 // 修改狀態並更新資料庫
@@ -212,6 +315,6 @@ namespace InterviewProject.Controllers
     public class StatusUpdateModel
     {
         public int Id { get; set; }
-        public string Status { get; set; }
+        public string Status { get; set; } = "";
     }
 }

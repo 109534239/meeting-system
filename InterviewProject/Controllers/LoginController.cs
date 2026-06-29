@@ -285,9 +285,20 @@ namespace InterviewProject.Controllers
 
                     string targetUrl = Url.Action("Index", "Home") ?? "/";
 
-                    if (cleanRole == "hr" || cleanRole == "manager" || cleanRole == "director")
+                    // 🎯 HR 有職缺管理權限，所以登入後導向職缺管理頁
+                    if (cleanRole == "hr")
+                    {
+                        targetUrl = Url.Action("Index", "HrJob") ?? "/";
+                    }
+                    // 🎯 Manager / Director 沒有職缺管理權限，但可以進入招募數據頁
+                    else if (cleanRole == "manager" || cleanRole == "director")
                     {
                         targetUrl = Url.Action("Dashboard", "AdminHome") ?? "/";
+                    }
+                    // 🎯 其他 employee 角色暫時維持原本首頁導向
+                    else if (cleanRole == "employee")
+                    {
+                        targetUrl = Url.Action("Index", "Home") ?? "/";
                     }
 
                     return Json(new { success = true, redirectUrl = targetUrl });
