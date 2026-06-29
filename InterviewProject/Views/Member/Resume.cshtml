@@ -2,80 +2,82 @@
 
 @{
     ViewData["Title"] = "我的履歷";
-    // 檢查是否為唯讀模式
     bool isReadOnly = ViewBag.IsReadOnly ?? false;
 }
 
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/MemberResume.css" asp-append-version="true" />
+    @* 套用 Job_Search 的篩選欄樣式 *@
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
 }
 
-<div class="app-wrapper">
-    <div class="page-header">
-        <div class="page-header-inner">
-            <h1>我的履歷</h1>
-            <p>Resume Management</p>
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>我的履歷</h1>
+        <p>Resume Management</p>
+    </div>
+</div>
+
+<div class="search-bar">
+    <div class="search-inner">
+        <div class="search-field">
+            <label>投遞時間</label>
+            <select id="sel-date">
+                <option value="">請選擇</option>
+                <option value="2026-05">2026/05</option>
+            </select>
         </div>
+        <div class="search-field">
+            <label>職缺類型</label>
+            <select id="sel-type">
+                <option value="">請選擇</option>
+            </select>
+        </div>
+        <button class="search-btn" onclick="doFilter()">篩選</button>
+        <button class="reset-btn" onclick="resetFilter()">重置</button>
+    </div>
+</div>
+
+<div class="main">
+
+    <div class="app-table-head">
+        <div>投遞時間</div>
+        <div>職缺名稱</div>
+        <div>目前狀態</div>
+        <div>操作區域</div>
     </div>
 
-    <div class="app-page">
-        <div class="app-filter">
-            <div class="filter-group">
-                <label>投遞時間</label>
-                <select id="sel-date">
-                    <option value="">請選擇</option>
-                    <option value="2026-05">2026/05</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>職缺類型</label>
-                <select id="sel-type">
-                    <option value="">請選擇</option>
-                </select>
-            </div>
-            <button class="filter-btn" onclick="doFilter()">篩選</button>
-        </div>
-
-        <div class="app-table-head">
-            <div>投遞時間</div>
-            <div>職缺名稱</div>
-            <div>目前狀態</div>
-            <div>操作區域</div>
-        </div>
-
-        <div class="app-list">
-            @if (Model == null || !Model.Any())
+    <div class="app-list">
+        @if (Model == null || !Model.Any())
+        {
+            <div class="no-data">目前尚無履歷投遞紀錄。</div>
+        }
+        else
+        {
+            @foreach (var item in Model)
             {
-                <div class="no-data">目前尚無履歷投遞紀錄。</div>
-            }
-            else
-            {
-                @foreach (var item in Model)
-                {
-                    <div class="app-row">
-                        <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm:ss")</div>
-                        <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>
-                        @{
-                            string statusClass = item.Status switch
-                            {
-                                "通過" => "status-pass",
-                                "不通過" => "status-fail",
-                                _ => "status-review"
-                            };
-                        }
-                        <div class="row-status"><span class="@statusClass">@item.Status</span></div>
-                        <div class="row-actions">
-                            <a href="@Url.Action("ResumeDetail", "Member", new { id = item.Id })" class="btn-view">查看</a>
-
-                            @* <button type="submit" asp-action="ExportToPdf" class="btn btn-secondary">
-                                列印 PDF
-                            </button> *@
-                        </div>
-                
+                <div class="app-row">
+                    <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm:ss")</div>
+                    <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>
+                    @{
+                        string statusClass = item.Status switch
+                        {
+                            "通過" => "status-pass",
+                            "不通過" => "status-fail",
+                            _ => "status-review"
+                        };
+                    }
+                    <div class="row-status">
+                        <span class="@statusClass">@item.Status</span>
                     </div>
-                }
+                    <div class="row-actions">
+                        <a href="@Url.Action("ResumeDetail", "Member", new { id = item.Id })"
+                           class="btn-view">查看</a>
+                    </div>
+                </div>
             }
-        </div>
+        }
     </div>
+
 </div>

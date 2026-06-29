@@ -9,195 +9,199 @@
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
 }
 
-<div class="app-wrapper">
+<!-- PAGE HEADER -->
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>應徵管理</h1>
+        <p>Application Management</p>
+    </div>
+</div>
 
-    <!-- PAGE HEADER -->
-    <div class="page-header">
-        <div class="page-header-inner">
-            <h1>應徵管理</h1>
-            <p>Application Management</p>
+<!-- FILTER BAR -->
+<div class="search-bar">
+    <div class="search-inner">
+        <div class="search-field">
+            <label>投遞時間</label>
+            <select id="sel-date">
+                <option value="">請選擇</option>
+                <option value="2026-05">2026/05</option>
+            </select>
         </div>
+        <div class="search-field">
+            <label>職缺類型</label>
+            <select id="sel-type">
+                <option value="">請選擇</option>
+            </select>
+        </div>
+        <button class="search-btn" onclick="doFilter()">篩選</button>
+        <button class="reset-btn" onclick="resetFilter()">重置</button>
+    </div>
+</div>
+
+<div class="main">
+
+    <div class="app-table-head">
+        <div>投遞時間</div>
+        <div>職缺名稱</div>
+        <div>履歷狀態</div>
+        <div>面試狀態</div>
+        <div>錄取/未錄取</div>
+        <div>查看詳細</div>
     </div>
 
-    <!-- FILTER BAR -->
-    <div class="app-page">
-        <div class="app-filter">
-            <div class="filter-group">
-                <label>投遞時間</label>
-                <select id="sel-date">
-                    <option value="">請選擇</option>
-                    <option value="2026-05">2026/05</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>職缺類型</label>
-                <select id="sel-type">
-                    <option value="">請選擇</option>
-                </select>
-            </div>
-            <button class="filter-btn" onclick="doFilter()">篩選</button>
-        </div>
-            <div class="app-table-head">
-                <div>投遞時間</div>
-                <div>職缺名稱</div>
-                <div>履歷狀態</div>
-                <div>面試狀態</div>
-                <div>錄取/未錄取</div>
-                <div>查看詳細</div>
-            </div>
-
-        <!-- ROWS -->
-        <div class="app-list">
-            @if (Model != null && Model.Any())
+    <!-- ROWS -->
+    <div class="app-list">
+        @if (Model != null && Model.Any())
+        {
+            @foreach (var item in Model)
             {
-                @foreach (var item in Model)
-                {
-                    bool isPassed = item.Status == "通過";
+                bool isPassed = item.Status == "通過";
 
-                    @* 💡 加上 app-row-wrap 容器，解決 JS toggle 找不到外層的問題 *@
-                    <div class="app-row-wrap">
-                        <div class="app-row">
-                            @* 1. 投遞時間 *@
-                            <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm:ss")</div>
+                @* 💡 加上 app-row-wrap 容器，解決 JS toggle 找不到外層的問題 *@
+                <div class="app-row-wrap">
+                    <div class="app-row">
+                        @* 1. 投遞時間 *@
+                        <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm:ss")</div>
 
-                            @* 2. 職缺名稱 *@
-                            <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>
+                        @* 2. 職缺名稱 *@
+                        <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>
 
-                            @* 3. 審核狀態 *@
-                            <div class="row-status text-center">
-                                <span class="@GetStatusClass(item.Status ?? "待審核") status-label">
-                                    @(string.IsNullOrEmpty(item.Status) ? "待審核" : item.Status)
-                                </span>
-                            </div>
-
-                            @* 4. 面試狀態 (動態套用對應標籤樣式) *@
-                            <div class="text-center">
-                                @if (isPassed)
-                                {
-                                    @* 💡 預設抓取資料庫面試狀態，若無則顯示 "等待安排面試" *@
-                                    var interviewStatus = item.Status ?? "等待安排面試";
-                                    <span class="@GetInterviewStatusClass(interviewStatus) status-label">
-                                        @interviewStatus
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span>-</span>
-                                }
-                            </div>
-
-                            @* 5. 錄取/未錄取 *@
-                            <div class="text-center">
-                                @* {
-                                    // 先取得當前的面試狀態（防呆 Null）
-                                    var currentInterviewStatus = item.Interview?.Status ?? "等待安排面試";
-                                    // 取得當前的資料庫錄取結果（假設欄位叫 AdmissionResult，可依你實際的改，如 item.Interview?.Result）
-                                    var dbResult = item.Interview?.AdmissionResult ?? "";
-
-                                    // 呼叫動態判斷方法
-                                    var admission = GetAdmissionStatus(item.Status ?? "待審核", currentInterviewStatus, dbResult);
-                                }
-
-                                @if (admission.Text != "-")
-                                {
-                                    <span class="@admission.Class status-label">
-                                        @admission.Text
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span>-</span>
-                                }*@
-                            </div>
-
-                            @* 6. 查看詳細按鈕 *@
-                            <div class="text-center">
-                                @if (isPassed)
-                                {
-                                    <button class="btn-view" onclick="toggleDetail(this)">
-                                        查看 <i class="fa fa-chevron-down"></i>
-                                    </button>
-                                }
-                            </div>
+                        @* 3. 審核狀態 *@
+                        <div class="row-status text-center">
+                            <span class="@GetStatusClass(item.Status ?? "待審核") status-label">
+                                @(string.IsNullOrEmpty(item.Status) ? "待審核" : item.Status)
+                            </span>
                         </div>
 
-                        @if (isPassed)
-                        {
-                            <div class="app-detail" style="display: none;">
-                                <div class="detail-grid">
-                                    <div class="detail-section">
-                                        <div class="detail-section-title">
-                                            <span class="title-text">
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                                    <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                                                    <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="2" />
-                                                </svg>
-                                                適性測驗
-                                            </span>
-                                            <span class="detail-badge badge-pending">未完成</span>
+                        @* 4. 面試狀態 (動態套用對應標籤樣式) *@
+                        <div class="text-center">
+                            @if (isPassed)
+                            {
+                                @* 💡 預設抓取資料庫面試狀態，若無則顯示 "等待安排面試" *@
+                                var interviewStatus = item.Status ?? "等待安排面試";
+                                <span class="@GetInterviewStatusClass(interviewStatus) status-label">
+                                    @interviewStatus
+                                </span>
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }
+                        </div>
+
+                        @* 5. 錄取/未錄取 *@
+                        <div class="text-center">
+                            @* {
+                                // 先取得當前的面試狀態（防呆 Null）
+                                var currentInterviewStatus = item.Interview?.Status ?? "等待安排面試";
+                                // 取得當前的資料庫錄取結果（假設欄位叫 AdmissionResult，可依你實際的改，如 item.Interview?.Result）
+                                var dbResult = item.Interview?.AdmissionResult ?? "";
+
+                                // 呼叫動態判斷方法
+                                var admission = GetAdmissionStatus(item.Status ?? "待審核", currentInterviewStatus, dbResult);
+                            }
+
+                            @if (admission.Text != "-")
+                            {
+                                <span class="@admission.Class status-label">
+                                    @admission.Text
+                                </span>
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }*@
+                        </div>
+
+                        @* 6. 查看詳細按鈕 *@
+                        <div class="text-center">
+                            @if (isPassed)
+                            {
+                                <button class="btn-view" onclick="toggleDetail(this)">
+                                    查看 <i class="fa fa-chevron-down"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    @if (isPassed)
+                    {
+                        <div class="app-detail" style="display: none;">
+                            <div class="detail-grid">
+                                <div class="detail-section">
+                                    <div class="detail-section-title">
+                                        <span class="title-text">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                                                <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="2" />
+                                            </svg>
+                                            適性測驗
+                                        </span>
+                                        <span class="detail-badge badge-pending">未完成</span>
+                                    </div>
+                                    <div class="detail-card">
+                                        <div class="detail-notice-box">
+                                            <p>1. 測驗時間約 15 分鐘，請確保網路穩定</p>
+                                            <p>2. 測驗開始後不可中途離開</p>
+                                            <p>3. 請於截止日期前完成</p>
                                         </div>
-                                        <div class="detail-card">
-                                            <div class="detail-notice-box">
-                                                <p>1. 測驗時間約 15 分鐘，請確保網路穩定</p>
-                                                <p>2. 測驗開始後不可中途離開</p>
-                                                <p>3. 請於截止日期前完成</p>
+                                        <div class="detail-info-group">
+                                            <div class="detail-row">
+                                                <span class="detail-label">截止日期</span>
+                                                <span class="detail-value">2026/05/10</span>
                                             </div>
-                                            <div class="detail-info-group">
-                                                <div class="detail-row">
-                                                    <span class="detail-label">截止日期</span>
-                                                    <span class="detail-value">2026/05/10</span>
-                                                </div>
-                                            </div>
-                                            <div class="detail-action">
-                                                <button class="btn-action btn-action--primary">前往測驗</button>
-                                            </div>
+                                        </div>
+                                        <div class="detail-action">
+                                            <button class="btn-action btn-action--primary">前往測驗</button>
                                         </div>
                                     </div>
+                                </div>
 
-                                    <div class="detail-section">
-                                        <div class="detail-section-title">
-                                            <span class="title-text">
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                                    <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2" />
-                                                    <path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                                                </svg>
-                                                面試資訊
-                                            </span>
-                                            <span class="detail-badge badge-waiting">@(item.Status ?? "等待安排面試")</span>
+                                <div class="detail-section">
+                                    <div class="detail-section-title">
+                                        <span class="title-text">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                                <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2" />
+                                                <path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                                            </svg>
+                                            面試資訊
+                                        </span>
+                                        <span class="detail-badge badge-waiting">@(item.Status ?? "等待安排面試")</span>
+                                    </div>
+                                    <div class="detail-card">
+                                        <div class="detail-notice-box">
+                                            <p>1. 請於面試時間前 10 分鐘登入</p>
+                                            <p>2. 請確保視訊與音訊設備正常</p>
                                         </div>
-                                        <div class="detail-card">
-                                            <div class="detail-notice-box">
-                                                <p>1. 請於面試時間前 10 分鐘登入</p>
-                                                <p>2. 請確保視訊與音訊設備正常</p>
+                                        <div class="detail-info-group">
+                                            <div class="detail-row">
+                                                <span class="detail-label">面試方式</span>
+                                                <span class="detail-value">視訊面試</span>
                                             </div>
-                                            <div class="detail-info-group">
-                                                <div class="detail-row">
-                                                    <span class="detail-label">面試方式</span>
-                                                    <span class="detail-value">視訊面試</span>
-                                                </div>
-                                                <div class="detail-row">
-                                                    <span class="detail-label">面試時間</span>
-                                                    <span class="detail-value">2026/05/15 14:00</span>
-                                                </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">面試時間</span>
+                                                <span class="detail-value">2026/05/15 14:00</span>
                                             </div>
-                                            <div class="detail-action">
-                                                <button class="btn-action btn-action--primary">前往面試</button>
-                                            </div>
+                                        </div>
+                                        <div class="detail-action">
+                                            <button class="btn-action btn-action--primary">前往面試</button>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        }
-                    </div>
-                }
+                        </div>
+                    }
+                </div>
             }
-            else
-            {
-                <div class="no-data">目前尚無投遞紀錄。</div>
-            }
-        </div>
+        }
+        else
+        {
+            <div class="no-data">目前尚無投遞紀錄。</div>
+        }
     </div>
+
 </div>
+
 @functions {
     // 1. 履歷審核狀態
     public string GetStatusClass(string status)
@@ -250,6 +254,7 @@
         return ("-", "");
     }
 }
+
 @section Scripts {
     <script>
         function toggleDetail(btn) {

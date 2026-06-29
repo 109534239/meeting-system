@@ -671,35 +671,43 @@
 @* 🚨 負責攔截後端 TempData 錯誤並顯示的 SweetAlert 腳本 🚨 *@
 @if (TempData["ApiError"] != null)
 {
+    var apiErrorHtml = TempData["ApiError"]?.ToString()?.Replace("\n", "<br/>").Replace("\r", "") ?? "";
+    var apiErrorText = TempData["ApiError"]?.ToString()?.Replace("\n", "\\n").Replace("\r", "") ?? "";
+
+    @Html.Raw($@"
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            if (typeof Swal !== 'undefined') {
-                Swal.fire({
-                    icon: 'error',
-                    title: '儲存失敗',
-                    html: '@Html.Raw(TempData["ApiError"].ToString()?.Replace("\n", "<br>").Replace("\r", ""))'
-                });
-            } else {
-                alert('@Html.Raw(TempData["ApiError"].ToString()?.Replace("\n", "\\n").Replace("\r", ""))');
-            }
-        });
+    document.addEventListener('DOMContentLoaded', function() {{
+        if (typeof Swal !== 'undefined') {{
+            Swal.fire({{
+                icon: 'error',
+                title: '儲存失敗',
+                html: '{apiErrorHtml}'
+            }});
+        }} else {{
+            alert('{apiErrorText}');
+        }}
+    }});
     </script>
+    ")
 }
 
 @if (TempData["ShowSuccessAlert"] != null)
 {
-  
+    var successText = TempData["ShowSuccessAlert"]?.ToString()?.Replace("\n", "\\n").Replace("\r", "") ?? "";
+
+    @Html.Raw($@"
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            if (typeof Swal !== 'undefined') {
-                Swal.fire({
-                    icon: 'success',
-                    title: '成功',
-                    text: '@Html.Raw(TempData["ShowSuccessAlert"].ToString()?.Replace("\n", "\\n").Replace("\r", ""))'
-                });
-            } else {
-                alert('@Html.Raw(TempData["ShowSuccessAlert"].ToString()?.Replace("\n", "\\n").Replace("\r", ""))');
-            }
-        });
+    document.addEventListener('DOMContentLoaded', function() {{
+        if (typeof Swal !== 'undefined') {{
+            Swal.fire({{
+                icon: 'success',
+                title: '成功',
+                text: '{successText}'
+            }});
+        }} else {{
+            alert('{successText}');
+        }}
+    }});
     </script>
+    ")
 }
