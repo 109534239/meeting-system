@@ -1,0 +1,98 @@
+@model InterviewProject.Models.FAQ
+
+@{
+    ViewData["Title"] = "新增 FAQ";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/AdminFAQ.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>新增 FAQ</h1>
+        <p>Create Frequently Asked Question</p>
+    </div>
+</div>
+
+<div class="faq-form-wrap">
+
+    <form asp-action="Create" method="post" class="form-card">
+
+        <div class="field-item">
+            <label asp-for="SortOrder" class="field-label">
+                顯示排序
+            </label>
+
+            <input asp-for="SortOrder"
+                   class="field-input"
+                   type="number"
+                   min="0" />
+
+            <span asp-validation-for="SortOrder" class="text-danger"></span>
+        </div>
+
+        <div class="field-item">
+            <label asp-for="IsActive" class="field-label">
+                上架狀態
+            </label>
+
+            <select asp-for="IsActive" class="field-input">
+                <option value="true">立即上架</option>
+                <option value="false">先存為下架</option>
+            </select>
+        </div>
+
+        <div class="field-item field-item--full">
+
+            <label asp-for="Question" class="field-label">
+                FAQ 問題
+            </label>
+
+            <input asp-for="Question"
+                   class="field-input"
+                   placeholder="例如：如何投遞履歷？" />
+
+            <span asp-validation-for="Question" class="text-danger"></span>
+
+        </div>
+
+        <div class="field-item field-item--full">
+
+            <label asp-for="Answer" class="field-label">
+                FAQ 回答
+            </label>
+
+            <textarea asp-for="Answer"
+                      class="field-input field-textarea"
+                      rows="8"
+                      placeholder="請輸入完整回答..."></textarea>
+
+            <span asp-validation-for="Answer" class="text-danger"></span>
+
+        </div>
+
+        <div class="form-actions">
+
+            <a asp-action="Index"
+               class="btn-cancel">
+                返回列表
+            </a>
+
+            <button type="submit"
+                    class="btn-save">
+                儲存 FAQ
+            </button>
+
+        </div>
+
+    </form>
+
+</div>
+
+@section Scripts {
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+}

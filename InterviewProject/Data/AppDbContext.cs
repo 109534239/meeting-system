@@ -22,5 +22,6 @@
         public DbSet<Employee> Employees { get; set; }
         public DbSet<Announcement> Announcements { get; set; }
         public DbSet<InterviewSchedule> InterviewSchedules { get; set; }
+        public DbSet<FAQ> Faqs { get; set; }
     }
 }
