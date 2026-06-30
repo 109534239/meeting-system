@@ -285,6 +285,21 @@
     background: var(--primary-dark);
 }
 
+/* ===========================
+   Q&A 回報列表
+=========================== */
+
+.report-head,
+.report-row {
+    grid-template-columns: 150px 100px 120px 1fr 100px 100px;
+}
+
+.report-row .faq-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* ── RWD ── */
 @media(max-width:768px) {
     .faq-manage-wrap,
@@ -304,5 +319,182 @@
 
     .field-item--full {
         grid-column: auto;
+    }
+}
+
+/* ===========================
+   FAQ / Q&A 回報 Tab
+=========================== */
+
+.faq-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 1px;
+}
+
+.faq-tab {
+    padding: 10px 20px;
+    border: 1px solid transparent;
+    border-radius: 8px 8px 0 0;
+    background: transparent;
+    color: #666;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+    margin-bottom: -2px;
+}
+
+.faq-tab:hover {
+    color: var(--primary);
+    background: #f5f5f5;
+}
+
+.faq-tab.active {
+    color: var(--primary);
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-bottom: 2px solid var(--primary);
+}
+
+.tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    margin-left: 6px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.faq-tab-content {
+    display: none;
+}
+
+.faq-tab-content.active {
+    display: block;
+}
+
+/* ===========================
+   Q&A 回報列表
+=========================== */
+
+.report-head,
+.report-row {
+    grid-template-columns: 150px 100px 120px 1fr 100px 100px;
+}
+
+.report-row .faq-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ===========================
+   Q&A 回報詳細頁：左右雙卡
+=========================== */
+
+.faq-report-detail-wrap {
+    max-width: 1200px;
+    margin: 32px auto;
+    padding: 0 40px;
+}
+
+.report-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    align-items: start;
+}
+
+.report-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 16px rgba(23,79,103,.08);
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.detail-card-header {
+    padding-bottom: 14px;
+    border-bottom: 1px solid #edf2f6;
+    margin-bottom: 4px;
+}
+
+.detail-card-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.detail-card-header p {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.report-content-box {
+    min-height: 260px;
+    white-space: pre-wrap;
+}
+
+.reply-textarea {
+    min-height: 180px;
+}
+
+.internal-note-textarea {
+    min-height: 110px;
+    resize: vertical;
+}
+
+.report-inline-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.report-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-top: 20px;
+    margin-top: 10px;
+    border-top: 1px solid #edf2f6;
+}
+
+.btn-full {
+    width: fit-content;
+    margin-top: 4px;
+}
+
+.alert-error {
+    padding: 12px 20px;
+    background: #fff0f0;
+    border: 1.5px solid #f1b0b0;
+    border-radius: 8px;
+    color: #c94040;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+@media(max-width: 900px) {
+    .faq-report-detail-wrap {
+        padding: 0 20px;
+    }
+
+    .report-detail-grid {
+        grid-template-columns: 1fr;
     }
 }

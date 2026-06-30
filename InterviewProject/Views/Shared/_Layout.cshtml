@@ -50,7 +50,7 @@
                 <div class="nav-links">
 
                     @* ==============================
-                       人資：招募數據 / 職缺管理 / 應徵管理 / 面試排程 / 公告管理 / 求職Q&A後台 / Q&A回報
+                       人資：招募數據 / 職缺管理 / 應徵管理 / 面試排程 / 公告管理 / 求職Q&A管理
                        ============================== *@
                     @if (isHr)
                     {
@@ -71,10 +71,7 @@
                            asp-controller="AdminAnnouncement" asp-action="Index">公告管理</a>
 
                         <a class="nav-btn @(controller == "AdminFAQ" && action != "Report" ? "active" : "")"
-                           asp-controller="AdminFAQ" asp-action="Index">求職Q&A</a>
-
-                        <a class="nav-btn @(controller == "AdminFAQ" && action == "Report" ? "active" : "")"
-                           asp-controller="AdminFAQ" asp-action="Report">Q&A回報</a>
+                           asp-controller="AdminFAQ" asp-action="Index">Q&A管理</a>
                     }
 
                     @* ==============================

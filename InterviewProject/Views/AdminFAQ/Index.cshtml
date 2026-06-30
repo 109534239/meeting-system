@@ -1,7 +1,22 @@
 @model IEnumerable<InterviewProject.Models.FAQ>
-    
+
 @{
-    ViewData["Title"] = "求職Q&A";
+    ViewData["Title"] = "求職Q&A管理";
+
+    var reports = ViewBag.Reports as List<InterviewProject.Models.FAQReport>
+                  ?? new List<InterviewProject.Models.FAQReport>();
+
+    string role = ViewBag.MemberRole ?? "";
+    bool isHr = role == "hr";
+}
+
+@{
+    var currentTab = Context.Request.Query["tab"].ToString();
+
+    if (string.IsNullOrEmpty(currentTab))
+    {
+        currentTab = isHr ? "faq" : "report";
+    }
 }
 
 @section Styles {
@@ -13,8 +28,8 @@
 <!-- PAGE HEADER -->
 <div class="page-header">
     <div class="page-header-inner">
-        <h1>求職 Q&A</h1>
-        <p>FAQ Management</p>
+        <h1>求職Q&A管理</h1>
+        <p>FAQ & Report Management</p>
     </div>
 </div>
 
@@ -27,77 +42,169 @@
         </div>
     }
 
-    <!-- 工具列 -->
-    <div class="faq-toolbar">
-        <a asp-action="Create" class="btn-add">
-            ＋ 新增 FAQ
-        </a>
+    @* ── Tab 切換區 ── *@
+    <div class="faq-tabs">
+        @if (isHr)
+        {
+            <button type="button"
+                    class="faq-tab @(currentTab == "faq" ? "active" : "")"
+                    data-tab="faq"
+                    onclick="showFaqTab('faq')">
+                FAQ 管理
+            </button>
+        }
+
+        <button type="button"
+                class="faq-tab @(currentTab == "report" ? "active" : "")"
+                data-tab="report"
+                onclick="showFaqTab('report')">
+            Q&A 回報
+            <span class="tab-count">@reports.Count</span>
+        </button>
     </div>
 
-    <!-- FAQ Table -->
-    <div class="faq-table">
+    @* ── FAQ 管理：僅 HR 顯示 ── *@
+    @if (isHr)
+    {
+        <div id="faq-tab-content" class="faq-tab-content @(currentTab == "faq" ? "active" : "")">
 
-        <div class="faq-table-head">
-            <div>排序</div>
-            <div>問題</div>
-            <div>狀態</div>
-            <div>操作</div>
+            <!-- 工具列 -->
+            <div class="faq-toolbar">
+                <a asp-action="Create" class="btn-add">
+                    ＋ 新增 FAQ
+                </a>
+            </div>
+
+            <!-- FAQ Table -->
+            <div class="faq-table">
+
+                <div class="faq-table-head">
+                    <div>排序</div>
+                    <div>問題</div>
+                    <div>狀態</div>
+                    <div>操作</div>
+                </div>
+
+                @if (Model != null && Model.Any())
+                {
+                    foreach (var item in Model)
+                    {
+                        <div class="faq-row">
+
+                            <div>
+                                @item.SortOrder
+                            </div>
+
+                            <div class="faq-title">
+                                @item.Question
+                            </div>
+
+                            <div>
+                                <button class="btn-toggle @(item.IsActive ? "active" : "inactive")"
+                                        onclick="toggleActive(@item.Id,this)">
+                                    @(item.IsActive ? "顯示中" : "已停用")
+                                </button>
+                            </div>
+
+                            <div class="faq-actions">
+
+                                <a asp-action="Edit"
+                                   asp-route-id="@item.Id"
+                                   class="btn-edit">
+                                    編輯
+                                </a>
+
+                                <form asp-action="Delete"
+                                      asp-route-id="@item.Id"
+                                      method="post"
+                                      onsubmit="return confirm('確定刪除此 FAQ？')">
+
+                                    @Html.AntiForgeryToken()
+
+                                    <button type="submit"
+                                            class="btn-delete">
+                                        刪除
+                                    </button>
+
+                                </form>
+
+                            </div>
+
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="faq-empty">
+                        目前尚未建立任何 FAQ
+                    </div>
+                }
+
+            </div>
         </div>
+    }
 
-        @if (Model.Any())
-        {
-            foreach (var item in Model)
+    @* ── Q&A 回報：HR / Manager / Director 顯示 ── *@
+    <div id="report-tab-content" class="faq-tab-content @(currentTab == "report" ? "active" : "")">
+
+        <div class="faq-table">
+
+            <div class="faq-table-head report-head">
+                <div>時間</div>
+                <div>姓名</div>
+                <div>類別</div>
+                <div>主旨</div>
+                <div>狀態</div>
+                <div>操作</div>
+            </div>
+
+            @if (reports.Any())
             {
-                <div class="faq-row">
+                foreach (var item in reports)
+                {
+                    <div class="faq-row report-row">
 
-                    <div>
-                        @item.SortOrder
-                    </div>
+                        <div>
+                            @item.CreatedAt.ToString("yyyy/MM/dd HH:mm")
+                        </div>
 
-                    <div class="faq-title">
-                        @item.Question
-                    </div>
+                        <div class="faq-title">
+                            @item.Name
+                        </div>
 
-                    <div>
-                        <button class="btn-toggle @(item.IsActive ? "active" : "inactive")"
-                                onclick="toggleActive(@item.Id,this)">
-                            @(item.IsActive ? "顯示中" : "已停用")
-                        </button>
-                    </div>
+                        <div>
+                            @item.Category
+                        </div>
 
-                    <div class="faq-actions">
+                        <div class="faq-title">
+                            @item.Subject
+                        </div>
 
-                        <a asp-action="Edit"
-                           asp-route-id="@item.Id"
-                           class="btn-edit">
-                            編輯
-                        </a>
+                        <div>
+                            <span class="btn-toggle @(item.Status == "已回覆" ? "active" : "inactive")">
+                                @item.Status
+                            </span>
+                        </div>
 
-                        <form asp-action="Delete"
-                              asp-route-id="@item.Id"
-                              method="post"
-                              onsubmit="return confirm('確定刪除此 FAQ？')">
-
-                            @Html.AntiForgeryToken()
-
-                            <button type="submit"
-                                    class="btn-delete">
-                                刪除
-                            </button>
-
-                        </form>
+                        <div class="faq-actions">
+                            <a asp-action="ReportDetail"
+                               asp-route-id="@item.Id"
+                               class="btn-edit">
+                                查看
+                            </a>
+                        </div>
 
                     </div>
-
+                }
+            }
+            else
+            {
+                <div class="faq-empty">
+                    目前尚未收到任何 Q&A 回報
                 </div>
             }
-        }
-        else
-        {
-            <div class="faq-empty">
-                目前尚未建立任何 FAQ
-            </div>
-        }
+
+        </div>
 
     </div>
 
@@ -105,6 +212,31 @@
 
 @section Scripts {
     <script>
+        function showFaqTab(tabName) {
+            document.querySelectorAll(".faq-tab").forEach(btn => {
+                btn.classList.remove("active");
+            });
+
+            document.querySelectorAll(".faq-tab-content").forEach(content => {
+                content.classList.remove("active");
+            });
+
+            const targetBtn = document.querySelector(`.faq-tab[data-tab="${tabName}"]`);
+            const targetContent = document.getElementById(`${tabName}-tab-content`);
+
+            if (targetBtn) {
+                targetBtn.classList.add("active");
+            }
+
+            if (targetContent) {
+                targetContent.classList.add("active");
+            }
+
+            const url = new URL(window.location.href);
+            url.searchParams.set("tab", tabName);
+            window.history.replaceState({}, "", url);
+        }
+
         async function toggleActive(id, btn) {
             const res = await fetch('/AdminFAQ/ToggleActive/' + id, {
                 method: 'POST'
