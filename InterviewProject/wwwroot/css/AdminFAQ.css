@@ -389,7 +389,7 @@
 
 .report-head,
 .report-row {
-    grid-template-columns: 150px 100px 120px 1fr 100px 100px;
+    grid-template-columns: 150px 100px 120px 1fr 100px minmax(240px, auto);
 }
 
 .report-row .faq-title {

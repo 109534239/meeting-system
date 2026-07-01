@@ -18,14 +18,10 @@ namespace InterviewProject.Models
 
         public string Status { get; set; } = "待處理";
 
-        public int? AssignedEmployeeId { get; set; }
-
-        public string? AssignedRole { get; set; }
-
         public string? ReplyContent { get; set; }
 
-        public string? InternalNote { get; set; }
-
+        public string? Department { get; set; }
+        
         public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         public DateTime? RepliedAt { get; set; }

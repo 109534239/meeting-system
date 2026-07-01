@@ -69,10 +69,8 @@ namespace InterviewProject.Controllers
             report.Status = "待處理";
             report.CreatedAt = DateTime.Now;
             report.RepliedAt = null;
-            report.AssignedEmployeeId = null;
-            report.AssignedRole = null;
+            report.Department = null;
             report.ReplyContent = null;
-            report.InternalNote = null;
 
             _db.FAQReports.Add(report);
             await _db.SaveChangesAsync();

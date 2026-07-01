@@ -15,6 +15,8 @@
     int visitorPendingCount = ViewBag.VisitorPendingCount ?? 0;
     int jobseekerPendingCount = ViewBag.JobseekerPendingCount ?? 0;
 
+    var departmentOptions = ViewBag.DepartmentOptions as List<string> ?? new List<string>();
+
     string role = ViewBag.MemberRole ?? "";
     bool isHr = role == "hr";
 }
@@ -254,8 +256,18 @@
                             <a asp-action="ReportDetail"
                                asp-route-id="@item.Id"
                                class="btn-edit">
-                                查看
+                                回覆
                             </a>
+
+                            <select name="department"
+                                    class="dept-select"
+                                    onchange="assignDepartment(@item.Id, this)">
+                                <option value="" selected="@(string.IsNullOrWhiteSpace(item.Department) || item.Department == "人力資源")">選擇部門</option>
+                                @foreach (var dept in departmentOptions)
+                                {
+                                    <option value="@dept" selected="@(item.Department == dept)">@dept</option>
+                                }
+                            </select>
                         </div>
 
                     </div>
@@ -341,8 +353,18 @@
                             <a asp-action="ReportDetail"
                                asp-route-id="@item.Id"
                                class="btn-edit">
-                                查看
+                                回覆
                             </a>
+
+                            <select name="department"
+                                    class="dept-select"
+                                    onchange="assignDepartment(@item.Id, this)">
+                                <option value="" selected="@(string.IsNullOrWhiteSpace(item.Department) || item.Department == "人力資源")">選擇部門</option>
+                                @foreach (var dept in departmentOptions)
+                                {
+                                    <option value="@dept" selected="@(item.Department == dept)">@dept</option>
+                                }
+                            </select>
                         </div>
 
                     </div>
@@ -403,6 +425,27 @@
             btn.textContent = data.isActive ? '顯示中' : '已停用';
 
             btn.className = 'btn-toggle ' + (data.isActive ? 'active' : 'inactive');
+        }
+
+        async function assignDepartment(id, selectEl) {
+            const department = selectEl.value;
+            const previousValue = selectEl.dataset.prevValue || department;
+
+            const res = await fetch('/AdminFAQ/AssignDepartment/' + id, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'department=' + encodeURIComponent(department)
+            });
+
+            const data = await res.json();
+
+            if (!data.success) {
+                alert(data.message);
+                selectEl.value = previousValue;
+                return;
+            }
+
+            window.location.reload();
         }
     </script>
 }

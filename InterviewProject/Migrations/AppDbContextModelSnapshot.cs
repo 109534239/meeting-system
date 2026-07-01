@@ -183,7 +183,7 @@ namespace InterviewProject.Migrations
                     b.Property<int?>("AssignedEmployeeId")
                         .HasColumnType("integer");
 
-                    b.Property<string>("AssignedRole")
+                    b.Property<string>("Department")
                         .HasColumnType("text");
 
                     b.Property<string>("Category")

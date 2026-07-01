@@ -51,13 +51,15 @@ namespace InterviewProject.Controllers
                 .ToListAsync();
 
             // ── 訪客回覆 ──
-            var visitorQuery = _db.FAQReports.Where(r => r.Role == "訪客");
+            var visitorQuery = _db.FAQReports.Where(r =>
+               r.Role == "訪客" && (r.Department == null || r.Department == "人力資源"));
             visitorQuery = ApplyStatusFilter(visitorQuery, visitorStatus);
             visitorQuery = ApplySort(visitorQuery, visitorSort);
             var visitorReports = await visitorQuery.ToListAsync();
 
             // ── 求職者回覆 ──
-            var jobseekerQuery = _db.FAQReports.Where(r => r.Role == "求職者");
+            var jobseekerQuery = _db.FAQReports.Where(r =>
+               r.Role == "求職者" && (r.Department == null || r.Department == "人力資源"));
             jobseekerQuery = ApplyStatusFilter(jobseekerQuery, jobseekerStatus);
             jobseekerQuery = ApplySort(jobseekerQuery, jobseekerSort);
             var jobseekerReports = await jobseekerQuery.ToListAsync();
@@ -72,9 +74,19 @@ namespace InterviewProject.Controllers
 
             // 待處理數量，不受篩選條件影響，用於分頁籤上的提示數字
             ViewBag.VisitorPendingCount = await _db.FAQReports
-                .CountAsync(r => r.Role == "訪客" && r.Status != "已回覆");
+                 .CountAsync(r => r.Role == "訪客" && (r.Department == null || r.Department == "人力資源") && r.Status != "已回覆");
             ViewBag.JobseekerPendingCount = await _db.FAQReports
-                .CountAsync(r => r.Role == "求職者" && r.Status != "已回覆");
+                .CountAsync(r => r.Role == "求職者" && (r.Department == null || r.Department == "人力資源") && r.Status != "已回覆");
+
+            // 部門下拉選單：來自 Employees 表中 role = "director" 的部門清單
+            // ※ 請依實際 Employee 模型的類別/屬性名稱調整（Employees / Role / Department）
+            ViewBag.DepartmentOptions = await _db.Employees
+                .Where(e => e.Role == "director")
+                .Select(e => e.Department)
+                .Where(d => !string.IsNullOrWhiteSpace(d))
+                .Distinct()
+                .OrderBy(d => d)
+                .ToListAsync();
 
             return View(faqs);
         }
@@ -254,8 +266,7 @@ namespace InterviewProject.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> ReplyReport(
             int id,
-            string replyContent,
-            string? internalNote)
+            string replyContent)
         {
             var memberId = HttpContext.Session.GetInt32("MemberId");
             if (memberId == null)
@@ -280,9 +291,9 @@ namespace InterviewProject.Controllers
             }
 
             report.ReplyContent = replyContent;
-            report.InternalNote = internalNote;
             report.Status = "已回覆";
             report.RepliedAt = DateTime.Now;
+            report.Department = "人力資源";
 
             await _db.SaveChangesAsync();
 
@@ -294,43 +305,32 @@ namespace InterviewProject.Controllers
         }
 
         // ==============================
-        // Q&A 回報：轉交主管
-        // 權限：僅 HR
+        // Q&A 回報：列表上直接變更處理部門
+        // 選擇下拉選單即直接更新，不需進入詳細頁
+        // 權限：hr / manager / director
         // ==============================
         [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> TransferReport(
-            int id,
-            string assignedRole,
-            string? internalNote)
+        [Route("AdminFAQ/AssignDepartment/{id}")]
+        public async Task<IActionResult> AssignDepartment(int id, string department)
         {
-            if (!IsHr())
-                return RedirectToAction("Index", "Login");
+            var memberId = HttpContext.Session.GetInt32("MemberId");
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+
+            if (memberId == null || (role != "hr" && role != "manager" && role != "director"))
+                return Json(new { success = false, message = "權限不足" });
+
+            if (string.IsNullOrWhiteSpace(department))
+                return Json(new { success = false, message = "請選擇部門" });
 
             var report = await _db.FAQReports.FindAsync(id);
-
             if (report == null)
-                return NotFound();
+                return Json(new { success = false, message = "找不到回報資料" });
 
-            if (assignedRole != "manager" &&
-                assignedRole != "director")
-            {
-                TempData["Error"] = "請選擇轉交對象。";
-                return RedirectToAction(nameof(ReportDetail), new { id });
-            }
-
-            report.AssignedRole = assignedRole;
-            report.InternalNote = internalNote;
-
-            report.Status = assignedRole == "manager"
-                ? "已轉主管"
-                : "已轉最高主管";
-
+            // 選擇「選擇部門」(空值) 時直接清空，不再視為錯誤
+            report.Department = string.IsNullOrWhiteSpace(department) ? null : department;
             await _db.SaveChangesAsync();
 
-            TempData["Success"] = "已成功轉交。";
-
-            return RedirectToAction(nameof(ReportDetail), new { id });
+            return Json(new { success = true, department = report.Department });
         }
     }
 }
