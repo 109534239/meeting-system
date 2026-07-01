@@ -7,6 +7,37 @@
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Faq.css" asp-append-version="true" />
+
+    <style>
+        /* 未勾選同意條款的錯誤提示：沿用 Faq.css 的 .toast-success 版型（置中、進出場動畫），
+                   這裡只疊加紅色系配色，不重複定義位置/動畫，避免跟 Faq.css 衝突 */
+        .toast-error {
+            border-left: 4px solid #e53935;
+        }
+
+            .toast-error .toast-icon {
+                background: #e53935;
+            }
+
+        /* 勾選框沒勾時，讓該列輕輕晃動，提醒使用者注意（Faq.css 沒有這個效果，額外補上） */
+        .checkbox-row.shake {
+            animation: shake 0.3s;
+        }
+
+        @@keyframes shake {
+            0%, 100% {
+                transform: translateX(0);
+            }
+
+            25% {
+                transform: translateX(-4px);
+            }
+
+            75% {
+                transform: translateX(4px);
+            }
+        }
+    </style>
 }
 
 <!-- PAGE HEADER -->
@@ -79,7 +110,7 @@
         </div>
     </div>
 
-    <form asp-controller="FAQ" asp-action="SubmitReport" method="post">
+    <form asp-controller="FAQ" asp-action="SubmitReport" method="post" id="faqContactForm">
         @Html.AntiForgeryToken()
 
         <!-- 姓名 -->
@@ -165,6 +196,21 @@
     </form>
 </section>
 
+<!-- 未勾選同意條款時的錯誤提示（前端攔截，避免資料遺失） -->
+<div id="toast-agree-error" class="toast-success toast-error" style="display:none;">
+    <div class="toast-icon">
+        !
+    </div>
+    <div class="toast-content">
+        <div class="toast-title">
+            尚未勾選同意事項
+        </div>
+        <div class="toast-message">
+            請先勾選「我同意個人資料保護法定應告知事項」後再送出表單。
+        </div>
+    </div>
+</div>
+
 @if (TempData["Success"] != null)
 {
     <div id="toast-success" class="toast-success">
@@ -208,6 +254,60 @@
                     toast.remove();
                 }, 400);
             }, 10000);
+        }
+
+        // ==============================
+        // 送出前檢查是否已勾選同意條款
+        // 未勾選時：攔截送出、不重新整理頁面（表單資料不會消失），並跳出提示
+        // ==============================
+        const faqForm = document.getElementById("faqContactForm");
+        const agreeCheckbox = document.getElementById("agree");
+        const agreeErrorToast = document.getElementById("toast-agree-error");
+
+        function showAgreeError() {
+            if (!agreeErrorToast) return;
+
+            agreeErrorToast.style.display = "flex";
+            agreeErrorToast.classList.remove("toast-hide");
+
+            // 讓同意勾選列輕輕晃動，提醒使用者注意
+            const checkboxRow = agreeCheckbox.closest(".checkbox-row");
+            if (checkboxRow) {
+                checkboxRow.classList.remove("shake");
+                void checkboxRow.offsetWidth; // 觸發 reflow，讓動畫可以重複播放
+                checkboxRow.classList.add("shake");
+            }
+
+            // 捲動到勾選欄位位置，讓使用者看得到
+            agreeCheckbox.scrollIntoView({ behavior: "smooth", block: "center" });
+
+            // 5 秒後自動消失
+            clearTimeout(agreeErrorToast._hideTimer);
+            agreeErrorToast._hideTimer = setTimeout(() => {
+                agreeErrorToast.classList.add("toast-hide");
+                setTimeout(() => {
+                    agreeErrorToast.style.display = "none";
+                }, 400);
+            }, 5000);
+        }
+
+        if (faqForm && agreeCheckbox) {
+            faqForm.addEventListener("submit", function (e) {
+                if (!agreeCheckbox.checked) {
+                    e.preventDefault();
+                    showAgreeError();
+                }
+            });
+
+            // 使用者勾選後，若提示還顯示中就自動隱藏
+            agreeCheckbox.addEventListener("change", function () {
+                if (agreeCheckbox.checked && agreeErrorToast) {
+                    agreeErrorToast.classList.add("toast-hide");
+                    setTimeout(() => {
+                        agreeErrorToast.style.display = "none";
+                    }, 400);
+                }
+            });
         }
     </script>
 }
