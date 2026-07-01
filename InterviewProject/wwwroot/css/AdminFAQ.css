@@ -498,3 +498,21 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* ── Q&A 回報內容唯讀框 ── */
+.report-content-box {
+    min-height: 260px;
+    padding: 14px 16px;
+    border: 1.5px solid #d0dde6;
+    border-radius: 8px;
+    background: #f8fbfc;
+    color: var(--text-main);
+    font-size: 14px;
+    line-height: 1.8;
+    font-family: inherit;
+    box-sizing: border-box;
+
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
