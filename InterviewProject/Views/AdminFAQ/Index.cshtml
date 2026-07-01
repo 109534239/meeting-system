@@ -1,10 +1,19 @@
 @model IEnumerable<InterviewProject.Models.FAQ>
+@using InterviewProject.Models
 
 @{
     ViewData["Title"] = "求職Q&A管理";
 
-    var reports = ViewBag.Reports as List<InterviewProject.Models.FAQReport>
-                  ?? new List<InterviewProject.Models.FAQReport>();
+    var visitorReports = ViewBag.VisitorReports as List<FAQReport> ?? new List<FAQReport>();
+    var jobseekerReports = ViewBag.JobseekerReports as List<FAQReport> ?? new List<FAQReport>();
+
+    string visitorStatus = ViewBag.VisitorStatus ?? "pending";
+    string visitorSort = ViewBag.VisitorSort ?? "asc";
+    string jobseekerStatus = ViewBag.JobseekerStatus ?? "pending";
+    string jobseekerSort = ViewBag.JobseekerSort ?? "asc";
+
+    int visitorPendingCount = ViewBag.VisitorPendingCount ?? 0;
+    int jobseekerPendingCount = ViewBag.JobseekerPendingCount ?? 0;
 
     string role = ViewBag.MemberRole ?? "";
     bool isHr = role == "hr";
@@ -15,7 +24,7 @@
 
     if (string.IsNullOrEmpty(currentTab))
     {
-        currentTab = isHr ? "faq" : "report";
+        currentTab = isHr ? "faq" : "visitor";
     }
 }
 
@@ -23,6 +32,30 @@
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/AdminFAQ.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <style>
+        .report-filter-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+
+        .report-filter-bar label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .report-filter-bar select {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid #d0d0d0;
+            font-size: 14px;
+        }
+    </style>
 }
 
 <!-- PAGE HEADER -->
@@ -55,11 +88,19 @@
         }
 
         <button type="button"
-                class="faq-tab @(currentTab == "report" ? "active" : "")"
-                data-tab="report"
-                onclick="showFaqTab('report')">
-            Q&A 回報
-            <span class="tab-count">@reports.Count</span>
+                class="faq-tab @(currentTab == "visitor" ? "active" : "")"
+                data-tab="visitor"
+                onclick="showFaqTab('visitor')">
+            訪客回覆
+            <span class="tab-count">@visitorPendingCount</span>
+        </button>
+
+        <button type="button"
+                class="faq-tab @(currentTab == "jobseeker" ? "active" : "")"
+                data-tab="jobseeker"
+                onclick="showFaqTab('jobseeker')">
+            求職者回覆
+            <span class="tab-count">@jobseekerPendingCount</span>
         </button>
     </div>
 
@@ -144,8 +185,31 @@
         </div>
     }
 
-    @* ── Q&A 回報：HR / Manager / Director 顯示 ── *@
-    <div id="report-tab-content" class="faq-tab-content @(currentTab == "report" ? "active" : "")">
+    @* ── 訪客回覆 ── *@
+    <div id="visitor-tab-content" class="faq-tab-content @(currentTab == "visitor" ? "active" : "")">
+
+        <form method="get" class="report-filter-bar">
+            <input type="hidden" name="tab" value="visitor" />
+            <input type="hidden" name="jobseekerStatus" value="@jobseekerStatus" />
+            <input type="hidden" name="jobseekerSort" value="@jobseekerSort" />
+
+            <label>
+                狀態：
+                <select name="visitorStatus" onchange="this.form.submit()">
+                    <option value="pending" selected="@(visitorStatus == "pending")">待處理</option>
+                    <option value="replied" selected="@(visitorStatus == "replied")">已回覆</option>
+                    <option value="all" selected="@(visitorStatus == "all")">全部</option>
+                </select>
+            </label>
+
+            <label>
+                排序：
+                <select name="visitorSort" onchange="this.form.submit()">
+                    <option value="asc" selected="@(visitorSort == "asc")">時間由舊到新</option>
+                    <option value="desc" selected="@(visitorSort == "desc")">時間由新到舊</option>
+                </select>
+            </label>
+        </form>
 
         <div class="faq-table">
 
@@ -158,9 +222,9 @@
                 <div>操作</div>
             </div>
 
-            @if (reports.Any())
+            @if (visitorReports.Any())
             {
-                foreach (var item in reports)
+                foreach (var item in visitorReports)
                 {
                     <div class="faq-row report-row">
 
@@ -200,7 +264,94 @@
             else
             {
                 <div class="faq-empty">
-                    目前尚未收到任何 Q&A 回報
+                    目前沒有符合條件的訪客回報
+                </div>
+            }
+
+        </div>
+
+    </div>
+
+    @* ── 求職者回覆 ── *@
+    <div id="jobseeker-tab-content" class="faq-tab-content @(currentTab == "jobseeker" ? "active" : "")">
+
+        <form method="get" class="report-filter-bar">
+            <input type="hidden" name="tab" value="jobseeker" />
+            <input type="hidden" name="visitorStatus" value="@visitorStatus" />
+            <input type="hidden" name="visitorSort" value="@visitorSort" />
+
+            <label>
+                狀態：
+                <select name="jobseekerStatus" onchange="this.form.submit()">
+                    <option value="pending" selected="@(jobseekerStatus == "pending")">待處理</option>
+                    <option value="replied" selected="@(jobseekerStatus == "replied")">已回覆</option>
+                    <option value="all" selected="@(jobseekerStatus == "all")">全部</option>
+                </select>
+            </label>
+
+            <label>
+                排序：
+                <select name="jobseekerSort" onchange="this.form.submit()">
+                    <option value="asc" selected="@(jobseekerSort == "asc")">時間由舊到新</option>
+                    <option value="desc" selected="@(jobseekerSort == "desc")">時間由新到舊</option>
+                </select>
+            </label>
+        </form>
+
+        <div class="faq-table">
+
+            <div class="faq-table-head report-head">
+                <div>時間</div>
+                <div>姓名</div>
+                <div>類別</div>
+                <div>主旨</div>
+                <div>狀態</div>
+                <div>操作</div>
+            </div>
+
+            @if (jobseekerReports.Any())
+            {
+                foreach (var item in jobseekerReports)
+                {
+                    <div class="faq-row report-row">
+
+                        <div>
+                            @item.CreatedAt.ToString("yyyy/MM/dd HH:mm")
+                        </div>
+
+                        <div class="faq-title">
+                            @item.Name
+                        </div>
+
+                        <div>
+                            @item.Category
+                        </div>
+
+                        <div class="faq-title">
+                            @item.Subject
+                        </div>
+
+                        <div>
+                            <span class="btn-toggle @(item.Status == "已回覆" ? "active" : "inactive")">
+                                @item.Status
+                            </span>
+                        </div>
+
+                        <div class="faq-actions">
+                            <a asp-action="ReportDetail"
+                               asp-route-id="@item.Id"
+                               class="btn-edit">
+                                查看
+                            </a>
+                        </div>
+
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="faq-empty">
+                    目前沒有符合條件的求職者回報
                 </div>
             }
 

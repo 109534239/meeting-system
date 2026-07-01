@@ -30,7 +30,7 @@ namespace InterviewProject.Controllers
         // 包含：FAQ 管理 + Q&A 回報
         // 權限：hr / manager / director
         // ==============================
-        public async Task<IActionResult> Index()
+        public async Task<IActionResult> Index(string visitorStatus = "pending", string visitorSort = "asc", string jobseekerStatus = "pending", string jobseekerSort = "asc")
         {
             var memberId = HttpContext.Session.GetInt32("MemberId");
             if (memberId == null)
@@ -50,14 +50,56 @@ namespace InterviewProject.Controllers
                 .ThenByDescending(f => f.CreatedAt)
                 .ToListAsync();
 
-            // Q&A 回報：HR / Manager / Director 都可以看
-            var reports = await _db.FAQReports
-                .OrderByDescending(r => r.CreatedAt)
-                .ToListAsync();
+            // ── 訪客回覆 ──
+            var visitorQuery = _db.FAQReports.Where(r => r.Role == "訪客");
+            visitorQuery = ApplyStatusFilter(visitorQuery, visitorStatus);
+            visitorQuery = ApplySort(visitorQuery, visitorSort);
+            var visitorReports = await visitorQuery.ToListAsync();
 
-            ViewBag.Reports = reports;
+            // ── 求職者回覆 ──
+            var jobseekerQuery = _db.FAQReports.Where(r => r.Role == "求職者");
+            jobseekerQuery = ApplyStatusFilter(jobseekerQuery, jobseekerStatus);
+            jobseekerQuery = ApplySort(jobseekerQuery, jobseekerSort);
+            var jobseekerReports = await jobseekerQuery.ToListAsync();
+
+            ViewBag.VisitorReports = visitorReports;
+            ViewBag.JobseekerReports = jobseekerReports;
+
+            ViewBag.VisitorStatus = visitorStatus;
+            ViewBag.VisitorSort = visitorSort;
+            ViewBag.JobseekerStatus = jobseekerStatus;
+            ViewBag.JobseekerSort = jobseekerSort;
+
+            // 待處理數量，不受篩選條件影響，用於分頁籤上的提示數字
+            ViewBag.VisitorPendingCount = await _db.FAQReports
+                .CountAsync(r => r.Role == "訪客" && r.Status != "已回覆");
+            ViewBag.JobseekerPendingCount = await _db.FAQReports
+                .CountAsync(r => r.Role == "求職者" && r.Status != "已回覆");
 
             return View(faqs);
+        }
+
+        // ==============================
+        // 狀態篩選：待處理(預設) / 已回覆 / 全部
+        // ==============================
+        private static IQueryable<FAQReport> ApplyStatusFilter(IQueryable<FAQReport> query, string status)
+        {
+            return status switch
+            {
+                "replied" => query.Where(r => r.Status == "已回覆"),
+                "all" => query,
+                _ => query.Where(r => r.Status != "已回覆") // 預設：待處理
+            };
+        }
+
+        // ==============================
+        // 時間排序：asc(預設，越早在上面) / desc
+        // ==============================
+        private static IQueryable<FAQReport> ApplySort(IQueryable<FAQReport> query, string sort)
+        {
+            return sort == "desc"
+                ? query.OrderByDescending(r => r.CreatedAt)
+                : query.OrderBy(r => r.CreatedAt);
         }
 
         // ==============================
@@ -79,7 +121,7 @@ namespace InterviewProject.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(FAQ faq)
-        {
+        {   
             if (!IsHr())
                 return RedirectToAction("Index", "Login");
 

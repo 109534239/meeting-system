@@ -4,6 +4,9 @@
     ViewData["Title"] = "Q&A 回報詳細資料";
     var role = ViewBag.MemberRole?.ToString()?.ToLower();
     bool isHr = role == "hr";
+
+    // 依回報者身份決定返回列表時應停留在哪個分頁
+    string backTab = Model.Role == "求職者" ? "jobseeker" : "visitor";
 }
 
 @section Styles {
@@ -43,6 +46,11 @@
             <div class="detail-card-header">
                 <h2>回報內容</h2>
                 <p>Applicant Question</p>
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">身份</label>
+                <div class="field-input">@Model.Role</div>
             </div>
 
             <div class="field-item">

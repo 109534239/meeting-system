@@ -63,6 +63,9 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Index");
             }
 
+            var applicantId = HttpContext.Session.GetInt32("UserId");
+            report.Role = applicantId != null ? "求職者" : "訪客";
+
             report.Status = "待處理";
             report.CreatedAt = DateTime.Now;
             report.RepliedAt = null;

@@ -4,6 +4,8 @@ namespace InterviewProject.Models
     {
         public int Id { get; set; }
 
+        public string Role { get; set; } = "訪客";
+
         public string Name { get; set; } = "";
 
         public string Email { get; set; } = "";
