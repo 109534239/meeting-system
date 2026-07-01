@@ -2,6 +2,9 @@ using InterviewProject.Data;
 using InterviewProject.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Net;
+using System.Net.Mail;
+using System.Text;
 
 namespace InterviewProject.Controllers
 {
@@ -297,7 +300,23 @@ namespace InterviewProject.Controllers
 
             await _db.SaveChangesAsync();
 
-            TempData["Success"] = "Q&A 已成功回覆。";
+            string resultMessage = "Q&A 已成功回覆。";
+
+            // 訪客回覆送出後，額外寄送 Email 通知（Email 取自 FAQReports.Email）
+            if (report.Role == "訪客" && !string.IsNullOrWhiteSpace(report.Email))
+            {
+                try
+                {
+                    await SendReplyEmailAsync(report.Email, report.Subject, report.Content, replyContent);
+                }
+                catch (Exception ex)
+                {
+                    string errorMsg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                    resultMessage += $"（但 Email 通知寄送失敗：{errorMsg}）";
+                }
+            }
+
+            TempData["Success"] = resultMessage;
 
             // 送出後直接返回該身份（訪客／求職者）的預設列表
             string backTab = report.Role == "求職者" ? "jobseeker" : "visitor";
@@ -319,9 +338,6 @@ namespace InterviewProject.Controllers
             if (memberId == null || (role != "hr" && role != "manager" && role != "director"))
                 return Json(new { success = false, message = "權限不足" });
 
-            if (string.IsNullOrWhiteSpace(department))
-                return Json(new { success = false, message = "請選擇部門" });
-
             var report = await _db.FAQReports.FindAsync(id);
             if (report == null)
                 return Json(new { success = false, message = "找不到回報資料" });
@@ -331,6 +347,47 @@ namespace InterviewProject.Controllers
             await _db.SaveChangesAsync();
 
             return Json(new { success = true, department = report.Department });
+        }
+
+        // ==============================
+        // Email 通知：回覆 Q&A 後寄送給訪客
+        // 寄信方式參考 LoginController 的 SendEmailAsync
+        // ==============================
+        private async Task SendReplyEmailAsync(string toEmail, string subject, string originalContent, string replyContent)
+        {
+            string fromEmail = "angela296123@gmail.com";
+            string appPassword = "zgpj hcew cyqc qxiy";
+            string companyName = "XXX公司";
+
+            using (var smtpClient = new SmtpClient("smtp.gmail.com", 587))
+            {
+                smtpClient.UseDefaultCredentials = false;
+                smtpClient.Credentials = new NetworkCredential(fromEmail, appPassword);
+                smtpClient.EnableSsl = true;
+                smtpClient.DeliveryFormat = SmtpDeliveryFormat.International;
+
+                using (var mailMessage = new MailMessage())
+                {
+                    mailMessage.From = new MailAddress(fromEmail, companyName, Encoding.UTF8);
+                    mailMessage.To.Add(toEmail);
+                    mailMessage.Subject = $"【{companyName}】您的Q&A提問已回覆：{subject}";
+                    mailMessage.SubjectEncoding = Encoding.UTF8;
+                    mailMessage.BodyEncoding = Encoding.UTF8;
+                    mailMessage.IsBodyHtml = true;
+
+                    mailMessage.Body = $@"
+                        <h3>您好：</h3>
+                        <p>感謝您的來信，我們已回覆您所提出的問題。</p>
+                        <p><b>您的提問內容：</b></p>
+                        <p style='white-space: pre-wrap;'>{WebUtility.HtmlEncode(originalContent)}</p>
+                        <p><b>我們的回覆：</b></p>
+                        <p style='white-space: pre-wrap;'>{WebUtility.HtmlEncode(replyContent)}</p>
+                        <br>
+                        <p>如有其他問題歡迎再次與我們聯繫。</p>";
+
+                    await smtpClient.SendMailAsync(mailMessage);
+                }
+            }
         }
     }
 }
