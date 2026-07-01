@@ -1,12 +1,12 @@
 @model InterviewProject.Models.FAQReport
 
 @{
-    // 依回報者身份決定標題與返回時應停留在哪個分頁
-    bool isJobseeker = Model.Role == "求職者";
-    string pageTitle = isJobseeker ? "求職者回覆" : "訪客回覆";
-    string backTab = isJobseeker ? "jobseeker" : "visitor";
+    ViewData["Title"] = "Q&A 回報詳細資料";
+    var role = ViewBag.MemberRole?.ToString()?.ToLower();
+    bool isHr = role == "hr";
 
-    ViewData["Title"] = pageTitle;
+    // 依回報者身份決定返回列表時應停留在哪個分頁
+    string backTab = Model.Role == "求職者" ? "jobseeker" : "visitor";
 }
 
 @section Styles {
@@ -17,7 +17,8 @@
 
 <div class="page-header">
     <div class="page-header-inner">
-        <h1>@pageTitle</h1>
+        <h1>Q&A 回報詳細資料</h1>
+        <p>FAQ Report Detail</p>
     </div>
 </div>
 
@@ -37,13 +38,31 @@
         </div>
     }
 
-    <div class="report-detail-grid" style="grid-template-columns: 1fr; justify-items: center;">
+    <div class="report-detail-grid">
 
-        <div class="report-card" style="width: 100%; max-width: 640px;">
+        @* ── 左側卡片：回報內容 ── *@
+        <div class="report-card">
+
+            <div class="detail-card-header">
+                <h2>回報內容</h2>
+                <p>Applicant Question</p>
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">身份</label>
+                <div class="field-input">@Model.Role</div>
+            </div>
 
             <div class="field-item">
                 <label class="field-label">姓名</label>
                 <div class="field-input">@Model.Name</div>
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">Email</label>
+                <div class="field-input">
+                    @(string.IsNullOrWhiteSpace(Model.Email) ? "-" : Model.Email)
+                </div>
             </div>
 
             <div class="field-item">
@@ -52,15 +71,77 @@
             </div>
 
             <div class="field-item field-item--full">
-                <label class="field-label">主旨</label>
+                <label class="field-label">信件主旨</label>
                 <div class="field-input">@Model.Subject</div>
             </div>
 
             <div class="field-item field-item--full">
-                <label class="field-label">內容</label>
+                <label class="field-label">信件內容</label>
                 <div class="report-content-box">@Model.Content</div>
             </div>
 
+        </div>
+
+        @* ── 右側卡片：處理資訊 ── *@
+        <div class="report-card">
+
+            <div class="detail-card-header">
+                <h2>處理資訊</h2>
+                <p>Internal Handling</p>
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">目前狀態</label>
+                <div class="field-input">@Model.Status</div>
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">目前指派</label>
+                <div class="field-input">
+                    @(string.IsNullOrWhiteSpace(Model.AssignedRole) ? "HR" : Model.AssignedRole)
+                </div>
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">送出時間</label>
+                <div class="field-input">
+                    @Model.CreatedAt.ToString("yyyy/MM/dd HH:mm")
+                </div>
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">回覆時間</label>
+                <div class="field-input">
+                    @(Model.RepliedAt?.ToString("yyyy/MM/dd HH:mm") ?? "-")
+                </div>
+            </div>
+
+            @if (isHr)
+            {
+                @* ── HR：轉交主管 ── *@
+                <form asp-action="TransferReport"
+                      method="post"
+                      class="field-item field-item--full report-inline-form">
+
+                    @Html.AntiForgeryToken()
+
+                    <input type="hidden" name="id" value="@Model.Id" />
+
+                    <label class="field-label">轉交主管</label>
+
+                    <select name="assignedRole" class="field-input">
+                        <option value="">不轉交</option>
+                        <option value="manager">部門主管 Manager</option>
+                        <option value="director">部門最高主管 Director</option>
+                    </select>
+
+                    <button type="submit" class="btn-save btn-full">
+                        轉交主管
+                    </button>
+                </form>
+            }
+
+            @* ── 回覆內容 ── *@
             <form asp-action="ReplyReport"
                   method="post"
                   class="field-item field-item--full report-inline-form">
@@ -74,17 +155,24 @@
                 <textarea name="replyContent"
                           class="field-input field-textarea reply-textarea"
                           rows="6"
-                          placeholder="請輸入要回覆的內容...">@Model.ReplyContent</textarea>
+                          placeholder="請輸入要回覆給求職者的內容...">@Model.ReplyContent</textarea>
+
+                <label class="field-label">內部備註</label>
+
+                <textarea name="internalNote"
+                          class="field-input internal-note-textarea"
+                          rows="4"
+                          placeholder="可填寫內部處理備註...">@Model.InternalNote</textarea>
 
                 <div class="form-actions report-detail-actions">
                     <a asp-action="Index"
-                       asp-route-tab="@backTab"
+                       asp-route-tab="report"
                        class="btn-cancel">
-                        返回
+                        返回 Q&A 回報
                     </a>
 
                     <button type="submit" class="btn-save">
-                        送出
+                        儲存回覆
                     </button>
                 </div>
 

@@ -288,9 +288,7 @@ namespace InterviewProject.Controllers
 
             TempData["Success"] = "Q&A 已成功回覆。";
 
-            // 送出後直接返回該身份（訪客／求職者）的預設列表
-            string backTab = report.Role == "求職者" ? "jobseeker" : "visitor";
-            return RedirectToAction(nameof(Index), new { tab = backTab });
+            return RedirectToAction(nameof(ReportDetail), new { id });
         }
 
         // ==============================
