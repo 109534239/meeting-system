@@ -47,9 +47,6 @@ namespace InterviewProject.Controllers
 
             // 將 null 轉成空字串，避免 PostgreSQL NOT NULL 欄位錯誤
             report.Name = report.Name ?? "";
-            report.ContactType = report.ContactType ?? "";
-            report.PhoneCountryCode = report.PhoneCountryCode ?? "+886";
-            report.Phone = report.Phone ?? "";
             report.Email = report.Email ?? "";
             report.Category = report.Category ?? "";
             report.Subject = report.Subject ?? "";
@@ -57,42 +54,22 @@ namespace InterviewProject.Controllers
 
             // 基本欄位防呆
             if (string.IsNullOrWhiteSpace(report.Name) ||
+                string.IsNullOrWhiteSpace(report.Email) ||
                 string.IsNullOrWhiteSpace(report.Category) ||
                 string.IsNullOrWhiteSpace(report.Subject) ||
                 string.IsNullOrWhiteSpace(report.Content))
             {
-                TempData["Error"] = "請完整填寫姓名、問題類別、信件主旨與信件內容。";
+                TempData["Error"] = "請完整填寫姓名、電子信箱、問題類別、信件主旨與信件內容。";
                 return RedirectToAction("Index");
             }
 
-            // 電子信箱必填
-            if (string.IsNullOrWhiteSpace(report.Email))
-            {
-                TempData["Error"] = "請填寫電子信箱。";
-                return RedirectToAction("Index");
-            }
-
-            // 自動判斷聯絡方式
-            if (!string.IsNullOrWhiteSpace(report.Phone) && !string.IsNullOrWhiteSpace(report.Email))
-            {
-                report.ContactType = "手機與電子信箱";
-            }
-            else if (!string.IsNullOrWhiteSpace(report.Phone))
-            {
-                report.ContactType = "手機";
-            }
-            else
-            {
-                report.ContactType = "電子信箱";
-            }
-
-            report.PhoneCountryCode = "";
-            report.Phone = "";
             report.Status = "待處理";
             report.CreatedAt = DateTime.Now;
             report.RepliedAt = null;
             report.AssignedEmployeeId = null;
+            report.AssignedRole = null;
             report.ReplyContent = null;
+            report.InternalNote = null;
 
             _db.FAQReports.Add(report);
             await _db.SaveChangesAsync();

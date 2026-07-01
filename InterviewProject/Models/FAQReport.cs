@@ -6,12 +6,6 @@ namespace InterviewProject.Models
 
         public string Name { get; set; } = "";
 
-        public string ContactType { get; set; } = "";
-
-        public string PhoneCountryCode { get; set; } = "+886";
-
-        public string Phone { get; set; } = "";
-
         public string Email { get; set; } = "";
 
         public string Category { get; set; } = "";
