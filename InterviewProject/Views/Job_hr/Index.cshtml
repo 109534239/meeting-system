@@ -64,10 +64,10 @@
                     <span class="hrjob-title-text">@job.Title</span>
                 </div>
 
-                @* 3. 主管 / 隸屬 *@
+                @* 3. 主管 / 隸屬 (🎯 ManagerName 改為外鍵，改讀 job.Manager 導覽屬性) *@
                 <div>
-                    <div class="hrjob-manager-name">@job.ManagerName</div>
-                    <div class="hrjob-manager-sub">職稱：@job.ReportToName</div>
+                    <div class="hrjob-manager-name">@(job.Manager?.Name ?? "未指定")</div>
+                    <div class="hrjob-manager-sub">職稱：@(job.Manager?.JobTitle ?? "-")</div>
                 </div>
 
                 @* 4. 應徵四大項指標四大區塊 (未處理 / 已錄取 / 需求人數 / 總履歷) *@

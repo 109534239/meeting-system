@@ -153,15 +153,24 @@
                 </div>
                 <div class="condition-row">
                     <span class="condition-label">科系需求</span>
-                    <span class="condition-value">@(string.IsNullOrEmpty(Model.MajorRequired) ? "不限" : Model.MajorRequired)</span>
+                    <span class="condition-value">
+                        @(Model.MajorList != null && Model.MajorList.Length > 0
+                                                ? string.Join("、", Model.MajorList)
+                                                : "不限")
+                    </span>
                 </div>
                 <div class="condition-row">
                     <span class="condition-label">語文條件</span>
-                    <span class="condition-value">@(string.IsNullOrEmpty(Model.LanguageRequired) ? "不限" : Model.LanguageRequired)</span>
-                </div>
-                <div class="condition-row">
-                    <span class="condition-label">知識技能</span>
-                    <span class="condition-value">@(string.IsNullOrEmpty(Model.Requirements) ? "不限" : Model.Requirements)</span>
+                    <span class="condition-value">
+                        @if (Model.LanguageRequirements != null && Model.LanguageRequirements.Any())
+                        {
+                            @string.Join("、", Model.LanguageRequirements.Select(l => $"{l.Language}（{l.Degree}）"))
+                        }
+                        else
+                        {
+                            @:不限
+                        }
+                    </span>
                 </div>
                 <div class="condition-row">
                     <span class="condition-label">必要證照</span>

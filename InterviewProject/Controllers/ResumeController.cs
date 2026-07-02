@@ -261,7 +261,35 @@ namespace InterviewProject.Controllers
         }
 
         // 獨立出只負責「拿 AI 結果」的方法，不再處理資料庫寫入
-        private async Task<(bool IsSuccess, string Message, int Score, string Comment)> GetGeminiReviewAsync(Resume resume)
+        // 🎯 Job.Requirements 欄位已刪除，改把 SkillTags / MajorRequirements / LanguageRequirements /
+        //    CertRequired / OtherRequirements 組成一段文字，餵給 AI 當作「職缺要求」內容
+        //    ⚠️ 呼叫前記得確保 job 是用 Include 帶出 SkillTags/MajorRequirements/LanguageRequirements 的，
+        //       否則這幾個集合會是空的（不會報錯，但 AI 審查會少了這些條件）
+        private string BuildJobRequirementsText(Job? job)
+        {
+            if (job == null) return "無";
+
+            var parts = new List<string>();
+
+            if (job.SkillTags != null && job.SkillTags.Any())
+                parts.Add("技能需求：" + string.Join("、", job.SkillTags.Select(t => t.Tag)));
+
+            if (job.MajorRequirements != null && job.MajorRequirements.Any())
+                parts.Add("科系需求：" + string.Join("、", job.MajorRequirements.Select(m => m.Major)));
+
+            if (job.LanguageRequirements != null && job.LanguageRequirements.Any())
+                parts.Add("語文需求：" + string.Join("、", job.LanguageRequirements.Select(l => $"{l.Language}（{l.Degree}）")));
+
+            if (!string.IsNullOrEmpty(job.CertRequired))
+                parts.Add("必要證照：" + job.CertRequired);
+
+            if (!string.IsNullOrEmpty(job.OtherRequirements))
+                parts.Add("其他條件：" + job.OtherRequirements);
+
+            return parts.Count > 0 ? string.Join("\n", parts) : "無";
+        }
+
+        private async Task<(bool IsSuccess, string Message, int Score, string Comment)> GetGeminiReviewAsync(Resume resume)
         {
             try
             {
@@ -275,7 +303,7 @@ namespace InterviewProject.Controllers
 
                 var jobTitle = resume.Job?.Title ?? "未指定職缺";
                 var jobDesc = resume.Job?.Description ?? "無說明";
-                var jobReq = resume.Job?.Requirements ?? "無";
+                var jobReq = BuildJobRequirementsText(resume.Job);
 
                 var promptBody = $@"
 你是一位嚴格的資深人資主管，請針對以下職缺與履歷進行一對一精準匹配審查。

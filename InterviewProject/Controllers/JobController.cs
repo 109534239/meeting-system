@@ -73,11 +73,12 @@ namespace InterviewProject.Controllers
             }
 
             // 4. 關鍵字搜尋
+            // 🎯 Requirements 欄位已刪除，改用 SkillTags 子表搜尋（一筆一個標籤）
             if (!string.IsNullOrEmpty(keyword))
             {
-                query = query.Where(x => x.Title.Contains(keyword) || 
-                                    x.Description.Contains(keyword) || 
-                                    x.Requirements.Contains(keyword));
+                query = query.Where(x => x.Title.Contains(keyword) ||
+                                    x.Description.Contains(keyword) ||
+                                    x.SkillTags.Any(t => t.Tag.Contains(keyword)));
             }
 
             var data = query.OrderByDescending(x => x.CreatedAt).ToList();
@@ -99,8 +100,13 @@ namespace InterviewProject.Controllers
             ViewBag.IsLoggedIn = HttpContext.Session.GetInt32("MemberId").HasValue;
             ViewBag.MemberId   = HttpContext.Session.GetInt32("MemberId") ?? 0;
 
-            // 1. 抓取職缺資料
-            var job = await _context.Jobs.FirstOrDefaultAsync(x => x.Id == id);
+            // 1. 抓取職缺資料（🎯 帶出 Manager 與正規化後的三張子表資料）
+            var job = await _context.Jobs
+                .Include(x => x.Manager)
+                .Include(x => x.MajorRequirements)
+                .Include(x => x.LanguageRequirements)
+                .Include(x => x.SkillTags)
+                .FirstOrDefaultAsync(x => x.Id == id);
             if (job == null) return NotFound();
 
             // 2. 檢查使用者是否已經投過履歷

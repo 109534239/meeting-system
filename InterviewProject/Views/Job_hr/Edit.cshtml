@@ -20,6 +20,54 @@
             margin-left: 6px;
             font-weight: normal;
         }
+
+        /* 🎯 動態新增列（科系需求 / 語文條件 / 技能標籤）樣式 */
+        .dynamic-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .dynamic-row-2col select {
+            max-width: 140px;
+            flex-shrink: 0;
+        }
+
+        .dynamic-row .form-control {
+            flex: 1;
+        }
+
+        .btn-remove-row {
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            border: 1px solid #e2e8f0;
+            background: #fff;
+            color: #e53e3e;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+            .btn-remove-row:hover {
+                background: #fff5f5;
+            }
+
+        .btn-add-row {
+            border: 1px dashed #a0aec0;
+            background: #f7fafc;
+            color: #4a5568;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 13px;
+            cursor: pointer;
+            margin-top: 4px;
+        }
+
+            .btn-add-row:hover {
+                background: #edf2f7;
+            }
     </style>
 }
 
@@ -113,18 +161,22 @@
         </div>
 
         @* ═══════════════════════════════
-            主管資訊 (對應最新規格：全數必填)
+            主管資訊 (🎯 ManagerName 改為外鍵，從員工清單選擇)
            ═══════════════════════════════ *@
         <div class="form-section-title">主管資訊</div>
 
         <div class="form-row">
             <div class="form-group">
                 <label>部門主管<span class="text-danger">*</span></label>
-                <input type="text" name="ManagerName" class="form-control" value="@Model.ManagerName" placeholder="例：王小明" required />
-            </div>
-            <div class="form-group">
-                <label>隸屬上級<span class="text-danger">*</span></label>
-                <input type="text" name="ReportToName" class="form-control" value="@Model.ReportToName" placeholder="例：技術長" required />
+                <select name="EmployeesName" class="form-control" required>
+                    <option value="">-- 請選擇部門主管 --</option>
+                    @foreach (var emp in (List<InterviewProject.Models.Employee>)ViewBag.Employees)
+                    {
+                        <option value="@emp.Name" selected="@(Model.EmployeesName == emp.Name ? "selected" : null)">
+                            @emp.Name @(string.IsNullOrEmpty(emp.JobTitle) ? "" : $"（{emp.JobTitle}）")
+                        </option>
+                    }
+                </select>
             </div>
         </div>
 
@@ -174,18 +226,65 @@
         </div>
 
         <div class="form-group">
-            <label>科系需求<span class="text-muted">(選填)</span></label>
-            <input type="text" name="MajorRequired" class="form-control" value="@Model.MajorRequired" placeholder="例：資訊工程、電機、工業工程或商管相關科系尤佳" />
+            <label>科系需求<span class="text-muted">(選填，可新增多筆)</span></label>
+            <div id="major-list">
+                @if (Model.MajorRequirements != null && Model.MajorRequirements.Any())
+                {
+                    foreach (var m in Model.MajorRequirements)
+                    {
+                        <div class="dynamic-row">
+                            <input type="text" name="MajorRequiredList" class="form-control" value="@m.Major" placeholder="例：資訊工程" />
+                            <button type="button" class="btn-remove-row" onclick="removeRow(this)">✕</button>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="dynamic-row">
+                        <input type="text" name="MajorRequiredList" class="form-control" placeholder="例：資訊工程" />
+                        <button type="button" class="btn-remove-row" onclick="removeRow(this)">✕</button>
+                    </div>
+                }
+            </div>
+            <button type="button" class="btn-add-row" onclick="addMajorRow()">＋ 新增科系</button>
         </div>
 
         <div class="form-group">
-            <label>語文條件<span class="text-muted">(選填)</span></label>
-            <input type="text" name="LanguageRequired" class="form-control" value="@Model.LanguageRequired" placeholder="例：英文 — 中等（能撰寫英文技術文件）" />
-        </div>
-
-        <div class="form-group">
-            <label>知識技能<span class="text-muted">(選填)</span></label>
-            <textarea name="Requirements" class="form-control" rows="3" placeholder="例：熟悉 MS Project、跨部門協調能力">@Model.Requirements</textarea>
+            <label>語文條件<span class="text-muted">(選填，可新增多筆)</span></label>
+            <div id="language-list">
+                @if (Model.LanguageRequirements != null && Model.LanguageRequirements.Any())
+                {
+                    foreach (var l in Model.LanguageRequirements)
+                    {
+                        <div class="dynamic-row dynamic-row-2col">
+                            <input type="text" name="LanguageList" class="form-control" value="@l.Language" placeholder="例：英文" />
+                            <select name="DegreeList" class="form-control">
+                                <option value="不限" selected="@(l.Degree == "不限" ? "selected" : null)">不限</option>
+                                <option value="基礎" selected="@(l.Degree == "基礎" ? "selected" : null)">基礎</option>
+                                <option value="中等" selected="@(l.Degree == "中等" ? "selected" : null)">中等</option>
+                                <option value="精通" selected="@(l.Degree == "精通" ? "selected" : null)">精通</option>
+                                <option value="母語" selected="@(l.Degree == "母語" ? "selected" : null)">母語</option>
+                            </select>
+                            <button type="button" class="btn-remove-row" onclick="removeRow(this)">✕</button>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="dynamic-row dynamic-row-2col">
+                        <input type="text" name="LanguageList" class="form-control" placeholder="例：英文" />
+                        <select name="DegreeList" class="form-control">
+                            <option value="不限">不限</option>
+                            <option value="基礎">基礎</option>
+                            <option value="中等">中等</option>
+                            <option value="精通">精通</option>
+                            <option value="母語">母語</option>
+                        </select>
+                        <button type="button" class="btn-remove-row" onclick="removeRow(this)">✕</button>
+                    </div>
+                }
+            </div>
+            <button type="button" class="btn-add-row" onclick="addLanguageRow()">＋ 新增語言</button>
         </div>
 
         <div class="form-group">
@@ -204,8 +303,27 @@
         <div class="form-section-title">技能標籤</div>
 
         <div class="form-group">
-            <label>技能標籤<span class="text-muted">(選填)</span></label>
-            <input type="text" name="SkillTags" class="form-control" value="@Model.SkillTags" placeholder="以逗號分隔，例：產品管理, 專案規劃, 英文溝通" />
+            <label>技能標籤<span class="text-muted">(選填，一筆一個標籤，可新增多筆)</span></label>
+            <div id="skilltag-list">
+                @if (Model.SkillTags != null && Model.SkillTags.Any())
+                {
+                    foreach (var t in Model.SkillTags)
+                    {
+                        <div class="dynamic-row">
+                            <input type="text" name="SkillTagsList" class="form-control" value="@t.Tag" placeholder="例：Vue" />
+                            <button type="button" class="btn-remove-row" onclick="removeRow(this)">✕</button>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="dynamic-row">
+                        <input type="text" name="SkillTagsList" class="form-control" placeholder="例：Vue" />
+                        <button type="button" class="btn-remove-row" onclick="removeRow(this)">✕</button>
+                    </div>
+                }
+            </div>
+            <button type="button" class="btn-add-row" onclick="addSkillTagRow()">＋ 新增標籤</button>
         </div>
 
         @* ═══════════════════════════════
@@ -269,6 +387,57 @@
                 const y = parseInt(yearsInput.value);
                 hidden.value = (y > 0) ? y + '年以上工作經驗' : '';
             }
+        }
+
+        // 🎯 移除某一列（科系需求 / 語文條件 / 技能標籤 共用）
+        function removeRow(btn) {
+            const row = btn.closest('.dynamic-row');
+            const container = row.parentElement;
+            if (container.children.length > 1) {
+                row.remove();
+            } else {
+                row.querySelectorAll('input').forEach(i => i.value = '');
+            }
+        }
+
+        function addMajorRow() {
+            const container = document.getElementById('major-list');
+            const row = document.createElement('div');
+            row.className = 'dynamic-row';
+            row.innerHTML = `
+                <input type="text" name="MajorRequiredList" class="form-control" placeholder="例：資訊工程" />
+                <button type="button" class="btn-remove-row" onclick="removeRow(this)">✕</button>
+            `;
+            container.appendChild(row);
+        }
+
+        function addLanguageRow() {
+            const container = document.getElementById('language-list');
+            const row = document.createElement('div');
+            row.className = 'dynamic-row dynamic-row-2col';
+            row.innerHTML = `
+                <input type="text" name="LanguageList" class="form-control" placeholder="例：英文" />
+                <select name="DegreeList" class="form-control">
+                    <option value="不限">不限</option>
+                    <option value="基礎">基礎</option>
+                    <option value="中等">中等</option>
+                    <option value="精通">精通</option>
+                    <option value="母語">母語</option>
+                </select>
+                <button type="button" class="btn-remove-row" onclick="removeRow(this)">✕</button>
+            `;
+            container.appendChild(row);
+        }
+
+        function addSkillTagRow() {
+            const container = document.getElementById('skilltag-list');
+            const row = document.createElement('div');
+            row.className = 'dynamic-row';
+            row.innerHTML = `
+                <input type="text" name="SkillTagsList" class="form-control" placeholder="例：Vue" />
+                <button type="button" class="btn-remove-row" onclick="removeRow(this)">✕</button>
+            `;
+            container.appendChild(row);
         }
     </script>
 }

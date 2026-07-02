@@ -24,5 +24,29 @@
         public DbSet<InterviewSchedule> InterviewSchedules { get; set; }
         public DbSet<FAQ> Faqs { get; set; }
         public DbSet<FAQReport> FAQReports { get; set; }
+
+        // 🎯 Job 表正規化後新增的三張子表
+        public DbSet<MajorRequired> MajorRequired { get; set; }
+        public DbSet<LanguageRequired> LanguageRequired { get; set; }
+        public DbSet<SkillTag> SkillTags { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            // 🎯 Employees.Name 必須是唯一值，才能被 Jobs.EmployeesName 當作外鍵目標
+            modelBuilder.Entity<Employee>()
+                .HasIndex(e => e.Name)
+                .IsUnique();
+
+            // 🎯 Job.EmployeesName 外鍵指向 Employees.Name（不是 Employees.Id），
+            //    所以要用 HasPrincipalKey 明確指定參考的是 Name 欄位
+            modelBuilder.Entity<Job>()
+                .HasOne(j => j.Manager)
+                .WithMany()
+                .HasForeignKey(j => j.EmployeesName)
+                .HasPrincipalKey(e => e.Name)
+                .OnDelete(DeleteBehavior.Restrict);
+        }
     }
 }
