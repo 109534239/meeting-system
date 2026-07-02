@@ -62,8 +62,9 @@ namespace InterviewProject.Controllers
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
-            // 🎯 給「部門主管」下拉選單用
+            // 🎯 給「部門主管」下拉選單用（只列出 Role 為 director 的員工）
             ViewBag.Employees = await _db.Employees
+                .Where(e => e.Role == "director")
                 .OrderBy(e => e.Name)
                 .ToListAsync();
 
@@ -104,9 +105,11 @@ namespace InterviewProject.Controllers
 
             if (job == null) return NotFound();
 
+            // 🎯 給「部門主管」下拉選單用（只列出 Role 為 director 的員工）
             ViewBag.Employees = await _db.Employees
-              .OrderBy(e => e.Name)
-              .ToListAsync();
+                .Where(e => e.Role == "director")
+                .OrderBy(e => e.Name)
+                .ToListAsync();
 
             return View("~/Views/Job_hr/Edit.cshtml", job);
         }

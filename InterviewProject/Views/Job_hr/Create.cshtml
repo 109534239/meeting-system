@@ -245,16 +245,16 @@
             <div class="form-grid-1">
 
                 <div class="form-group">
-                    <label>部門主管<span class="text-danger">*</span></label>
+                    <label>最高主管<span class="text-danger">*</span></label>
 
                     <select name="EmployeesName"
                             class="form-control"
                             required>
 
-                        <option value="">-- 請選擇部門主管 --</option>
+                        <option value="">-- 請選擇最高主管 --</option>
                         @foreach (var emp in (List<InterviewProject.Models.Employee>)ViewBag.Employees)
                         {
-                            <option value="@emp.Name">@emp.Name @(string.IsNullOrEmpty(emp.JobTitle) ? "" : $"（{emp.JobTitle}）")</option>
+                            <option value="@emp.Name">@emp.Name @(string.IsNullOrEmpty(emp.Department) ? "" : $"（{emp.Department}）")</option>
                         }
 
                     </select>

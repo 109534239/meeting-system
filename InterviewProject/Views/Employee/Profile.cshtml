@@ -68,10 +68,6 @@
                         <input type="text" class="field-input field-readonly" value="@Model.Department" readonly />
                     </div>
                     <div class="field-item">
-                        <label class="field-label">職稱</label>
-                        <input type="text" class="field-input field-readonly" value="@Model.JobTitle" readonly />
-                    </div>
-                    <div class="field-item">
                         <label class="field-label">系統權限</label>
                         <input type="text" class="field-input field-readonly"
                             value="@(Model.Role == "director" ? "部門最高主管" : Model.Role == "manager" ? "部門主管" : "人資")" readonly />
