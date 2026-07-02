@@ -36,7 +36,6 @@ namespace InterviewProject.Controllers
                 {
                     "pm" => "專案管理",
                     "it" => "資訊技術",
-                    "hr" => "人力資源",
                     "mkt" => "行銷企劃",
                     "fin" => "財務會計",
                     "sales" => "業務銷售",
