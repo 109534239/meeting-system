@@ -22,9 +22,12 @@ namespace InterviewProject.Controllers
             // 💡 把 Session 值傳給 View
             ViewBag.IsLoggedIn = HttpContext.Session.GetInt32("MemberId").HasValue;
             ViewBag.MemberId   = HttpContext.Session.GetInt32("MemberId") ?? 0;
-            
+
             // 只撈取啟用中的職缺
-            var query = _context.Jobs.Where(x => x.IsActive).AsQueryable();
+            var now = DateTime.Now;
+            var query = _context.Jobs
+                .Where(x => x.IsActive && x.Deadline.AddDays(1) > now)
+                .AsQueryable();
 
             // 💡 1. 職缺類別對照 (英文 Value 轉成資料庫中文)
             if (!string.IsNullOrEmpty(category))
