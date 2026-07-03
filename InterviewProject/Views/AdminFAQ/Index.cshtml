@@ -19,6 +19,8 @@
 
     string role = ViewBag.MemberRole ?? "";
     bool isHr = role == "hr";
+    bool isDirector = role == "director";
+    string myDepartment = ViewBag.MyDepartment ?? "";
 }
 
 @{
@@ -74,6 +76,13 @@
     {
         <div class="alert-success">
             @TempData["Success"]
+        </div>
+    }
+
+    @if (isDirector)
+    {
+        <div class="alert-success" style="background:#eef2ff;color:#3730a3;">
+            目前僅顯示分派給「@(string.IsNullOrWhiteSpace(myDepartment) ? "尚未設定部門" : myDepartment)」的 Q&amp;A 回報
         </div>
     }
 
@@ -259,15 +268,19 @@
                                 回覆
                             </a>
 
-                            <select name="department"
-                                    class="dept-select"
-                                    onchange="assignDepartment(@item.Id, this)">
-                                <option value="" selected="@(string.IsNullOrWhiteSpace(item.Department) || item.Department == "人力資源")">選擇部門</option>
-                                @foreach (var dept in departmentOptions)
-                                {
-                                    <option value="@dept" selected="@(item.Department == dept)">@dept</option>
-                                }
-                            </select>
+                            @* 🎯 部門最高主管：只會看到自己部門的回報，不需要再指派部門，直接回覆即可 *@
+                            @if (!isDirector)
+                            {
+                                <select name="department"
+                                        class="dept-select"
+                                        onchange="assignDepartment(@item.Id, this)">
+                                    <option value="" selected="@(string.IsNullOrWhiteSpace(item.Department) || item.Department == "人力資源")">選擇部門</option>
+                                    @foreach (var dept in departmentOptions)
+                                    {
+                                        <option value="@dept" selected="@(item.Department == dept)">@dept</option>
+                                    }
+                                </select>
+                            }
                         </div>
 
                     </div>
@@ -356,15 +369,19 @@
                                 回覆
                             </a>
 
-                            <select name="department"
-                                    class="dept-select"
-                                    onchange="assignDepartment(@item.Id, this)">
-                                <option value="" selected="@(string.IsNullOrWhiteSpace(item.Department) || item.Department == "人力資源")">選擇部門</option>
-                                @foreach (var dept in departmentOptions)
-                                {
-                                    <option value="@dept" selected="@(item.Department == dept)">@dept</option>
-                                }
-                            </select>
+                            @* 🎯 部門最高主管：只會看到自己部門的回報，不需要再指派部門，直接回覆即可 *@
+                            @if (!isDirector)
+                            {
+                                <select name="department"
+                                        class="dept-select"
+                                        onchange="assignDepartment(@item.Id, this)">
+                                    <option value="" selected="@(string.IsNullOrWhiteSpace(item.Department) || item.Department == "人力資源")">選擇部門</option>
+                                    @foreach (var dept in departmentOptions)
+                                    {
+                                        <option value="@dept" selected="@(item.Department == dept)">@dept</option>
+                                    }
+                                </select>
+                            }
                         </div>
 
                     </div>

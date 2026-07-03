@@ -50,7 +50,7 @@
                 <div class="nav-links">
 
                     @* ==============================
-                       人資：招募數據 / 職缺管理 / 應徵管理 / 面試排程 / 公告管理 / 求職Q&A管理
+                       人資：招募數據 / 職缺管理 / 公告管理 / 求職Q&A / Q&A回報 / 個人資料
                        ============================== *@
                     @if (isHr)
                     {
@@ -60,8 +60,8 @@
                         <a class="nav-btn @(controller == "HrJob" ? "active" : "")"
                            asp-controller="HrJob" asp-action="Index">職缺管理</a>
 
-                        <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
-                           asp-controller="AdminApplication" asp-action="Index">應徵管理</a>
+                      @*   <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
+                           asp-controller="AdminApplication" asp-action="Index">應徵管理</a> *@
 
                         @* ✅ 新增：面試排程（HR） *@
                         <a class="nav-btn @(controller == "Interview" ? "active" : "")"
@@ -75,7 +75,7 @@
                     }
 
                     @* ==============================
-                       部門主管：招募數據 / 應徵管理 / 面試排程 / Q&A回報（限本部門）
+                       部門主管：招募數據 / 應徵管理(面試會議分析與評分) / 面試會議(列表) / 個人資料
                        ============================== *@
                     else if (isManager)
                     {
@@ -85,17 +85,17 @@
                         <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
                            asp-controller="AdminApplication" asp-action="Index">應徵管理</a>
 
-                        @* ✅ 新增：面試排程（主管） *@
+                        @* ✅ 新增：面試會議（主管） *@
                         <a class="nav-btn @(controller == "Interview" ? "active" : "")"
                            asp-controller="Interview" asp-action="Index">面試排程</a>
 
                         @* 主管：只有 Report *@
-                        <a class="nav-btn @(controller == "AdminFAQ" && action == "Report" ? "active" : "")"
-                           asp-controller="AdminFAQ" asp-action="Report">Q&A回報</a>
+                        @* <a class="nav-btn @(controller == "AdminFAQ" && action == "Report" ? "active" : "")"
+                           asp-controller="AdminFAQ" asp-action="Report">Q&A回報</a> *@
                     }
 
                     @* ==============================
-                       部門最高主管：招募數據 / 應徵管理 / 面試排程（含錄取決定權）
+                       部門最高主管：招募數據 / 應徵管理(決定最終錄取求職者) / Q&A回報 / 權限管理 / 個人資料
                        ============================== *@
                     else if (isDirector)
                     {
@@ -112,10 +112,13 @@
                         @* ✅ 新增：主管管理 *@
                         <a class="nav-btn @(controller == "DirectorManager" ? "active" : "")"
                            asp-controller="DirectorManager" asp-action="Index">權限管理</a>
+
+                        <a class="nav-btn @(controller == "AdminFAQ" && action != "Report" ? "active" : "")"
+                           asp-controller="AdminFAQ" asp-action="Index">Q&A管理</a>
                     }
 
                     @* ==============================
-                       求職者（已登入）：首頁 / 職缺搜尋 / 公司介紹 / 求職Q&A前台
+                       求職者（已登入）：首頁 / 職缺搜尋 / 公司介紹 / 求職Q&A / 個人資料 / 我的履歷 / 應徵管理(進入面試會議) / 我的收藏
                        ============================== *@
                     else if (isApplicant)
                     {
@@ -133,7 +136,7 @@
                     }
 
                     @* ==============================
-                       訪客（未登入）：首頁 / 職缺搜尋 / 公司介紹 / 求職Q&A前台
+                       訪客（未登入）：首頁 / 職缺搜尋 / 公司介紹 / 求職Q&A
                        ============================== *@
                     else
                     {
@@ -195,9 +198,6 @@
                                    class="dropdown-item">應徵管理</a>
                                 <a asp-controller="Member" asp-action="Favorites"
                                    class="dropdown-item">我的收藏</a>
-                                @* ✅ 新增：求職者查看面試通知 *@
-                                <a asp-controller="Interview" asp-action="MyInterviews"
-                                   class="dropdown-item">我的面試</a>
                                 <a asp-controller="Login" asp-action="Logout"
                                    class="dropdown-item logout">登出</a>
                             }
