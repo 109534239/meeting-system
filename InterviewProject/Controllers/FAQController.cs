@@ -27,6 +27,24 @@ namespace InterviewProject.Controllers
                 .ThenByDescending(x => x.CreatedAt)
                 .ToListAsync();
 
+            // ==============================
+            // 若目前登入身分為「求職者」，
+            // 自動帶入其姓名 / 電子信箱，並於前台設為唯讀
+            // ==============================
+            var memberId = HttpContext.Session.GetInt32("MemberId");
+            var memberRole = HttpContext.Session.GetString("MemberRole");
+
+            if (memberId != null && memberRole == "jobseeker")
+            {
+                var member = await _db.Members.FindAsync(memberId.Value);
+                if (member != null)
+                {
+                    ViewBag.IsJobseeker = true;
+                    ViewBag.MemberName = member.Name;
+                    ViewBag.MemberEmail = member.Email;
+                }
+            }
+
             return View(faqs);
         }
 
@@ -65,7 +83,29 @@ namespace InterviewProject.Controllers
 
             var memberId = HttpContext.Session.GetInt32("MemberId");
             var memberRole = HttpContext.Session.GetString("MemberRole");
-            report.Role = (memberId != null && memberRole == "jobseeker") ? "求職者" : "訪客";
+            var isJobseeker = memberId != null && memberRole == "jobseeker";
+            report.Role = isJobseeker ? "求職者" : "訪客";
+
+            // 求職者的姓名/電子信箱前台為唯讀欄位，
+            // 但唯讀僅為前端限制，仍可能被竄改，
+            // 因此後端一律以資料庫中的會員資料為準，避免冒用他人姓名/信箱
+            if (isJobseeker)
+            {
+                var member = await _db.Members.FindAsync(memberId!.Value);
+                if (member != null)
+                {
+                    report.Name = member.Name;
+                    report.Email = member.Email;
+                }
+
+                // 寫入登入者的 MemberId，之後才能用「登入者身份」查出與自己相關的 Q&A
+                report.MemberId = memberId;
+            }
+            else
+            {
+                // 訪客（未登入）一律清空，避免前端偽造 MemberId 冒充其他會員
+                report.MemberId = null;
+            }
 
             report.Status = "待處理";
             report.CreatedAt = DateTime.Now;

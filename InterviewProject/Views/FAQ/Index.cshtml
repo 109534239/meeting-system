@@ -117,10 +117,12 @@
         <div class="form-group">
             <label>姓名 <span class="required">*</span></label>
             <input type="text"
-                    name="Name"
-                    class="form-control"
-                    placeholder="請填入您的姓名"
-                    required />
+                   name="Name"
+                   class="form-control @(ViewBag.IsJobseeker == true ? "form-control-readonly" : "")"
+                   placeholder="請填入您的姓名"
+                   value="@(ViewBag.IsJobseeker == true ? ViewBag.MemberName : null)"
+                   readonly="@(ViewBag.IsJobseeker == true)"
+                   required />
         </div>
 
         <!-- 電子信箱 -->
@@ -128,10 +130,12 @@
             <label>電子信箱 <span class="required">*</span></label>
 
             <input type="email"
-                name="Email"
-                class="form-control"
-                placeholder="請輸入電子信箱"
-                required />
+                   name="Email"
+                   class="form-control @(ViewBag.IsJobseeker == true ? "form-control-readonly" : "")"
+                   placeholder="請輸入電子信箱"
+                   value="@(ViewBag.IsJobseeker == true ? ViewBag.MemberEmail : null)"
+                   readonly="@(ViewBag.IsJobseeker == true)"
+                   required />
         </div>
         
         <!-- 問題類別 / 信件主旨 -->
