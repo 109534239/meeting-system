@@ -1,0 +1,92 @@
+﻿@model InterviewProject.Models.FAQReport
+
+@{
+    ViewData["Title"] = "查看 Q&A";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/AdminFAQ.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>查看 Q&amp;A</h1>
+    </div>
+</div>
+
+<div class="faq-report-detail-wrap">
+
+    <div class="report-detail-grid" style="grid-template-columns: 1fr; justify-items: center;">
+
+        <div class="report-card" style="width: 100%; max-width: 640px;">
+
+            <div class="field-item">
+                <label class="field-label">問題類別</label>
+                <div class="field-input">@Model.Category</div>
+            </div>
+
+            <div class="field-item">
+                <label class="field-label">狀態</label>
+                <div class="field-input">
+                    <span class="btn-toggle @(Model.Status == "已回覆" ? "active" : "inactive")">
+                        @Model.Status
+                    </span>
+                </div>
+            </div>
+
+            <div class="field-item field-item--full">
+                <label class="field-label">主旨</label>
+                <div class="field-input">@Model.Subject</div>
+            </div>
+
+            <div class="field-item field-item--full">
+                <label class="field-label">我的提問內容</label>
+                <div class="report-content-box">@Model.Content</div>
+            </div>
+
+            <div class="field-item field-item--full">
+                <label class="field-label">回覆內容</label>
+                <div class="report-content-box">
+                    @(string.IsNullOrWhiteSpace(Model.ReplyContent) ? "尚未回覆，請耐心等候" : Model.ReplyContent)
+                </div>
+            </div>
+
+            @if (Model.RepliedAt != null)
+            {
+                <div class="field-item field-item--full">
+                    <label class="field-label">回覆時間</label>
+                    <div class="field-input">@Model.RepliedAt?.ToString("yyyy/MM/dd HH:mm")</div>
+                </div>
+            }
+
+            <div class="form-actions report-detail-actions">
+                <button type="button"
+                        class="btn-save"
+                        onclick="closeThisTab()">
+                    關閉
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+@section Scripts {
+    <script>
+        function closeThisTab() {
+            // 這個頁面預期是從列表頁用 window.open 開出的新分頁，
+            // 因此 window.close() 可以正常運作。
+            // 若使用者是直接用網址列打開（沒有 opener），瀏覽器基於安全考量可能不會關閉，
+            // 這種情況就退回「返回列表」。
+            window.close();
+
+            setTimeout(function () {
+                window.location.href = '@Url.Action("Index", "JobseekerFAQ")';
+            }, 300);
+        }
+    </script>
+}

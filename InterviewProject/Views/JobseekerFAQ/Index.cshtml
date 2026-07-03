@@ -1,0 +1,95 @@
+﻿@model IEnumerable<InterviewProject.Models.FAQReport>
+
+@{
+    ViewData["Title"] = "我的Q&A";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/AdminFAQ.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+}
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>我的 Q&amp;A</h1>
+        <p>My Questions &amp; Answers</p>
+    </div>
+</div>
+
+<div class="faq-manage-wrap">
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert-success">
+            @TempData["Success"]
+        </div>
+    }
+
+    @* 🎯 不分「FAQ管理／訪客回覆／求職者回覆」分頁，
+       只有一個列表，待處理與已回覆的 Q&A 都顯示在同一頁 *@
+    <div class="faq-table">
+
+        <div class="faq-table-head report-head">
+            <div>時間</div>
+            <div>類別</div>
+            <div>主旨</div>
+            <div>狀態</div>
+            <div>操作</div>
+        </div>
+
+        @if (Model != null && Model.Any())
+        {
+            foreach (var item in Model)
+            {
+                <div class="faq-row report-row">
+
+                    <div>
+                        @item.CreatedAt.ToString("yyyy/MM/dd HH:mm")
+                    </div>
+
+                    <div>
+                        @item.Category
+                    </div>
+
+                    <div class="faq-title">
+                        @item.Subject
+                    </div>
+
+                    <div>
+                        <span class="btn-toggle @(item.Status == "已回覆" ? "active" : "inactive")">
+                            @item.Status
+                        </span>
+                    </div>
+
+                    <div class="faq-actions">
+                        <button type="button"
+                                class="btn-edit"
+                                onclick="openDetail(@item.Id)">
+                            查看
+                        </button>
+                    </div>
+
+                </div>
+            }
+        }
+        else
+        {
+            <div class="faq-empty">
+                您目前沒有任何 Q&amp;A 紀錄
+            </div>
+        }
+
+    </div>
+
+</div>
+
+@section Scripts {
+    <script>
+        function openDetail(id) {
+            // 用 window.open 開新分頁，讓詳細頁裡的「關閉」按鈕可以正常關閉這個分頁
+            window.open('@Url.Action("Detail", "JobseekerFAQ")/' + id, '_blank');
+        }
+    </script>
+}
