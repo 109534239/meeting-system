@@ -53,7 +53,7 @@
                     @dept.Key（@dept.Count() 人）
                 </div>
 
-                foreach (var manager in dept)
+                foreach (var manager in dept.OrderBy(m => m.Id))
                 {
                     <div class="announce-row"
                          style="grid-template-columns: 1fr 1fr 140px 120px;">
