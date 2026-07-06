@@ -42,6 +42,7 @@ namespace InterviewProject.Models
         public string? DriverLicense { get; set; }
         [NotMapped]
         public string? Specialty { get; set; }
+        [NotMapped]
         public string? Certificates { get; set; }
         [NotMapped]
         public string? ComputerSkills { get; set; }

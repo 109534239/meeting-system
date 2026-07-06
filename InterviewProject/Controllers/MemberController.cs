@@ -115,6 +115,7 @@ namespace InterviewProject.Controllers
 
             return string.Join(", ", certStrings);
         }
+
         // GET: 基本資料
         public async Task<IActionResult> Profile()
         {
@@ -252,6 +253,11 @@ namespace InterviewProject.Controllers
             resume.DriverLicense = FormatDriverLicenseString(dbLicenses);
 
             resume.Specialty = await GetFormattedSpecialties(resume.Id);
+
+            var dbCertificates = await _db.Certificates
+                .Where(c => c.ResumeId == resume.Id)
+                .ToListAsync();
+            resume.Certificates = FormatCertificatesString(dbCertificates); // 寫入 NotMapped 的暫存屬性
 
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == userId);
             if (member != null)

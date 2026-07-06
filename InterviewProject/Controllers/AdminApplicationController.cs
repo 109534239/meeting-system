@@ -196,11 +196,13 @@ namespace InterviewProject.Controllers
             var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == resume.Id).ToListAsync();
             var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == resume.Id).ToListAsync();
             var dbSpecs = await _db.Specialties.Where(s => s.ResumeId == resume.Id).OrderBy(s => s.SortOrder).ToListAsync();
+            var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == resume.Id).ToListAsync();
 
             resume.LanguageSkills = FormatLanguageString(dblangs);
             resume.DriverLicense = FormatDriverLicenseString(dbLicenses);
             resume.ComputerSkills = FormatComputerSkillString(dbCompSkills);
             resume.Specialty = FormatSpecialtyString(dbSpecs);
+            resume.Certificates = FormatCertificatesString(dbCertificates);
 
             var member = await _db.Members.FindAsync(resume.MembersId);
             if (member != null)
@@ -308,6 +310,17 @@ namespace InterviewProject.Controllers
         {
             if (specs == null || !specs.Any()) return "";
             return string.Join("; ", specs.OrderBy(s => s.SortOrder).Select(s => s.Specialty));
+        }
+        private string FormatCertificatesString(List<InterviewProject.Models.Certificates> dbCerts)
+        {
+            if (dbCerts == null || !dbCerts.Any()) return "";
+
+            // 將每筆資料組合成 "證照名稱(級別)"，如果沒級別就只留 "證照名稱"
+            var certStrings = dbCerts.Select(c =>
+                !string.IsNullOrEmpty(c.Levels) ? $"{c.CName.Trim()}({c.Levels.Trim()})" : c.CName.Trim()
+            );
+
+            return string.Join(", ", certStrings);
         }
     }
 
