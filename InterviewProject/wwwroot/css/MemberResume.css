@@ -1,6 +1,6 @@
-/* ¢w¢w °òÂ¦®e¾¹ ¢w¢w */
+ï»¿/* â”€â”€ åŸºç¤å®¹å™¨ â”€â”€ */
 .app-wrapper {
-    background: #f4f7f9; /* ²L¦Ç¦â©³ */
+    background: #f4f7f9; /* æ·ºç°è‰²åº• */
     width: 100%;
     min-height: 100vh;
 }
@@ -11,7 +11,7 @@
     padding: 20px 40px;
 }
 
-/* ¢w¢w ¿z¿ïÄæ¦ì ¢w¢w */
+/* â”€â”€ ç¯©é¸æ¬„ä½ â”€â”€ */
 .app-filter {
     display: flex;
     align-items: flex-end;
@@ -54,10 +54,10 @@
     transition: 0.2s;
 }
 
-/* ¢w¢w ®Ö¤ß Grid ©w¸q (4Äæ¹ï»ô) ¢w¢w */
+/* â”€â”€ æ ¸å¿ƒ Grid å®šç¾© (4æ¬„å°é½Š) â”€â”€ */
 .app-table-head, .app-row {
     display: grid;
-    /* ®É¶¡(150px) | Â¾¯Ê(¼u©Ê) | ª¬ºA(150px) | «ö¶s°Ï(180px) */
+    /* æ™‚é–“(150px) | è·ç¼º(å½ˆæ€§) | ç‹€æ…‹(150px) | æŒ‰éˆ•å€(180px) */
     grid-template-columns: 150px 1fr 150px 180px;
     align-items: center;
     padding: 12px 24px;
@@ -76,7 +76,7 @@
         padding-left: 10px;
     }
 
-/* ¢w¢w ¸ê®Æ¦C¥d¤ù¼Ë¦¡ ¢w¢w */
+/* â”€â”€ è³‡æ–™åˆ—å¡ç‰‡æ¨£å¼ â”€â”€ */
 .app-row {
     background: #fff;
     border-radius: 12px;
@@ -101,7 +101,7 @@
     padding-left: 10px;
 }
 
-/* ¢w¢w ª¬ºA¼ĞÅÒ ¢w¢w */
+/* â”€â”€ ç‹€æ…‹æ¨™ç±¤ â”€â”€ */
 .status-pass {
     color: #10b981;
     font-weight: 700;
@@ -138,7 +138,7 @@
     gap: 8px;
     justify-content: center;
 }
-/* ¢w¢w «ö¶s°Ï ¢w¢w */
+/* â”€â”€ æŒ‰éˆ•å€ â”€â”€ */
 .row-actions {
     display: flex;
     gap: 8px;
@@ -162,16 +162,19 @@
     }
 
 .btn-pdf {
-    padding: 6px 10px;
-    background: #f1f5f9;
-    color: #475569;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
+    padding: 6px 16px;
+    background: #f3f4f6; /* æ·ºç°è‰²èƒŒæ™¯ */
+    color: #4b5563; /* æ·±ç°è‰²æ–‡å­— */
+    border-radius: 50px;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: 0.2s;
 }
 
     .btn-pdf:hover {
-        background: #e2e8f0;
+        background: #4b5563; /* æ»‘éæ™‚è®Šæˆæ·±ç°è‰²èƒŒæ™¯ */
+        color: #fff; /* æ»‘è¿‡æ™‚æ–‡å­—è®Šæˆç™½è‰² */
     }
 
 .no-data {

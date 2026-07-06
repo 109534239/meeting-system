@@ -19,6 +19,8 @@
         public DbSet<Resume> Resumes { get; set; }
         public DbSet<VerificationCode> VerificationCodes { get; set; }
         public DbSet<Specialties> Specialties { get; set; }
+        public DbSet<Certificatecategories> Certificatecategories { get; set; }
+        public DbSet<Certificates> Certificates { get; set; }
         public DbSet<Employee> Employees { get; set; }
         public DbSet<Announcement> Announcements { get; set; }
         public DbSet<InterviewSchedule> InterviewSchedules { get; set; }

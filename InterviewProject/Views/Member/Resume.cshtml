@@ -72,8 +72,15 @@
                         <span class="@statusClass">@item.Status</span>
                     </div>
                     <div class="row-actions">
+                        @* 查看按鈕維持不變 *@
                         <a href="@Url.Action("ResumeDetail", "Member", new { id = item.Id })"
                            class="btn-view">查看</a>
+
+                        @* 🎯 修改點：直接導向 MemberController 的 ExportToPdf，不需繞進 Detail 頁面 *@
+                        <a href="@Url.Action("ExportToPdf", "Member", new { id = item.Id })"
+                           class="btn-pdf">
+                            列印 PDF
+                        </a>
                     </div>
                 </div>
             }

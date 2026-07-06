@@ -288,33 +288,26 @@
                     3.<input type="text" class="spec-input" style="width:80%" />
                 </td>
             </tr>
-            <tr>
-                <td>證照職類及級別</td>
-                <td colspan="4">
-                    <input type="hidden" asp-for="Certificates" id="finalCertificates" />
-                    <div class="cert-item">
-                        1. <input type="text" class="cert-name" style="width:150px" />
-                        <input type="checkbox" class="cert-lv" value="甲" />甲
-                        <input type="checkbox" class="cert-lv" value="乙" />乙
-                        <input type="checkbox" class="cert-lv" value="丙" />丙
-                        <input type="checkbox" class="cert-lv" value="單一級" />單一級
-                    </div>
-                    <div class="cert-item">
-                        2. <input type="text" class="cert-name" style="width:150px" />
-                        <input type="checkbox" class="cert-lv" value="甲" />甲
-                        <input type="checkbox" class="cert-lv" value="乙" />乙
-                        <input type="checkbox" class="cert-lv" value="丙" />丙
-                        <input type="checkbox" class="cert-lv" value="單一級" />單一級
-                    </div>
-                    <div class="cert-item">
-                        3.其他：<input type="text" id="othercert-name" class="input-inline" style="width:150px" />
-                        <input type="checkbox" class="cert-lv" value="甲" />甲
-                        <input type="checkbox" class="cert-lv" value="乙" />乙
-                        <input type="checkbox" class="cert-lv" value="丙" />丙
-                        <input type="checkbox" class="cert-lv" value="單一級" />單一級
-                    </div>
-                </td>
-            </tr>
+           <tr>
+    <td>證照職類及級別</td>
+    <td colspan="4">
+        <input type="hidden" asp-for="Certificates" id="finalCertificates" />
+        
+        <div class="cert-item" style="margin-bottom: 8px;">
+            1. <select class="cert-select" style="width:200px;"><option value="">--請選擇證照--</option></select>
+            級別：<select class="cert-level-select" style="width:100px;"><option value="">--級別--</option></select>
+        </div>
+        <div class="cert-item" style="margin-bottom: 8px;">
+            2. <select class="cert-select" style="width:200px;"><option value="">--請選擇證照--</option></select>
+            級別：<select class="cert-level-select" style="width:100px;"><option value="">--級別--</option></select>
+        </div>
+        <div class="cert-item">
+            3. <select class="cert-select" style="width:200px;"><option value="">--請選擇證照--</option></select>
+            級別：<select class="cert-level-select" style="width:100px;"><option value="">--級別--</option></select>
+        </div>
+    </td>
+</tr>
+
             <tr>
                 <td>使用電腦能力<br />(可複選)</td>
                 <td colspan="4">
@@ -365,211 +358,319 @@
 </div>
 
 <script>
-    // --- 頁面載入後，根據後端資料反勾選 Checkbox ---
-    window.onload = function() {
-        // 1. 處理語文能力反填
-        const langData = `@Html.Raw(Model?.LanguageSkills ?? "")`;
-        if (langData && langData.trim() !== "") {
-            const items = langData.split(', ');
-            const knownLangs = ["英語", "日語", "台語", "客語"];
+// 💡 1. 宣告全域變數（放最外層）
+var globalCertList = [];
 
-            items.forEach(item => {
-                if (item === "不具外文能力") {
-                    const node = document.querySelector('.lang-node');
-                    if(node) node.checked = true;
-                    return;
-                }
-
-                const name = item.split('(')[0];
-                const lvMatch = item.match(/\(([^)]+)\)/);
-                const lvValue = lvMatch ? lvMatch[1] : "";
-
-                if (knownLangs.includes(name)) {
-                    document.querySelectorAll('.lang-row').forEach(row => {
-                        const labelElement = row.querySelector('.lang-label');
-                        if (labelElement && labelElement.innerText.includes(name)) {
-                            const lvChk = Array.from(row.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
-                            if (lvChk) lvChk.checked = true;
-                        }
-                    });
-                } else {
-                    const otherRow = Array.from(document.querySelectorAll('.lang-row')).find(row => {
-                        const lbl = row.querySelector('.lang-label');
-                        return lbl && lbl.innerText.includes("其他");
-                    });
-                    if (otherRow) {
-                        document.getElementById('otherLangName').value = name;
-                        const lvChk = Array.from(otherRow.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
-                        if (lvChk) lvChk.checked = true;
-                    }
-                }
-            });
-        }
-
-        // 2. 處理駕照種類
-        const licenseData = "@Html.Raw(Model?.DriverLicense ?? "")";
-        if (licenseData) {
-            const parts = licenseData.split(', ');
-            parts.forEach(p => {
-                if (p.includes('(')) {
-                    const typeName = p.split('(')[0].trim();
-                    const subValues = p.split('(')[1].replace(')', '').split('/');
-                    const row = document.querySelector(`.license-row[data-type="${typeName}"]`);
-                    if (row) {
-                        subValues.forEach(v => {
-                            const chk = row.querySelector(`.license-chk[value="${v}"]`);
-                            if (chk) chk.checked = true;
-                        });
-                    }
-                } else {
-                    const row = document.querySelector(`.license-row[data-type="汽(機)車"]`);
-                    if (row) {
-                        const subValues = p.split('/');
-                        subValues.forEach(v => {
-                            const chk = row.querySelector(`.license-chk[value="${v}"]`);
-                            if (chk) chk.checked = true;
-                        });
-                    }
-                }
-            });
-        }
-
-        // 3. 處理專長反填
-        const specData = "@Html.Raw(Model?.Specialty ?? "")";
-        if (specData) {
-            const specs = specData.split('; ');
-            const specInputs = document.querySelectorAll('.spec-input');
-            specs.forEach((val, index) => {
-                 if(specInputs[index]) specInputs[index].value = val;
-            });
-        }
-
-        // 4. 處理證照
-        const certData = "@Html.Raw(Model?.Certificates ?? "")";
-        if (certData) {
-            const certs = certData.split(', ');
-            document.querySelectorAll('.cert-item').forEach((item, index) => {
-                if(certs[index]) {
-                    let name = certs[index].split('(')[0];
-                    let levelPart = certs[index].match(/\(([^)]+)\)/);
-
-                    const nameInput = item.querySelector('.cert-name') || document.getElementById('othercert-name');
-                    if(nameInput && index === (certs.length -1) && index === 2) {
-                        document.getElementById('othercert-name').value = name;
-                    } else if (nameInput) {
-                        nameInput.value = name;
-                    }
-
-                    if (levelPart) {
-                        let levels = levelPart[1].split(',');
-                        item.querySelectorAll('.cert-lv').forEach(lv => {
-                            if (levels.includes(lv.value)) lv.checked = true;
-                        });
-                    }
-                }
-            });
-        }
-
-        // 5. 處理電腦能力
-        const compData = "@Html.Raw(Model?.ComputerSkills ?? "")";
-        if (compData) {
-            document.querySelectorAll('.comp-chk').forEach(chk => {
-                if (compData.split(',').map(s => s.trim()).includes(chk.value)) chk.checked = true;
-            });
-            if (compData.includes("其他:")) {
-                const match = compData.match(/其他:([^,]+)/);
-                if (match) {
-                    document.getElementById('otherCompName').value = match[1].trim();
-                    const otherChk = Array.from(document.querySelectorAll('.comp-chk')).find(c => c.value === "其他");
-                    if(otherChk) otherChk.checked = true;
-                }
+// 💡 2. 將非同步的 fetch 移到最外層，網頁一開立刻背景撈取資料，不卡畫面
+fetch('/Resume/GetCertificates', {
+    method: 'GET'
+})
+.then(response => {
+    if (!response.ok) throw new Error("網路回應不成功：" + response.status);
+    return response.json();
+})
+.then(data => {
+    globalCertList = data;
+    console.log("後端回傳的證照資料：", globalCertList);
+    
+    // 用原生 JS 把證照名稱塞入所有的 select 選項中
+    const certSelects = document.querySelectorAll('.cert-select');
+    certSelects.forEach(select => {
+        while (select.options.length > 1) { select.remove(1); } // 清空舊資料
+        
+        globalCertList.forEach(item => {
+            let cName = item.CertName || item.certName; // 容錯大、小寫
+            if (cName) {
+                let opt = document.createElement('option');
+                opt.value = cName;
+                opt.textContent = cName;
+                select.appendChild(opt);
             }
-        }
-
-        // 6. 處理學歷狀況
-        const eduData = "@Html.Raw(Model?.EduStatus ?? "")";
-        if (eduData) {
-            document.querySelectorAll('#eduStatusArea .edu-chk').forEach(chk => {
-                if (eduData.includes(chk.value)) chk.checked = true;
-            });
-        }
-
-        // 7. 年資欄位初始化
-        const workYearsInput = document.getElementById('workYearsInput');
-        if (workYearsInput && parseInt(workYearsInput.value) <= 0) {
-            workYearsInput.value = "";
-        }
-
-        // --- 互斥限制邏輯 ---
-        document.querySelectorAll('.lang-row').forEach(row => {
-            const lvs = row.querySelectorAll('.lang-lv');
-            lvs.forEach(chk => {
-                chk.addEventListener('change', function() {
-                    if (this.checked) {
-                        lvs.forEach(other => { if(other !== this) other.checked = false; });
-                    }
-                });
-            });
         });
-
-        const eduChks = document.querySelectorAll('#eduStatusArea .edu-chk');
-        eduChks.forEach(chk => {
-            chk.addEventListener('change', function() {
-                if (this.checked) {
-                    eduChks.forEach(other => { if(other !== this) other.checked = false; });
-                }
-            });
-        });
-
-        const eduLevelValue = "@Html.Raw(Model?.EduLevel ?? "")";
-        const presetLevels = ["博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小"];
-
-        if (eduLevelValue && !presetLevels.includes(eduLevelValue)) {
-            document.getElementById('otherEduLevel').value = eduLevelValue;
-            document.getElementById('radioOther').checked = true;
-            document.getElementById('radioOther').value = eduLevelValue;
-        }
-    };
-
-    // 其他教育程度 Focus 處理
-    document.getElementById('otherEduLevel').addEventListener('focus', function() {
-        document.getElementById('radioOther').checked = true;
     });
 
-    function setWorkExp(val) {
-        const input = document.getElementById('workYearsInput');
-        const company = document.getElementById('CompanyName');
-        const title = document.getElementById('JobTitle');
-        const desc = document.getElementById('JobDescription');
+    // 💡 確保下拉選單都有「證照名稱」後，才執行反填
+    parseAndFillExistingCerts();
+})
+.catch(err => {
+    console.error("無法成功取得證照清單：", err);
+});
 
-        if (val === 0) {
-            input.value = "";
-            input.readOnly = true;
-            if(company) company.value = "";
-            if(title) title.value = "";
-            if(desc) desc.value = "";
-        } else {
-            if(input.value === "" || parseInt(input.value) <= 0) {
-                input.value = 1;
+
+// 💡 3. 將所有依賴 jQuery ($) 與視窗載入的邏輯，安全地包裹在 window.onload 內
+window.onload = function() {
+    
+    // ------ 1. 處理語文能力反填 ------
+    const langData = `@Html.Raw(Model?.LanguageSkills ?? "")`;
+    if (langData && langData.trim() !== "") {
+        const items = langData.split(', ');
+        const knownLangs = ["英語", "日語", "台語", "客語"];
+
+        items.forEach(item => {
+            if (item === "不具外文能力") {
+                const node = document.querySelector('.lang-node');
+                if(node) node.checked = true;
+                return;
             }
-            input.readOnly = false;
+
+            const name = item.split('(')[0];
+            const lvMatch = item.match(/\(([^)]+)\)/);
+            const lvValue = lvMatch ? lvMatch[1] : "";
+
+            if (knownLangs.includes(name)) {
+                document.querySelectorAll('.lang-row').forEach(row => {
+                    const labelElement = row.querySelector('.lang-label');
+                    if (labelElement && labelElement.innerText.includes(name)) {
+                        const lvChk = Array.from(row.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
+                        if (lvChk) lvChk.checked = true;
+                    }
+                });
+            } else {
+                const otherRow = Array.from(document.querySelectorAll('.lang-row')).find(row => {
+                    const lbl = row.querySelector('.lang-label');
+                    return lbl && lbl.innerText.includes("其他");
+                });
+                if (otherRow) {
+                    const otherLangInput = document.getElementById('otherLangName');
+                    if (otherLangInput) otherLangInput.value = name;
+                    
+                    const lvChk = Array.from(otherRow.querySelectorAll('.lang-lv')).find(c => c.value === lvValue);
+                    if (lvChk) lvChk.checked = true;
+                }
+            }
+        });
+    }
+
+    // ------ 2. 處理駕照種類 ------
+    const licenseData = "@Html.Raw(Model?.DriverLicense ?? "")";
+    if (licenseData) {
+        const parts = licenseData.split(', ');
+        parts.forEach(p => {
+            if (p.includes('(')) {
+                const typeName = p.split('(')[0].trim();
+                const subValues = p.split('(')[1].replace(')', '').split('/');
+                const row = document.querySelector(`.license-row[data-type="${typeName}"]`);
+                if (row) {
+                    subValues.forEach(v => {
+                        const chk = row.querySelector(`.license-chk[value="${v}"]`);
+                        if (chk) chk.checked = true;
+                    });
+                }
+            } else {
+                const row = document.querySelector(`.license-row[data-type="汽(機)車"]`);
+                if (row) {
+                    const subValues = p.split('/');
+                    subValues.forEach(v => {
+                        const chk = row.querySelector(`.license-chk[value="${v}"]`);
+                        if (chk) chk.checked = true;
+                    });
+                }
+            }
+        });
+    }
+
+    // ------ 3. 處理專長反填 ------
+    const specData = "@Html.Raw(Model?.Specialty ?? "")";
+    if (specData) {
+        const specs = specData.split('; ');
+        const specInputs = document.querySelectorAll('.spec-input');
+        specs.forEach((val, index) => {
+             if(specInputs[index]) specInputs[index].value = val;
+        });
+    }
+
+    // ------ 5. 處理電腦能力 ------
+    const compData = "@Html.Raw(Model?.ComputerSkills ?? "")";
+    if (compData) {
+        const compArray = compData.split(',').map(s => s.trim());
+        document.querySelectorAll('.comp-chk').forEach(chk => {
+            if (compArray.includes(chk.value)) chk.checked = true;
+        });
+        if (compData.includes("其他:")) {
+            const match = compData.match(/其他:([^,]+)/);
+            if (match) {
+                const otherCompInput = document.getElementById('otherCompName');
+                if (otherCompInput) otherCompInput.value = match[1].trim();
+                
+                const otherChk = Array.from(document.querySelectorAll('.comp-chk')).find(c => c.value === "其他");
+                if(otherChk) otherChk.checked = true;
+            }
         }
     }
 
-    // 🎯 綁定明確的表單 ID
-    document.getElementById('resumeForm').addEventListener('submit', function (e) {
+    // ------ 6. 處理學歷狀況 ------
+    const eduData = "@Html.Raw(Model?.EduStatus ?? "")";
+    if (eduData) {
+        document.querySelectorAll('#eduStatusArea .edu-chk').forEach(chk => {
+            if (eduData.includes(chk.value)) chk.checked = true;
+        });
+    }
+
+    // ------ 7. 年資欄位初始化 ------
+    const workYearsInput = document.getElementById('workYearsInput');
+    if (workYearsInput && parseInt(workYearsInput.value) <= 0) {
+        workYearsInput.value = "";
+    }
+
+    // ------ 8. 互斥限制邏輯 ------
+    document.querySelectorAll('.lang-row').forEach(row => {
+        const lvs = row.querySelectorAll('.lang-lv');
+        lvs.forEach(chk => {
+            chk.addEventListener('change', function() {
+                if (this.checked) {
+                    lvs.forEach(other => { if(other !== this) other.checked = false; });
+                }
+            });
+        });
+    });
+
+    const eduChks = document.querySelectorAll('#eduStatusArea .edu-chk');
+    eduChks.forEach(chk => {
+        chk.addEventListener('change', function() {
+            if (this.checked) {
+                eduChks.forEach(other => { if(other !== this) other.checked = false; });
+            }
+        });
+    });
+
+    const eduLevelValue = "@Html.Raw(Model?.EduLevel ?? "")";
+    const presetLevels = ["博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小"];
+
+    if (eduLevelValue && !presetLevels.includes(eduLevelValue)) {
+        const otherEduInput = document.getElementById('otherEduLevel');
+        const radioOther = document.getElementById('radioOther');
+        if (otherEduInput) otherEduInput.value = eduLevelValue;
+        if (radioOther) {
+            radioOther.checked = true;
+            radioOther.value = eduLevelValue;
+        }
+    }
+
+    // 💡 【重要移入】確保 jQuery 載入後才綁定 change 事件，手動切換選單時級別才會出來！
+    $(document).on('change', '.cert-select', function () {
+        const selectedCert = $(this).val();
+        const $levelSelect = $(this).closest('.cert-item').find('.cert-level-select');
+        
+        $levelSelect.empty().append('<option value="">--級別--</option>');
+
+        if (selectedCert && globalCertList) {
+            // 大小寫全面相容比對
+            const certData = globalCertList.find(x => {
+                const currentName = x.CertName || x.certName || "";
+                return currentName.trim() === selectedCert.trim();
+            });
+            
+            let levelsArray = certData ? (certData.Levels || certData.levels) : null;
+            
+            if (levelsArray && Array.isArray(levelsArray)) {
+                levelsArray.forEach(lvl => {
+                    let formattedLvl = lvl.trim();
+                    $levelSelect.append(`<option value="${formattedLvl}">${formattedLvl}</option>`);
+                });
+            }
+        }
+    });
+
+    // 其他教育程度 Focus 處理
+    const otherEduLevelEl = document.getElementById('otherEduLevel');
+    if (otherEduLevelEl) {
+        otherEduLevelEl.addEventListener('focus', function() {
+            const radioOther = document.getElementById('radioOther');
+            if (radioOther) radioOther.checked = true;
+        });
+    }
+}; // window.onload 結束
+
+
+// 🎯 拆解既有證照欄位字串並自動反填
+function parseAndFillExistingCerts() {
+    // 同時支援原本的 id 與隱藏 name 屬性選取器
+    const $finalCert = $('#finalCertificates').length ? $('#finalCertificates') : $('input[name="Certificates"]');
+    if (!$finalCert.length) return;
+    
+    const rawValue = $finalCert.val();
+    if (!rawValue) return;
+
+    const certList = rawValue.split(', ');
+    $('.cert-item').each(function (index) {
+        if (index < certList.length) {
+            const current = certList[index];
+            const match = current.match(/(.+)\((.+)\)/);
+            
+            const $certSelect = $(this).find('.cert-select');
+            const $levelSelect = $(this).find('.cert-level-select');
+
+            if (match) {
+                const name = match[1].trim();
+                const lvl = match[2].trim(); 
+
+                // 1. 反填證照名稱
+                $certSelect.val(name);
+                
+                // 2. 立即動態塞入該證照對應的級別選單 (全面相容大、小寫屬性)
+                $levelSelect.empty().append('<option value="">--級別--</option>');
+                if (globalCertList) {
+                    const certData = globalCertList.find(x => {
+                        const currentName = x.CertName || x.certName || "";
+                        return currentName.trim() === name;
+                    });
+                    
+                    let levelsArray = certData ? (certData.Levels || certData.levels) : null;
+
+                    if (levelsArray && Array.isArray(levelsArray)) {
+                        levelsArray.forEach(l => {
+                            let formattedLvl = l.trim();
+                            $levelSelect.append(`<option value="${formattedLvl}">${formattedLvl}</option>`);
+                        });
+                    }
+                }
+
+                // 3. 反填級別值
+                $levelSelect.val(lvl);
+            } else {
+                $certSelect.val(current.trim()).trigger('change');
+            }
+        }
+    });
+}
+
+function setWorkExp(val) {
+    const input = document.getElementById('workYearsInput');
+    const company = document.getElementById('CompanyName');
+    const title = document.getElementById('JobTitle');
+    const desc = document.getElementById('JobDescription');
+
+    if (!input) return;
+
+    if (val === 0) {
+        input.value = "";
+        input.readOnly = true;
+        if(company) company.value = "";
+        if(title) title.value = "";
+        if(desc) desc.value = "";
+    } else {
+        if(input.value === "" || parseInt(input.value) <= 0) {
+            input.value = 1;
+        }
+        input.readOnly = false;
+    }
+}
+
+// 🎯 綁定明確的表單 ID
+const resumeFormEl = document.getElementById('resumeForm');
+if (resumeFormEl) {
+    resumeFormEl.addEventListener('submit', function (e) {
         const workYearsInput = document.getElementById('workYearsInput');
         const workExpType = document.querySelector('input[name="workExpType"]:checked');
 
-        // 1. 驗證是否有選工作經歷 Radio
         if (!workExpType) {
             Swal.fire('提示', '請選擇是否有工作經歷', 'warning');
             e.preventDefault();
             return false;
         }
 
-        const isHaveExp = workExpType.getAttribute('onclick').includes('1');
-        const yearsValue = workYearsInput.value.trim();
+        const isHaveExp = workExpType.getAttribute('onclick') && workExpType.getAttribute('onclick').includes('1');
+        const yearsValue = workYearsInput ? workYearsInput.value.trim() : "";
 
         if (isHaveExp) {
             const years = parseInt(yearsValue);
@@ -578,41 +679,53 @@
                 e.preventDefault();
                 return false;
             }
-            if (!document.getElementById('CompanyName').value.trim() ||
-                !document.getElementById('JobTitle').value.trim()) {
+            const compEl = document.getElementById('CompanyName');
+            const titleEl = document.getElementById('JobTitle');
+            if ((compEl && !compEl.value.trim()) || (titleEl && !titleEl.value.trim())) {
                 Swal.fire('提示', '您已填寫年資，請完整填寫公司名稱與職稱', 'warning');
                 e.preventDefault();
                 return false;
             }
         } else {
-            workYearsInput.value = 0;
+            if (workYearsInput) workYearsInput.value = 0;
         }
 
-        // 2. 其他教育程度
         const otherEduInput = document.getElementById('otherEduLevel');
         const radioOther = document.getElementById('radioOther');
-        const otherVal = otherEduInput.value.trim();
-        if (otherVal !== "") {
-            radioOther.checked = true;
-            radioOther.value = otherVal;
+        if (otherEduInput && radioOther) {
+            const otherVal = otherEduInput.value.trim();
+            if (otherVal !== "") {
+                radioOther.checked = true;
+                radioOther.value = otherVal;
+            }
         }
 
-        // 3. 紀錄時間
-        const now = new Date();
-        document.getElementById('finalResumeTime').value = now.toISOString();
+        const finalTimeEl = document.getElementById('finalResumeTime');
+        if (finalTimeEl) {
+            const now = new Date();
+            finalTimeEl.value = now.toISOString();
+        }
 
-        // 4. 語文能力串接
         let langResults = [];
-        if (document.querySelector('.lang-node:checked')) langResults.push("不具外文能力");
-        document.querySelectorAll('.lang-row').forEach(row => {
-            let label = row.querySelector('.lang-label') ? row.querySelector('.lang-label').innerText : "";
-            if (label.includes("其他")) label = document.getElementById('otherLangName').value;
-            let lv = row.querySelector('.lang-lv:checked');
-            if (lv && label) langResults.push(`${label.replace('：','')}(${lv.value})`);
-        });
-        document.getElementById('finalLanguageSkills').value = langResults.join(', ');
+        const isNoLang = document.querySelector('.lang-node:checked');
+        if (isNoLang) {
+            langResults.push("不具外文能力");
+        } else {
+            document.querySelectorAll('.lang-row').forEach(row => {
+                let label = row.querySelector('.lang-label') ? row.querySelector('.lang-label').innerText : "";
+                if (label.includes("其他")) {
+                    const otherLangInput = document.getElementById('otherLangName');
+                    label = otherLangInput ? otherLangInput.value.trim() : "";
+                }
+                let lv = row.querySelector('.lang-lv:checked');
+                if (lv && label) {
+                    langResults.push(`${label.replace('：','').trim()}(${lv.value})`);
+                }
+            });
+        }
+        const finalLangEl = document.getElementById('finalLanguageSkills');
+        if (finalLangEl) finalLangEl.value = langResults.join(', ');
 
-        // 5. 駕照種類
         let licenseResults = [];
         document.querySelectorAll('.license-row').forEach(row => {
             let type = row.getAttribute('data-type');
@@ -627,45 +740,49 @@
                 }
             }
         });
-        document.getElementById('finalDriverLicense').value = licenseResults.join(', ');
+        const finalLicenseEl = document.getElementById('finalDriverLicense');
+        if (finalLicenseEl) finalLicenseEl.value = licenseResults.join(', ');
 
-        // 6. 專長串接
         let specResults = [];
         document.querySelectorAll('.spec-input').forEach(input => {
             if(input.value.trim()) specResults.push(input.value.trim());
         });
-        document.getElementById('finalSpecialty').value = specResults.join('; ');
+        const finalSpecEl = document.getElementById('finalSpecialty');
+        if (finalSpecEl) finalSpecEl.value = specResults.join('; ');
 
-        // 7. 證照
+        // 🎯 證照組合區塊
         let certResults = [];
-        document.querySelectorAll('.cert-item').forEach((item, index) => {
-            let nameInput = item.querySelector('.cert-name');
-            let name = nameInput ? nameInput.value.trim() : "";
-            if (index === 2) name = document.getElementById('othercert-name').value.trim();
-
-            if (name) {
-                let selectedLvs = [];
-                item.querySelectorAll('.cert-lv:checked').forEach(lv => selectedLvs.push(lv.value));
-                certResults.push(selectedLvs.length > 0 ? `${name}(${selectedLvs.join(',')})` : name);
+        $('.cert-item').each(function () {
+            const certName = $(this).find('.cert-select').val();
+            const certLvl = $(this).find('.cert-level-select').val();
+            if (certName) {
+                certResults.push(certLvl ? `${certName}(${certLvl})` : certName);
             }
         });
-        document.getElementById('finalCertificates').value = certResults.join(', ');
-
-        // 8. 電腦能力
+        const finalCertEl = document.getElementById('finalCertificates');
+        if (finalCertEl) finalCertEl.value = certResults.join(', ');
+                   
         let compResults = [];
         document.querySelectorAll('.comp-chk:checked').forEach(chk => {
-            if (chk.value === "城市設計" || chk.value === "程式設計") compResults.push(chk.value);
-            else if (chk.value === "其他") compResults.push("其他:" + document.getElementById('otherCompName').value);
-            else compResults.push(chk.value);
+            if (chk.value.includes("程式設計") || chk.value.includes("城市設計")) {
+                compResults.push(chk.value);
+            } else if (chk.value === "其他") {
+                const otherCompInput = document.getElementById('otherCompName');
+                compResults.push("其他:" + (otherCompInput ? otherCompInput.value.trim() : ""));
+            } else {
+                compResults.push(chk.value);
+            }
         });
-        document.getElementById('finalComputerSkills').value = compResults.join(', ');
+        const finalCompEl = document.getElementById('finalComputerSkills');
+        if (finalCompEl) finalCompEl.value = compResults.join(', ');
 
-        // 9. 學歷狀況狀況反填
         let selectedEdu = document.querySelector('#eduStatusArea .edu-chk:checked');
-        document.getElementById('finalEduStatus').value = selectedEdu ? selectedEdu.value : "";
+        const finalEduEl = document.getElementById('finalEduStatus');
+        if (finalEduEl) finalEduEl.value = selectedEdu ? selectedEdu.value : "";
 
         return true;
     });
+}
 </script>
 
 @* 🚨 負責攔截後端 TempData 錯誤並顯示的 SweetAlert 腳本 🚨 *@

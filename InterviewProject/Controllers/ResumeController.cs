@@ -96,11 +96,13 @@ namespace InterviewProject.Controllers
                     var sourceLangs = await _db.LanguageProficiency.Where(l => l.ResumeId == existingResume.Id).ToListAsync();
                     var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == existingResume.Id).ToListAsync();
                     var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == existingResume.Id).ToListAsync();
+                    var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == existingResume.Id).ToListAsync();
 
                     model = existingResume;
                     model.LanguageSkills = FormatLanguageString(sourceLangs);
                     model.DriverLicense = FormatDriverLicenseString(dbLicenses);
-                    model.ComputerSkills = FormatComputerSkillString(dbCompSkills);
+                    model.ComputerSkills = FormatComputerSkillString(dbCompSkills); 
+                    model.Certificates = FormatCertificatesString(dbCertificates); 
 
                     model.Id = 0;
                     model.JobsId = jobId;
@@ -127,6 +129,8 @@ namespace InterviewProject.Controllers
                     model.DriverLicense = FormatDriverLicenseString(dbLicenses);
                     var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == model.Id).ToListAsync();
                     model.ComputerSkills = FormatComputerSkillString(dbCompSkills);
+                    var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == model.Id).ToListAsync();
+                    model.Certificates = FormatCertificatesString(dbCertificates);
                 }
             }
 
@@ -214,12 +218,14 @@ namespace InterviewProject.Controllers
                     await UpdateDriverLicense(trackedResume.Id, model.DriverLicense);
                     await UpdateComputerSkills(trackedResume.Id, model.ComputerSkills);
                     await UpdateSpecialties(trackedResume.Id, model.Specialty);
+                    await UpdateCertificates(trackedResume.Id, model.Certificates);
 
                     // 補齊供 AI 審查的完整資訊
                     trackedResume.Job = await _db.Jobs.FindAsync(trackedResume.JobsId);
                     trackedResume.LanguageSkills = model.LanguageSkills;
-                    trackedResume.DriverLicense = model.DriverLicense;
+                    trackedResume.DriverLicense = model.DriverLicense; 
                     trackedResume.ComputerSkills = model.ComputerSkills;
+                    trackedResume.Certificates = model.Certificates;
 
                     // 🌟 3. 呼叫 AI API 進行審核
                     var apiResult = await GetGeminiReviewAsync(trackedResume);
@@ -401,6 +407,17 @@ namespace InterviewProject.Controllers
             if (skills == null || !skills.Any()) return "";
             return string.Join(", ", skills.Select(s => s.ComputerSkill));
         }
+        private string FormatCertificatesString(List<InterviewProject.Models.Certificates> dbCerts)
+        {
+            if (dbCerts == null || !dbCerts.Any()) return "";
+
+            // 將每筆資料組合成 "證照名稱(級別)"，如果沒級別就只留 "證照名稱"
+            var certStrings = dbCerts.Select(c =>
+                !string.IsNullOrEmpty(c.Levels) ? $"{c.CName.Trim()}({c.Levels.Trim()})" : c.CName.Trim()
+            );
+
+            return string.Join(", ", certStrings);
+        }
 
         private async Task UpdateLanguageProficiency(int resumeId, string? languageSkills)
         {
@@ -497,6 +514,91 @@ namespace InterviewProject.Controllers
             }
         }
 
+        private async Task UpdateCertificates(int resumeId, string certificatesString)
+        {
+            // 💡 先刪除該履歷舊有的所有證照資料
+            var oldCerts = await _db.Certificates.Where(c => c.ResumeId == resumeId).ToListAsync();
+            if (oldCerts.Any())
+            {
+                _db.Certificates.RemoveRange(oldCerts);
+                await _db.SaveChangesAsync();
+            }
+
+            if (string.IsNullOrWhiteSpace(certificatesString)) return;
+
+            // 💡 修正點：將小寫的 split 改為大寫的 Split
+            var certItems = certificatesString.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var item in certItems)
+            {
+                var trimmedItem = item.Trim();
+                if (string.IsNullOrEmpty(trimmedItem)) continue;
+
+                string cName = trimmedItem;
+                string levels = "";
+
+                // 💡 拆分 "電腦軟體應用(丙級)"
+                if (trimmedItem.Contains("(") && trimmedItem.EndsWith(")"))
+                {
+                    int openBracketIndex = trimmedItem.IndexOf('(');
+                    cName = trimmedItem.Substring(0, openBracketIndex).Trim();
+                    levels = trimmedItem.Substring(openBracketIndex + 1, trimmedItem.Length - openBracketIndex - 2).Trim();
+                }
+
+                // 💡 建立新實體並寫入資料庫 (請確保 Cname 的大小寫與你的 Entity 屬性一致)
+                var newCert = new InterviewProject.Models.Certificates
+                {
+                    ResumeId = resumeId,
+                    CName = cName,
+                    Levels = levels
+                };
+
+                _db.Certificates.Add(newCert);
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetCertificates()
+        {
+            try
+            {
+                // 💡 1. 儘量在資料庫端就先把名稱 Trim 好，減少記憶體浪費
+                var dbCerts = await _db.Certificatecategories
+                    .Select(c => new {
+                        CertName = c.CertName != null ? c.CertName.Trim() : "",
+                        c.AvailableLevels
+                    })
+                    .ToListAsync();
+
+                // 💡 2. 記憶體內處理字串切分與補「級」字邏輯
+                var certs = dbCerts.Select(c => new
+                {
+                    c.CertName,
+                    Levels = (c.AvailableLevels ?? "")
+                        .Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(l =>
+                        {
+                            var val = l.Trim();
+                            // 如果是單字 甲/乙/丙/丁 且結尾不是級，就自動補上「級」，否則保持原樣（如：單一級）
+                            return (val.Length == 1 && "甲乙丙丁".Contains(val)) ? val + "級" : val;
+                        })
+                        .ToArray()
+                }).ToList();
+
+                // 強制使用 PascalCase (不改動屬性大小寫)
+                return Json(certs, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = null
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = $"資料庫讀取失敗: {ex.Message}" });
+            }
+        }
+
         [HttpPost]
         public async Task<IActionResult> ExportToPdf(Resume model)
         {
@@ -508,6 +610,7 @@ namespace InterviewProject.Controllers
             var dbLangs = await _db.LanguageProficiency.Where(l => l.ResumeId == model.Id).ToListAsync();
             var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == model.Id).ToListAsync();
             var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == model.Id).ToListAsync();
+            var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == model.Id).ToListAsync();
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
@@ -553,8 +656,8 @@ namespace InterviewProject.Controllers
             var otherLang = dbLangs.FirstOrDefault(x => !knownLangs.Contains(x.Language));
 
             string spec = model.Specialty ?? "";
-            string cert = model.Certificates ?? "";
             string edu = model.EduStatus ?? "";
+            string cert = FormatCertificatesString(dbCertificates);
 
             var value = new Dictionary<string, object>()
             {
@@ -659,14 +762,17 @@ namespace InterviewProject.Controllers
             var certList = cert.Split(", ").ToList();
             for (int i = 1; i <= 3; i++)
             {
-                string currentCert = certList.ElementAtOrDefault(i - 1) ?? "";
-                if (!string.IsNullOrEmpty(currentCert))
+                // 直接拿第 i-1 個陣列元素
+                var currentCert = dbCertificates.ElementAtOrDefault(i - 1);
+
+                if (currentCert != null)
                 {
-                    value[$"C{i}_Name"] = currentCert.Split('(')[0].Trim();
-                    value[$"C{i}_A"] = currentCert.Contains("甲") ? ck : un;
-                    value[$"C{i}_B"] = currentCert.Contains("乙") ? ck : un;
-                    value[$"C{i}_C"] = currentCert.Contains("丙") ? ck : un;
-                    value[$"C{i}_S"] = currentCert.Contains("單一級") ? ck : un;
+                    // 直接讀取新表的 Cname 與 Levels 欄位
+                    value[$"C{i}_Name"] = currentCert.CName ?? "";
+                    value[$"C{i}_A"] = (currentCert.Levels == "甲級" || currentCert.Levels == "甲") ? ck : un;
+                    value[$"C{i}_B"] = (currentCert.Levels == "乙級" || currentCert.Levels == "乙") ? ck : un;
+                    value[$"C{i}_C"] = (currentCert.Levels == "丙級" || currentCert.Levels == "丙") ? ck : un;
+                    value[$"C{i}_S"] = (currentCert.Levels == "單一級") ? ck : un;
                 }
                 else
                 {
