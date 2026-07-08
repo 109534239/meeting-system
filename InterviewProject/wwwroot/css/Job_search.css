@@ -129,7 +129,7 @@
 /* ── TABLE HEADER ── */
 .job-table-head {
     display: grid;
-    grid-template-columns: 120px 1fr 140px 140px 140px 80px 60px;
+    grid-template-columns: 120px 1fr 140px 140px 140px 110px 80px 60px;
     padding: 12px 20px;
     font-size: 13px;
     color: #525252;
@@ -137,16 +137,22 @@
     gap: 8px;
     border: 1.5px solid transparent;
 }
+
     .job-table-head .sortable {
-      cursor: pointer;
-      display: flex; align-items: center; gap: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 4px;
     }
-    .job-table-head .sortable:hover { color: var(--primary); }
+
+        .job-table-head .sortable:hover {
+            color: var(--primary);
+        }
 
     .job-table-head div:nth-child(1),
-.job-table-head div:nth-child(2) {
-    text-align: left;
-}
+    .job-table-head div:nth-child(2) {
+        text-align: left;
+    }
 
 
 /* ── JOB LIST ── */
@@ -156,7 +162,7 @@
     background: var(--white);
     border-radius: var(--radius-card);
     display: grid;
-    grid-template-columns: 120px 1fr 140px 140px 140px 80px 60px;
+    grid-template-columns: 120px 1fr 140px 140px 140px 110px 80px 60px;
     align-items: center;
     padding: 18px 20px;
     gap: 8px;
@@ -276,6 +282,14 @@
     transition: all 0.2s;
 }
     .page-arrow:hover { border-color: var(--primary); color: var(--primary); }
+
+.page-total-count {
+    margin-left: 12px;
+    font-size: 14px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+}
 
 /* ── PAGE WRAPPER ── */
 .page-wrapper {

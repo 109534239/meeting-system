@@ -59,7 +59,6 @@
     <main class="main">
 
         <div class="result-meta">
-            <div class="result-count">共 <span id="result-num">@(Model != null ? Model.Count() : 0)</span> 筆職缺</div>
             <div class="filter-tag" id="active-filter" style="display:none">
                 專案管理 <button onclick="removeFilter()">×</button>
             </div>
@@ -71,6 +70,7 @@
             <div>工作地點</div>
             <div>經歷要求</div>
             <div>學歷要求</div>
+            <div>截止日期</div>
             <div></div>
             <div></div>
         </div>
@@ -124,7 +124,10 @@
                             }
                         </div>
 
-                        @* 6. 立即應徵按鈕 *@
+                        @* 6. 截止日期 *@
+                        <div class="job-cell">@job.Deadline.ToString("yyyy/MM/dd")</div>
+
+                        @* 7. 立即應徵按鈕 *@
                         <div class="job-actions">
                             <a asp-controller="Job"
                                asp-action="Job_detail"
@@ -132,7 +135,7 @@
                                class="btn-apply">立即應徵</a>
                         </div>
 
-                        @* 7. 收藏按鈕 *@
+                        @* 8. 收藏按鈕 *@
                         <div class="job-actions">
                             <button class="btn-icon btn-favorite"
                                     title="收藏"
@@ -166,7 +169,7 @@
         const IS_LOGGED_IN = @Json.Serialize((bool)ViewBag.IsLoggedIn);
         const MEMBER_ID    = @Json.Serialize((int)ViewBag.MemberId);
 
-        const PAGE_SIZE = 20;
+        const PAGE_SIZE = 10;
         let currentPage = 1;
 
         // ============================
@@ -225,9 +228,24 @@
             return document.querySelectorAll('#job-list .job-row').length;
         }
 
+         // 依目前頁碼，只顯示該頁應出現的職缺列，其餘隱藏
+        function showPage(page) {
+            const rows = document.querySelectorAll('#job-list .job-row');
+            const start = (page - 1) * PAGE_SIZE;
+            const end = start + PAGE_SIZE;
+            rows.forEach((row, idx) => {
+                row.style.display = (idx >= start && idx < end) ? '' : 'none';
+            });
+        }
+
         function renderPagination() {
             const total = getTotalRows();
             const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+             // 頁碼超出範圍時自動修正（例如篩選後總筆數變少）
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
             const pg = document.getElementById('pagination');
             if (!pg) return;
             pg.innerHTML = '';
@@ -251,6 +269,17 @@
             next.innerHTML = '&#8250;';
             next.onclick = () => { if (currentPage < totalPages) goPage(currentPage + 1); };
             pg.appendChild(next);
+
+             // 總筆數文字，顯示在頁碼按鈕之後
+            const countText = document.createElement('span');
+            countText.className = 'page-total-count';
+            countText.style.marginLeft = '12px';
+            countText.style.color = '#666';
+            countText.style.fontSize = '14px';
+            countText.textContent = `共 ${total} 筆職缺`;
+            pg.appendChild(countText);
+
+            showPage(currentPage);
         }
 
         function goPage(page) {
