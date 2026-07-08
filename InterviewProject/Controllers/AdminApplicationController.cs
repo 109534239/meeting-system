@@ -1,22 +1,25 @@
 using InterviewProject.Data;
 using InterviewProject.Models;
+using InterviewProject.Services;
+using Microsoft.AspNetCore.Http; // 確保有引入 Session 所需的命名空間
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http; // 確保有引入 Session 所需的命名空間
 
 namespace InterviewProject.Controllers
 {
     public class AdminApplicationController : Controller
     {
         private readonly AppDbContext _db;
+        private readonly AutoInterviewSchedulingService _scheduler;
 
-        public AdminApplicationController(AppDbContext db)
+        public AdminApplicationController(AppDbContext db, AutoInterviewSchedulingService scheduler)
         {
             _db = db;
+            _scheduler = scheduler;
         }
 
         private bool IsEmployee()
@@ -266,6 +269,9 @@ namespace InterviewProject.Controllers
                 resume.Status = model.Status;
                 _db.Entry(resume).State = EntityState.Modified;
                 await _db.SaveChangesAsync();
+
+                // 🎯 Step B：這筆履歷審完了，順便檢查這個職缺是否全部審核完畢、可以自動安排面試
+                await _scheduler.TryAutoScheduleAsync(resume.JobsId);
 
                 return Json(new { success = true, message = "履歷狀態已成功存入資料庫。" });
             }

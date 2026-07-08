@@ -1,5 +1,6 @@
 using InterviewProject.Data;
 using InterviewProject.Models;
+using InterviewProject.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,10 +9,12 @@ namespace InterviewProject.Controllers
     public class HrJobController : Controller
     {
         private readonly AppDbContext _db;
+        private readonly AutoInterviewSchedulingService _scheduler;
 
-        public HrJobController(AppDbContext db)
+        public HrJobController(AppDbContext db, AutoInterviewSchedulingService scheduler)
         {
             _db = db;
+            _scheduler = scheduler;
         }
 
         // 權限檢查 helper
@@ -195,6 +198,12 @@ namespace InterviewProject.Controllers
             // 使用 DateTime.Now 更新時間
             job.UpdatedAt = DateTime.Now;
             await _db.SaveChangesAsync();
+
+            // 🎯 Step B：若這次是下架，順便檢查是否能自動安排面試
+            if (!job.IsActive)
+            {
+                await _scheduler.TryAutoScheduleAsync(job.Id);
+            }
 
             return RedirectToAction("Index");
         }
