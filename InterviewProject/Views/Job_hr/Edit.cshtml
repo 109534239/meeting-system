@@ -68,6 +68,34 @@
             .btn-add-row:hover {
                 background: #edf2f7;
             }
+
+        /* 🎯 表單驗證：欄位錯誤標示與缺漏欄位提示橫幅 */
+        .field-error {
+            border-color: #e53e3e !important;
+            background-color: #fff5f5;
+        }
+
+        .field-error-msg {
+            color: #e53e3e;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .form-error-banner {
+            border: 1px solid #feb2b2;
+            background: #fff5f5;
+            color: #c53030;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+            .form-error-banner strong {
+                display: block;
+                margin-bottom: 4px;
+            }
     </style>
 }
 
@@ -77,9 +105,16 @@
         <h2>修改職缺</h2>
     </div>
 
-    <form method="post" asp-action="Edit" class="hrjob-form">
+    <form method="post" asp-action="Edit" class="hrjob-form" id="job-edit-form" novalidate>
         @Html.AntiForgeryToken()
         <input type="hidden" name="Id" value="@Model.Id" />
+
+        @if (TempData["Error"] != null)
+        {
+            <div class="form-error-banner">
+                <strong>⚠ @TempData["Error"]</strong>
+            </div>
+        }
 
         @* ═══════════════════════════════
             基本資訊 (對應最新規格：全數必填)
@@ -88,13 +123,13 @@
 
         <div class="form-group">
             <label>職缺名稱<span class="text-danger">*</span></label>
-            <input type="text" name="Title" class="form-control" value="@Model.Title" required />
+            <input type="text" name="Title" id="title-input" class="form-control" value="@Model.Title" required />
         </div>
 
         <div class="form-row">
             <div class="form-group">
                 <label>職缺類別（部門）<span class="text-danger">*</span></label>
-                <select name="Department" class="form-control" required>
+                <select name="Department" id="department-select" class="form-control" onchange="onDepartmentChange()" required>
                     <option value="">-- 請選擇職缺類別 --</option>
                     <option value="專案管理" selected="@(Model.Department == "專案管理" ? "selected" : null)">專案管理</option>
                     <option value="資訊技術" selected="@(Model.Department == "資訊技術" ? "selected" : null)">資訊技術</option>
@@ -105,7 +140,7 @@
             </div>
             <div class="form-group">
                 <label>工作地點<span class="text-danger">*</span></label>
-                <input type="text" name="Location" class="form-control" value="@Model.Location" required />
+                <input type="text" name="Location" id="location-input" class="form-control" value="@Model.Location" required />
             </div>
         </div>
 
@@ -119,23 +154,23 @@
                 </select>
             </div>
             <div class="form-group">
-                <label>需求人數<span class="text-danger">*</span></label>
-                <input type="text" name="HeadCount" class="form-control" value="@Model.HeadCount" placeholder="例：1 ～ 3 人" required />
+                <label>需求人數<span class="text-muted">(選填，留空預設為「不限」)</span></label>
+                <input type="text" name="HeadCount" id="headcount-input" class="form-control" value="@Model.HeadCount" placeholder="例：1 ～ 3 人" />
             </div>
         </div>
 
         <div class="form-row">
             <div class="form-group">
-                <label>上班時段<span class="text-danger">*</span></label>
-                <select name="WorkShift" class="form-control" required>
+                <label>上班時段<span class="text-muted">(選填，留空預設為「日班」)</span></label>
+                <select name="WorkShift" id="workshift-select" class="form-control">
                     <option value="day" selected="@(Model.WorkShift == "day" ? "selected" : null)">日班</option>
                     <option value="night" selected="@(Model.WorkShift == "night" ? "selected" : null)">夜班</option>
                     <option value="rotating" selected="@(Model.WorkShift == "rotating" ? "selected" : null)">輪班</option>
                 </select>
             </div>
             <div class="form-group">
-                <label>休假制度<span class="text-danger">*</span></label>
-                <select name="LeavePolicy" class="form-control" required>
+                <label>休假制度<span class="text-muted">(選填，留空預設為「週休二日」)</span></label>
+                <select name="LeavePolicy" id="leavepolicy-select" class="form-control">
                     <option value="twodays" selected="@(Model.LeavePolicy == "twodays" ? "selected" : null)">週休二日</option>
                     <option value="oneday" selected="@(Model.LeavePolicy == "oneday" ? "selected" : null)">週休一日</option>
                     <option value="flexible" selected="@(Model.LeavePolicy == "flexible" ? "selected" : null)">彈性休假</option>
@@ -151,11 +186,11 @@
         <div class="form-row">
             <div class="form-group">
                 <label>最低月薪（元）<span class="text-danger">*</span></label>
-                <input type="number" name="SalaryMin" class="form-control" value="@Model.SalaryMin" min="0" required />
+                <input type="number" name="SalaryMin" id="salarymin-input" class="form-control" value="@Model.SalaryMin" min="0" required />
             </div>
             <div class="form-group">
                 <label>最高月薪（元）<span class="text-danger">*</span></label>
-                <input type="number" name="SalaryMax" class="form-control" value="@Model.SalaryMax" min="0" required />
+                <input type="number" name="SalaryMax" id="salarymax-input" class="form-control" value="@Model.SalaryMax" min="0" required />
             </div>
         </div>
 
@@ -167,15 +202,24 @@
         <div class="form-row">
             <div class="form-group">
                 <label>最高主管<span class="text-danger">*</span></label>
-                <select name="EmployeesName" class="form-control" required>
-                    <option value="">-- 請選擇最高主管 --</option>
+
+                @* 🎯 唯讀顯示用下拉：disabled，使用者無法手動變更，僅隨「職缺類別」自動帶入 *@
+                <select id="employees-name-display" class="form-control" disabled>
+                    <option value="">-- 請先選擇職缺類別 --</option>
                     @foreach (var emp in (List<InterviewProject.Models.Employee>)ViewBag.Employees)
                     {
-                        <option value="@emp.Name" selected="@(Model.EmployeesName == emp.Name ? "selected" : null)">
+                        <option value="@emp.Name" data-department="@emp.Department" selected="@(Model.EmployeesName == emp.Name ? "selected" : null)">
                             @emp.Name @(string.IsNullOrEmpty(emp.Department) ? "" : $"（{emp.Department}）")
                         </option>
                     }
                 </select>
+
+                @* 🎯 disabled 的欄位不會隨表單送出，實際送出的值改用 hidden input，預設帶入既有資料 *@
+                <input type="hidden" name="EmployeesName" id="employees-name-hidden" value="@Model.EmployeesName" />
+
+                <small class="text-muted" style="display:block; margin-top:6px;">
+                    依「職缺類別」自動帶入該部門最高主管，無法手動變更
+                </small>
             </div>
         </div>
 
@@ -186,7 +230,7 @@
 
         <div class="form-group">
             <label>職缺描述（工作內容）<span class="text-danger">*</span></label>
-            <textarea name="Description" class="form-control" rows="5" placeholder="請條列主要工作職責" required>@Model.Description</textarea>
+            <textarea name="Description" id="description-input" class="form-control" rows="5" placeholder="請條列主要工作職責" required>@Model.Description</textarea>
         </div>
 
         @* ═══════════════════════════════
@@ -333,15 +377,26 @@
         <div class="form-row">
             <div class="form-group">
                 <label>截止日期<span class="text-danger">*</span></label>
-                <input type="date" name="Deadline" class="form-control" value="@Model.Deadline.ToLocalTime().ToString("yyyy-MM-dd")" required />
+                <input type="date" name="Deadline" id="deadline-input" class="form-control" value="@Model.Deadline.ToLocalTime().ToString("yyyy-MM-dd")" min="@Model.CreatedAt.ToLocalTime().AddDays(1).ToString("yyyy-MM-dd")" required />
+                <small class="text-muted" style="display:block; margin-top:6px;">
+                    截止日期不能早於或等於上架日期；職缺上架中時，還必須晚於今天
+                </small>
             </div>
         </div>
 
         <div class="form-group checkbox-group">
             <label style="cursor: pointer; font-weight: normal;">
-                <input type="checkbox" name="IsActive" value="true" @(Model.IsActive ? "checked" : "") />
+                <input type="checkbox" id="is-active-checkbox" name="IsActive" value="true" @(Model.IsActive ? "checked" : "") onchange="onIsActiveChange()" />
                 上架中
             </label>
+            <small class="text-muted" style="display:block; margin-top:4px;">
+                取消勾選會把上面的截止日期自動改成今天，避免出現「已下架但截止日期還沒到」的矛盾狀態
+            </small>
+            @* 🎯 checkbox 沒勾選時瀏覽器完全不會送出這個欄位，若沒有這個 hidden 備援，
+                後端會用 Job.cs 的預設值 true 覆蓋掉，導致「取消勾選」永遠無效。
+                順序必須是 checkbox 在前、hidden 在後：勾選時送出 true+false 取第一個值 true；
+                不勾選時只會送出 hidden 的 false。 *@
+            <input type="hidden" name="IsActive" value="false" />
         </div>
 
         <div class="form-actions">
@@ -353,6 +408,221 @@
 
 @section Scripts {
     <script>
+        // 🎯 取消勾選「上架中」時，若截止日期還在未來，自動改成今天，
+        //    避免存出「已下架，但截止日期還沒到」這種矛盾狀態
+        //    （重新勾選不會自動改截止日期，因為要延長到哪一天需要人工判斷，不適合自動推算）
+        // 🎯 取得本機時區的 yyyy-MM-dd 字串，跟 <input type="date"> 的格式一致，可以直接用字串比大小
+         function getLocalDateString(date) {
+             return date.getFullYear() + '-' +
+                 String(date.getMonth() + 1).padStart(2, '0') + '-' +
+                 String(date.getDate()).padStart(2, '0');
+         }
+
+         // 🎯 「上架中」勾選狀態改變時同步截止日期：
+        //    - 取消勾選（下架）：若截止日期還在未來，拉回今天，避免「已下架但還沒到截止日」
+        //    - 重新勾選（上架）：若截止日期還停留在今天或更早（代表是舊的/已過期的），直接清空，
+        //      強制使用者重新選一個至少晚於今天的日期，不能延用舊的
+        function onIsActiveChange() {
+            const checkbox = document.getElementById('is-active-checkbox');
+            const deadlineInput = document.getElementById('deadline-input');
+            const createdAtStr = document.getElementById('created-at-value')?.value;
+            const wasActiveStr = document.getElementById('was-active-value')?.value;
+            const todayStr = getLocalDateString(new Date());
+
+            if (!checkbox.checked) {
+                // 🎯 當天上架的職缺不能當天下架，要隔天才能操作：擋下這次操作並復原勾選狀態
+                if (wasActiveStr === 'true' && createdAtStr && createdAtStr === todayStr) {
+                    alert('當天上架的職缺不能當天下架，請隔天再操作。');
+                    checkbox.checked = true;
+                    return;
+                }
+
+                if (!deadlineInput.value) return;
+
+                // 下架：截止日期拉回今天即可，但同時不能早於或等於上架日期
+                let target = todayStr;
+                if (createdAtStr && target <= createdAtStr) {
+                    const d = new Date(createdAtStr + 'T00:00:00');
+                    d.setDate(d.getDate() + 1);
+                    target = getLocalDateString(d);
+                }
+                if (deadlineInput.value > target) {
+                    deadlineInput.value = target;
+                }
+            } else {
+                if (!deadlineInput.value) return;
+
+                // 重新上架：舊的截止日期可能已經過期，必須讓使用者重新選一個至少晚於今天的日期
+                if (deadlineInput.value <= todayStr) {
+                    deadlineInput.value = '';
+                }
+            }
+        }
+
+        // 🎯 職缺類別（部門）變更時，自動帶入該部門的最高主管
+        //    對應規則：employees-name-display 的每個 <option> 都帶有 data-department，
+        //    找出符合目前選擇部門的那一筆，同步設定顯示用 select 與實際送出用的 hidden input
+        function onDepartmentChange() {
+            const deptEl = document.getElementById('department-select');
+            const dept = deptEl.value;
+            const displaySelect = document.getElementById('employees-name-display');
+            const hiddenInput = document.getElementById('employees-name-hidden');
+
+            const match = Array.from(displaySelect.options)
+                .find(opt => opt.value !== '' && opt.dataset.department === dept);
+
+            if (match) {
+                displaySelect.value = match.value;
+                hiddenInput.value = match.value;
+            } else {
+                displaySelect.value = '';
+                hiddenInput.value = '';
+            }
+
+            // 使用者一旦重新選擇，先移除舊的錯誤標示，等下次送出時再重新驗證
+            [deptEl, displaySelect].forEach(el => {
+                el.classList.remove('field-error');
+                const group = el.closest('.form-group');
+                const msg = group && group.querySelector('.field-error-msg');
+                if (msg) msg.remove();
+            });
+        }
+
+         // 🎯 送出表單一律先攔截（fail-closed）：
+        //    不管驗證過程有沒有意外出錯，瀏覽器都不會偷偷把表單送出去，
+        //    只有明確驗證通過，才會呼叫 form.submit() 真正送出
+        document.getElementById('job-edit-form')?.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const form = e.target;
+
+            try {
+                fillDefaultsForOptionalFields();
+                clearFieldErrors();
+
+                const errors = validateJobForm();
+
+                if (errors.length > 0) {
+                    showFieldErrors(errors);
+                    return;
+                }
+
+                form.submit(); // 驗證通過才真正送出（form.submit() 不會再觸發 submit 事件，不會無限迴圈）
+            } catch (err) {
+                console.error('表單驗證發生錯誤：', err);
+                alert('驗證表單時發生非預期錯誤，請重新整理頁面後再試一次。若持續發生，請聯絡系統管理員。');
+            }
+        });
+
+        // 🎯 選填欄位若留空，套用與後端 Model 一致的預設值，避免蓋掉合理的預設行為
+         function fillDefaultsForOptionalFields() {
+             const headCount = document.getElementById('headcount-input');
+             if (headCount && !headCount.value.trim()) headCount.value = '不限';
+
+             const workShift = document.getElementById('workshift-select');
+             if (workShift && !workShift.value) workShift.value = 'day';
+
+             const leavePolicy = document.getElementById('leavepolicy-select');
+             if (leavePolicy && !leavePolicy.value) leavePolicy.value = 'twodays';
+
+             // 🎯 條件要求（選填）：這幾欄資料庫允許 NULL，但留空字串會被存成 NULL 導致列表頁噴例外，
+             //    一律補上「不限」，確保永遠不會送出空字串
+             const educationRequired = document.getElementById('education-required-select');
+             if (educationRequired && !educationRequired.value) educationRequired.value = '不限';
+
+             const industryExperience = document.getElementById('industry-experience-input');
+             if (industryExperience && !industryExperience.value.trim()) industryExperience.value = '不限';
+
+             const certRequired = document.getElementById('cert-required-input');
+             if (certRequired && !certRequired.value.trim()) certRequired.value = '不限';
+
+             const otherRequirements = document.getElementById('other-requirements-input');
+             if (otherRequirements && !otherRequirements.value.trim()) otherRequirements.value = '不限';
+
+             const experienceValue = document.getElementById('experience-value');
+             if (experienceValue && !experienceValue.value.trim()) experienceValue.value = '不限';
+         }
+
+        // 🎯 真正必填的欄位清單（其餘欄位一律選填）
+        function validateJobForm() {
+            const errors = [];
+
+            const push = (el, label, isEmpty) => {
+                if (el && isEmpty) errors.push({ el, label });
+            };
+
+            const title = document.getElementById('title-input');
+            push(title, '職缺名稱', !title || !title.value.trim());
+
+            const dept = document.getElementById('department-select');
+            push(dept, '職缺類別（部門）', !dept || !dept.value);
+
+            const location = document.getElementById('location-input');
+            push(location, '工作地點', !location || !location.value.trim());
+
+            const description = document.getElementById('description-input');
+            push(description, '職缺描述（工作內容）', !description || !description.value.trim());
+
+            const salaryMin = document.getElementById('salarymin-input');
+            push(salaryMin, '最低月薪', !salaryMin || salaryMin.value.trim() === '');
+
+            const salaryMax = document.getElementById('salarymax-input');
+            push(salaryMax, '最高月薪', !salaryMax || salaryMax.value.trim() === '');
+
+            const deadline = document.getElementById('deadline-input');
+            push(deadline, '截止日期', !deadline || !deadline.value);
+
+            // 最高主管是依「職缺類別」自動帶入的，若尚未帶出，等同職缺類別未選
+            const hiddenManager = document.getElementById('employees-name-hidden');
+            const managerDisplay = document.getElementById('employees-name-display');
+            push(managerDisplay, '最高主管（請先選擇職缺類別以自動帶入）', !hiddenManager || !hiddenManager.value);
+
+            return errors;
+        }
+
+        // 清除先前的錯誤標示（重新驗證前先歸零）
+        function clearFieldErrors() {
+            document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+            document.querySelectorAll('.field-error-msg').forEach(el => el.remove());
+            const banner = document.getElementById('form-error-banner');
+            if (banner) banner.remove();
+        }
+
+        // 在每個缺漏欄位旁標示紅框 + 提示文字，並在表單最上方列出完整清單
+        function showFieldErrors(errors) {
+            const banner = document.createElement('div');
+            banner.id = 'form-error-banner';
+            banner.className = 'form-error-banner';
+            banner.innerHTML = '<strong>⚠ 請完成以下必填欄位：</strong>' +
+                errors.map(err => '・' + err.label).join('<br>');
+
+            const form = document.getElementById('job-edit-form');
+            form.insertBefore(banner, form.firstChild);
+
+            errors.forEach(err => {
+                if (!err.el) return;
+                err.el.classList.add('field-error');
+                const group = err.el.closest('.form-group');
+                if (group && !group.querySelector('.field-error-msg')) {
+                    const msg = document.createElement('div');
+                    msg.className = 'field-error-msg';
+                    msg.textContent = '⚠ 此欄位為必填';
+                    group.appendChild(msg);
+                }
+            });
+
+           // 捲動、聚焦並「彈一下」第一個缺漏欄位，讓使用者能立刻看到問題出在哪
+            const firstEl = errors[0].el;
+            if (firstEl) {
+                firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (typeof firstEl.focus === 'function') firstEl.focus();
+                firstEl.classList.add('field-error-flash');
+                setTimeout(() => firstEl.classList.remove('field-error-flash'), 600);
+            } else {
+                banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
         // 💡 頁面載入時：反向解析現有的工作經驗資料並還原控制項状態
         window.addEventListener('DOMContentLoaded', (event) => {
             const hiddenValue = document.getElementById('experience-value').value;
@@ -383,8 +653,14 @@
                 hidden.value = '不限';
             } else {
                 yearsInput.style.display = 'block';
+
+                // 🎯 切到「要求」時，若年數還沒填，預設帶入 1 年，避免留空
+                if (!yearsInput.value) {
+                    yearsInput.value = '1';
+                }
+
                 const y = parseInt(yearsInput.value);
-                hidden.value = (y > 0) ? y + '年以上工作經驗' : '';
+                hidden.value = (y > 0) ? y + '年以上工作經驗' : '不限';
             }
         }
 

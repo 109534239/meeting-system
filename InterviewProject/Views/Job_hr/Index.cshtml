@@ -19,6 +19,44 @@
     </div>
 </div>
 
+@* 🎯 篩選列，樣式沿用 Job_search.css（跟公開求職頁的搜尋列一致）
+    篩選條件：部門（從資料庫實際存在的部門動態產生選項）、上架狀態、日期（落在上架~截止之間）、職缺名稱關鍵字 *@
+<div class="search-bar">
+    <div class="search-inner">
+        <div class="search-field">
+            <label>部門</label>
+            <select id="sel-department">
+                <option value="">全部部門</option>
+                @if (ViewBag.DepartmentOptions != null)
+                {
+                    foreach (var dept in (List<string>)ViewBag.DepartmentOptions)
+                    {
+                        <option value="@dept" selected="@(ViewBag.SelectedDepartment == dept ? "selected" : null)">@dept</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="search-field">
+            <label>上架狀態</label>
+            <select id="sel-status">
+                <option value="">全部狀態</option>
+                <option value="active" selected="@(ViewBag.SelectedStatus == "active")">上架中</option>
+                <option value="inactive" selected="@(ViewBag.SelectedStatus == "inactive")">已下架</option>
+            </select>
+        </div>
+        <div class="search-field">
+            <label>日期（落在上架～截止之間）</label>
+            <input type="date" id="sel-date" value="@ViewBag.SelectedDate" />
+        </div>
+        <div class="search-field keyword">
+            <label>職缺名稱搜尋</label>
+            <input type="text" id="kw-input" value="@ViewBag.Keyword" placeholder="輸入職缺名稱關鍵字" />
+        </div>
+        <button class="search-btn" type="button" onclick="doSearch()">搜尋</button>
+        <button class="reset-btn" type="button" onclick="resetSearch()">重置</button>
+    </div>
+</div>
+
 <div class="hrjob-page">
 
     @* ── 新增按鈕 ── *@
@@ -35,7 +73,7 @@
     <div class="hrjob-cols hrjob-grid-head">
         <div>部門</div>
         <div>職缺名稱</div>
-        <div>部門主管 / 隸屬</div>
+        <div>部門主管</div>
         <div>招募進度 (未處理 / 錄取 / 需求 / 總數)</div>
         <div class="text-center">狀態</div>
         <div class="text-center">上架 / 下架日期</div>
@@ -43,98 +81,210 @@
     </div>
 
     @* ── 資料列 ── *@
-    <div class="hrjob-list">
-        @foreach (var job in Model)
+    <div class="hrjob-list" id="hrjob-list">
+        @if (Model != null && Model.Any())
         {
-            // 取得當前職缺的統計數據，若無則預設為 0
-            var stat = statsDict != null && statsDict.ContainsKey(job.Id) 
-                       ? statsDict[job.Id] 
-                       : new JobStatsViewModel { UnhandledCount = 0, HiredCount = 0, TotalCount = 0 };
+            @foreach (var job in Model)
+            {
+                // 取得當前職缺的統計數據，若無則預設為 0
+                var stat = statsDict != null && statsDict.ContainsKey(job.Id) 
+                           ? statsDict[job.Id] 
+                           : new JobStatsViewModel { UnhandledCount = 0, HiredCount = 0, TotalCount = 0 };
 
-            <div class="hrjob-row hrjob-cols">
+                <div class="hrjob-row hrjob-cols">
 
-                @* 1. 部門 *@
-                <div class="hrjob-dept-text">@job.Department</div>
+                    @* 1. 部門 *@
+                    <div class="hrjob-dept-text">@job.Department</div>
 
-                @* 2. 職缺名稱與類型 *@
-                <div class="hrjob-title-cell">
-                    <span class="job-fulltime">
-                        @(job.JobType == "fulltime" ? "全職" : job.JobType == "parttime" ? "兼職" : "實習")
-                    </span>
-                    <span class="hrjob-title-text">@job.Title</span>
-                </div>
+                    @* 2. 職缺名稱與類型 *@
+                    <div class="hrjob-title-cell">
+                        <span class="job-fulltime">
+                            @(job.JobType == "fulltime" ? "全職" : job.JobType == "parttime" ? "兼職" : "實習")
+                        </span>
+                        <span class="hrjob-title-text">@job.Title</span>
+                    </div>
 
-                @* 3. 主管 / 隸屬 (🎯 ManagerName 改為外鍵，改讀 job.Manager 導覽屬性) *@
-                <div>
-                    <div class="hrjob-manager-name">@(job.Manager?.Name ?? "未指定")</div>
-                    <div class="hrjob-manager-sub">職稱：@(job.Manager?.Department ?? "-")</div>
-                </div>
+                    @* 3. 主管 / 隸屬 (🎯 ManagerName 改為外鍵，改讀 job.Manager 導覽屬性) *@
+                    <div>
+                        <div class="hrjob-manager-name">@(job.Manager?.Name ?? "未指定")</div>
+                    </div>
 
-                @* 4. 應徵四大項指標四大區塊 (未處理 / 已錄取 / 需求人數 / 總履歷) *@
-                <div class="hrjob-stats-cell">
-                    <a asp-controller="AdminApplication" 
-                        asp-action="Index"
-                        asp-route-jobId="@job.Id"
-                        class="hrjob-stats-link"
-                        title="點擊管理此職缺履歷">
+                    @* 4. 應徵四大項指標四大區塊 (未處理 / 已錄取 / 需求人數 / 總履歷) *@
+                    <div class="hrjob-stats-cell">
+                        <a asp-controller="AdminApplication" 
+                            asp-action="Index"
+                            asp-route-jobId="@job.Id"
+                            class="hrjob-stats-link"
+                            title="點擊管理此職缺履歷">
                         
-                        <div class="stat-badge-grid">
-                            <div class="stat-item unhandled">
-                                <span class="stat-label">未處理</span>
-                                <span class="stat-v">@stat.UnhandledCount</span>
-                            </div>
+                            <div class="stat-badge-grid">
+                                <div class="stat-item unhandled">
+                                    <span class="stat-label">未處理</span>
+                                    <span class="stat-v">@stat.UnhandledCount</span>
+                                </div>
                             
-                            <div class="stat-item hired">
-                                <span class="stat-label">已錄取</span>
-                                <span class="stat-v">@stat.HiredCount</span>
-                            </div>
+                                <div class="stat-item hired">
+                                    <span class="stat-label">已錄取</span>
+                                    <span class="stat-v">@stat.HiredCount</span>
+                                </div>
                             
-                            <div class="stat-item needed">
-                                <span class="stat-label">需求</span>
-                                <span class="stat-v">@(string.IsNullOrEmpty(job.HeadCount) ? "0" : job.HeadCount)</span>
-                            </div>
+                                <div class="stat-item needed">
+                                    <span class="stat-label">需求</span>
+                                    <span class="stat-v">@(string.IsNullOrEmpty(job.HeadCount) ? "0" : job.HeadCount)</span>
+                                </div>
                             
-                            <div class="stat-item total">
-                                <span class="stat-label">總履歷</span>
-                                <span class="stat-v">@stat.TotalCount</span>
+                                <div class="stat-item total">
+                                    <span class="stat-label">總履歷</span>
+                                    <span class="stat-v">@stat.TotalCount</span>
+                                </div>
                             </div>
-                        </div>
-                    </a>
-                </div>
+                        </a>
+                    </div>
 
-                @* 5. 上下架切換 *@
-                <div class="hrjob-status-cell">
-                    <form method="post" asp-action="ToggleActive" asp-route-id="@job.Id">
-                        @Html.AntiForgeryToken()
-                        <button type="submit" class="btn-toggle @(job.IsActive ? "active" : "inactive")">
+                    @* 5. 上下架狀態（僅顯示，不可點擊切換）
+                        🎯 狀態改成只能透過「修改」頁面調整，不再提供列表直接點擊切換，
+                           避免跳過截止日期的邏輯，讓「上架中/已下架」跟截止日期兜不起來 *@
+                    <div class="hrjob-status-cell">
+                        <span class="btn-toggle @(job.IsActive ? "active" : "inactive")" style="cursor: default;">
                             @(job.IsActive ? "上架中" : "已下架")
-                        </button>
-                    </form>
-                </div>
-
-                @* 6. 上架 / 截止日期 *@
-                <div>
-                    <div class="hrjob-time-item">
-                        <span class="hrjob-time-label">上架：</span>
-                        @job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")
+                        </span>
                     </div>
-                    <div class="hrjob-time-item">
-                        <span class="hrjob-time-label-deadline">截止：</span>
-                        <span class="hrjob-time-deadline">@job.Deadline.ToLocalTime().ToString("yyyy/MM/dd")</span>
+
+                    @* 6. 上架 / 截止日期 *@
+                    <div>
+                        <div class="hrjob-time-item">
+                            <span class="hrjob-time-label">上架：</span>
+                            @job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")
+                        </div>
+                        <div class="hrjob-time-item">
+                            <span class="hrjob-time-label-deadline">截止：</span>
+                            <span class="hrjob-time-deadline">@job.Deadline.ToLocalTime().ToString("yyyy/MM/dd")</span>
+                        </div>
                     </div>
-                </div>
 
-                @* 7. 操作按鈕 *@
-                <div class="action-btns">
-                    <a asp-action="Edit" asp-route-id="@job.Id" class="btn-edit">修改</a>
-                    <form method="post" asp-action="Delete" asp-route-id="@job.Id"
-                          onsubmit="return confirm('確定刪除此職缺？')">
-                        @Html.AntiForgeryToken()
-                        <button type="submit" class="btn-delete">刪除</button>
-                    </form>
-                </div>
+                    @* 7. 操作按鈕 *@
+                    <div class="action-btns">
+                        <a asp-action="Edit" asp-route-id="@job.Id" class="btn-edit">修改</a>
+                        <form method="post" asp-action="Delete" asp-route-id="@job.Id"
+                              onsubmit="return confirm('確定刪除此職缺？')">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn-delete">刪除</button>
+                        </form>
+                    </div>
 
+                </div>
+            }
+        }
+        else
+        {
+            <div style="padding: 40px; text-align:center; color:#888;">
+                目前沒有符合篩選條件的職缺
             </div>
         }
     </div>
+
+    <div class="pagination" id="pagination"></div>
 </div>
+
+@section Scripts {
+    <script>
+        // ============================
+        // 篩選（跟 Job_search.cshtml 同一套：組 query string 後整頁導航）
+        // ============================
+        function doSearch() {
+            const department = document.getElementById('sel-department').value;
+            const status     = document.getElementById('sel-status').value;
+            const date       = document.getElementById('sel-date').value;
+            const keyword    = document.getElementById('kw-input').value.trim();
+
+            const params = new URLSearchParams();
+            if (department) params.append('department', department);
+            if (status)     params.append('status', status);
+            if (date)       params.append('date', date);
+            if (keyword)    params.append('keyword', keyword);
+
+            window.location.href = '/HrJob?' + params.toString();
+        }
+
+        function resetSearch() {
+            window.location.href = '/HrJob';
+        }
+
+        // ============================
+        // 分頁（跟 Job_search.cshtml 同一套：每頁 10 筆，前端隱藏/顯示列）
+        // ============================
+        const PAGE_SIZE = 10;
+        let currentPage = 1;
+
+        function getTotalRows() {
+            return document.querySelectorAll('#hrjob-list .hrjob-row').length;
+        }
+
+        // 依目前頁碼，只顯示該頁應出現的職缺列，其餘隱藏
+        function showPage(page) {
+            const rows = document.querySelectorAll('#hrjob-list .hrjob-row');
+            const start = (page - 1) * PAGE_SIZE;
+            const end = start + PAGE_SIZE;
+            rows.forEach((row, idx) => {
+                row.style.display = (idx >= start && idx < end) ? '' : 'none';
+            });
+        }
+
+        function renderPagination() {
+            const total = getTotalRows();
+            const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+            // 頁碼超出範圍時自動修正（例如篩選後總筆數變少）
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const pg = document.getElementById('pagination');
+            if (!pg) return;
+            pg.innerHTML = '';
+
+            const prev = document.createElement('button');
+            prev.type = 'button';
+            prev.className = 'page-arrow';
+            prev.innerHTML = '&#8249;';
+            prev.onclick = () => { if (currentPage > 1) goPage(currentPage - 1); };
+            pg.appendChild(prev);
+
+            for (let i = 1; i <= totalPages; i++) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'page-num' + (i === currentPage ? ' active' : '');
+                btn.textContent = i;
+                btn.onclick = () => goPage(i);
+                pg.appendChild(btn);
+            }
+
+            const next = document.createElement('button');
+            next.type = 'button';
+            next.className = 'page-arrow';
+            next.innerHTML = '&#8250;';
+            next.onclick = () => { if (currentPage < totalPages) goPage(currentPage + 1); };
+            pg.appendChild(next);
+
+            // 總筆數文字，顯示在頁碼按鈕之後
+            const countText = document.createElement('span');
+            countText.className = 'page-total-count';
+            countText.style.marginLeft = '12px';
+            countText.style.color = '#666';
+            countText.style.fontSize = '14px';
+            countText.textContent = `共 ${total} 筆職缺`;
+            pg.appendChild(countText);
+
+            showPage(currentPage);
+        }
+
+        function goPage(page) {
+            currentPage = page;
+            renderPagination();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        window.addEventListener('load', function () {
+            renderPagination();
+        });
+    </script>
+}
