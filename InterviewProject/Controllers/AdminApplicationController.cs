@@ -133,18 +133,20 @@ namespace InterviewProject.Controllers
                 query = query.Where(x => x.Job.Department == department);
             }
 
+            // 🎯 電話欄位整併：Resume 只剩 Phone1 一個真正的電話欄位，不能再借用 Phone2／Mobile
+            //    當作暫存欄位塞會員姓名跟電話。改用獨立的 Dictionary（跟下面 AiScores/AiComments
+            //    同一套模式）帶到 View，Index.cshtml 那邊要把 @item.Phone2 / @item.Mobile
+            //    改成 @ViewBag.MemberNames[item.Id] / @ViewBag.MemberPhones[item.Id]
+            var memberNames = await query.ToDictionaryAsync(x => x.Resume.Id, x => x.Member.Name);
+            var memberPhones = await query.ToDictionaryAsync(x => x.Resume.Id, x => x.Member.Phone);
+
             var resultQuery = query.Select(x => new InterviewProject.Models.Resume
             {
                 Id = x.Resume.Id,
                 ResumeTime = x.Resume.ResumeTime,
-                Phone2 = x.Member.Name,
-                Mobile = x.Member.Phone,
-                SchoolName = x.Resume.SchoolName,
-                Major = x.Resume.Major,
-                EduLevel = x.Resume.EduLevel,
+                // 🎯 學歷已改成 Educations 子表，這個投影沒辦法直接讀 SchoolName/Major/EduLevel 了，
+                //    改成撈完 resumesList 後再另外查一次 Educations 補上去（見下方）
                 WorkExperienceYears = x.Resume.WorkExperienceYears,
-                CompanyName = x.Resume.CompanyName,
-                JobTitle = x.Resume.JobTitle,
                 Status = x.Resume.Status,
                 JobsId = x.Resume.JobsId,
                 AiScore = x.Resume.AiScore,
@@ -162,6 +164,33 @@ namespace InterviewProject.Controllers
 
             var resumesList = await resultQuery.OrderByDescending(x => x.ResumeTime).ToListAsync();
 
+            // 🎯 學歷、工作經歷子表另外查一次再組回去：上面那個 Select 是投影成新的 Resume 物件，
+            //    不是被追蹤的 entity，沒辦法用 .Include() 帶出子表，只能分開查、在記憶體裡組
+            var resumeIds = resumesList.Select(r => r.Id).ToList();
+            var allEducations = await _db.Educations
+                .Where(e => resumeIds.Contains(e.ResumeId))
+                .OrderBy(e => e.SortOrder)
+                .ToListAsync();
+            var eduLookup = allEducations.GroupBy(e => e.ResumeId).ToDictionary(g => g.Key, g => g.ToList());
+
+            var allWorkExperiences = await _db.WorkExperiences
+                .Where(w => resumeIds.Contains(w.ResumeId))
+                .OrderBy(w => w.SortOrder)
+                .ToListAsync();
+            var workLookup = allWorkExperiences.GroupBy(w => w.ResumeId).ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var r in resumesList)
+            {
+                if (eduLookup.TryGetValue(r.Id, out var edus))
+                {
+                    r.Educations = edus;
+                }
+                if (workLookup.TryGetValue(r.Id, out var works))
+                {
+                    r.WorkExperiences = works;
+                }
+            }
+
             var aiScores = new Dictionary<int, int>();
             var aiComments = new Dictionary<int, string>();
 
@@ -173,6 +202,8 @@ namespace InterviewProject.Controllers
 
             ViewBag.AiScores = aiScores;
             ViewBag.AiComments = aiComments;
+            ViewBag.MemberNames = memberNames;   // 🎯 取代原本借用 Phone2 塞姓名的寫法
+            ViewBag.MemberPhones = memberPhones; // 🎯 取代原本借用 Mobile 塞電話的寫法
 
             return View("~/Views/AdminApplication/Index.cshtml", resumesList);
         }
@@ -216,6 +247,7 @@ namespace InterviewProject.Controllers
                 ViewBag.UserBirthday = member.Birthday.ToString("yyyy/MM/dd");
                 ViewBag.UserAddress = member.Address;
                 ViewBag.UserEmail = member.Email;
+                ViewBag.UserPhone = member.Phone; // 🎯 新增：跟 ResumeController 的 PopulateViewBagData 一致
                 ViewBag.UserPhotoBase64 = member.ProfileImagePath;
             }
 

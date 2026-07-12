@@ -18,6 +18,9 @@
         public DbSet<DriverLicense> DriverLicense { get; set; }
         public DbSet<ComputerSkills> ComputerSkills { get; set; }
         public DbSet<Resume> Resumes { get; set; }
+        public DbSet<Education> Educations { get; set; } // 🎯 履歷學歷子表（一對多）
+        public DbSet<WorkExperience> WorkExperiences { get; set; } // 🎯 履歷工作經歷子表（一對多）
+        public DbSet<Portfolio> Portfolios { get; set; } // 🎯 履歷作品集子表（一對多）
         public DbSet<VerificationCode> VerificationCodes { get; set; }
         public DbSet<Specialties> Specialties { get; set; }
         public DbSet<Certificatecategories> Certificatecategories { get; set; }

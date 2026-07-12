@@ -5,6 +5,10 @@
     string currentFilter = ViewBag.CurrentFilter ?? "全部";
     var aiScores = ViewBag.AiScores as Dictionary<int, int>;
     var aiComments = ViewBag.AiComments as Dictionary<int, string>;
+    // 🎯 電話欄位整併後，Resume 不再借用 Phone2／Mobile 塞會員姓名跟電話，
+    //    改吃 Controller 帶過來的這兩個 Dictionary
+    var memberNames = ViewBag.MemberNames as Dictionary<int, string>;
+    var memberPhones = ViewBag.MemberPhones as Dictionary<int, string>;
 }
 
 @section Styles {
@@ -65,6 +69,8 @@
 
                 int score = aiScores != null && aiScores.ContainsKey(item.Id) ? aiScores[item.Id] : 0;
                 string comment = aiComments != null && aiComments.ContainsKey(item.Id) ? aiComments[item.Id] : "暫無評語";
+                string memberName = memberNames != null && memberNames.ContainsKey(item.Id) ? memberNames[item.Id] : "";
+                string memberPhone = memberPhones != null && memberPhones.ContainsKey(item.Id) ? memberPhones[item.Id] : "";
 
                 @* 🎯 在整橫列加上 data-row-id 方便 JavaScript 動態變更整列的 row-unhandled / row-handled 樣式 *@
                 <div class="hrapp-row hrapp-cols @rowClass"
@@ -78,19 +84,29 @@
 
                     @* 2. 應徵者姓名 *@
                     <div class="user-main-info">
-                        <span class="user-name">@item.Phone2</span>
+                        <span class="user-name">@memberName</span>
                     </div>
 
                     @* 3. 聯絡電話 *@
-                    <div class="user-phone">@item.Mobile</div>
+                    <div class="user-phone">@memberPhone</div>
 
-                    @* 4. 學歷與科系 *@
+                    @* 4. 學歷與科系（改為多筆學歷後，列表只顯示第一筆＝最高學歷） *@
+                    @{
+                        var topEdu = item.Educations != null && item.Educations.Any()
+                        ? item.Educations.OrderBy(e => e.SortOrder).First()
+                        : null;
+                    }
                     <div class="user-edu">
-                        <div class="edu-school">@item.SchoolName</div>
-                        <div class="edu-major">@item.Major (@item.EduLevel)</div>
+                        <div class="edu-school">@(topEdu?.SchoolName ?? "")</div>
+                        <div class="edu-major">@(topEdu?.Major ?? "") (@(topEdu?.EduLevel ?? ""))</div>
                     </div>
 
                     @* 5. 工作經驗 *@
+                    @{
+                        var topWork = item.WorkExperiences != null && item.WorkExperiences.Any()
+                        ? item.WorkExperiences.OrderBy(w => w.SortOrder).First()
+                        : null;
+                    }
                     <div class="user-exp">
                         @if (!item.WorkExperienceYears.HasValue || item.WorkExperienceYears.Value <= 0)
                         {
@@ -98,8 +114,8 @@
                         }
                         else
                         {
-                            <div class="exp-company">@item.CompanyName</div>
-                            <div class="exp-title">@item.JobTitle (@(item.WorkExperienceYears.Value)年)</div>
+                            <div class="exp-company">@(topWork?.CompanyName ?? "")</div>
+                            <div class="exp-title">@(topWork?.JobTitle ?? "") (@(item.WorkExperienceYears.Value)年)</div>
                         }
                     </div>
 
@@ -121,7 +137,7 @@
                                 @score<span class="ai-pt">分</span>
                             </span>
                             <button type="button" class="btn-ai-view open-ai-modal"
-                                    data-name="@item.Phone2"
+                                    data-name="@memberName"
                                     data-score="@score"
                                     data-comment="@comment"
                                     onclick="event.stopPropagation();">

@@ -1,11 +1,27 @@
-/* 模擬 Word 紙張排版 */
+/* ======================================================================
+   Resume.css
+   🎯 這支檔案原本只有基本版面（模擬 Word 紙張），後來履歷表單改成「多筆動態列」
+   （學歷／工作經歷／語文能力／專長／證照／電腦能力）之後，那些樣式都散落寫在
+   Resume.cshtml 自己的 <style> 區塊裡，兩邊互相覆蓋、還各自定義了一份 .photo-cell，
+   非常容易埋雷。這次整併成單一檔案，Resume.cshtml 不再自帶 <style>。
+   ====================================================================== */
+
+/* ---------- 整體版面：模擬 Word 紙張排版 ---------- */
 .resume-paper {
+    /* 🎯 修正「白底不夠大、內容超出去」：原本 width:1100px + padding:40px 是 content-box，
+       實際渲染寬度 = 1100 + 40*2 = 1180px，但 max-width:96vw 只限制了 content 寬度、
+       沒把 padding 算進去，螢幕沒有寬到 1180px 時，白底本體（含 padding）就會比 max-width
+       允許的還寬，內容跟著一起被撐出視窗。改成 box-sizing:border-box 後，
+       width / max-width 才會包含 padding，白底的實際寬度就不會再超出 96vw。 */
+    box-sizing: border-box;
     width: 1100px;
+    max-width: 96vw; /* 螢幕真的比紙張窄時，改成跟著螢幕縮，不會被內容硬撐爆 */
     margin: 20px auto;
     padding: 40px;
     background: white;
     border: 1px solid #ccc;
     font-family: "標楷體", serif;
+    overflow-x: auto; /* 🎯 安全網：萬一巢狀表格還是比紙張寬，用內部捲動吸收，不會整塊超出白底 */
 }
 
 .resume-title {
@@ -28,11 +44,31 @@
         vertical-align: middle;
     }
 
+/* 🎯 修正：原本只有 width:80px，沒有 white-space:nowrap。
+   main-table 是「auto 版面配置」，瀏覽器算欄寬時，CJK 文字預設可以在任兩個字中間換行，
+   一旦同一列裡有其他儲存格（例如巢狀的工作經歷表格）要求很寬，瀏覽器就會為了滿足整體版面
+   把這個標籤欄的「最小內容寬度」估到只剩一個字，逼著「工作經歷」「背景及專長」這種
+   標籤被硬擠成一字一行、直得誇張。
+   加上 white-space: nowrap + min-width，讓標籤內用 <br/> 手動斷好的每一段
+   （例如「工作」「經歷」各自兩個字）不會再被瀏覽器二次拆開。 */
 .label-bg {
     background-color: #f2f2f2;
     text-align: center;
     font-weight: bold;
     width: 80px;
+    min-width: 80px;
+    white-space: nowrap;
+}
+
+/* 🎯 修正「姓名/身分證號碼/聯絡地址...這欄有必要這麼寬嗎」：
+   這欄是普通 <td>，沒有寬度限制時瀏覽器會用同一欄裡最長的內容去撐欄寬，
+   而「*學歷(可新增多筆，第一筆請填最高學歷)」這種帶說明文字的標籤最長，
+   會把整欄硬撐得很寬，連帶把整張表推出白底、需要橫向捲動。
+   固定寬度 + 允許換行，長文字自己折成兩行，不再拖累欄寬。 */
+.field-label {
+    width: 110px;
+    white-space: normal;
+    word-break: break-word;
 }
 
 .input-inline {
@@ -70,6 +106,7 @@
     padding: 2px 5px;
     background-color: transparent;
 }
+
 /* 必填紅星樣式 */
 .required-mark {
     color: #ff4d4f; /* 亮眼的警示紅 */
@@ -92,27 +129,304 @@ textarea {
     font-family: inherit;
 }
 
+/* 🎯 大頭照：原本這裡跟 Resume.cshtml 的內嵌 <style> 各寫一份 .photo-cell，
+   這份是舊版（120x150 + object-fit:fill 會把照片硬拉伸變形），
+   兩份靠「後面寫的贏」在互相蓋，非常危險。現在統一只在這裡定義一份正確的版本：
+   固定成證件照常見的直式比例，object-fit:cover 等比例裁切置中，不會再變形。 */
 .photo-cell {
-    width: 120px;
-    height: 150px;
-    border: 1px solid #ddd;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1); /* 立體陰影 */
-    overflow: hidden;
-    border-radius: 8px; /* 圓角更柔和 */
+    width: 130px;
+    text-align: center;
+    vertical-align: middle;
 }
 
     .photo-cell img {
-        width: 100%;
-        height: 100%;
-        object-fit: fill; /* 強制拉伸填充，消除空白 */
+        width: 110px;
+        height: 140px;
+        object-fit: cover;
+        border: 1px solid #999;
+        border-radius: 2px;
         display: block;
+        margin: 0 auto;
+    }
+
+/* 🎯 大頭照上傳按鈕：放在照片下方，小小一顆文字連結感的按鈕，不搶走照片本身的視覺重點 */
+.btn-upload-photo {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: #4a5568;
+    background: #f7fafc;
+    border: 1px dashed #a0aec0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+    .btn-upload-photo:hover {
+        background: #edf2f7;
     }
 
 /* 針對巢狀表格的間距處理 */
 .sub-table td {
     background: transparent !important;
 }
+
 /* 當滑鼠點擊輸入時，底線可以變色（可選） */
 .full-input:focus, .input-inline:focus {
     border-bottom: 2px solid black; /* 獲取焦點時變純黑 */
+}
+
+
+/* ======================================================================
+   以下是「多筆動態列」相關樣式（學歷／工作經歷／語文能力／專長／證照／電腦能力），
+   原本寫在 Resume.cshtml 自己的 <style> 裡，現在搬過來跟上面的基礎樣式合併管理。
+   ====================================================================== */
+
+/* ---------- 學歷／工作經歷：真正的 <table>，用 colgroup 固定欄寬對齊欄位 ----------
+   原因：<input>/<select>/type="month" 這些原生控制項本身有瀏覽器預設的「內在最小寬度」
+   （一個文字輸入框沒設 size 大約要 170px 起跳）。如果表格是 width:100% 的 auto 版面配置，
+   瀏覽器算每個儲存格寬度時還是會去讀這些原生控制項的最小寬度需求，
+   反而把旁邊的標籤欄硬擠爆。解法：改成「固定像素寬度」（不吃 100%），
+   並把裡面所有控制項的 min-width 強制歸零，讓它們乖乖聽 colgroup 的話。 */
+.edu-table-wrap {
+    overflow-x: auto; /* 手機或版面真的不夠寬時用捲動救援，不會再逼外層表格變形 */
+    max-width: 100%;
+}
+
+.edu-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin-bottom: 4px;
+}
+
+/* 🎯 工作經歷欄位比學歷多（公司/職位/工作內容/起訖日期），改用跟 .edu-table 一樣的
+   width:100%（吃滿 .edu-table-wrap 目前有多少空間就用多少），不再寫死固定px寬度。
+   固定寬度在標籤欄變寬、或視窗變窄時很容易把整張表格撐爆、逼出橫向捲動軸；
+   改成 100% 之後表格永遠貼齊實際可用空間，欄寬比例交給 colgroup 的百分比決定，
+   真的空間不夠時才靠 .edu-table-wrap 的橫向捲動救援。 */
+.work-table {
+    width: 100%;
+}
+
+.edu-table th,
+.edu-table td {
+    border: 1px solid #333;
+    padding: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.edu-table th {
+    background: #eee;
+    text-align: center;
+    padding: 6px 4px;
+    font-size: 14px;
+}
+
+.edu-table td .form-control {
+    display: block;
+    min-width: 0; /* 🎯 關鍵：清掉 input/select 的內在最小寬度，不然會撐爆外層表格欄寬 */
+    border: none;
+    border-radius: 0;
+    padding: 6px 4px;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 13px;
+    background: transparent;
+}
+
+/* 🎯 工作經歷的「工作內容」改用 <textarea>，文字一多就用 JS 自動長高（見 Resume.cshtml 的
+   autoGrowTextarea），這裡負責關掉內建捲軸、不給使用者手動拖曳，高度完全交給 JS 控制 */
+.work-table textarea.form-control {
+    resize: none;
+    overflow: hidden;
+    min-height: 30px;
+    line-height: 1.4;
+    white-space: pre-wrap; /* 保留手動換行，並允許自動換行 */
+    overflow-wrap: break-word;
+    word-break: break-word; /* 沒有空白的長字串（英文單字、網址）也強制斷行，不撐爆欄寬 */
+}
+
+/* ---------- 動態列共用的「新增」「刪除」按鈕 ---------- */
+.btn-add-row {
+    border: 1px dashed #a0aec0;
+    background: #f7fafc;
+    color: #4a5568;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    margin-top: 4px;
+}
+
+    .btn-add-row:hover {
+        background: #edf2f7;
+    }
+
+/* 🎯 統一的「刪除這一列」按鈕：不管是學歷／工作經歷的表格列，
+   還是語文能力／專長／證照／電腦能力的 flex 列，都用同一種樣式。
+   改成單純的紅色 ✕ 文字、沒有外框跟底色的方塊，跟學歷第一筆（Razor 從伺服器端
+   直接算繪的那一列）長得一致；hover 時才用淡淡的紅底提示可以點擊。 */
+.btn-remove-row {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    flex: 0 0 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: #e53e3e;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: bold;
+    padding: 0;
+}
+
+    .btn-remove-row:hover {
+        background: #fff0f0;
+        border-radius: 4px;
+    }
+
+/* 🎯 學歷／工作經歷表格最後一欄（刪除按鈕）：拿掉表格邊框跟底色，
+   並且明確留一段左邊距，讓按鈕確實跟表格本體之間有一段空隙、視覺上像
+   「浮」在表格旁邊的操作按鈕，而不是緊貼著表格最後一條邊框、看起來像
+   被硬塞進去的資料欄位。這裡明確加 padding 而不是只拔掉框線，
+   是因為只拔框線在有些欄寬換算下還是會讓按鈕整個貼齊在表格邊上，
+   加上實際留白才能保證每一列都跟第一列長得一樣。 */
+.edu-table td.remove-cell {
+    border: none;
+    background: transparent;
+    text-align: center;
+    vertical-align: middle;
+    padding-left: 10px !important;
+}
+
+    .edu-table td.remove-cell .btn-remove-row {
+        margin-left: 6px;
+    }
+
+/* ---------- 語文能力／專長／證照／電腦能力：flex 排版的單行列 ---------- */
+.dynamic-row-simple {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+    .dynamic-row-simple .full-input {
+        flex: 1 1 240px;
+        min-width: 0;
+        width: auto; /* 🎯 蓋掉上面 .full-input 的 width:95%，改由 flex-basis 主導寬度 */
+    }
+
+    /* 🎯 電腦能力的內容通常是「文書處理」這種短分類詞，不需要吃滿整行的長底線，
+   固定寬度比照語言名稱欄位（lang-name-input），視覺上更緊湊、不會拖得很長 */
+    .dynamic-row-simple .comp-input {
+        flex: 0 0 280px;
+        width: 280px;
+    }
+
+    /* 🎯 專長／電腦能力改用 <textarea>，原本單行 <input> 太窄打不下字。
+   改成頂端對齊 + 可垂直拉伸，讓使用者填長一點的描述也不會擠成一行 */
+    .dynamic-row-simple textarea.full-input {
+        resize: vertical;
+        min-height: 44px;
+        font-family: inherit;
+        padding: 6px 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+    }
+
+/* 語文能力那一列的 name/select 不吃 full-input 的 flex:1，維持固定寬度即可
+   🎯 220px 時「語言，例如：英語」的 placeholder 文字還是會被裁切看不全，
+   加寬到 280px 確保完整顯示 */
+.lang-name-input {
+    flex: 0 0 auto;
+    width: 280px;
+    padding: 5px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.lang-lv-select,
+.cert-select,
+.cert-level-select {
+    flex: 0 0 auto;
+    padding: 5px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-size: 13px;
+}
+
+/* 🎯 下拉選單原本沒設最小寬度，選項文字（例如證照名稱、語言熟悉度）長一點就會被截斷看不全，
+   這裡再加寬一輪，確保「精通/良好/普通/稍懂」跟證照名稱都能完整顯示 */
+.lang-lv-select {
+    min-width: 140px;
+}
+
+.cert-select {
+    min-width: 260px;
+}
+
+.cert-level-select {
+    min-width: 140px;
+}
+
+.cert-item {
+    flex-wrap: wrap;
+}
+
+/* 🎯 依應徵職位比對出的推薦證照，用小藥丸狀按鈕呈現，跟一般文字輸入區隔開來，
+   點了直接帶入第一個空的證照列，強調「這是快速選取」而不是一般欄位 */
+.cert-recommend-chip {
+    display: inline-block;
+    margin: 2px 4px 2px 0;
+    padding: 3px 10px;
+    font-size: 12px;
+    color: #2c5282;
+    background: #ebf8ff;
+    border: 1px solid #90cdf4;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+    .cert-recommend-chip:hover {
+        background: #bee3f8;
+    }
+
+/* ---------- 提示文字（未新增任何資料時的說明） ---------- */
+.text-muted {
+    color: #888;
+    font-size: 12px;
+}
+
+
+/* ======================================================================
+   唯讀模式（HR/主管審查履歷時）：鎖定所有欄位，隱藏編輯用的按鈕
+   ====================================================================== */
+.is-readonly input,
+.is-readonly textarea,
+.is-readonly select {
+    background-color: #f9f9f9 !important;
+    border-color: #ccc !important;
+    pointer-events: none; /* 徹底禁止滑鼠互動 */
+    cursor: not-allowed;
+}
+
+    /* 讓 Radio / Checkbox 看起來是灰色的 */
+    .is-readonly input[type="radio"],
+    .is-readonly input[type="checkbox"] {
+        filter: grayscale(1);
+        opacity: 0.6;
+    }
+
+/* 隱藏不必要的提示或按鈕 */
+.is-readonly .no-print-in-readonly {
+    display: none !important;
 }

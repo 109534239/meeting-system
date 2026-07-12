@@ -19,20 +19,20 @@ namespace InterviewProject.Models
         public string? MaritalStatus { get; set; }
         public string? MilitaryService { get; set; }
         public string? Phone1 { get; set; }
-        public string? Phone2 { get; set; }
-        public string? Mobile { get; set; }
-        public string? EduLevel { get; set; }
-        public string? SchoolName { get; set; }
-        public string? Major { get; set; }
-        public string? EduStatus { get; set; }
 
-        // 🎯 貼心修正：將型態由 string? 改為 DateTime?，才能完美接收前端 input type="month" 的日期
-        public DateTime? EduDate { get; set; }
+        // 🎯 學歷改為多筆子表（比照 Job 的 MajorRequired / LanguageRequired），
+        //    不再是單一 EduLevel/SchoolName/Major/EduStatus/EduDate 欄位
+        public virtual ICollection<Education> Educations { get; set; } = new List<Education>();
+        [Required]
+        public string ContactAddress { get; set; } = "";
 
         public int? WorkExperienceYears { get; set; }
-        public string? CompanyName { get; set; }
-        public string? JobTitle { get; set; }
-        public string? JobDescription { get; set; }
+        // 🎯 工作經歷改為多筆子表（比照 Educations），不再是單一 CompanyName/JobTitle/JobDescription 欄位
+        public virtual ICollection<WorkExperience> WorkExperiences { get; set; } = new List<WorkExperience>();
+
+        // 🎯 作品集：多筆子表（比照 Educations / WorkExperiences），每筆有說明、連結、上傳檔案，
+        //    未新增任何一筆即視為「無作品集」
+        public virtual ICollection<Portfolio> Portfolios { get; set; } = new List<Portfolio>();
 
         // 這些欄位將接收 JavaScript 串接後的長字串
 

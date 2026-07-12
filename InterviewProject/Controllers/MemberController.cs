@@ -240,6 +240,8 @@ namespace InterviewProject.Controllers
 
             var resume = await _db.Resumes
                 .Include(r => r.Job)
+                .Include(r => r.Educations) // 🎯 讀取詳細內容時要一併帶出學歷子表，不然唯讀畫面學歷區塊會是空的
+                .Include(r => r.WorkExperiences) // 🎯 同樣要帶出工作經歷子表
                 .FirstOrDefaultAsync(r => r.Id == id && r.MembersId == userId);
 
             if (resume == null) return NotFound();
@@ -298,6 +300,11 @@ namespace InterviewProject.Controllers
             var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == model.Id).ToListAsync();
             var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == model.Id).ToListAsync();
             var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == model.Id).ToListAsync();
+            var dbEducations = await _db.Educations.Where(e => e.ResumeId == model.Id).OrderBy(e => e.SortOrder).ToListAsync();
+            // 🎯 Word 範本是單一列版面，取「第一筆＝最高學歷」帶入既有欄位（跟 ResumeController.ExportToPdf 邏輯一致）
+            var topEducation = dbEducations.FirstOrDefault();
+            var dbWorkExperiences = await _db.WorkExperiences.Where(w => w.ResumeId == model.Id).OrderBy(w => w.SortOrder).ToListAsync();
+            var topWorkExperience = dbWorkExperiences.FirstOrDefault();
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
@@ -345,7 +352,7 @@ namespace InterviewProject.Controllers
             // 🎯 【核心修正】：不要直接讀 model.Specialty，請改用你寫好的獨立表查詢方法並 await 它！
             string spec = await GetFormattedSpecialties(model.Id);
             string cert = FormatCertificatesString(dbCertificates);
-            string edu = model.EduStatus ?? "";
+            string edu = topEducation?.EduStatus ?? "";
 
             var value = new Dictionary<string, object>()
             {
@@ -364,36 +371,34 @@ namespace InterviewProject.Controllers
                 ["MS_3"] = (model.MilitaryService == "未役") ? ck : un,
                 ["MS_4"] = (model.MilitaryService == "待役中") ? ck : un,
                 ["Phone1"] = model.Phone1 ?? "",
-                ["Phone2"] = model.Phone2 ?? "",
-                ["Mobile"] = model.Mobile ?? "",
                 ["Email"] = realEmail,
 
-                ["E_Dr"] = (model.EduLevel == "博士") ? ck : un,
-                ["E_Ms"] = (model.EduLevel == "碩士") ? ck : un,
-                ["E_Uni"] = (model.EduLevel == "大學") ? ck : un,
-                ["E_Col"] = (model.EduLevel == "專科") ? ck : un,
-                ["E_Voc"] = (model.EduLevel == "高職") ? ck : un,
-                ["E_High"] = (model.EduLevel == "高中") ? ck : un,
-                ["E_Jun"] = (model.EduLevel == "國中") ? ck : un,
-                ["E_Pri"] = (model.EduLevel == "國小") ? ck : un,
-                ["E_Other"] = (!string.IsNullOrEmpty(model.EduLevel) && !new[] { "博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小" }.Contains(model.EduLevel)) ? ck : un,
-                ["OtherEdu"] = model.EduLevel ?? "______",
+                ["E_Dr"] = (topEducation?.EduLevel == "博士") ? ck : un,
+                ["E_Ms"] = (topEducation?.EduLevel == "碩士") ? ck : un,
+                ["E_Uni"] = (topEducation?.EduLevel == "大學") ? ck : un,
+                ["E_Col"] = (topEducation?.EduLevel == "專科") ? ck : un,
+                ["E_Voc"] = (topEducation?.EduLevel == "高職") ? ck : un,
+                ["E_High"] = (topEducation?.EduLevel == "高中") ? ck : un,
+                ["E_Jun"] = (topEducation?.EduLevel == "國中") ? ck : un,
+                ["E_Pri"] = (topEducation?.EduLevel == "國小") ? ck : un,
+                ["E_Other"] = (!string.IsNullOrEmpty(topEducation?.EduLevel) && !new[] { "博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小" }.Contains(topEducation?.EduLevel)) ? ck : un,
+                ["OtherEdu"] = topEducation?.EduLevel ?? "______",
 
-                ["SchoolName"] = model.SchoolName ?? "",
-                ["Major"] = model.Major ?? "",
+                ["SchoolName"] = topEducation?.SchoolName ?? "",
+                ["Major"] = topEducation?.Major ?? "",
                 ["E_Grad"] = edu.Contains("畢業") ? ck : un,
                 ["E_Under"] = edu.Contains("肄業") ? ck : un,
                 ["E_Stud"] = edu.Contains("在學") ? ck : un,
 
-                ["EduDate"] = model.EduDate?.ToString("yyyy/MM") ?? "",
+                ["EduDate"] = topEducation?.EndDate?.ToString("yyyy/MM") ?? "",
 
                 ["WorkExp"] = (model.WorkExperienceYears >= 1) ? ck : un,
                 ["NoWorkExp"] = (model.WorkExperienceYears == 0) ? ck : un,
                 ["WorkExperienceYears"] = (model.WorkExperienceYears == -1) ? "0" : model.WorkExperienceYears.ToString(),
 
-                ["CompanyName"] = model.CompanyName ?? "",
-                ["JobTitle"] = model.JobTitle ?? "",
-                ["JobDescription"] = model.JobDescription ?? "",
+                ["CompanyName"] = topWorkExperience?.CompanyName ?? "",
+                ["JobTitle"] = topWorkExperience?.JobTitle ?? "",
+                ["JobDescription"] = topWorkExperience?.JobDescription ?? "",
                 ["Autobiography"] = model.Autobiography ?? "",
 
                 ["L_None"] = dbLangs.Any(x => x.Language == "不具外文能力") ? ck : un,
