@@ -52,6 +52,7 @@ namespace InterviewProject.Controllers
             ViewBag.UserBirthday = member?.Birthday;
             ViewBag.UserAddress = member?.Address;
             ViewBag.UserEmail = member?.Email;
+            ViewBag.UserPhone = member?.Phone; // 🎯 新增：帶入會員註冊時填的手機號碼，履歷表聯絡電話預設帶入這支
             ViewBag.UserPhotoBase64 = member?.ProfileImagePath;
         }
 
@@ -97,12 +98,18 @@ namespace InterviewProject.Controllers
                     var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == existingResume.Id).ToListAsync();
                     var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == existingResume.Id).ToListAsync();
                     var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == existingResume.Id).ToListAsync();
+                    var sourceEducations = await _db.Educations.AsNoTracking().Where(e => e.ResumeId == existingResume.Id).OrderBy(e => e.SortOrder).ToListAsync();
+                    var sourceWorkExperiences = await _db.WorkExperiences.AsNoTracking().Where(w => w.ResumeId == existingResume.Id).OrderBy(w => w.SortOrder).ToListAsync();
+                    var sourcePortfolios = await _db.Portfolios.AsNoTracking().Where(p => p.ResumeId == existingResume.Id).OrderBy(p => p.SortOrder).ToListAsync();
 
                     model = existingResume;
                     model.LanguageSkills = FormatLanguageString(sourceLangs);
                     model.DriverLicense = FormatDriverLicenseString(dbLicenses);
                     model.ComputerSkills = FormatComputerSkillString(dbCompSkills); 
-                    model.Certificates = FormatCertificatesString(dbCertificates); 
+                    model.Certificates = FormatCertificatesString(dbCertificates);
+                    model.Educations = sourceEducations; // 🎯 學歷子表也要一起帶到新履歷（Id 沿用只是拿來顯示，實際存檔時會重新新增）
+                    model.WorkExperiences = sourceWorkExperiences; // 🎯 工作經歷子表同樣要帶過去
+                    model.Portfolios = sourcePortfolios; // 🎯 作品集子表同樣要帶過去（實體檔案沿用同一份，不重新複製檔案）
 
                     model.Id = 0;
                     model.JobsId = jobId;
@@ -115,11 +122,23 @@ namespace InterviewProject.Controllers
             {
                 model = await _db.Resumes
                   .Include(r => r.Job)
+                  .Include(r => r.Educations) // 🎯 帶出學歷子表，讓表單能還原多筆學歷
+                  .Include(r => r.WorkExperiences) // 🎯 帶出工作經歷子表，讓表單能還原多筆工作經歷
+                  .Include(r => r.Portfolios) // 🎯 帶出作品集子表，讓表單能還原多筆作品集
                   .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == jobId);
 
                 if (model == null)
                 {
-                    model = new Resume { MembersId = userId, JobsId = jobId, WorkExperienceYears = -1, Job = targetJob };
+                    var member = await _db.Members.FindAsync(userId);
+                    model = new Resume
+                    {
+                        MembersId = userId,
+                        JobsId = jobId,
+                        WorkExperienceYears = -1,
+                        Job = targetJob,
+                        ContactAddress = member?.Address ?? "", // 🎯 新履歷預設帶入會員地址，之後可於履歷中變更
+                        Phone1 = member?.Phone ?? "" // 🎯 新履歷預設帶入會員註冊手機號碼，之後可於履歷中變更（電話欄位整併只留 Phone1，Phone2/Mobile 已移除）
+                    };
                 }
                 else
                 {
@@ -139,15 +158,36 @@ namespace InterviewProject.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> SaveResume(Resume model)
+        public async Task<IActionResult> SaveResume(
+            Resume model,
+            List<string>? EduLevelList,
+            List<string>? SchoolNameList,
+            List<string>? MajorList,
+            List<string>? EduStatusList,
+            List<string>? StartDateList,
+            List<string>? EndDateList,
+            List<string>? CompanyNameList,
+            List<string>? JobTitleList,
+            List<string>? JobDescriptionList,
+            List<string>? WorkStartDateList,
+            List<string>? WorkEndDateList,
+            List<string>? PortfolioTitleList,
+            List<string>? PortfolioDescList,
+            List<string>? PortfolioLinkList,
+            List<IFormFile>? PortfolioFileList,
+            List<string>? PortfolioExistingFileList,
+            string? ProfileImageBase64)
         {
-            // 排除系統與導航屬性驗證
-            ModelState.Remove("ResumeTime");
+            // 排除系統與導航屬性驗證
+            ModelState.Remove("ResumeTime");
             ModelState.Remove("Job");
             ModelState.Remove("Status");
             ModelState.Remove("AiScore");
             ModelState.Remove("AiComment");
             ModelState.Remove("Members");
+            ModelState.Remove("Educations"); // 🎯 學歷改用平行陣列（EduLevelList 等）送出，不透過 model.Educations 綁定
+            ModelState.Remove("WorkExperiences"); // 🎯 工作經歷同樣改用平行陣列送出
+            ModelState.Remove("Portfolios"); // 🎯 作品集同樣改用平行陣列（含檔案上傳）送出
 
             int userId = GetCurrentUserId();
 
@@ -160,6 +200,18 @@ namespace InterviewProject.Controllers
             }
 
             model.MembersId = userId;
+
+            // 🎯 大頭照：跟 Profile.cshtml 用同一套 base64 直存法，且獨立於履歷驗證/交易之外，
+            //    避免「照片換好了，但履歷表單其他欄位驗證沒過」導致照片也跟著白改
+            if (!string.IsNullOrEmpty(ProfileImageBase64) && ProfileImageBase64.StartsWith("data:image"))
+            {
+                var memberForPhoto = await _db.Members.FindAsync(userId);
+                if (memberForPhoto != null)
+                {
+                    memberForPhoto.ProfileImagePath = ProfileImageBase64;
+                    await _db.SaveChangesAsync();
+                }
+            }
 
             if (model.JobsId <= 0)
             {
@@ -219,6 +271,9 @@ namespace InterviewProject.Controllers
                     await UpdateComputerSkills(trackedResume.Id, model.ComputerSkills);
                     await UpdateSpecialties(trackedResume.Id, model.Specialty);
                     await UpdateCertificates(trackedResume.Id, model.Certificates);
+                    await UpdateEducations(trackedResume.Id, EduLevelList, SchoolNameList, MajorList, EduStatusList, StartDateList, EndDateList);
+                    await UpdateWorkExperiences(trackedResume.Id, CompanyNameList, JobTitleList, JobDescriptionList, WorkStartDateList, WorkEndDateList);
+                    await UpdatePortfolios(trackedResume.Id, PortfolioTitleList, PortfolioDescList, PortfolioLinkList, PortfolioFileList, PortfolioExistingFileList);
 
                     // 補齊供 AI 審查的完整資訊
                     trackedResume.Job = await _db.Jobs.FindAsync(trackedResume.JobsId);
@@ -226,6 +281,18 @@ namespace InterviewProject.Controllers
                     trackedResume.DriverLicense = model.DriverLicense; 
                     trackedResume.ComputerSkills = model.ComputerSkills;
                     trackedResume.Certificates = model.Certificates;
+                    trackedResume.Educations = await _db.Educations
+                       .Where(e => e.ResumeId == trackedResume.Id)
+                       .OrderBy(e => e.SortOrder)
+                       .ToListAsync();
+                    trackedResume.WorkExperiences = await _db.WorkExperiences
+                        .Where(w => w.ResumeId == trackedResume.Id)
+                        .OrderBy(w => w.SortOrder)
+                        .ToListAsync();
+                    trackedResume.Portfolios = await _db.Portfolios
+                       .Where(p => p.ResumeId == trackedResume.Id)
+                       .OrderBy(p => p.SortOrder)
+                       .ToListAsync();
 
                     // 🌟 3. 呼叫 AI API 進行審核
                     var apiResult = await GetGeminiReviewAsync(trackedResume);
@@ -320,10 +387,9 @@ namespace InterviewProject.Controllers
 要求：{jobReq}
 
 【履歷內容】
-學歷：{resume.EduLevel} ({resume.SchoolName} - {resume.Major} / {resume.EduStatus})
+學歷：{FormatEducationString(resume.Educations)}
 工作年資：{resume.WorkExperienceYears} 年
-公司與職稱：{resume.CompanyName} - {resume.JobTitle}
-經歷說明：{resume.JobDescription}
+工作經歷：{FormatWorkExperienceString(resume.WorkExperiences)}
 語文：{resume.LanguageSkills}
 證照：{resume.Certificates}
 自傳：{resume.Autobiography}
@@ -417,6 +483,34 @@ namespace InterviewProject.Controllers
             );
 
             return string.Join(", ", certStrings);
+        }
+
+        // 🎯 把多筆學歷組成一段可讀文字，給 AI 審查 prompt 用
+        private string FormatEducationString(ICollection<Education>? educations)
+        {
+            if (educations == null || !educations.Any()) return "無";
+
+            return string.Join("; ", educations.OrderBy(e => e.SortOrder).Select(e =>
+            {
+                string period = e.StartDate.HasValue || e.EndDate.HasValue
+                    ? $"，{e.StartDate?.ToString("yyyy/MM")}~{e.EndDate?.ToString("yyyy/MM")}"
+                    : "";
+                return $"{e.EduLevel} {e.SchoolName} - {e.Major} / {e.EduStatus}{period}";
+            }));
+        }
+
+        // 🎯 把多筆工作經歷組成一段可讀文字，給 AI 審查 prompt 用
+        private string FormatWorkExperienceString(ICollection<WorkExperience>? workExperiences)
+        {
+            if (workExperiences == null || !workExperiences.Any()) return "無";
+
+            return string.Join("; ", workExperiences.OrderBy(w => w.SortOrder).Select(w =>
+            {
+                string period = w.StartDate.HasValue || w.EndDate.HasValue
+                    ? $"，{w.StartDate?.ToString("yyyy/MM")}~{(w.EndDate.HasValue ? w.EndDate.Value.ToString("yyyy/MM") : "至今")}"
+                    : "";
+                return $"{w.CompanyName} - {w.JobTitle}（{w.JobDescription}）{period}";
+            }));
         }
 
         private async Task UpdateLanguageProficiency(int resumeId, string? languageSkills)
@@ -559,8 +653,244 @@ namespace InterviewProject.Controllers
             await _db.SaveChangesAsync();
         }
 
+        // 🎯 學歷子表：比照 HrJobController.AddChildRecords 的平行陣列作法
+        //    簡單作法 = 該履歷舊學歷全刪、依表單重新寫入，履歷筆數不多，不會有效能問題
+        private async Task UpdateEducations(
+            int resumeId,
+            List<string>? levelList,
+            List<string>? schoolList,
+            List<string>? majorList,
+            List<string>? statusList,
+            List<string>? startList,
+            List<string>? endList)
+        {
+            var oldEducations = await _db.Educations.Where(e => e.ResumeId == resumeId).ToListAsync();
+            if (oldEducations.Any())
+            {
+                _db.Educations.RemoveRange(oldEducations);
+                await _db.SaveChangesAsync();
+            }
+
+            if (schoolList == null) return;
+
+            string Get(List<string>? list, int idx) =>
+                (list != null && idx < list.Count) ? (list[idx]?.Trim() ?? "") : "";
+
+            for (int i = 0; i < schoolList.Count; i++)
+            {
+                // 學校名稱是每一列的必要判斷依據：留空視為這一列沒有真的填寫，直接跳過
+                if (string.IsNullOrWhiteSpace(Get(schoolList, i))) continue;
+
+                DateTime? start = DateTime.TryParse(Get(startList, i), out var s) ? s : null;
+                DateTime? end = DateTime.TryParse(Get(endList, i), out var e2) ? e2 : null;
+
+                _db.Educations.Add(new Education
+                {
+                    ResumeId = resumeId,
+                    EduLevel = Get(levelList, i),
+                    SchoolName = Get(schoolList, i),
+                    Major = Get(majorList, i),
+                    EduStatus = Get(statusList, i),
+                    StartDate = start,
+                    EndDate = end,
+                    SortOrder = i
+                });
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
+        // 🎯 工作經歷子表：跟 UpdateEducations 同一套寫法（全刪重寫）
+        //    沒有任何列（或全部列的公司名稱都空白）＝「無工作經歷」，不需要再靠額外的旗標欄位判斷
+        private async Task UpdateWorkExperiences(
+            int resumeId,
+            List<string>? companyList,
+            List<string>? titleList,
+            List<string>? descList,
+            List<string>? startDateList,
+            List<string>? endDateList)
+        {
+            var oldWorkExperiences = await _db.WorkExperiences.Where(w => w.ResumeId == resumeId).ToListAsync();
+            if (oldWorkExperiences.Any())
+            {
+                _db.WorkExperiences.RemoveRange(oldWorkExperiences);
+                await _db.SaveChangesAsync();
+            }
+
+            if (companyList == null) return;
+
+            string Get(List<string>? list, int idx) =>
+                (list != null && idx < list.Count) ? (list[idx]?.Trim() ?? "") : "";
+
+            DateTime? GetDate(List<string>? list, int idx)
+            {
+                var raw = Get(list, idx);
+                if (string.IsNullOrWhiteSpace(raw)) return null;
+                // <input type="month"> 送出的格式是 yyyy-MM
+                return DateTime.TryParse(raw + "-01", out var dt) ? dt : null;
+            }
+
+            int sortOrder = 0;
+            for (int i = 0; i < companyList.Count; i++)
+            {
+                // 公司名稱空白視為這一列沒填，直接跳過（沒有任何一列有效資料時，等於「無工作經歷」）
+                if (string.IsNullOrWhiteSpace(Get(companyList, i))) continue;
+
+                _db.WorkExperiences.Add(new WorkExperience
+                {
+                    ResumeId = resumeId,
+                    CompanyName = Get(companyList, i),
+                    JobTitle = Get(titleList, i),
+                    JobDescription = Get(descList, i),
+                    StartDate = GetDate(startDateList, i),
+                    EndDate = GetDate(endDateList, i),
+                    SortOrder = sortOrder++
+                });
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
+        // 🎯 作品集子表：說明/連結是文字，另外還有「上傳檔案」。
+        //    做法：檔案存實體到 wwwroot/uploads/portfolio，資料庫只存相對路徑（FilePath）。
+        //    每一列如果沒有重新上傳檔案，就沿用 PortfolioExistingFileList 裡帶回來的舊路徑；
+        //    整批資料庫紀錄一樣採「全刪重寫」（跟 Educations/WorkExperiences 同一套），
+        //    但實體檔案要額外比對，只刪除「這次沒有被留用」的舊檔案，避免誤刪還在使用中的檔案。
+        private static readonly string[] AllowedPortfolioExtensions =
+            { ".jpg", ".jpeg", ".png", ".gif", ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".zip" };
+
+        private async Task UpdatePortfolios(
+            int resumeId,
+            List<string>? titleList,
+            List<string>? descList,
+            List<string>? linkList,
+            List<IFormFile>? fileList,
+            List<string>? existingFilePathList)
+        {
+            var oldPortfolios = await _db.Portfolios.Where(p => p.ResumeId == resumeId).ToListAsync();
+
+            string Get(List<string>? list, int idx) =>
+                (list != null && idx < list.Count) ? (list[idx]?.Trim() ?? "") : "";
+
+            int rowCount = new[] { titleList?.Count ?? 0, descList?.Count ?? 0, linkList?.Count ?? 0, fileList?.Count ?? 0, existingFilePathList?.Count ?? 0 }.Max();
+
+            var uploadRoot = Path.Combine(_env.WebRootPath, "uploads", "portfolio");
+            Directory.CreateDirectory(uploadRoot);
+
+            var newPortfolios = new List<Portfolio>();
+            var keptFilePaths = new HashSet<string>();
+            int sortOrder = 0;
+
+            for (int i = 0; i < rowCount; i++)
+            {
+                string title = Get(titleList, i);
+                string desc = Get(descList, i);
+                string link = Get(linkList, i);
+                string existingPath = Get(existingFilePathList, i);
+                var uploadFile = (fileList != null && i < fileList.Count) ? fileList[i] : null;
+                bool hasNewFile = uploadFile != null && uploadFile.Length > 0;
+
+                // 這一列完全沒填任何東西（沒名稱、沒說明、沒連結、沒新檔案、也沒有沿用舊檔案）＝這一列沒有真的填寫，跳過
+                if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(desc) && string.IsNullOrWhiteSpace(link) && !hasNewFile && string.IsNullOrWhiteSpace(existingPath))
+                    continue;
+
+                string finalFilePath = existingPath;
+
+                if (hasNewFile)
+                {
+                    var ext = Path.GetExtension(uploadFile!.FileName).ToLowerInvariant();
+                    if (!AllowedPortfolioExtensions.Contains(ext))
+                    {
+                        throw new InvalidOperationException($"作品集檔案「{uploadFile.FileName}」的格式不支援，僅接受圖片、PDF、Office 文件或壓縮檔。");
+                    }
+
+                    var newFileName = $"{Guid.NewGuid()}{ext}";
+                    var savePath = Path.Combine(uploadRoot, newFileName);
+                    using (var stream = new FileStream(savePath, FileMode.Create))
+                    {
+                        await uploadFile.CopyToAsync(stream);
+                    }
+                    finalFilePath = $"/uploads/portfolio/{newFileName}";
+                }
+
+                if (!string.IsNullOrWhiteSpace(finalFilePath))
+                {
+                    keptFilePaths.Add(finalFilePath);
+                }
+
+                newPortfolios.Add(new Portfolio
+                {
+                    ResumeId = resumeId,
+                    Title = title,
+                    Description = desc,
+                    Link = link,
+                    FilePath = string.IsNullOrWhiteSpace(finalFilePath) ? null : finalFilePath,
+                    SortOrder = sortOrder++
+                });
+            }
+
+            if (oldPortfolios.Any())
+            {
+                _db.Portfolios.RemoveRange(oldPortfolios);
+                await _db.SaveChangesAsync();
+            }
+
+            if (newPortfolios.Any())
+            {
+                _db.Portfolios.AddRange(newPortfolios);
+                await _db.SaveChangesAsync();
+            }
+
+            // 🎯 清掉硬碟上「舊有、但這次沒有被留用」的實體檔案（換新檔或整筆被刪除的情況）
+            foreach (var old in oldPortfolios)
+            {
+                if (!string.IsNullOrWhiteSpace(old.FilePath) && !keptFilePaths.Contains(old.FilePath))
+                {
+                    var relativePath = old.FilePath!.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                    var physicalPath = Path.Combine(_env.WebRootPath, relativePath);
+                    if (System.IO.File.Exists(physicalPath))
+                    {
+                        try { System.IO.File.Delete(physicalPath); } catch { /* 刪檔失敗不影響主流程，忽略即可 */ }
+                    }
+                }
+            }
+        }
+
+        // 🎯 把職缺 CertRequired 這種自由文字（例如「PMP證照、Scrum Master 認證」「CEH、CISSP 或 ISO 27001 證照優先加分。」）
+        //    拆成一段一段的候選關鍵字，用來跟 Certificatecategories 的證照名稱做模糊比對。
+        //    常見的頓號/逗號/斜線/中英文「或」「及」「與」都當作分隔符號，
+        //    再把「證照」「認證」「佳」「加分」「優先」這類語氣詞從候選字串頭尾清掉，保留比較乾淨的核心名稱。
+        private List<string> ParseCertKeywords(string? certRequired)
+        {
+            var result = new List<string>();
+            if (string.IsNullOrWhiteSpace(certRequired)) return result;
+
+            var noiseWords = new[] { "證照", "認證", "佳", "加分", "優先", "尤佳", "者佳", "為佳", "。", "、" };
+
+            var segments = System.Text.RegularExpressions.Regex.Split(
+                certRequired, @"[、,，/；;]|或|及|與");
+
+            foreach (var seg in segments)
+            {
+                var s = seg.Trim();
+                foreach (var noise in noiseWords)
+                {
+                    s = s.Replace(noise, "");
+                }
+                s = s.Trim();
+
+                // 過濾掉「無特定要求」「不限」「無」這種代表沒有要求的片語，不當作關鍵字
+                if (string.IsNullOrWhiteSpace(s)) continue;
+                if (s.Contains("無特定要求") || s == "不限" || s == "無") continue;
+
+                result.Add(s);
+            }
+
+            return result;
+        }
+
         [HttpGet]
-        public async Task<IActionResult> GetCertificates()
+        public async Task<IActionResult> GetCertificates(int? jobId)
         {
             try
             {
@@ -571,6 +901,14 @@ namespace InterviewProject.Controllers
                         c.AvailableLevels
                     })
                     .ToListAsync();
+
+                // 🎯 如果有帶 jobId，撈出該職缺的 CertRequired 文字，拆出關鍵字列表，用來標記「推薦」
+                List<string> certKeywords = new List<string>();
+                if (jobId.HasValue)
+                {
+                    var job = await _db.Jobs.FindAsync(jobId.Value);
+                    certKeywords = ParseCertKeywords(job?.CertRequired);
+                }
 
                 // 💡 2. 記憶體內處理字串切分與補「級」字邏輯
                 var certs = dbCerts.Select(c => new
@@ -584,8 +922,17 @@ namespace InterviewProject.Controllers
                             // 如果是單字 甲/乙/丙/丁 且結尾不是級，就自動補上「級」，否則保持原樣（如：單一級）
                             return (val.Length == 1 && "甲乙丙丁".Contains(val)) ? val + "級" : val;
                         })
-                        .ToArray()
-                }).ToList();
+                        .ToArray(),
+                    // 🎯 雙向模糊比對：職缺關鍵字包含證照名稱、或證照名稱包含職缺關鍵字，只要有一邊命中就算推薦
+                    //    （例如關鍵字「AWS Certified Cloud Practitioner」完全等於證照名稱；
+                    //      關鍵字「多益(TOEIC) 900分以上」則包含證照名稱「多益 TOEIC」）
+                    IsRecommended = certKeywords.Any(k =>
+                        !string.IsNullOrWhiteSpace(c.CertName) &&
+                        (k.IndexOf(c.CertName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         c.CertName.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0))
+                })
+                .OrderByDescending(c => c.IsRecommended) // 推薦的排最前面
+                .ToList();
 
                 // 強制使用 PascalCase (不改動屬性大小寫)
                 return Json(certs, new System.Text.Json.JsonSerializerOptions
@@ -611,13 +958,20 @@ namespace InterviewProject.Controllers
             var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == model.Id).ToListAsync();
             var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == model.Id).ToListAsync();
             var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == model.Id).ToListAsync();
+            var dbEducations = await _db.Educations.Where(e => e.ResumeId == model.Id).OrderBy(e => e.SortOrder).ToListAsync();
+            // 🎯 Word 範本（履歷表.docx）的學歷欄位是單一列版面，這裡先用「第一筆＝最高學歷」帶入既有欄位。
+            //    若要在匯出檔案顯示多筆學歷，範本本身也需要改成可重複的表格區塊，非純程式碼能解決。
+            var topEducation = dbEducations.FirstOrDefault();
+            var dbWorkExperiences = await _db.WorkExperiences.Where(w => w.ResumeId == model.Id).OrderBy(w => w.SortOrder).ToListAsync();
+            // 🎯 同樣道理，工作經歷範本也只有一列，取第一筆帶入
+            var topWorkExperience = dbWorkExperiences.FirstOrDefault();
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
             string realIdNumber = member.IdNumber ?? "";
             string realBirthday = member.Birthday.ToString("yyyy/MM/dd");
             string realEmail = member.Email ?? "";
-            string realAddress = member.Address ?? "";
+            string realAddress = model.ContactAddress ?? ""; // 🎯 改抓履歷自身儲存的地址，而非會員即時地址
 
             object photoData = "";
             if (!string.IsNullOrEmpty(member.ProfileImagePath) && member.ProfileImagePath.Contains(","))
@@ -656,7 +1010,7 @@ namespace InterviewProject.Controllers
             var otherLang = dbLangs.FirstOrDefault(x => !knownLangs.Contains(x.Language));
 
             string spec = model.Specialty ?? "";
-            string edu = model.EduStatus ?? "";
+            string edu = topEducation?.EduStatus ?? "";
             string cert = FormatCertificatesString(dbCertificates);
 
             var value = new Dictionary<string, object>()
@@ -676,36 +1030,34 @@ namespace InterviewProject.Controllers
                 ["MS_3"] = (model.MilitaryService == "未役") ? ck : un,
                 ["MS_4"] = (model.MilitaryService == "待役中") ? ck : un,
                 ["Phone1"] = model.Phone1 ?? "",
-                ["Phone2"] = model.Phone2 ?? "",
-                ["Mobile"] = model.Mobile ?? "",
                 ["Email"] = realEmail,
 
-                ["E_Dr"] = (model.EduLevel == "博士") ? ck : un,
-                ["E_Ms"] = (model.EduLevel == "碩士") ? ck : un,
-                ["E_Uni"] = (model.EduLevel == "大學") ? ck : un,
-                ["E_Col"] = (model.EduLevel == "專科") ? ck : un,
-                ["E_Voc"] = (model.EduLevel == "高職") ? ck : un,
-                ["E_High"] = (model.EduLevel == "高中") ? ck : un,
-                ["E_Jun"] = (model.EduLevel == "國中") ? ck : un,
-                ["E_Pri"] = (model.EduLevel == "國小") ? ck : un,
-                ["E_Other"] = (!string.IsNullOrEmpty(model.EduLevel) && !new[] { "博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小" }.Contains(model.EduLevel)) ? ck : un,
-                ["OtherEdu"] = model.EduLevel ?? "______",
+                ["E_Dr"] = (topEducation?.EduLevel == "博士") ? ck : un,
+                ["E_Ms"] = (topEducation?.EduLevel == "碩士") ? ck : un,
+                ["E_Uni"] = (topEducation?.EduLevel == "大學") ? ck : un,
+                ["E_Col"] = (topEducation?.EduLevel == "專科") ? ck : un,
+                ["E_Voc"] = (topEducation?.EduLevel == "高職") ? ck : un,
+                ["E_High"] = (topEducation?.EduLevel == "高中") ? ck : un,
+                ["E_Jun"] = (topEducation?.EduLevel == "國中") ? ck : un,
+                ["E_Pri"] = (topEducation?.EduLevel == "國小") ? ck : un,
+                ["E_Other"] = (!string.IsNullOrEmpty(topEducation?.EduLevel) && !new[] { "博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小" }.Contains(topEducation?.EduLevel)) ? ck : un,
+                ["OtherEdu"] = topEducation?.EduLevel ?? "______",
 
-                ["SchoolName"] = model.SchoolName ?? "",
-                ["Major"] = model.Major ?? "",
+                ["SchoolName"] = topEducation?.SchoolName ?? "",
+                ["Major"] = topEducation?.Major ?? "",
                 ["E_Grad"] = edu.Contains("畢業") ? ck : un,
                 ["E_Under"] = edu.Contains("肄業") ? ck : un,
                 ["E_Stud"] = edu.Contains("在學") ? ck : un,
 
-                ["EduDate"] = model.EduDate?.ToString("yyyy/MM") ?? "",
+                ["EduDate"] = topEducation?.EndDate?.ToString("yyyy/MM") ?? "", // 🎯 範本目前只有一個「年月」欄位，先對應到結束(畢業)年月；若要同時顯示入學年月，需在 .docx 範本裡新增一個 {{EduStartDate}} 佔位符後，再多傳一組 ["EduStartDate"] = topEducation?.StartDate?.ToString("yyyy/MM") ?? "",
 
                 ["WorkExp"] = (model.WorkExperienceYears >= 1) ? ck : un,
                 ["NoWorkExp"] = (model.WorkExperienceYears == 0) ? ck : un,
                 ["WorkExperienceYears"] = (model.WorkExperienceYears == -1) ? "0" : model.WorkExperienceYears.ToString(),
 
-                ["CompanyName"] = model.CompanyName ?? "",
-                ["JobTitle"] = model.JobTitle ?? "",
-                ["JobDescription"] = model.JobDescription ?? "",
+                ["CompanyName"] = topWorkExperience?.CompanyName ?? "",
+                ["JobTitle"] = topWorkExperience?.JobTitle ?? "",
+                ["JobDescription"] = topWorkExperience?.JobDescription ?? "",
                 ["Autobiography"] = model.Autobiography ?? "",
 
                 ["L_None"] = dbLangs.Any(x => x.Language == "不具外文能力") ? ck : un,
