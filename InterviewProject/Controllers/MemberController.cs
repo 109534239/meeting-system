@@ -1,12 +1,13 @@
+using DocumentFormat.OpenXml.Spreadsheet;
 using InterviewProject.Data;
 using InterviewProject.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Http;
 using System;
-using System.Threading.Tasks;
-using System.Linq;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace InterviewProject.Controllers
 {
@@ -130,14 +131,16 @@ namespace InterviewProject.Controllers
 
         // POST: 儲存基本資料
         [HttpPost]
-        public async Task<IActionResult> ProfileSave(string name, string gender, string idNumber, DateOnly birthday, string address, string? profileImageBase64)
+        public async Task<IActionResult> ProfileSave(string name, string gender, string idNumber, DateOnly birthday, string address, string phone, string email, string? profileImageBase64)
         {
             var id = HttpContext.Session.GetInt32("MemberId");
             if (id == null) return RedirectToAction("Index", "Login");
 
             // 後端強烈驗證：只針對純文字輸入框欄位檢查，防範前端漏洞留空
+            // 🎯 手機號碼、電子郵件現在開放使用者變更，一併納入必填檢查
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(gender) ||
-                string.IsNullOrWhiteSpace(idNumber) || string.IsNullOrWhiteSpace(address))
+                string.IsNullOrWhiteSpace(idNumber) || string.IsNullOrWhiteSpace(address) ||
+                string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(email))
             {
                 TempData["SaveError"] = "所有欄位皆為必填，請勿留空。";
                 return RedirectToAction("Profile");
@@ -154,12 +157,23 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Profile");
             }
 
+            // 🎯 電子郵件通常是登入帳號/唯一鍵，變更前先檢查其他人是不是已經用了這組信箱（排除自己）
+            var emailExists = await _db.Members.AnyAsync(m => m.Email == email.Trim() && m.Id != id);
+            if (emailExists)
+            {
+                TempData["SaveError"] = "該電子郵件已被其他會員使用！";
+                return RedirectToAction("Profile");
+            }
+
             // 更新資料欄位
             member.Name = name.Trim();
             member.Gender = gender;
             member.IdNumber = idNumber.Trim().ToUpper();
             member.Birthday = birthday;
             member.Address = address.Trim();
+            // 🎯 手機號碼、電子郵件改為可變更，覆蓋寫回資料庫原本的值
+            member.Phone = phone.Trim();
+            member.Email = email.Trim();
 
             // 🎯 核心防呆處理：只有當前端傳送過來的 Base64 為有效圖片資料時，才覆蓋寫入資料庫
             if (!string.IsNullOrEmpty(profileImageBase64) && profileImageBase64.StartsWith("data:image"))

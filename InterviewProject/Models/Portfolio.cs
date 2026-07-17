@@ -25,7 +25,11 @@ namespace InterviewProject.Models
         public string? Link { get; set; }
 
         // 🎯 存的是實體檔案在 wwwroot 底下的相對路徑（例如 /uploads/portfolio/xxx.pdf），
-        //    不是檔案本身內容，檔案實體另外存在伺服器磁碟上
+        //    不是檔案本身內容，檔案實體另外存在伺服器磁碟上。
+        //    🎯 改成一筆作品集可以上傳多個檔案之後，這裡可能會是多個路徑用「|」串接
+        //    （例如 "/uploads/portfolio/a.pdf|/uploads/portfolio/b.png"），
+        //    沒有用額外的子表拆分是為了跟 Resume 其他多值欄位（Specialty／ComputerSkills 等）
+        //    的處理方式一致，讀取時記得用 Split('|') 拆開。
         public string? FilePath { get; set; }
 
         public int SortOrder { get; set; } = 0;

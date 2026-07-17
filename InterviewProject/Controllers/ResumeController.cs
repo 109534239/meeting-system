@@ -98,6 +98,7 @@ namespace InterviewProject.Controllers
                     var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == existingResume.Id).ToListAsync();
                     var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == existingResume.Id).ToListAsync();
                     var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == existingResume.Id).ToListAsync();
+                    var sourceSpecialties = await _db.Specialties.Where(s => s.ResumeId == existingResume.Id).OrderBy(s => s.SortOrder).ToListAsync(); // 🎯 修正：套用現有履歷時，專長之前完全沒有被查詢與帶入
                     var sourceEducations = await _db.Educations.AsNoTracking().Where(e => e.ResumeId == existingResume.Id).OrderBy(e => e.SortOrder).ToListAsync();
                     var sourceWorkExperiences = await _db.WorkExperiences.AsNoTracking().Where(w => w.ResumeId == existingResume.Id).OrderBy(w => w.SortOrder).ToListAsync();
                     var sourcePortfolios = await _db.Portfolios.AsNoTracking().Where(p => p.ResumeId == existingResume.Id).OrderBy(p => p.SortOrder).ToListAsync();
@@ -105,8 +106,9 @@ namespace InterviewProject.Controllers
                     model = existingResume;
                     model.LanguageSkills = FormatLanguageString(sourceLangs);
                     model.DriverLicense = FormatDriverLicenseString(dbLicenses);
-                    model.ComputerSkills = FormatComputerSkillString(dbCompSkills); 
+                    model.ComputerSkills = FormatComputerSkillString(dbCompSkills);
                     model.Certificates = FormatCertificatesString(dbCertificates);
+                    model.Specialty = FormatSpecialtyString(sourceSpecialties); // 🎯 修正：補上專長的反填，之前這行完全沒有出現過
                     model.Educations = sourceEducations; // 🎯 學歷子表也要一起帶到新履歷（Id 沿用只是拿來顯示，實際存檔時會重新新增）
                     model.WorkExperiences = sourceWorkExperiences; // 🎯 工作經歷子表同樣要帶過去
                     model.Portfolios = sourcePortfolios; // 🎯 作品集子表同樣要帶過去（實體檔案沿用同一份，不重新複製檔案）
@@ -150,6 +152,8 @@ namespace InterviewProject.Controllers
                     model.ComputerSkills = FormatComputerSkillString(dbCompSkills);
                     var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == model.Id).ToListAsync();
                     model.Certificates = FormatCertificatesString(dbCertificates);
+                    var dbSpecialties = await _db.Specialties.Where(s => s.ResumeId == model.Id).OrderBy(s => s.SortOrder).ToListAsync(); // 🎯 修正：一般編輯載入時，專長之前也完全沒有被查詢與帶入
+                    model.Specialty = FormatSpecialtyString(dbSpecialties); // 🎯 修正：補上專長的反填
                 }
             }
 
@@ -178,6 +182,24 @@ namespace InterviewProject.Controllers
             List<string>? PortfolioExistingFileList,
             string? ProfileImageBase64)
         {
+            // 🎯 作品集上傳改成「一列可多個檔案」，前端用 name="PortfolioFileList_{列序}" + multiple
+            //    送出（見 Resume.cshtml 的 preparePortfolioFilesForSubmit），沒辦法直接靠單一
+            //    List<IFormFile> 參數綁定，所以改成自己讀 Request.Form.Files、
+            //    依欄位名稱分組成「第幾列 → 這一列選了哪些檔案」。
+            var portfolioFilesByRow = new Dictionary<int, List<IFormFile>>();
+            const string portfolioFilePrefix = "PortfolioFileList_";
+            foreach (var f in Request.Form.Files)
+            {
+                if (f.Length <= 0 || !f.Name.StartsWith(portfolioFilePrefix)) continue;
+                if (!int.TryParse(f.Name.Substring(portfolioFilePrefix.Length), out int rowIndex)) continue;
+                if (!portfolioFilesByRow.TryGetValue(rowIndex, out var rowFiles))
+                {
+                    rowFiles = new List<IFormFile>();
+                    portfolioFilesByRow[rowIndex] = rowFiles;
+                }
+                rowFiles.Add(f);
+            }
+
             // 排除系統與導航屬性驗證
             ModelState.Remove("ResumeTime");
             ModelState.Remove("Job");
@@ -203,14 +225,23 @@ namespace InterviewProject.Controllers
 
             // 🎯 大頭照：跟 Profile.cshtml 用同一套 base64 直存法，且獨立於履歷驗證/交易之外，
             //    避免「照片換好了，但履歷表單其他欄位驗證沒過」導致照片也跟著白改
-            if (!string.IsNullOrEmpty(ProfileImageBase64) && ProfileImageBase64.StartsWith("data:image"))
+            var photoMember = await _db.Members.FindAsync(userId);
+            if (photoMember != null && !string.IsNullOrEmpty(ProfileImageBase64) && ProfileImageBase64.StartsWith("data:image"))
             {
-                var memberForPhoto = await _db.Members.FindAsync(userId);
-                if (memberForPhoto != null)
-                {
-                    memberForPhoto.ProfileImagePath = ProfileImageBase64;
-                    await _db.SaveChangesAsync();
-                }
+                photoMember.ProfileImagePath = ProfileImageBase64;
+                await _db.SaveChangesAsync();
+            }
+
+            // 🚨 大頭照為必填：前端 JS 已經擋過一次，但 JS 驗證永遠可能因為瀏覽器停用 JavaScript、
+            //    第三方套件（SweetAlert2）載入延遲/失敗、或使用者直接用工具送出原始 POST 而被繞過，
+            //    所以伺服器端一定要重新檢查一次，這裡才是真正擋得住的最後一道防線。
+            //    不管是這次新上傳的照片，還是先前已經存在會員資料裡的照片，只要目前完全沒有照片就不放行。
+            if (photoMember == null || string.IsNullOrWhiteSpace(photoMember.ProfileImagePath))
+            {
+                TempData["ApiError"] = "❌ 請上傳大頭照後再送出履歷。";
+                model.Job = await _db.Jobs.FindAsync(model.JobsId);
+                await PopulateViewBagData(userId);
+                return View("Resume", model);
             }
 
             if (model.JobsId <= 0)
@@ -228,6 +259,18 @@ namespace InterviewProject.Controllers
                   .Select(x => $"[{x.Key}]: {string.Join(", ", x.Value.Errors.Select(e => e.ErrorMessage))}"));
 
                 TempData["ApiError"] = $"❌ 表單驗證失敗：{errorDetails}";
+                model.Job = await _db.Jobs.FindAsync(model.JobsId);
+                await PopulateViewBagData(userId);
+                return View("Resume", model);
+            }
+
+            // 🚨 證照職類及級別為條件必填：若使用者填的證照名稱，在證照對照表（Certificatecategories）
+            //    裡查得到、且該證照確實有「可選級別」，卻沒有一併填寫級別，就視為漏填，擋下送出。
+            //    這一樣是伺服器端最後把關，理由同上（前端 JS 驗證可能被繞過或因為非同步資料還沒載入而失效）。
+            var certLevelError = await ValidateCertificateLevelsAsync(model.Certificates);
+            if (!string.IsNullOrEmpty(certLevelError))
+            {
+                TempData["ApiError"] = $"❌ {certLevelError}";
                 model.Job = await _db.Jobs.FindAsync(model.JobsId);
                 await PopulateViewBagData(userId);
                 return View("Resume", model);
@@ -273,7 +316,10 @@ namespace InterviewProject.Controllers
                     await UpdateCertificates(trackedResume.Id, model.Certificates);
                     await UpdateEducations(trackedResume.Id, EduLevelList, SchoolNameList, MajorList, EduStatusList, StartDateList, EndDateList);
                     await UpdateWorkExperiences(trackedResume.Id, CompanyNameList, JobTitleList, JobDescriptionList, WorkStartDateList, WorkEndDateList);
-                    await UpdatePortfolios(trackedResume.Id, PortfolioTitleList, PortfolioDescList, PortfolioLinkList, PortfolioFileList, PortfolioExistingFileList);
+                    // 🎯 作品集檔案改成依「會員姓名／應徵職稱」分資料夾存放，所以要先查出這兩個名稱
+                    var portfolioMember = await _db.Members.FindAsync(userId);
+                    var portfolioJob = await _db.Jobs.FindAsync(model.JobsId);
+                    await UpdatePortfolios(trackedResume.Id, portfolioMember?.Name ?? "", portfolioJob?.Title ?? "", PortfolioTitleList, PortfolioDescList, PortfolioLinkList, portfolioFilesByRow, PortfolioExistingFileList);
 
                     // 補齊供 AI 審查的完整資訊
                     trackedResume.Job = await _db.Jobs.FindAsync(trackedResume.JobsId);
@@ -471,7 +517,18 @@ namespace InterviewProject.Controllers
         private string FormatComputerSkillString(List<ComputerSkills> skills)
         {
             if (skills == null || !skills.Any()) return "";
-            return string.Join(", ", skills.Select(s => s.ComputerSkill));
+            // 🎯 修正：改用 "; " 分隔，跟 Resume.cshtml 反填時的 split('; ') 對齊。
+            //    原本用 ", " 會跟「電腦能力內容本身含有逗號」的情況（如「專案管理工具（MS Project, Jira, Trello）」）混淆，
+            //    也跟前端反填邏輯的分隔符號不一致，導致資料整包被當成一筆、甚至讓反填的 JS 出錯而整段失敗。
+            return string.Join("; ", skills.Select(s => s.ComputerSkill));
+        }
+
+        // 🎯 修正：新增專長的格式化函式（先前完全沒有這個函式，也沒有任何地方把 Specialties 資料表讀回 model.Specialty）
+        private string FormatSpecialtyString(List<Specialties> specialties)
+        {
+            if (specialties == null || !specialties.Any()) return "";
+            // 用 "; " 分隔，對齊 UpdateSpecialties() 存檔時的 split 邏輯，以及 Resume.cshtml 反填時的 specData.split('; ')
+            return string.Join("; ", specialties.OrderBy(s => s.SortOrder).Select(s => s.Specialty));
         }
         private string FormatCertificatesString(List<InterviewProject.Models.Certificates> dbCerts)
         {
@@ -575,10 +632,14 @@ namespace InterviewProject.Controllers
 
             if (!string.IsNullOrEmpty(computerSkills))
             {
-                var parts = computerSkills.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
+                // 🎯 修正：分隔符號改成 "; "，跟 FormatComputerSkillString() 的 join 分隔符號、
+                //    以及 Resume.cshtml 送出/反填時使用的 "; " 對齊，避免電腦能力內容本身含逗號時被錯誤切分。
+                var parts = computerSkills.Split(new[] { "; " }, StringSplitOptions.RemoveEmptyEntries);
                 foreach (var p in parts)
                 {
-                    _db.ComputerSkills.Add(new ComputerSkills { ResumeId = resumeId, ComputerSkill = p });
+                    var trimmed = p.Trim();
+                    if (!string.IsNullOrEmpty(trimmed))
+                        _db.ComputerSkills.Add(new ComputerSkills { ResumeId = resumeId, ComputerSkill = trimmed });
                 }
                 await _db.SaveChangesAsync();
             }
@@ -606,6 +667,55 @@ namespace InterviewProject.Controllers
                 }
                 await _db.SaveChangesAsync();
             }
+        }
+
+        // 🚨 伺服器端證照級別驗證：解析邏輯必須跟 UpdateCertificates() 拆字串的方式（"名稱(級別)"、逗號分隔）
+        //    保持一致，否則兩邊對同一筆資料的認知會兜不起來。
+        //    回傳 null 代表驗證通過；回傳非 null 字串代表有錯誤，內容可直接顯示給使用者看。
+        private async Task<string?> ValidateCertificateLevelsAsync(string? certificatesString)
+        {
+            if (string.IsNullOrWhiteSpace(certificatesString)) return null;
+
+            var certItems = certificatesString.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
+            if (certItems.Length == 0) return null;
+
+            // 💡 一次把證照對照表撈出來，避免在迴圈裡重複查詢資料庫
+            var dbCerts = await _db.Certificatecategories
+                .Select(c => new
+                {
+                    CertName = c.CertName != null ? c.CertName.Trim() : "",
+                    c.AvailableLevels
+                })
+                .ToListAsync();
+
+            foreach (var item in certItems)
+            {
+                var trimmedItem = item.Trim();
+                if (string.IsNullOrEmpty(trimmedItem)) continue;
+
+                string cName = trimmedItem;
+                string levels = "";
+
+                // 💡 拆分 "電腦軟體應用(丙級)"，跟 UpdateCertificates() 用同一套規則
+                if (trimmedItem.Contains("(") && trimmedItem.EndsWith(")"))
+                {
+                    int openBracketIndex = trimmedItem.IndexOf('(');
+                    cName = trimmedItem.Substring(0, openBracketIndex).Trim();
+                    levels = trimmedItem.Substring(openBracketIndex + 1, trimmedItem.Length - openBracketIndex - 2).Trim();
+                }
+
+                // 🎯 只有「對照表裡查得到這張證照、且它明確有可選級別」時才要求必填級別；
+                //    使用者自訂輸入、清單裡查不到的證照，允許不填級別（跟前端邏輯一致）
+                var match = dbCerts.FirstOrDefault(c => c.CertName == cName);
+                bool hasAvailableLevels = match != null && !string.IsNullOrWhiteSpace(match.AvailableLevels);
+
+                if (hasAvailableLevels && string.IsNullOrWhiteSpace(levels))
+                {
+                    return $"證照「{cName}」有級別可選，請選擇對應的級別後再送出。";
+                }
+            }
+
+            return null;
         }
 
         private async Task UpdateCertificates(int resumeId, string certificatesString)
@@ -756,15 +866,45 @@ namespace InterviewProject.Controllers
         //    每一列如果沒有重新上傳檔案，就沿用 PortfolioExistingFileList 裡帶回來的舊路徑；
         //    整批資料庫紀錄一樣採「全刪重寫」（跟 Educations/WorkExperiences 同一套），
         //    但實體檔案要額外比對，只刪除「這次沒有被留用」的舊檔案，避免誤刪還在使用中的檔案。
-        private static readonly string[] AllowedPortfolioExtensions =
-            { ".jpg", ".jpeg", ".png", ".gif", ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".zip" };
+        // 🎯 需求改成「什麼類型檔案都行」，不再限制副檔名白名單。
+        // 🎯 把「會員姓名」「應徵職稱」清成可以安全當資料夾名稱的字串：
+        //    去除檔案系統不允許的字元（例如 / \ : * ? " < > |）、去除頭尾空白，
+        //    避免使用者姓名或職稱恰好包含這些符號時，Directory.CreateDirectory 直接丟例外。
+        private static string SanitizeFolderName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "未命名";
+
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var chars = name.Trim().Select(c => invalidChars.Contains(c) ? '_' : c).ToArray();
+            var cleaned = new string(chars).Trim(' ', '.'); // Windows 資料夾名稱不能以空白或句點結尾
+
+            if (cleaned.Length > 100) cleaned = cleaned.Substring(0, 100);
+
+            return string.IsNullOrWhiteSpace(cleaned) ? "未命名" : cleaned;
+        }
+
+        // 🎯 把使用者上傳的原始檔名（不含副檔名）清成可以安全當檔名的字串，邏輯同 SanitizeFolderName
+        private static string SanitizeFileName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "file";
+
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var chars = name.Trim().Select(c => invalidChars.Contains(c) ? '_' : c).ToArray();
+            var cleaned = new string(chars).Trim(' ', '.');
+
+            if (cleaned.Length > 150) cleaned = cleaned.Substring(0, 150);
+
+            return cleaned;
+        }
 
         private async Task UpdatePortfolios(
             int resumeId,
+            string memberName,
+            string jobTitle,
             List<string>? titleList,
             List<string>? descList,
             List<string>? linkList,
-            List<IFormFile>? fileList,
+            Dictionary<int, List<IFormFile>>? filesByRow,
             List<string>? existingFilePathList)
         {
             var oldPortfolios = await _db.Portfolios.Where(p => p.ResumeId == resumeId).ToListAsync();
@@ -772,10 +912,16 @@ namespace InterviewProject.Controllers
             string Get(List<string>? list, int idx) =>
                 (list != null && idx < list.Count) ? (list[idx]?.Trim() ?? "") : "";
 
-            int rowCount = new[] { titleList?.Count ?? 0, descList?.Count ?? 0, linkList?.Count ?? 0, fileList?.Count ?? 0, existingFilePathList?.Count ?? 0 }.Max();
+            int filesRowCount = (filesByRow != null && filesByRow.Count > 0) ? filesByRow.Keys.Max() + 1 : 0;
+            int rowCount = new[] { titleList?.Count ?? 0, descList?.Count ?? 0, linkList?.Count ?? 0, filesRowCount, existingFilePathList?.Count ?? 0 }.Max();
 
-            var uploadRoot = Path.Combine(_env.WebRootPath, "uploads", "portfolio");
+            // 🎯 以前所有人的檔案都平放在同一個 uploads/portfolio 資料夾、且檔名被改成 GUID，既難辨識也難整理。
+            //    改成按「會員姓名/應徵職稱」分資料夾，並保留使用者上傳時的原始檔名（只做基本清理，防止路徑跳脫或不合法字元）。
+            var safeMemberFolder = SanitizeFolderName(memberName);
+            var safeJobFolder = SanitizeFolderName(jobTitle);
+            var uploadRoot = Path.Combine(_env.WebRootPath, "uploads", "portfolio", safeMemberFolder, safeJobFolder);
             Directory.CreateDirectory(uploadRoot);
+            var relativeFolder = $"/uploads/portfolio/{safeMemberFolder}/{safeJobFolder}";
 
             var newPortfolios = new List<Portfolio>();
             var keptFilePaths = new HashSet<string>();
@@ -787,35 +933,61 @@ namespace InterviewProject.Controllers
                 string desc = Get(descList, i);
                 string link = Get(linkList, i);
                 string existingPath = Get(existingFilePathList, i);
-                var uploadFile = (fileList != null && i < fileList.Count) ? fileList[i] : null;
-                bool hasNewFile = uploadFile != null && uploadFile.Length > 0;
+                var uploadFiles = (filesByRow != null && filesByRow.TryGetValue(i, out var rowFiles))
+                    ? rowFiles.Where(f => f != null && f.Length > 0).ToList()
+                    : new List<IFormFile>();
+                bool hasNewFiles = uploadFiles.Count > 0;
 
                 // 這一列完全沒填任何東西（沒名稱、沒說明、沒連結、沒新檔案、也沒有沿用舊檔案）＝這一列沒有真的填寫，跳過
-                if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(desc) && string.IsNullOrWhiteSpace(link) && !hasNewFile && string.IsNullOrWhiteSpace(existingPath))
+                if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(desc) && string.IsNullOrWhiteSpace(link) && !hasNewFiles && string.IsNullOrWhiteSpace(existingPath))
                     continue;
 
+                // 🎯 一列可能對應多個檔案，路徑用「|」串接成單一字串存進 FilePath
+                //    （比照 Resume 其他多值欄位如 Specialty／ComputerSkills 的逗號/分號分隔寫法）。
+                //    有選新檔案就整組取代舊的；沒有新檔案就沿用 existingPath（本身也可能已經是「|」串接的多個路徑）。
                 string finalFilePath = existingPath;
 
-                if (hasNewFile)
+                if (hasNewFiles)
                 {
-                    var ext = Path.GetExtension(uploadFile!.FileName).ToLowerInvariant();
-                    if (!AllowedPortfolioExtensions.Contains(ext))
+                    var savedPaths = new List<string>();
+                    foreach (var uploadFile in uploadFiles)
                     {
-                        throw new InvalidOperationException($"作品集檔案「{uploadFile.FileName}」的格式不支援，僅接受圖片、PDF、Office 文件或壓縮檔。");
-                    }
+                        // 🎯 保留使用者上傳時的原始檔名（不再改成 GUID）。
+                        //    Path.GetFileName 先把上傳者可能夾帶的路徑部分剝除（防 ../ 路徑跳脫），
+                        //    再用 SanitizeFileName 清掉檔案系統不允許的字元。
+                        var originalName = Path.GetFileName(uploadFile.FileName);
+                        var ext = Path.GetExtension(originalName);
+                        var baseName = Path.GetFileNameWithoutExtension(originalName);
+                        var safeBaseName = SanitizeFileName(baseName);
+                        if (string.IsNullOrWhiteSpace(safeBaseName)) safeBaseName = "file";
 
-                    var newFileName = $"{Guid.NewGuid()}{ext}";
-                    var savePath = Path.Combine(uploadRoot, newFileName);
-                    using (var stream = new FileStream(savePath, FileMode.Create))
-                    {
-                        await uploadFile.CopyToAsync(stream);
+                        var finalName = $"{safeBaseName}{ext}";
+                        var savePath = Path.Combine(uploadRoot, finalName);
+
+                        // 🎯 同資料夾已有同名檔案時（例如重新上傳同一個檔名），加上流水號尾綴避免覆蓋別筆資料（例如 resume(1).pdf）
+                        int dup = 1;
+                        while (System.IO.File.Exists(savePath))
+                        {
+                            finalName = $"{safeBaseName}({dup}){ext}";
+                            savePath = Path.Combine(uploadRoot, finalName);
+                            dup++;
+                        }
+
+                        using (var stream = new FileStream(savePath, FileMode.Create))
+                        {
+                            await uploadFile.CopyToAsync(stream);
+                        }
+                        savedPaths.Add($"{relativeFolder}/{finalName}");
                     }
-                    finalFilePath = $"/uploads/portfolio/{newFileName}";
+                    finalFilePath = string.Join("|", savedPaths);
                 }
 
                 if (!string.IsNullOrWhiteSpace(finalFilePath))
                 {
-                    keptFilePaths.Add(finalFilePath);
+                    foreach (var singlePath in finalFilePath.Split('|', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        keptFilePaths.Add(singlePath);
+                    }
                 }
 
                 newPortfolios.Add(new Portfolio
@@ -828,7 +1000,6 @@ namespace InterviewProject.Controllers
                     SortOrder = sortOrder++
                 });
             }
-
             if (oldPortfolios.Any())
             {
                 _db.Portfolios.RemoveRange(oldPortfolios);
@@ -841,12 +1012,15 @@ namespace InterviewProject.Controllers
                 await _db.SaveChangesAsync();
             }
 
-            // 🎯 清掉硬碟上「舊有、但這次沒有被留用」的實體檔案（換新檔或整筆被刪除的情況）
+            // 🎯 清掉硬碟上「舊有、但這次沒有被留用」的實體檔案（換新檔、單獨刪除某個檔案、或整筆被刪除的情況）。
+            //    old.FilePath 現在可能是「|」串接的多個路徑，要逐一拆開個別比對。
             foreach (var old in oldPortfolios)
             {
-                if (!string.IsNullOrWhiteSpace(old.FilePath) && !keptFilePaths.Contains(old.FilePath))
+                if (string.IsNullOrWhiteSpace(old.FilePath)) continue;
+                foreach (var singlePath in old.FilePath.Split('|', StringSplitOptions.RemoveEmptyEntries))
                 {
-                    var relativePath = old.FilePath!.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                    if (keptFilePaths.Contains(singlePath)) continue;
+                    var relativePath = singlePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
                     var physicalPath = Path.Combine(_env.WebRootPath, relativePath);
                     if (System.IO.File.Exists(physicalPath))
                     {
@@ -1110,6 +1284,35 @@ namespace InterviewProject.Controllers
                 ["C_Biz"] = checkcomp("商業軟體"),
                 ["C_Prog"] = checkcomp("程式設計"),
             };
+
+            // 🎯 樣板（履歷表.docx）的學歷／工作經歷／作品集區塊已改成可重複列（MiniWord Table 語法：{{ListKey.Field}}），
+            //    這裡把整批資料（不只第一筆）傳入，樣板會依筆數自動重複整列。
+            string FormatDateRange(DateTime? start, DateTime? end) =>
+                $"{(start?.ToString("yyyy/MM") ?? "")} - {(end?.ToString("yyyy/MM") ?? "")}";
+
+            value["Educations"] = dbEducations.Select(e => new Dictionary<string, object>
+            {
+                ["SchoolName"] = e.SchoolName ?? "",
+                ["Major"] = e.Major ?? "",
+                ["EduStatus"] = e.EduStatus ?? "",
+                ["EduDate"] = FormatDateRange(e.StartDate, e.EndDate),
+            }).ToList();
+
+            value["WorkExperiences"] = dbWorkExperiences.Select(w => new Dictionary<string, object>
+            {
+                ["CompanyName"] = w.CompanyName ?? "",
+                ["JobTitle"] = w.JobTitle ?? "",
+                ["JobDescription"] = w.JobDescription ?? "",
+                ["DateRange"] = FormatDateRange(w.StartDate, w.EndDate),
+            }).ToList();
+
+            var dbPortfolios = await _db.Portfolios.Where(p => p.ResumeId == model.Id).OrderBy(p => p.SortOrder).ToListAsync();
+            value["Portfolios"] = dbPortfolios.Select(p => new Dictionary<string, object>
+            {
+                ["Title"] = p.Title ?? "",
+                ["Description"] = p.Description ?? "",
+                ["Link"] = p.Link ?? "",
+            }).ToList();
 
             var certList = cert.Split(", ").ToList();
             for (int i = 1; i <= 3; i++)

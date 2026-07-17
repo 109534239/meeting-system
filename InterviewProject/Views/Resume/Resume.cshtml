@@ -29,7 +29,7 @@
     </div>
 
     @* 🎯 修改重點：加入 id="resumeForm" 確保下方腳本綁定正確表單 *@
-    <form id="resumeForm" method="post" asp-action="SaveResume">
+    <form id="resumeForm" method="post" asp-action="SaveResume" enctype="multipart/form-data">
         <input type="hidden" asp-for="Id" />
         <input type="hidden" asp-for="JobsId" />
         <input type="hidden" asp-for="MembersId" />
@@ -144,34 +144,57 @@
                             {
                                 var edu = eduList[i];
                                 <tr class="dynamic-row-edu">
-                                    <td><input type="text" name="EduLevelList" class="form-control" list="eduLevelOptions" value="@edu.EduLevel" placeholder="學歷" required /></td>
-                                    <td><input type="text" name="SchoolNameList" class="form-control" value="@edu.SchoolName" placeholder="學校名稱" required /></td>
-                                    <td><input type="text" name="MajorList" class="form-control" value="@edu.Major" placeholder="科系所" required /></td>
                                     <td>
-                                        <select name="EduStatusList" class="form-control">
+                                        <select name="EduLevelList" class="form-control" required>
+                                            <option value="" disabled selected="@(string.IsNullOrEmpty(edu.EduLevel))">請選擇</option>
+                                            <option value="博士" selected="@(edu.EduLevel == "博士")">博士</option>
+                                            <option value="碩士" selected="@(edu.EduLevel == "碩士")">碩士</option>
+                                            <option value="大學" selected="@(edu.EduLevel == "大學")">大學</option>
+                                            <option value="專科" selected="@(edu.EduLevel == "專科")">專科</option>
+                                            <option value="高職" selected="@(edu.EduLevel == "高職")">高職</option>
+                                            <option value="高中" selected="@(edu.EduLevel == "高中")">高中</option>
+                                            <option value="國中" selected="@(edu.EduLevel == "國中")">國中</option>
+                                            <option value="國小" selected="@(edu.EduLevel == "國小")">國小</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <div class="scroll-input-wrap">
+                                            <input type="text" name="SchoolNameList" class="form-control" value="@edu.SchoolName" placeholder="學校名稱" required oninput="autoSizeInput(this)" />
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="scroll-input-wrap">
+                                            <input type="text" name="MajorList" class="form-control" value="@edu.Major" placeholder="科系所" required oninput="autoSizeInput(this)" />
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <select name="EduStatusList" class="form-control" required>
+                                            <option value="" disabled selected="@(string.IsNullOrEmpty(edu.EduStatus))">請選擇</option>
                                             <option value="畢業" selected="@(edu.EduStatus == "畢業")">畢業</option>
                                             <option value="肄業" selected="@(edu.EduStatus == "肄業")">肄業</option>
                                             <option value="在學" selected="@(edu.EduStatus == "在學")">在學</option>
                                         </select>
                                     </td>
-                                    <td><input type="month" name="StartDateList" class="form-control" value="@(edu.StartDate?.ToString("yyyy-MM"))" /></td>
-                                    <td><input type="month" name="EndDateList" class="form-control" value="@(edu.EndDate?.ToString("yyyy-MM"))" required /></td>
+                                    <td>
+                                        <div class="ym-select-wrap">
+                                            <select class="form-control" data-part="year" required></select>
+                                            <select class="form-control" data-part="month" required></select>
+                                        </div>
+                                        <input type="hidden" name="StartDateList" value="@(edu.StartDate?.ToString("yyyy-MM"))" />
+                                    </td>
+                                    <td>
+                                        <div class="ym-select-wrap">
+                                            <select class="form-control" data-part="year" required></select>
+                                            <select class="form-control" data-part="month" required></select>
+                                        </div>
+                                        <input type="hidden" name="EndDateList" value="@(edu.EndDate?.ToString("yyyy-MM"))" />
+                                    </td>
                                     <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeRow(this)">✕</button></td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                     </div>
-                    <datalist id="eduLevelOptions">
-                        <option value="博士"></option>
-                        <option value="碩士"></option>
-                        <option value="大學"></option>
-                        <option value="專科"></option>
-                        <option value="高職"></option>
-                        <option value="高中"></option>
-                        <option value="國中"></option>
-                        <option value="國小"></option>
-                    </datalist>
                     <button type="button" class="btn-add-row no-print-in-readonly" onclick="addEducationRow()">＋ 新增學歷</button>
                 </td>
             </tr>
@@ -208,11 +231,23 @@
                             {
                                 var work = workList[i];
                                 <tr class="dynamic-row-work">
-                                    <td><input type="text" name="CompanyNameList" class="form-control work-company" value="@work.CompanyName" placeholder="公司名稱" /></td>
-                                    <td><input type="text" name="JobTitleList" class="form-control work-title" value="@work.JobTitle" placeholder="職位" /></td>
-                                    <td><textarea name="JobDescriptionList" class="form-control" placeholder="工作內容" rows="1">@work.JobDescription</textarea></td>
-                                    <td><input type="month" name="WorkStartDateList" class="form-control" value="@(work.StartDate?.ToString("yyyy-MM"))" /></td>
-                                    <td><input type="month" name="WorkEndDateList" class="form-control" value="@(work.EndDate?.ToString("yyyy-MM"))" /></td>
+                                    <td><textarea name="CompanyNameList" class="form-control work-company" placeholder="公司名稱" rows="1" oninput="autoGrowTextarea(this)">@work.CompanyName</textarea></td>
+                                    <td><textarea name="JobTitleList" class="form-control work-title" placeholder="職位" rows="1" oninput="autoGrowTextarea(this)">@work.JobTitle</textarea></td>
+                                    <td><textarea name="JobDescriptionList" class="form-control" placeholder="工作內容" rows="1" oninput="autoGrowTextarea(this)">@work.JobDescription</textarea></td>
+                                    <td>
+                                        <div class="ym-select-wrap">
+                                            <select class="form-control" data-part="year"></select>
+                                            <select class="form-control" data-part="month"></select>
+                                        </div>
+                                        <input type="hidden" name="WorkStartDateList" value="@(work.StartDate?.ToString("yyyy-MM"))" />
+                                    </td>
+                                    <td>
+                                        <div class="ym-select-wrap">
+                                            <select class="form-control" data-part="year"></select>
+                                            <select class="form-control" data-part="month"></select>
+                                        </div>
+                                        <input type="hidden" name="WorkEndDateList" value="@(work.EndDate?.ToString("yyyy-MM"))" />
+                                    </td>
                                     <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeWorkRow(this)">✕</button></td>
                                 </tr>
                             }
@@ -223,6 +258,7 @@
                     <div id="noWorkExpHint" class="text-muted" style="margin-top:6px; @(workList.Any() ? "display:none;" : "")">目前尚未新增任何工作經歷，將視為「無工作經歷」。</div>
                 </td>
             </tr>
+
             <tr>
                 <td class="label-bg">作品集</td>
                 <td colspan="5">
@@ -253,19 +289,17 @@
                             {
                                 var pf = portfolioList[i];
                                 <tr class="dynamic-row-portfolio">
-                                    <td><input type="text" name="PortfolioTitleList" class="form-control" value="@pf.Title" placeholder="作品名稱" /></td>
-                                    <td><textarea name="PortfolioDescList" class="form-control" placeholder="作品說明">@pf.Description</textarea></td>
-                                    <td><input type="url" name="PortfolioLinkList" class="form-control" value="@pf.Link" placeholder="https://" /></td>
+                                    <td><textarea name="PortfolioTitleList" class="form-control" placeholder="作品名稱" rows="1" oninput="autoGrowTextarea(this)">@pf.Title</textarea></td>
+                                    <td><textarea name="PortfolioDescList" class="form-control" placeholder="作品說明" rows="1" oninput="autoGrowTextarea(this)">@pf.Description</textarea></td>
+                                    <td><textarea name="PortfolioLinkList" class="form-control portfolio-link" placeholder="https://" rows="1" autocomplete="off" oninput="autoGrowTextarea(this)">@pf.Link</textarea></td>
                                     <td class="portfolio-file-cell">
                                         <input type="hidden" name="PortfolioExistingFileList" class="portfolio-existing-file" value="@pf.FilePath" />
-                                        @if (!string.IsNullOrEmpty(pf.FilePath))
-                                        {
-                                            <div class="portfolio-existing-wrap">
-                                                <a href="@pf.FilePath" target="_blank" rel="noopener">目前檔案</a>
-                                                <button type="button" class="btn-remove-row no-print-in-readonly" onclick="clearExistingPortfolioFile(this)">✕</button>
-                                            </div>
-                                        }
-                                        <input type="file" name="PortfolioFileList" class="form-control no-print-in-readonly" onchange="markPortfolioFileReplaced(this)" />
+                                        <div class="portfolio-existing-list"></div>
+                                        <label class="btn-upload-file no-print-in-readonly">
+                                            選擇檔案
+                                            <input type="file" name="PortfolioFileList" class="portfolio-file-input no-print-in-readonly" multiple onchange="handlePortfolioFileSelect(this)" />
+                                        </label>
+                                        <div class="portfolio-new-files"></div>
                                     </td>
                                     <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removePortfolioRow(this)">✕</button></td>
                                 </tr>
@@ -277,6 +311,7 @@
                     <div id="noPortfolioHint" class="text-muted" style="margin-top:6px; @(portfolioList.Any() ? "display:none;" : "")">目前尚未新增任何作品集，將視為「無」。</div>
                 </td>
             </tr>
+
             <tr>
                 <td rowspan="5" class="label-bg">背景<br />及<br />專長</td>
                 <td>語文能力<br />(可新增多筆，未新增即視為不具外文能力)</td>
@@ -284,12 +319,6 @@
                     <input type="hidden" asp-for="LanguageSkills" id="finalLanguageSkills" />
                     <div id="language-list" style="margin-top:6px;">
                     </div>
-                    <datalist id="langNameOptions">
-                        <option value="英語"></option>
-                        <option value="日語"></option>
-                        <option value="台語"></option>
-                        <option value="客語"></option>
-                    </datalist>
                     <button type="button" class="btn-add-row no-print-in-readonly" onclick="addLanguageRow()">＋ 新增語言</button>
                     @{
                         var hasLangData = !string.IsNullOrWhiteSpace(Model?.LanguageSkills) && Model.LanguageSkills.Trim() != "不具外文能力";
@@ -297,6 +326,7 @@
                     <div id="noLangHint" class="text-muted" style="margin-top:6px; @(hasLangData ? "display:none;" : "")">目前尚未新增任何語言，將視為「不具外文能力」。</div>
                 </td>
             </tr>
+
             <tr>
                 <td>駕照種類<br />(可複選)</td>
                 <td colspan="4">
@@ -326,6 +356,7 @@
                     </div>
                 </td>
             </tr>
+
              <tr>
                 <td>專長<br />(可新增多筆，未新增即視為無)</td>
                 <td colspan="4">
@@ -340,6 +371,7 @@
                 </td>
             </tr>
            <tr>
+
    <td>證照職類及級別<br />(可輸入自訂項目，未列在建議清單也能填)</td>
    <td colspan="4">
         <input type="hidden" asp-for="Certificates" id="finalCertificates" />
@@ -352,7 +384,7 @@
 
         <div id="cert-list">
             <div class="cert-item dynamic-row-simple" style="margin-bottom: 8px;">
-                <input type="text" class="cert-select" list="certNameOptions" placeholder="輸入或選擇證照名稱" />
+                <input type="text" class="cert-select" list="certNameOptions" placeholder="輸入或選擇證照名稱" oninput="autoGrowInputWidth(this)" />
                 <span class="cert-level-wrap">
                     級別：<input type="text" class="cert-level-select" list="certLevelOptions_0" placeholder="級別（無則留空）" />
                     <datalist id="certLevelOptions_0"></datalist>
@@ -416,6 +448,8 @@
 <script>
 // 💡 1. 宣告全域變數（放最外層）
 var globalCertList = [];
+var certListLoaded = false; // 🚨 證照對照表是非同步 fetch 回來的；若使用者在資料還沒抓回來前就送出表單，
+                             // 「這張證照有沒有級別可選」根本無從判斷，必須先擋下來，而不是放行
 var certLevelDatalistCounter = 1; // 🎯 每一列證照級別要有自己獨立的 datalist id，從 1 開始（第一列已經是 certLevelOptions_0）
 
 // 🎯 證照名稱改成 input + 共用 datalist（id="certNameOptions"），所有列共用同一份選項，
@@ -529,6 +563,7 @@ function fillCertByName(certName) {
     }
     const nameInput = target.querySelector('.cert-select');
     nameInput.value = certName;
+    autoGrowInputWidth(nameInput);
     updateCertLevelOptions(target);
 }
 
@@ -550,9 +585,13 @@ fetch('/Resume/GetCertificates?jobId=@Model.JobsId', {
 
     // 💡 確保 datalist 都有「證照名稱」後，才執行反填
     parseAndFillExistingCerts();
+    certListLoaded = true;
 })
 .catch(err => {
     console.error("無法成功取得證照清單：", err);
+    // 🚨 抓取失敗也要標記為「已結束載入」，否則畫面會永遠卡在「資料還沒回來」的擋下狀態，使用者永遠送不出履歷。
+    //    抓取失敗時，級別必填的檢查交給後端做最後把關（伺服器端一樣會查證照對照表驗證）。
+    certListLoaded = true;
 });
 
 
@@ -561,7 +600,31 @@ window.onload = function() {
 
     // ------ 0. 工作經歷「工作內容」欄位，如果是編輯既有履歷、內容本來就有好幾行文字，
     //           一進頁面就先量一次高度，不用等使用者打字才長高 ------
-    document.querySelectorAll('.work-table textarea[name="JobDescriptionList"]').forEach(autoGrowTextarea);
+    document.querySelectorAll('.work-table textarea').forEach(autoGrowTextarea);
+    document.querySelectorAll('.portfolio-table textarea').forEach(autoGrowTextarea);
+    document.querySelectorAll('.edu-table .scroll-input-wrap input').forEach(autoSizeInput);
+    document.querySelectorAll('.portfolio-file-cell').forEach(renderExistingPortfolioFiles);
+
+    // 🎯 學歷/工作經歷的起訖年月下拉選單：頁面載入時就存在的既有列，逐列初始化互動
+    //    （新增出來的列，是在 addEducationRow / addWorkRow 裡各自呼叫）
+    document.querySelectorAll('#education-list .dynamic-row-edu').forEach(row => {
+        const wraps = row.querySelectorAll('.ym-select-wrap');
+        const startHidden = row.querySelector('input[name="StartDateList"]');
+        const endHidden = row.querySelector('input[name="EndDateList"]');
+        if (wraps.length === 2 && startHidden && endHidden) {
+            setupEduRowAutoDates(row);
+        }
+    });
+    document.querySelectorAll('#work-list .dynamic-row-work').forEach(row => {
+        const wraps = row.querySelectorAll('.ym-select-wrap');
+        const startHidden = row.querySelector('input[name="WorkStartDateList"]');
+        const endHidden = row.querySelector('input[name="WorkEndDateList"]');
+        if (wraps.length === 2 && startHidden && endHidden) {
+            initYmRange(wraps[0], startHidden, wraps[1], endHidden);
+        }
+    });
+
+    document.querySelectorAll('#education-list .dynamic-row-edu').forEach(applyEduInProgressStatus);
 
    // ------ 1. 處理語文能力反填（改成動態列，資料有幾筆就補幾列；
     //           "不具外文能力" 已不再是使用者手動勾選的值，純粹代表「一筆都沒填」，
@@ -577,9 +640,23 @@ window.onload = function() {
             addLanguageRow();
             const rows = document.querySelectorAll('#language-list .dynamic-row-simple');
             const row = rows[rows.length - 1];
-            const nameInput = row.querySelector('.lang-name-input');
+            const nameSelect = row.querySelector('.lang-name-select');
+            const otherInput = row.querySelector('.lang-name-other');
             const lvSelect = row.querySelector('.lang-lv-select');
-            if (nameInput) nameInput.value = name;
+            if (nameSelect && name) {
+                const matched = Array.from(nameSelect.options).some(opt => opt.value === name);
+                if (matched) {
+                    nameSelect.value = name;
+                } else {
+                    // 🎯 舊資料存的語言名稱若不在目前清單裡（例如之前是自由輸入的），
+                    //    歸類到「其他」，並把原本文字帶進旁邊的自訂輸入框，不會憑空消失
+                    nameSelect.value = '其他';
+                    if (otherInput) {
+                        otherInput.value = name;
+                        otherInput.style.display = '';
+                    }
+                }
+            }
             if (lvSelect && lvValue) lvSelect.value = lvValue;
         });
     }
@@ -620,7 +697,9 @@ window.onload = function() {
         specs.forEach((val) => {
             addSpecialtyRow();
             const inputs = document.querySelectorAll('.spec-input');
-            inputs[inputs.length - 1].value = val;
+            const lastInput = inputs[inputs.length - 1];
+            lastInput.value = val;
+            autoGrowTextarea(lastInput);
         });
     }
     updateNoSpecHint();
@@ -628,11 +707,17 @@ window.onload = function() {
     // ------ 5. 處理電腦能力（改成動態列） ------
     const compData = "@Html.Raw(Model?.ComputerSkills ?? "")";
     if (compData && compData.trim() !== "") {
-        const compArray = compData.split(',').map(s => s.trim()).filter(s => s !== "");
-        compArray.forEach((val, index) => {
-            if (index > 0) addCompSkillRow();
+        // 🎯 分隔符改用 "; "，避免電腦能力內容本身含有逗號被誤判成分隔符
+        const compArray = compData.split('; ').map(s => s.trim()).filter(s => s !== "");
+        // 🎯 修正：原本第一筆(index===0)沒有呼叫 addCompSkillRow()，
+        //    但 #compskill-list 一開始是空的，會導致 inputs[inputs.length-1] 是 undefined，
+        //    寫入時直接噴例外，讓整段反填中斷（電腦能力因此整塊空白）。改成每筆都先新增一列再填值。
+        compArray.forEach((val) => {
+            addCompSkillRow();
             const inputs = document.querySelectorAll('.comp-input');
-            inputs[inputs.length - 1].value = val;
+            const lastInput = inputs[inputs.length - 1];
+            lastInput.value = val;
+            autoGrowTextarea(lastInput);
         });
     }
 
@@ -647,33 +732,12 @@ window.onload = function() {
         if (certItemEl) updateCertLevelOptions(certItemEl);
     });
 
-    // 🎯 需求：已經選過證照名稱的欄位，再次點擊應該要能重新看到「全部」選項，
-    //    而不是被瀏覽器的 datalist 用目前文字做前綴過濾，只剩自己一個選項可選。
-    //    做法：在瀏覽器真的「打開」建議清單之前就把值清空 —— 只在 focus 時清是不夠的，
-    //    因為滑鼠點擊時瀏覽器有可能在 focus 事件觸發前就已經用「舊的值」畫出建議清單，
-    //    所以要提早在 mousedown（點擊瞬間、focus 之前）就先清空，focus 再補一次保險。
-    //    blur 時如果使用者沒有另外輸入/選擇新值，就把原本的值還原回去。
-    function clearCertSelectForReopen(el) {
-        if (el.dataset.prevCertValue === undefined) {
-            el.dataset.prevCertValue = el.value;
-        }
-        el.value = '';
-    }
-    $(document).on('mousedown', '.cert-select', function () {
-        clearCertSelectForReopen(this);
-    });
-    $(document).on('focus', '.cert-select', function () {
-        clearCertSelectForReopen(this);
-    });
+    // 欄位打完字離開時，仍然要重新比對一次級別選項，確保跟目前欄位值同步（只是不再清空原本的值）
     $(document).on('blur', '.cert-select', function () {
-        if (this.value.trim() === '' && this.dataset.prevCertValue) {
-            this.value = this.dataset.prevCertValue;
-        }
-        delete this.dataset.prevCertValue;
-        // 不論值是否被還原，都重新跑一次級別欄位顯示/隱藏與選項比對，確保跟目前欄位值同步
         const certItemEl = this.closest('.cert-item');
         if (certItemEl) updateCertLevelOptions(certItemEl);
     });
+
 
     // 學歷改為動態列 + datalist，不再需要「其他」欄位的 focus 處理
 }; // window.onload 結束
@@ -689,6 +753,13 @@ function parseAndFillExistingCerts() {
     if (!rawValue) return;
 
     const certList = rawValue.split(', ');
+
+    // 🎯 修正：頁面預設只有 1 個 .cert-item，原本沒有依 certList 筆數補足 row，
+    //    導致第 2 筆以後的證照資料直接被略過（畫面上只會看到第 1 筆）。這裡先把 row 數量補到足夠。
+    while ($('.cert-item').length < certList.length) {
+        addCertRow();
+    }
+
     $('.cert-item').each(function (index) {
         if (index < certList.length) {
             const current = certList[index];
@@ -703,6 +774,7 @@ function parseAndFillExistingCerts() {
 
                 // 1. 反填證照名稱
                 $certSelect.val(name);
+                autoGrowInputWidth($certSelect[0]);
 
                 // 2. 立即動態塞入該證照對應的級別 datalist（全面相容大、小寫屬性）
                 updateCertLevelOptions(this);
@@ -718,11 +790,212 @@ function parseAndFillExistingCerts() {
                 }
             } else {
                 $certSelect.val(current.trim()).trigger('change');
+                autoGrowInputWidth($certSelect[0]);
+
+                // 🎯 這筆證照存檔時就沒有級別資料，代表使用者當初就是「無級別」送出的，
+                //    不管清單裡這張證照有沒有級別可選，都直接把級別欄位藏起來，不要顯示空白的級別欄位。
+                //    trigger('change') 已經先跑過 updateCertLevelOptions() 更新過 datalist 跟顯示狀態，
+                //    這裡再強制蓋掉一次確保一定是隱藏的。
+                const $levelWrap = $(this).find('.cert-level-wrap');
+                if ($levelWrap.length) $levelWrap.hide();
+                $levelSelect.val('');
             }
         }
     });
 }
 
+// 🎯 學歷／工作經歷的起訖日期，改成「年」「月」各一個下拉選單，使用者只能選、不能打字，
+//    從根本上避免打出格式錯誤或亂七八糟的日期。以下是這組下拉選單共用的邏輯。
+// 🎯 年份選項改成「今年往前 70 年～往後 10 年」，不用 1950~2100 這種長達 150 筆的清單
+//    （履歷上的學歷/工作經歷日期正常來說不會超出這個範圍，選單也不用捲那麼久）
+const YM_CURRENT_YEAR = new Date().getFullYear();
+const YM_MIN_YEAR = YM_CURRENT_YEAR - 70;
+const YM_MAX_YEAR = YM_CURRENT_YEAR + 10;
+
+function buildYearOptions(select, minYear) {
+    const fromYear = minYear ? Math.max(YM_MIN_YEAR, minYear) : YM_MIN_YEAR;
+    let html = '<option value="">年</option>';
+    for (let y = YM_MAX_YEAR; y >= fromYear; y--) {
+        html += `<option value="${y}">${y}年</option>`;
+    }
+    select.innerHTML = html;
+}
+
+function buildMonthOptions(select, minMonth) {
+    const fromMonth = minMonth ? Math.max(1, minMonth) : 1;
+    let html = '<option value="">月</option>';
+    for (let m = fromMonth; m <= 12; m++) {
+        const mm = String(m).padStart(2, '0');
+        html += `<option value="${mm}">${m}月</option>`;
+    }
+    select.innerHTML = html;
+}
+
+// 🎯 把「年」「月」兩個下拉選單目前選的值組成 "yyyy-MM" 字串寫進 hidden input，
+//    這個 hidden input 的 name 沿用原本 StartDateList/EndDateList 等，後端完全不用改
+function syncYmHidden(wrap, hidden) {
+    const y = wrap.querySelector('[data-part="year"]').value;
+    const m = wrap.querySelector('[data-part="month"]').value;
+    hidden.value = (y && m) ? `${y}-${m}` : '';
+}
+
+// 🎯 依照 minVal（"yyyy-MM" 或空字串，通常是入學年月/開始日期目前的值）重建「結束」那組年/月下拉選單：
+//    比 minVal 更早的「年份」選項直接不顯示（不是變灰不能選，是整個選項移除）；
+//    同一年份時，比 minVal 更早的「月份」選項也一併移除，同一年份本身仍可以選。
+//    原本已選的值如果在新的選項清單裡還存在就保留，不存在（代表變成不合理了）才清空。
+function applyYmMinBound(wrap, minVal) {
+    const yearSel = wrap.querySelector('[data-part="year"]');
+    const monthSel = wrap.querySelector('[data-part="month"]');
+    const [minYStr, minMStr] = (minVal || '').split('-');
+    const minY = minYStr ? Number(minYStr) : null;
+    const minM = minMStr ? Number(minMStr) : null;
+
+    const prevYear = yearSel.value;
+    buildYearOptions(yearSel, minY);
+    yearSel.value = (prevYear && Array.from(yearSel.options).some(o => o.value === prevYear)) ? prevYear : '';
+
+    const curYear = yearSel.value;
+    const monthLowerBound = (minY && curYear === String(minY)) ? minM : null;
+    const prevMonth = monthSel.value;
+    buildMonthOptions(monthSel, monthLowerBound);
+    monthSel.value = (prevMonth && Array.from(monthSel.options).some(o => o.value === prevMonth)) ? prevMonth : '';
+}
+
+// 🎯 建立一組「起訖年月」下拉選單的完整互動：初始化選項、反填既有資料、
+//    並讓「結束/畢業」那組下拉選單即時依「開始/入學」那組目前選的值鎖住不合理的年份/月份
+// 🎯 讀取「開始/入學」那組年月選單目前選的值，組成用來鎖定「結束/畢業」選單的邊界字串：
+//    年份有選就一定會回傳邊界（就算月份還沒選，也用該年 1 月當底線，讓「年」的鎖定立刻生效，
+//    不用等使用者把月份也選完才鎖住——這是先前的 bug：只選年沒選月時完全沒套用邊界）
+function getYmBoundValue(wrap) {
+    const y = wrap.querySelector('[data-part="year"]').value;
+    const m = wrap.querySelector('[data-part="month"]').value;
+    if (!y) return '';
+    return `${y}-${m || '01'}`;
+}
+
+function initYmRange(startWrap, startHidden, endWrap, endHidden, onStartChangeExtra) {
+    [startWrap, endWrap].forEach(wrap => {
+        buildYearOptions(wrap.querySelector('[data-part="year"]'));
+        buildMonthOptions(wrap.querySelector('[data-part="month"]'));
+    });
+
+    [[startWrap, startHidden], [endWrap, endHidden]].forEach(([wrap, hidden]) => {
+        const [y, m] = (hidden.value || '').split('-');
+        if (y) wrap.querySelector('[data-part="year"]').value = y;
+        if (m) wrap.querySelector('[data-part="month"]').value = m;
+    });
+
+    const refreshEndBound = () => applyYmMinBound(endWrap, getYmBoundValue(startWrap));
+
+    const onStartChange = () => {
+        syncYmHidden(startWrap, startHidden);
+        refreshEndBound();
+        syncYmHidden(endWrap, endHidden);
+        onAnyYmChanged(startWrap);
+        if (typeof onStartChangeExtra === 'function') onStartChangeExtra();
+    };
+    const onEndChange = () => {
+        refreshEndBound();
+        syncYmHidden(endWrap, endHidden);
+        onAnyYmChanged(endWrap);
+    };
+
+    startWrap.querySelectorAll('select').forEach(sel => sel.addEventListener('change', onStartChange));
+    endWrap.querySelectorAll('select').forEach(sel => sel.addEventListener('change', onEndChange));
+
+    refreshEndBound();
+}
+
+// 🎯 各學歷程度常見的修業年限（用來自動預估畢業年月，僅供預設值參考，使用者仍可自行改選）
+const EDU_LEVEL_DURATION_YEARS = {
+    '國小': 6,
+    '國中': 3,
+    '高中': 3,
+    '高職': 3,
+    '專科': 2,
+    '大學': 4,
+    '碩士': 2,
+    '博士': 4
+};
+
+// 🎯 學歷列的「入學年」一選好，如果「入學月」還沒選，先幫忙帶入常見的 9 月開學；
+//    「畢業年月」如果整個還是空的，就依目前選的學歷程度、抓常見修業年限，
+//    自動算出「入學年 + 年限」當畢業年、6 月當畢業月。這些都只是「預設帶入」，
+//    使用者只要自己動過那個下拉選單，之後就不會再被這裡覆蓋掉。
+function autoFillEduDates(row) {
+    const levelSel = row.querySelector('select[name="EduLevelList"]');
+    const wraps = row.querySelectorAll('.ym-select-wrap');
+    if (!levelSel || wraps.length < 2) return;
+    const startWrap = wraps[0];
+    const endWrap = wraps[1];
+    const startYearSel = startWrap.querySelector('[data-part="year"]');
+    const startMonthSel = startWrap.querySelector('[data-part="month"]');
+    const endYearSel = endWrap.querySelector('[data-part="year"]');
+    const endMonthSel = endWrap.querySelector('[data-part="month"]');
+    if (!startYearSel || !startMonthSel || !endYearSel || !endMonthSel) return;
+
+    // 入學年有選、入學月還空著 → 預設帶入 9 月
+    if (startYearSel.value && !startMonthSel.value) {
+        if (Array.from(startMonthSel.options).some(o => o.value === '09')) {
+            startMonthSel.value = '09';
+            startMonthSel.dispatchEvent(new Event('change'));
+        }
+    }
+
+    // 畢業年月兩個都還空著、學歷程度也選了 → 依修業年限自動預估（年）+ 6月（月）
+    const duration = EDU_LEVEL_DURATION_YEARS[levelSel.value];
+    if (duration && startYearSel.value && !endYearSel.value && !endMonthSel.value) {
+        const suggestedYear = String(Number(startYearSel.value) + duration);
+        if (Array.from(endYearSel.options).some(o => o.value === suggestedYear)) {
+            endYearSel.value = suggestedYear;
+            endYearSel.dispatchEvent(new Event('change'));
+        }
+        if (Array.from(endMonthSel.options).some(o => o.value === '06')) {
+            endMonthSel.value = '06';
+            endMonthSel.dispatchEvent(new Event('change'));
+        }
+    }
+}
+
+// 🎯 學歷列的初始化：在共用的 initYmRange 之外，多綁「學歷程度」下拉改變時也觸發自動預估，
+//    並把 onStartChangeExtra 接到 autoFillEduDates，讓選入學年月時一併觸發
+function setupEduRowAutoDates(row) {
+    const levelSel = row.querySelector('select[name="EduLevelList"]');
+    const wraps = row.querySelectorAll('.ym-select-wrap');
+    const startHidden = row.querySelector('input[name="StartDateList"]');
+    const endHidden = row.querySelector('input[name="EndDateList"]');
+    if (!levelSel || wraps.length < 2 || !startHidden || !endHidden) return;
+
+    const runAutoFill = () => autoFillEduDates(row);
+    initYmRange(wraps[0], startHidden, wraps[1], endHidden, runAutoFill);
+    levelSel.addEventListener('change', runAutoFill);
+}
+
+// 🎯 起訖年月改變後，如果是學歷列就重新判斷一次「畢業年月未到即視為在學」；
+//    工作經歷列沒有對應的自動狀態欄位，不用額外處理
+function onAnyYmChanged(wrapEl) {
+    const eduRow = wrapEl.closest('.dynamic-row-edu');
+    if (eduRow) applyEduInProgressStatus(eduRow);
+}
+
+// 🎯 學歷/工作經歷共用：結束日期是否早於開始日期（"YYYY-MM" 格式字串可以直接用字典序比大小）
+function isEndBeforeStart(startVal, endVal) {
+    return !!(startVal && endVal && endVal < startVal);
+}
+
+// 🎯 依畢業年月是否還沒到，自動把該列的學歷狀況設成「在學」（靜默調整，不跳提示，
+//    頁面載入時反填既有資料、或使用者改日期時都會呼叫這個函式）
+function applyEduInProgressStatus(row) {
+    const endEl = row.querySelector('input[name="EndDateList"]');
+    const statusEl = row.querySelector('select[name="EduStatusList"]');
+    if (!endEl || !endEl.value || !statusEl) return;
+    const todayYm = new Date().toISOString().slice(0, 7);
+    if (endEl.value > todayYm) {
+        statusEl.value = '在學';
+    }
+}
+
+// 🎯 工作經歷：離職（結束）日期不可以早於到職（開始）日期
 // 🎯 依「工作經歷」列表的起訖日期自動換算工作年資（無列 = 0 年），不再需要使用者手動選擇/輸入
 function calcWorkExperienceYears() {
     let totalMonths = 0;
@@ -749,22 +1022,118 @@ function calcWorkExperienceYears() {
     return Math.round(totalMonths / 12);
 }
 
+// 🎯 送出表單時，如果是原生 required 處理不了的跨欄位檢查（例如「結束不能早於開始」「有公司名稱就要有開始日期」）
+//    沒通過，除了跳提示之外，也把畫面捲動到該欄位、短暫標示紅框，跟瀏覽器原生驗證擋下必填欄位時的體驗一致，
+//    讓使用者能直接看到、點到有問題的地方，不用自己在整張履歷表裡面找
+function scrollToAndFlagField(el) {
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => {
+        try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+    }, 300);
+    el.classList.add('field-error-flash');
+    setTimeout(() => el.classList.remove('field-error-flash'), 2000);
+}
+
+// 🚨 送出前的所有攔截檢查，一律用這個函式跳提示，不要直接呼叫 Swal.fire。
+//    原因：Swal 是外部 CDN 載入的第三方套件，若載入順序延遲、被封鎖或載入失敗，
+//    直接呼叫 Swal.fire(...) 會丟出「Swal is not defined」例外；
+//    這個例外若發生在 e.preventDefault() 之前，會讓整段 submit handler 中斷執行，
+//    preventDefault() 永遠不會被呼叫到 —— 表單就會在「沒有提示、也沒有錯誤訊息」的情況下正常送出，
+//    這正是大頭照/證照級別沒填也能送出成功的根本原因之一。
+//    所以每一個驗證區塊都必須先呼叫 e.preventDefault()，再呼叫這個安全版的提示函式。
+function showValidationAlert(title, text) {
+    if (typeof Swal !== 'undefined' && typeof Swal.fire === 'function') {
+        try {
+            Swal.fire(title, text, 'warning');
+            return;
+        } catch (err) {
+            console.error('Swal.fire 執行失敗，改用原生 alert：', err);
+        }
+    }
+    alert(title + '\n' + text);
+}
+
 // 🎯 綁定明確的表單 ID
 const resumeFormEl = document.getElementById('resumeForm');
 if (resumeFormEl) {
     resumeFormEl.addEventListener('submit', function (e) {
-        // 🎯 工作經歷若有填公司名稱，至少要同時填開始日期，否則無法換算年資
-        let workRowError = false;
+        // 🎯 送出前先把作品集的檔案欄位改名成 PortfolioFileList_{列序}，後端才抓得到對應哪一列
+        preparePortfolioFilesForSubmit();
+
+        // 🎯 大頭照必填：沒有照片（hidden input 沒有 base64 值）就擋下送出並提示
+        const resumePhotoInputEl = document.getElementById('resumePhotoBase64Input');
+        if (!resumePhotoInputEl || !resumePhotoInputEl.value.trim()) {
+            e.preventDefault();
+            const photoPreviewEl = document.getElementById('resume-photo-preview');
+            scrollToAndFlagField(photoPreviewEl);
+            showValidationAlert('提示', '請上傳大頭照後再送出。');
+            return false;
+        }
+
+        // 🎯 送出前的最後把關：學歷/畢業年月必填（原本靠 <input required>，
+        //    現在年/月下拉選單本身已經加了 required，瀏覽器會先擋下來；這裡是多一層保險，
+        //    防止極端情況下（例如列是用非預期方式插入 DOM）漏掉 required 屬性）
+        let eduEndMissingEl = null;
+        document.querySelectorAll('#education-list .dynamic-row-edu').forEach(row => {
+            if (eduEndMissingEl) return;
+            const endHidden = row.querySelector('input[name="EndDateList"]');
+            if (!endHidden || !endHidden.value) {
+                const endWrap = row.querySelectorAll('.ym-select-wrap')[1];
+                eduEndMissingEl = endWrap ? endWrap.querySelector('[data-part="year"]') : endHidden;
+            }
+        });
+        if (eduEndMissingEl) {
+            e.preventDefault();
+            scrollToAndFlagField(eduEndMissingEl);
+            showValidationAlert('提示', '請選擇每一筆學歷的畢業年月。');
+            return false;
+        }
+
+        // 🎯 學歷/工作經歷的起訖年月下拉選單本身已經鎖住「結束不能選在開始之前」，
+        //    這裡只是送出前的最後一道保險（以防萬一有列漏了初始化互動）
+        let dateOrderErrorEl = null;
+        document.querySelectorAll('#education-list .dynamic-row-edu').forEach(row => {
+            applyEduInProgressStatus(row); // 送出前再確認一次「畢業年月未到就自動視為在學」
+            if (dateOrderErrorEl) return;
+            const s = row.querySelector('input[name="StartDateList"]')?.value;
+            const en = row.querySelector('input[name="EndDateList"]')?.value;
+            if (isEndBeforeStart(s, en)) {
+                const endWrap = row.querySelectorAll('.ym-select-wrap')[1];
+                dateOrderErrorEl = endWrap ? endWrap.querySelector('[data-part="year"]') : null;
+            }
+        });
         document.querySelectorAll('#work-list .dynamic-row-work').forEach(row => {
+            if (dateOrderErrorEl) return;
+            const s = row.querySelector('input[name="WorkStartDateList"]')?.value;
+            const en = row.querySelector('input[name="WorkEndDateList"]')?.value;
+            if (isEndBeforeStart(s, en)) {
+                const endWrap = row.querySelectorAll('.ym-select-wrap')[1];
+                dateOrderErrorEl = endWrap ? endWrap.querySelector('[data-part="year"]') : null;
+            }
+        });
+        if (dateOrderErrorEl) {
+            e.preventDefault();
+            scrollToAndFlagField(dateOrderErrorEl);
+            showValidationAlert('提示', '有學歷或工作經歷的結束日期早於開始日期，請修正後再送出。');
+            return false;
+        }
+
+        // 🎯 工作經歷若有填公司名稱，至少要同時填開始日期，否則無法換算年資
+        let workRowErrorEl = null;
+        document.querySelectorAll('#work-list .dynamic-row-work').forEach(row => {
+            if (workRowErrorEl) return;
             const company = row.querySelector('.work-company');
             const startEl = row.querySelector('input[name="WorkStartDateList"]');
             if (company && company.value.trim() && (!startEl || !startEl.value)) {
-                workRowError = true;
+                const startWrap = row.querySelectorAll('.ym-select-wrap')[0];
+                workRowErrorEl = startWrap ? startWrap.querySelector('[data-part="year"]') : company;
             }
         });
-        if (workRowError) {
-            Swal.fire('提示', '已填寫的工作經歷請至少補上「開始日期」', 'warning');
+        if (workRowErrorEl) {
             e.preventDefault();
+            scrollToAndFlagField(workRowErrorEl);
+            showValidationAlert('提示', '已填寫的工作經歷請至少補上「開始日期」');
             return false;
         }
 
@@ -777,11 +1146,36 @@ if (resumeFormEl) {
             finalTimeEl.value = now.toISOString();
         }
 
+        // 🎯 語言選「其他」卻沒填自訂名稱，或填了但查不到是真實語言，先擋下來，
+        //    不要讓一筆有問題的語言資料送進資料庫
+        let langOtherErrorEl = null;
+        document.querySelectorAll('#language-list .dynamic-row-simple').forEach(row => {
+            const nameSelect = row.querySelector('.lang-name-select');
+            const otherInput = row.querySelector('.lang-name-other');
+            if (nameSelect && nameSelect.value === '其他') {
+                const typed = otherInput ? otherInput.value.trim() : '';
+                if (!typed || !isRecognizedLanguageName(typed)) {
+                    if (otherInput) setLangOtherError(otherInput, true, typed ? '請輸入正確語言' : '請輸入語言名稱');
+                    if (!langOtherErrorEl) langOtherErrorEl = otherInput || nameSelect;
+                }
+            }
+        });
+        if (langOtherErrorEl) {
+            e.preventDefault();
+            scrollToAndFlagField(langOtherErrorEl);
+            showValidationAlert('提示', '語文能力「其他」欄位有語言名稱還沒填對，請修正下方標紅的欄位。');
+            return false;
+        }
+
         let langResults = [];
         document.querySelectorAll('#language-list .dynamic-row-simple').forEach(row => {
-            const nameInput = row.querySelector('.lang-name-input');
+            const nameSelect = row.querySelector('.lang-name-select');
+            const otherInput = row.querySelector('.lang-name-other');
             const lvSelect = row.querySelector('.lang-lv-select');
-            const name = nameInput ? nameInput.value.trim() : "";
+            let name = nameSelect ? nameSelect.value.trim() : "";
+            if (name === '其他') {
+                name = otherInput ? otherInput.value.trim() : "";
+            }
             if (name && lvSelect) {
                 langResults.push(`${name}(${lvSelect.value})`);
             }
@@ -817,6 +1211,53 @@ if (resumeFormEl) {
         const finalSpecEl = document.getElementById('finalSpecialty');
         if (finalSpecEl) finalSpecEl.value = specResults.join('; ');
 
+        // 🎯 證照職類及級別：若這一列的級別欄位目前「有顯示」且「有建議清單（下拉選項）」可選，
+        //    卻沒有選擇/填寫級別，就擋下送出並提示錯誤。
+        //    🚨 這裡改成直接檢查畫面上 datalist 目前實際塞了哪些選項（由 updateCertLevelOptions
+        //    即時維護），而不是重新去比對 globalCertList —— 因為 globalCertList 是頁面載入時
+        //    非同步 fetch 回來的，若使用者送出當下清單「還沒抓回來」，比對永遠找不到、檢查等於失效。
+        //    直接看 datalist 的即時狀態就不會有這個時間差問題。
+        // 🚨 證照對照表還沒抓回來之前，沒辦法判斷「這張證照到底有沒有級別可選」，
+        //    此時若使用者已經填了至少一筆證照名稱，先擋下送出，請使用者稍後再試，避免誤放行。
+        if (!certListLoaded) {
+            let hasAnyCertTyped = false;
+            document.querySelectorAll('.cert-item .cert-select').forEach(nameInput => {
+                if (nameInput.value.trim()) hasAnyCertTyped = true;
+            });
+            if (hasAnyCertTyped) {
+                e.preventDefault();
+                showValidationAlert('提示', '證照資料仍在載入中，請稍候幾秒後再送出履歷。');
+                return false;
+            }
+        }
+
+        let certLevelMissingEl = null;
+        document.querySelectorAll('.cert-item').forEach(item => {
+            if (certLevelMissingEl) return;
+            const nameInput = item.querySelector('.cert-select');
+            const levelInput = item.querySelector('.cert-level-select');
+            const levelWrap = item.querySelector('.cert-level-wrap');
+            if (!nameInput || !levelInput) return;
+
+            if (!nameInput.value.trim()) return; // 這一列還沒填證照名稱，不用檢查級別
+
+            const isLevelFieldVisible = !levelWrap || levelWrap.style.display !== 'none';
+            if (!isLevelFieldVisible) return; // 級別欄位已被判定為「這張證照沒有級別」而隱藏，不用檢查
+
+            const levelDatalist = document.getElementById(levelInput.getAttribute('list'));
+            const hasLevelOptions = !!levelDatalist && levelDatalist.options && levelDatalist.options.length > 0;
+
+            if (hasLevelOptions && !levelInput.value.trim()) {
+                certLevelMissingEl = levelInput;
+            }
+        });
+        if (certLevelMissingEl) {
+            e.preventDefault();
+            scrollToAndFlagField(certLevelMissingEl);
+            showValidationAlert('提示', '此證照有級別可選，請選擇對應的級別後再送出。');
+            return false;
+        }
+
         // 🎯 證照組合區塊（.cert-item 數量已經是動態的，這段邏輯本來就是用 .each 跑全部，不用改）
         let certResults = [];
         $('.cert-item').each(function () {
@@ -834,7 +1275,7 @@ if (resumeFormEl) {
             if (input.value.trim()) compResults.push(input.value.trim());
         });
         const finalCompEl = document.getElementById('finalComputerSkills');
-        if (finalCompEl) finalCompEl.value = compResults.join(', ');
+        if (finalCompEl) finalCompEl.value = compResults.join('; ');
 
         // 學歷已改為 EduLevelList/SchoolNameList/MajorList/EduStatusList/StartDateList/EndDateList
         // 多筆動態列，表單送出時瀏覽器會直接把每個 input 的值一起 POST，不需要在這裡額外組字串
@@ -861,25 +1302,187 @@ function addEducationRow() {
     const row = document.createElement('tr');
     row.className = 'dynamic-row-edu';
     row.innerHTML = `
-        <td><input type="text" name="EduLevelList" class="form-control" list="eduLevelOptions" placeholder="學歷" required /></td>
-        <td><input type="text" name="SchoolNameList" class="form-control" placeholder="學校名稱" required /></td>
-        <td><input type="text" name="MajorList" class="form-control" placeholder="科系所" required /></td>
         <td>
-            <select name="EduStatusList" class="form-control">
+            <select name="EduLevelList" class="form-control" required>
+                <option value="" disabled selected>請選擇</option>
+                <option value="博士">博士</option>
+                <option value="碩士">碩士</option>
+                <option value="大學">大學</option>
+                <option value="專科">專科</option>
+                <option value="高職">高職</option>
+                <option value="高中">高中</option>
+                <option value="國中">國中</option>
+                <option value="國小">國小</option>
+            </select>
+        </td>
+        <td><div class="scroll-input-wrap"><input type="text" name="SchoolNameList" class="form-control" placeholder="學校名稱" required oninput="autoSizeInput(this)" /></div></td>
+        <td><div class="scroll-input-wrap"><input type="text" name="MajorList" class="form-control" placeholder="科系所" required oninput="autoSizeInput(this)" /></div></td>
+        <td>
+            <select name="EduStatusList" class="form-control" required>
+                <option value="" disabled selected>請選擇</option>
                 <option value="畢業">畢業</option>
                 <option value="肄業">肄業</option>
                 <option value="在學">在學</option>
             </select>
         </td>
-        <td><input type="month" name="StartDateList" class="form-control" /></td>
-        <td><input type="month" name="EndDateList" class="form-control" required /></td>
+        <td>
+            <div class="ym-select-wrap">
+                <select class="form-control" data-part="year" required></select>
+                <select class="form-control" data-part="month" required></select>
+            </div>
+            <input type="hidden" name="StartDateList" />
+        </td>
+        <td>
+            <div class="ym-select-wrap">
+                <select class="form-control" data-part="year" required></select>
+                <select class="form-control" data-part="month" required></select>
+            </div>
+            <input type="hidden" name="EndDateList" />
+        </td>
         <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeRow(this)">✕</button></td>
     `;
     container.appendChild(row);
+    setupEduRowAutoDates(row);
 }
 
 // 🎯 通用「移除一列」：語文能力／專長／證照／電腦能力都是單行 flex 列，用同一支函式即可
 //    （學歷是 <table><tr>，用另一支專門的 removeRow，兩者容器結構不同不能共用）
+// 🎯 語言下拉選單選到「其他」時，跳出一個輸入框讓使用者自己打語言名稱；
+//    選回清單裡的其他語言，就把這個輸入框收起來、清空內容，避免殘留舊值被誤送出
+// 🎯 語言選「其他」後，使用者在旁邊自訂輸入框打的語言名稱，
+//    如果剛好跟下拉選單裡既有的選項完全相同，就自動改選那個下拉選項，
+//    並把自訂輸入框收起來、清空，避免同一種語言一份存成下拉選項、一份存成自訂文字造成資料不一致
+// 🎯 用瀏覽器內建的 Intl.DisplayNames（來源是 CLDR 這個國際通用的語言資料庫，不是我們手key的清單）
+//    把常見的 ISO 639-1 語言代碼轉成中文/英文名稱，藉此判斷語文能力「其他」欄位打的是不是一個「真的存在」的語言，
+//    而不是隨便亂打的文字。這個清單另外也會把下拉選單裡本來就有的語言名稱一起收進來。
+const ISO_639_1_CODES = ['aa','ab','ae','af','ak','am','an','ar','as','av','ay','az','ba','be','bg','bh','bi','bm','bn','bo','br','bs','ca','ce','ch','co','cr','cs','cu','cv','cy','da','de','dv','dz','ee','el','en','eo','es','et','eu','fa','ff','fi','fj','fo','fr','fy','ga','gd','gl','gn','gu','gv','ha','he','hi','ho','hr','ht','hu','hy','hz','ia','id','ie','ig','ii','ik','io','is','it','iu','ja','jv','ka','kg','ki','kj','kk','kl','km','kn','ko','kr','ks','ku','kv','kw','ky','la','lb','lg','li','ln','lo','lt','lu','lv','mg','mh','mi','mk','ml','mn','mr','ms','mt','my','na','nb','nd','ne','ng','nl','nn','no','nr','nv','ny','oc','oj','om','or','os','pa','pi','pl','ps','pt','qu','rm','rn','ro','ru','rw','sa','sc','sd','se','sg','si','sk','sl','sm','sn','so','sq','sr','ss','st','su','sv','sw','ta','te','tg','th','ti','tk','tl','tn','to','tr','ts','tt','tw','ty','ug','uk','ur','uz','ve','vi','vo','wa','wo','xh','yi','yo','za','zh','zu'];
+
+// 🎯 統一格式：去掉全形/半形空白、括號附註（例如「閩南語（台語）」），
+//    以及「語／文／話」這類語言字尾，方便不同來源、不同寫法的語言名稱互相比對
+function normalizeLangName(str) {
+    return (str || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[（(].*?[）)]/g, '')
+        .replace(/\s+/g, '')
+        .replace(/[語文話]$/g, '');
+}
+
+function getKnownLanguageNameSet() {
+    if (window.__knownLangSet) return window.__knownLangSet;
+    const set = new Set();
+    document.querySelectorAll('.lang-name-select option').forEach(opt => {
+        if (opt.value && opt.value !== '其他') set.add(normalizeLangName(opt.value));
+    });
+    try {
+        const zhDn = new Intl.DisplayNames(['zh-Hant'], { type: 'language' });
+        const enDn = new Intl.DisplayNames(['en'], { type: 'language' });
+        ISO_639_1_CODES.forEach(code => {
+            try {
+                const zhName = zhDn.of(code);
+                if (zhName) set.add(normalizeLangName(zhName));
+            } catch (e) { /* 忽略單一代碼失敗 */ }
+            try {
+                const enName = enDn.of(code);
+                if (enName) set.add(normalizeLangName(enName));
+            } catch (e) { /* 忽略單一代碼失敗 */ }
+        });
+    } catch (e) {
+        // 🎯 若瀏覽器不支援 Intl.DisplayNames，就只用畫面上既有的語言清單比對，不誤傷使用者
+    }
+    window.__knownLangSet = set;
+    return set;
+}
+
+// 🎯 判斷輸入的是不是一個「真的存在」的語言名稱；查不到清單本身（例如舊瀏覽器）就不擋，避免誤傷
+function isRecognizedLanguageName(name) {
+    const set = getKnownLanguageNameSet();
+    if (set.size === 0) return true;
+    return set.has(normalizeLangName(name));
+}
+
+// 🎯 語文能力選「其他」時的自訂輸入框：
+//    - 打字過程中（isFinal=false）：只要打的內容跟下拉選單裡既有的語言完全相同，就自動切回該選項
+//    - 打完離開欄位（isFinal=true）：如果沒有對應到既有選項，就進一步檢查是不是一個真實存在的語言，
+//      不是的話（亂碼、隨便打的文字）直接擋下來並清空，不讓假語言存進資料庫
+// 🎯 顯示/收起「其他」自訂語言輸入框下方的錯誤提示（行內紅字，不會擋住頁面其他按鈕）
+function setLangOtherError(inputEl, hasError, message) {
+    const wrap = inputEl.closest('.lang-other-wrap');
+    const msgEl = wrap ? wrap.querySelector('.lang-other-error-msg') : null;
+    if (hasError) {
+        inputEl.classList.add('input-error');
+        if (msgEl) {
+            msgEl.textContent = message || '請輸入正確語言';
+            msgEl.style.display = '';
+        }
+    } else {
+        inputEl.classList.remove('input-error');
+        if (msgEl) msgEl.style.display = 'none';
+    }
+}
+
+function checkLangOtherMatch(inputEl, isFinal) {
+    const row = inputEl.closest('.dynamic-row-simple');
+    if (!row) return;
+    const nameSelect = row.querySelector('.lang-name-select');
+    if (!nameSelect) return;
+    const typed = inputEl.value.trim();
+
+    if (inputEl.__langCheckTimer) {
+        clearTimeout(inputEl.__langCheckTimer);
+        inputEl.__langCheckTimer = null;
+    }
+    if (!typed) {
+        setLangOtherError(inputEl, false);
+        return;
+    }
+
+    // 🎯 比對下拉選單既有語言時，忽略「語／文／話」這類字尾差異，
+    //    讓「英文」「英語」都能對應到同一個下拉選項，不用完全一字不差
+    const typedNorm = normalizeLangName(typed);
+    const matchedOption = Array.from(nameSelect.options).find(
+        opt => opt.value !== '其他' && normalizeLangName(opt.value) === typedNorm
+    );
+    if (matchedOption) {
+        nameSelect.value = matchedOption.value;
+        inputEl.value = '';
+        inputEl.style.display = 'none';
+        setLangOtherError(inputEl, false);
+        return;
+    }
+
+    if (isFinal) {
+        if (!isRecognizedLanguageName(typed)) {
+            setLangOtherError(inputEl, true, '請輸入正確語言');
+        } else {
+            setLangOtherError(inputEl, false);
+        }
+        return;
+    }
+
+    // 🎯 不是 isFinal（打字過程中）：不完全依賴使用者一定會觸發 change/blur，
+    //    停止打字約 0.6 秒後主動補驗證一次，作為多一層保險
+    inputEl.__langCheckTimer = setTimeout(() => {
+        if (document.body.contains(inputEl) && inputEl.value.trim() === typed) {
+            checkLangOtherMatch(inputEl, true);
+        }
+    }, 600);
+}
+
+function toggleLangOtherInput(selectEl) {
+    const row = selectEl.closest('.dynamic-row-simple');
+    if (!row) return;
+    const otherInput = row.querySelector('.lang-name-other');
+    if (!otherInput) return;
+    if (selectEl.value === '其他') {
+        otherInput.style.display = '';
+        otherInput.focus();
+    } else {
+        otherInput.style.display = 'none';
+        otherInput.value = '';
+    }
+}
+
 function removeSimpleRow(btn) {
     const row = btn.closest('.dynamic-row-simple');
     const container = row.parentElement;
@@ -925,12 +1528,74 @@ function updateNoCompHint() {
 }
 
 function addLanguageRow() {
+    // 🎯 新增下一列之前，先強制驗證目前所有「其他」自訂輸入框，
+    //    避免使用者打完亂碼後立刻點「+新增語言」而剛好錯過 change/blur 驗證的時機
+    document.querySelectorAll('#language-list .lang-name-other').forEach(el => {
+        if (el.style.display !== 'none' && el.value.trim()) {
+            checkLangOtherMatch(el, true);
+        }
+    });
+
     const container = document.getElementById('language-list');
     const row = document.createElement('div');
     row.className = 'dynamic-row-simple';
     row.innerHTML = `
-        <input type="text" class="lang-name-input" list="langNameOptions" placeholder="語言，例如：英語" />
-        <select class="lang-lv-select">
+        <select class="lang-name-select" required onchange="toggleLangOtherInput(this)">
+            <option value="" disabled selected>請選擇</option>
+            <option value="中文">中文</option>
+            <option value="台語（閩南語）">台語（閩南語）</option>
+            <option value="客家話">客家話</option>
+            <option value="粵語（廣東話）">粵語（廣東話）</option>
+            <option value="英語">英語</option>
+            <option value="日語">日語</option>
+            <option value="韓語">韓語</option>
+            <option value="越南語">越南語</option>
+            <option value="泰語">泰語</option>
+            <option value="印尼語">印尼語</option>
+            <option value="馬來語">馬來語</option>
+            <option value="菲律賓語（他加祿語）">菲律賓語（他加祿語）</option>
+            <option value="緬甸語">緬甸語</option>
+            <option value="高棉語（柬埔寨語）">高棉語（柬埔寨語）</option>
+            <option value="寮語（寮國語）">寮語（寮國語）</option>
+            <option value="印地語">印地語</option>
+            <option value="烏爾都語">烏爾都語</option>
+            <option value="孟加拉語">孟加拉語</option>
+            <option value="尼泊爾語">尼泊爾語</option>
+            <option value="法語">法語</option>
+            <option value="德語">德語</option>
+            <option value="西班牙語">西班牙語</option>
+            <option value="義大利語">義大利語</option>
+            <option value="葡萄牙語">葡萄牙語</option>
+            <option value="荷蘭語">荷蘭語</option>
+            <option value="俄語">俄語</option>
+            <option value="波蘭語">波蘭語</option>
+            <option value="烏克蘭語">烏克蘭語</option>
+            <option value="捷克語">捷克語</option>
+            <option value="斯洛伐克語">斯洛伐克語</option>
+            <option value="匈牙利語">匈牙利語</option>
+            <option value="羅馬尼亞語">羅馬尼亞語</option>
+            <option value="保加利亞語">保加利亞語</option>
+            <option value="希臘語">希臘語</option>
+            <option value="瑞典語">瑞典語</option>
+            <option value="挪威語">挪威語</option>
+            <option value="丹麥語">丹麥語</option>
+            <option value="芬蘭語">芬蘭語</option>
+            <option value="冰島語">冰島語</option>
+            <option value="土耳其語">土耳其語</option>
+            <option value="阿拉伯語">阿拉伯語</option>
+            <option value="希伯來語">希伯來語</option>
+            <option value="波斯語（法爾西語）">波斯語（法爾西語）</option>
+            <option value="斯瓦希里語">斯瓦希里語</option>
+            <option value="南非語（阿非利卡語）">南非語（阿非利卡語）</option>
+            <option value="蒙古語">蒙古語</option>
+            <option value="其他">其他</option>
+        </select>
+        <span class="lang-other-wrap">
+            <input type="text" class="lang-name-other" placeholder="請輸入語言名稱" style="display:none;" oninput="checkLangOtherMatch(this, false)" onchange="checkLangOtherMatch(this, true)" onblur="checkLangOtherMatch(this, true)" />
+            <span class="lang-other-error-msg" style="display:none;"></span>
+        </span>
+        <select class="lang-lv-select" required>
+            <option value="" disabled selected>請選擇</option>
             <option value="精通">精通</option>
             <option value="良好">良好</option>
             <option value="普通">普通</option>
@@ -946,7 +1611,7 @@ function addSpecialtyRow() {
     const row = document.createElement('div');
     row.className = 'dynamic-row-simple';
     row.innerHTML = `
-        <input type="text" class="spec-input full-input" placeholder="專長，例如：Excel 樞紐分析" />
+        <textarea class="spec-input full-input" placeholder="專長，例如：Excel 樞紐分析" rows="1" oninput="autoGrowTextarea(this)"></textarea>
         <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
     `;
     container.appendChild(row);
@@ -958,7 +1623,7 @@ function addCompSkillRow() {
     const row = document.createElement('div');
     row.className = 'dynamic-row-simple';
     row.innerHTML = `
-        <input type="text" class="comp-input full-input" placeholder="電腦能力，例如：文書處理" />
+        <textarea class="comp-input full-input" placeholder="電腦能力，例如：文書處理" rows="1" oninput="autoGrowTextarea(this)"></textarea>
         <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
     `;
     container.appendChild(row);
@@ -972,7 +1637,7 @@ function addCertRow() {
     row.style.marginBottom = '8px';
     const levelDatalistId = 'certLevelOptions_' + certLevelDatalistCounter++;
     row.innerHTML = `
-        <input type="text" class="cert-select" list="certNameOptions" placeholder="輸入或選擇證照名稱" />
+        <input type="text" class="cert-select" list="certNameOptions" placeholder="輸入或選擇證照名稱" oninput="autoGrowInputWidth(this)" />
         <span class="cert-level-wrap">
             級別：<input type="text" class="cert-level-select" list="${levelDatalistId}" placeholder="級別（無則留空）" />
             <datalist id="${levelDatalistId}"></datalist>
@@ -1034,7 +1699,7 @@ function autoGrowTextarea(el) {
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = el.scrollHeight + 'px';
-}
+} 
 
 function removeWorkRow(btn) {
     const row = btn.closest('.dynamic-row-work');
@@ -1049,14 +1714,30 @@ function addWorkRow() {
     const row = document.createElement('tr');
     row.className = 'dynamic-row-work';
     row.innerHTML = `
-        <td><input type="text" name="CompanyNameList" class="form-control work-company" placeholder="公司名稱" /></td>
-        <td><input type="text" name="JobTitleList" class="form-control work-title" placeholder="職位" /></td>
-        <td><textarea name="JobDescriptionList" class="form-control" placeholder="工作內容" rows="1"></textarea></td>
-        <td><input type="month" name="WorkStartDateList" class="form-control" /></td>
-        <td><input type="month" name="WorkEndDateList" class="form-control" /></td>
+        <td><textarea name="CompanyNameList" class="form-control work-company" placeholder="公司名稱" rows="1" oninput="autoGrowTextarea(this)"></textarea></td>
+        <td><textarea name="JobTitleList" class="form-control work-title" placeholder="職位" rows="1" oninput="autoGrowTextarea(this)"></textarea></td>
+        <td><textarea name="JobDescriptionList" class="form-control" placeholder="工作內容" rows="1" oninput="autoGrowTextarea(this)"></textarea></td>
+        <td>
+            <div class="ym-select-wrap">
+                <select class="form-control" data-part="year"></select>
+                <select class="form-control" data-part="month"></select>
+            </div>
+            <input type="hidden" name="WorkStartDateList" />
+        </td>
+        <td>
+            <div class="ym-select-wrap">
+                <select class="form-control" data-part="year"></select>
+                <select class="form-control" data-part="month"></select>
+            </div>
+            <input type="hidden" name="WorkEndDateList" />
+        </td>
         <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeWorkRow(this)">✕</button></td>
     `;
     container.appendChild(row);
+    const ymWraps = row.querySelectorAll('.ym-select-wrap');
+    const startHidden = row.querySelector('input[name="WorkStartDateList"]');
+    const endHidden = row.querySelector('input[name="WorkEndDateList"]');
+    initYmRange(ymWraps[0], startHidden, ymWraps[1], endHidden);
     updateNoWorkExpHint();
 }
 
@@ -1076,26 +1757,161 @@ function removePortfolioRow(btn) {
     updateNoPortfolioHint();
 }
 
-// 🎯 使用者選了新檔案要取代舊檔案：既有檔案的 hidden input 值清空，
-//    後端看到「有新檔案上傳」就會直接用新檔案覆蓋，不會再去看這個舊路徑
-function markPortfolioFileReplaced(fileInput) {
-    const cell = fileInput.closest('.portfolio-file-cell');
+// ======================================================================
+// 🎯 作品集「上傳檔案」欄位：改成可一次選多個檔案（不限類型），
+//    每個檔案都顯示檔名，點一下可以開新分頁預覽內容，也能個別刪除，
+//    不用整組重選。既有檔案（伺服器上已存的）跟這次新選的檔案分開兩區顯示，
+//    但共用同一個 hidden input（value 用「|」串接路徑）跟送出邏輯。
+// ======================================================================
+
+// 🎯 頁面載入時，把伺服器帶回來的既有檔案路徑（可能用「|」串接多個）畫成清單，
+//    每個檔案都可以點開連結查看、也可以按 ✕ 單獨移除
+function renderExistingPortfolioFiles(cell) {
     if (!cell) return;
     const hiddenInput = cell.querySelector('.portfolio-existing-file');
-    if (hiddenInput) hiddenInput.value = '';
-    const existingWrap = cell.querySelector('.portfolio-existing-wrap');
-    if (existingWrap) existingWrap.remove();
+    const listEl = cell.querySelector('.portfolio-existing-list');
+    if (!hiddenInput || !listEl) return;
+
+    listEl.innerHTML = '';
+    const paths = (hiddenInput.value || '').split('|').map(p => p.trim()).filter(p => p !== '');
+
+    paths.forEach(path => {
+        const item = document.createElement('div');
+        item.className = 'portfolio-existing-wrap';
+
+        const link = document.createElement('a');
+        link.href = path;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = path.split('/').pop();
+        link.title = '點一下查看內容';
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn-remove-row no-print-in-readonly';
+        delBtn.textContent = '✕';
+        delBtn.title = '刪除這個檔案';
+        delBtn.onclick = function () {
+            const remaining = (hiddenInput.value || '').split('|').map(p => p.trim()).filter(p => p !== '' && p !== path);
+            hiddenInput.value = remaining.join('|');
+            renderExistingPortfolioFiles(cell);
+        };
+
+        item.appendChild(link);
+        item.appendChild(delBtn);
+        listEl.appendChild(item);
+    });
 }
 
-// 🎯 使用者按「✕」明確要移除既有檔案、且不打算另外上傳新檔案
-function clearExistingPortfolioFile(btn) {
-    const wrap = btn.closest('.portfolio-existing-wrap');
-    const cell = btn.closest('.portfolio-file-cell');
-    if (cell) {
-        const hiddenInput = cell.querySelector('.portfolio-existing-file');
-        if (hiddenInput) hiddenInput.value = '';
+// 🎯 使用者透過檔案選取視窗新選了檔案（可能一次選了好幾個），畫出可預覽/可個別刪除的清單
+function handlePortfolioFileSelect(fileInput) {
+    renderNewPortfolioFiles(fileInput);
+}
+
+function renderNewPortfolioFiles(fileInput) {
+    const cell = fileInput.closest('.portfolio-file-cell');
+    if (!cell) return;
+    const listEl = cell.querySelector('.portfolio-new-files');
+    if (!listEl) return;
+
+    listEl.innerHTML = '';
+    Array.from(fileInput.files || []).forEach((file, idx) => {
+        const item = document.createElement('div');
+        item.className = 'portfolio-new-file-item';
+
+        const link = document.createElement('a');
+        link.href = '#';
+        link.textContent = file.name;
+        link.title = '點一下查看內容';
+        link.onclick = function (e) {
+            e.preventDefault();
+            const url = URL.createObjectURL(file);
+            window.open(url, '_blank');
+            // 🎯 開新分頁後這個暫時網址就沒用了，晚一點釋放記憶體即可，不用等分頁關閉
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn-remove-row no-print-in-readonly';
+        delBtn.textContent = '✕';
+        delBtn.title = '取消選擇這個檔案';
+        delBtn.onclick = function () {
+            removeNewPortfolioFile(fileInput, idx);
+        };
+
+        item.appendChild(link);
+        item.appendChild(delBtn);
+        listEl.appendChild(item);
+    });
+}
+
+// 🎯 input.files 是唯讀的 FileList，要移除其中一個檔案得靠 DataTransfer 重新組一份再塞回去
+function removeNewPortfolioFile(fileInput, removeIdx) {
+    const dt = new DataTransfer();
+    Array.from(fileInput.files || []).forEach((file, i) => {
+        if (i !== removeIdx) dt.items.add(file);
+    });
+    fileInput.files = dt.files;
+    renderNewPortfolioFiles(fileInput);
+}
+
+// 🎯 表單送出前，把每一列的檔案 input 依照目前在畫面上的實際順序，
+//    重新命名成後端要求的 name="PortfolioFileList_{列序}"（見 ResumeController.SaveResume），
+//    這樣後端才知道「這幾個檔案是屬於第幾列作品集」
+function preparePortfolioFilesForSubmit() {
+    document.querySelectorAll('#portfolio-list .dynamic-row-portfolio').forEach((row, idx) => {
+        const fileInput = row.querySelector('.portfolio-file-input');
+        if (fileInput) fileInput.name = 'PortfolioFileList_' + idx;
+    });
+}
+
+// 🎯 證照名稱欄位：內容太長（例如「Google Cloud Professional Cloud Architect」）原本欄寬固定，
+//    看不到完整名稱。這裡用 JS 依實際輸入內容量出所需寬度，讓欄位跟著撐開；
+//    因為這一列是 flex-wrap，撐開後如果真的放不下，會自然換到下一行，不會被截斷看不到。
+function autoGrowInputWidth(el) {
+    if (!el) return;
+    const minWidth = 340; // 🎯 修正：跟 CSS .cert-select 的 min-width 對齊，原本 260 偏窄
+    const row = el.closest('.dynamic-row-simple');
+    // 上限抓「目前所在列的可用寬度」，避免單一欄位無限撐開把版面弄壞
+    const maxWidth = row ? Math.max(minWidth, row.clientWidth - 40) : 600;
+
+    let ruler = window.__certWidthRuler;
+    if (!ruler) {
+        ruler = document.createElement('span');
+        ruler.className = 'input-width-ruler';
+        document.body.appendChild(ruler);
+        window.__certWidthRuler = ruler;
     }
-    if (wrap) wrap.remove();
+    const computed = window.getComputedStyle(el);
+    ruler.style.font = computed.font;
+    ruler.textContent = el.value || el.placeholder || '';
+
+    const neededWidth = ruler.offsetWidth + 24; // 保留一點緩衝空間
+    el.style.width = Math.min(Math.max(neededWidth, minWidth), maxWidth) + 'px';
+}
+
+// 🎯 學歷「學校名稱」「科系所」欄位：內容太長就不換行，改成讓外層可以橫向捲動查看，
+//    用一個隱形的量尺元素量出目前輸入內容實際需要多寬，讓 input 跟著撐開，
+//    超出欄位可視範圍的部分就交給 .scroll-input-wrap 的 overflow-x:auto 捲動
+function autoSizeInput(el) {
+    if (!el) return;
+    const wrap = el.closest('.scroll-input-wrap');
+    if (!wrap) return;
+
+    let ruler = wrap.querySelector('.input-width-ruler');
+    if (!ruler) {
+        ruler = document.createElement('span');
+        ruler.className = 'input-width-ruler';
+        wrap.appendChild(ruler);
+    }
+    const computed = window.getComputedStyle(el);
+    ruler.style.font = computed.font;
+    ruler.textContent = el.value || el.placeholder || '';
+
+    const neededWidth = ruler.offsetWidth + 16; // 保留一點緩衝空間
+    const minWidth = wrap.clientWidth;
+    el.style.width = Math.max(neededWidth, minWidth) + 'px';
 }
 
 function addPortfolioRow() {
@@ -1103,12 +1919,17 @@ function addPortfolioRow() {
     const row = document.createElement('tr');
     row.className = 'dynamic-row-portfolio';
     row.innerHTML = `
-        <td><input type="text" name="PortfolioTitleList" class="form-control" placeholder="作品名稱" /></td>
-        <td><textarea name="PortfolioDescList" class="form-control" placeholder="作品說明"></textarea></td>
-        <td><input type="url" name="PortfolioLinkList" class="form-control" placeholder="https://" /></td>
+        <td><textarea name="PortfolioTitleList" class="form-control" placeholder="作品名稱" rows="1" oninput="autoGrowTextarea(this)"></textarea></td>
+        <td><textarea name="PortfolioDescList" class="form-control" placeholder="作品說明" rows="1" oninput="autoGrowTextarea(this)"></textarea></td>
+        <td><textarea name="PortfolioLinkList" class="form-control portfolio-link" placeholder="https://" rows="1" autocomplete="off" oninput="autoGrowTextarea(this)"></textarea></td>
         <td class="portfolio-file-cell">
             <input type="hidden" name="PortfolioExistingFileList" class="portfolio-existing-file" value="" />
-            <input type="file" name="PortfolioFileList" class="form-control no-print-in-readonly" onchange="markPortfolioFileReplaced(this)" />
+            <div class="portfolio-existing-list"></div>
+            <label class="btn-upload-file no-print-in-readonly">
+                選擇檔案
+                <input type="file" name="PortfolioFileList" class="portfolio-file-input no-print-in-readonly" multiple onchange="handlePortfolioFileSelect(this)" />
+            </label>
+            <div class="portfolio-new-files"></div>
         </td>
         <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removePortfolioRow(this)">✕</button></td>
     `;

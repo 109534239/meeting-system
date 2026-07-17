@@ -176,11 +176,82 @@ textarea {
     border-bottom: 2px solid black; /* 獲取焦點時變純黑 */
 }
 
+/* ======================================================================
+   🎯 點擊/取得焦點的欄位不要出現瀏覽器預設的藍色外框或底色：
+   - outline: none 拿掉 Chrome/Edge 內建的藍色聚焦外框
+   - -webkit-tap-highlight-color 拿掉手機瀏覽器點擊時短暫出現的半透明藍色疊層
+   - 針對 Chrome 自動填入（autofill）強制蓋掉它塞進去的淡藍色底色
+   ====================================================================== */
+input,
+select,
+textarea,
+button,
+.form-control {
+    -webkit-tap-highlight-color: transparent;
+}
+
+    input:focus,
+    select:focus,
+    textarea:focus,
+    .form-control:focus,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+        outline: none;
+        box-shadow: none;
+    }
+
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus {
+        -webkit-text-fill-color: #000;
+        -webkit-box-shadow: 0 0 0px 1000px #fff inset;
+        box-shadow: 0 0 0px 1000px #fff inset;
+        transition: background-color 999999s ease-in-out 0s;
+    }
+
 
 /* ======================================================================
    以下是「多筆動態列」相關樣式（學歷／工作經歷／語文能力／專長／證照／電腦能力），
    原本寫在 Resume.cshtml 自己的 <style> 裡，現在搬過來跟上面的基礎樣式合併管理。
    ====================================================================== */
+
+/* 🎯 送出表單時，跨欄位檢查沒過的欄位會被捲動到畫面中央並短暫標示，
+   跟瀏覽器原生擋下必填欄位時的視覺提示一致，讓使用者能一眼看到問題在哪裡 */
+@keyframes field-error-flash-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 3px rgba(217, 83, 79, 0.55);
+    }
+
+    50% {
+        box-shadow: 0 0 0 3px rgba(217, 83, 79, 0.15);
+    }
+}
+
+.field-error-flash {
+    outline: none;
+    border-color: #d9534f !important;
+    animation: field-error-flash-pulse 0.5s ease-in-out 3;
+}
+
+
+/* 🎯 學歷/工作經歷的起訖年月：改成「年」「月」兩個 <select> 並排，只能選不能打字，
+   兩個選單依內容寬度靠在一起，不要被 .edu-table td .form-control 的 width:100% 拉開 */
+.ym-select-wrap {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+}
+
+.edu-table td .ym-select-wrap select.form-control {
+    display: inline-block;
+    width: auto;
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 6px 2px;
+    font-size: 12px;
+    cursor: pointer;
+}
 
 /* ---------- 學歷／工作經歷：真正的 <table>，用 colgroup 固定欄寬對齊欄位 ----------
    原因：<input>/<select>/type="month" 這些原生控制項本身有瀏覽器預設的「內在最小寬度」
@@ -236,16 +307,52 @@ textarea {
     background: transparent;
 }
 
-/* 🎯 工作經歷的「工作內容」改用 <textarea>，文字一多就用 JS 自動長高（見 Resume.cshtml 的
-   autoGrowTextarea），這裡負責關掉內建捲軸、不給使用者手動拖曳，高度完全交給 JS 控制 */
-.work-table textarea.form-control {
+/* 🎯 工作經歷「公司名稱」「職位」「工作內容」、作品集「作品名稱」「作品說明」都改用 <textarea>，
+   文字一多就用 JS 自動長高（見 Resume.cshtml 的 autoGrowTextarea），這裡負責關掉內建捲軸、
+   不給使用者手動拖曳，高度完全交給 JS 控制，且不會像固定高度那樣在內容不多時留一大片空白 */
+.work-table textarea.form-control,
+.portfolio-table textarea.form-control {
     resize: none;
     overflow: hidden;
     min-height: 30px;
+    height: auto; /* 🎯 關鍵：交給 JS 依內容量出實際高度，不吃固定/繼承高度，內容少就不留白 */
     line-height: 1.4;
     white-space: pre-wrap; /* 保留手動換行，並允許自動換行 */
     overflow-wrap: break-word;
     word-break: break-word; /* 沒有空白的長字串（英文單字、網址）也強制斷行，不撐爆欄寬 */
+    vertical-align: top;
+}
+
+/* 🎯 學歷/工作經歷/作品集表格的每一格內容都靠頂對齊，
+   避免某一欄內容比較短時，因為列高被其他欄撐高而在該欄「置中」造成上下都留白，
+   靠頂對齊後至少只會在內容下方留白（屬於列高被撐高時無可避免的正常現象）*/
+.edu-table td {
+    vertical-align: top;
+}
+
+/* 🎯 學歷「學校名稱」「科系所」：內容太長時不換行，改成橫向捲動查看（而不是把列高撐高）。
+   input 本身的實際寬度由 JS（autoSizeInput）依內容量測撐開，超出這層 wrap 可視範圍的部分
+   就交給 overflow-x:auto 用滑鼠拖曳/觸控/滾輪橫向捲動。 */
+.scroll-input-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+    width: 100%;
+    position: relative;
+}
+
+    .scroll-input-wrap input.form-control {
+        white-space: nowrap;
+        min-width: 100%;
+    }
+
+/* 🎯 隱形的量尺元素，只用來量測目前輸入內容實際需要多少像素寬，不會顯示在畫面上 */
+.input-width-ruler {
+    position: absolute;
+    visibility: hidden;
+    white-space: pre;
+    top: -9999px;
+    left: -9999px;
+    pointer-events: none;
 }
 
 /* ---------- 動態列共用的「新增」「刪除」按鈕 ---------- */
@@ -323,34 +430,62 @@ textarea {
         width: auto; /* 🎯 蓋掉上面 .full-input 的 width:95%，改由 flex-basis 主導寬度 */
     }
 
-    /* 🎯 電腦能力的內容通常是「文書處理」這種短分類詞，不需要吃滿整行的長底線，
-   固定寬度比照語言名稱欄位（lang-name-input），視覺上更緊湊、不會拖得很長 */
-    .dynamic-row-simple .comp-input {
-        flex: 0 0 280px;
-        width: 280px;
-    }
+    /* 🎯 電腦能力跟專長採用同一套自動換行/自動長高邏輯（見下方 .dynamic-row-simple textarea.full-input），
+   不再限制固定寬度，內容太長就自動換行、長高，而不是被裁掉看不到 */
 
-    /* 🎯 專長／電腦能力改用 <textarea>，原本單行 <input> 太窄打不下字。
-   改成頂端對齊 + 可垂直拉伸，讓使用者填長一點的描述也不會擠成一行 */
+    /* 🎯 專長／電腦能力改用 <textarea>，內容太長就自動換行、自動長高（JS: autoGrowTextarea），
+   不給使用者手動拖曳調整大小，也不留固定高度的空白 */
     .dynamic-row-simple textarea.full-input {
-        resize: vertical;
-        min-height: 44px;
+        resize: none;
+        overflow: hidden;
+        height: auto;
+        min-height: 32px;
+        line-height: 1.4;
         font-family: inherit;
         padding: 6px 8px;
         border: 1px solid #ccc;
         border-radius: 4px;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+        word-break: break-word;
     }
 
-/* 語文能力那一列的 name/select 不吃 full-input 的 flex:1，維持固定寬度即可
-   🎯 220px 時「語言，例如：英語」的 placeholder 文字還是會被裁切看不全，
-   加寬到 280px 確保完整顯示 */
-.lang-name-input {
+/* 語文能力那一列的 name/select 不吃 full-input 的 flex:1，維持固定寬度即可 */
+.lang-name-select {
     flex: 0 0 auto;
     width: 280px;
     padding: 5px 8px;
     border: 1px solid #ccc;
     border-radius: 4px;
     box-sizing: border-box;
+}
+
+/* 🎯 語言選「其他」時才會出現的自訂輸入框，寬度比照語言下拉選單，預設是隱藏的 */
+.lang-name-other {
+    flex: 0 0 auto;
+    width: 200px;
+    padding: 5px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+/* 🎯 自訂輸入框外層包一層，讓「查不到這個語言」的提示文字可以顯示在輸入框下方，
+   而不用跳出會擋住整個畫面、逼你按確定才能繼續操作其他按鈕的彈窗 */
+.lang-other-wrap {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+}
+
+.lang-other-error-msg {
+    color: #d9534f;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.lang-name-other.input-error {
+    border-color: #d9534f;
 }
 
 .lang-lv-select,
@@ -371,7 +506,7 @@ textarea {
 }
 
 .cert-select {
-    min-width: 260px;
+    min-width: 340px; /* 🎯 修正：原本 260px 偏窄，證照名稱容易看不完整，加寬一點 */
 }
 
 .cert-level-select {
@@ -398,6 +533,76 @@ textarea {
 
     .cert-recommend-chip:hover {
         background: #bee3f8;
+    }
+
+/* 🎯 作品集「連結」欄位：改用跟作品名稱/說明一樣的自動換行 textarea（大部分樣式繼承自
+   .portfolio-table textarea.form-control），這裡額外把 word-break 加強成 break-all——
+   網址通常是一長串完全沒有空白的字元，break-word 在部分瀏覽器判斷上還是可能不斷行，
+   break-all 直接允許在任意字元之間換行，確保一定會自動換行、不會被裁掉看不到 */
+.portfolio-link {
+    font-size: 13px;
+    word-break: break-all;
+}
+
+/* 🎯 作品集「上傳檔案」：用一顆按鈕樣式的 <label> 包住原生 <input type="file">，
+   把原生檔案輸入框（在不同瀏覽器長相不一致、又占版面）隱藏起來，只露出好看的按鈕，
+   點按鈕一樣會觸發原生的選擇檔案視窗 */
+.btn-upload-file {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: #4a5568;
+    background: #f7fafc;
+    border: 1px dashed #a0aec0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+    .btn-upload-file:hover {
+        background: #edf2f7;
+    }
+
+    .btn-upload-file input[type="file"] {
+        display: none;
+    }
+
+/* 🎯 已存在（伺服器上）的檔案清單／這次新選的檔案清單：每個檔案一行，
+   檔名可以點擊查看內容，右邊有 ✕ 可以單獨刪除，不用整批重選 */
+.portfolio-existing-list,
+.portfolio-new-files {
+    margin-top: 4px;
+}
+
+.portfolio-existing-wrap,
+.portfolio-new-file-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    padding: 2px 0;
+}
+
+    .portfolio-existing-wrap a,
+    .portfolio-new-file-item a {
+        color: #2c5282;
+        text-decoration: underline;
+        word-break: break-all;
+        cursor: pointer;
+    }
+
+        .portfolio-existing-wrap a:hover,
+        .portfolio-new-file-item a:hover {
+            color: #1a365d;
+        }
+
+    .portfolio-existing-wrap .btn-remove-row,
+    .portfolio-new-file-item .btn-remove-row {
+        width: 18px;
+        height: 18px;
+        min-width: 18px;
+        flex: 0 0 18px;
+        font-size: 12px;
     }
 
 /* ---------- 提示文字（未新增任何資料時的說明） ---------- */

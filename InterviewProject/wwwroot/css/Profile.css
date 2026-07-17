@@ -32,18 +32,34 @@
     top: 92px;
 }
 
-.profile-avatar {
-    width: 96px;
-    height: 96px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.2);
-    border: 3px solid rgba(255,255,255,0.5);
+/* 🎯 大頭照：改用比照 Resume.cshtml 的 .photo-cell 證件照樣式（矩形、直式比例、
+   object-fit:cover 等比例裁切置中），取代原本的圓形大頭貼。
+   尺寸/邊框數值直接沿用 Resume.css 的 .photo-cell img（110x140、1px solid #999、border-radius:2px），
+   確保兩個頁面的照片框視覺一致。 */
+.profile-photo-box {
+    width: 110px;
+    height: 140px;
+    border: 1px solid #999;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.85);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     margin-bottom: 4px;
 }
+
+    .profile-photo-box img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 0 !important;
+    }
+
+    .profile-photo-box span {
+        color: #888;
+        font-size: 12px;
+    }
 
 .sidebar-name {
     font-size: 18px;
@@ -63,29 +79,23 @@
     margin-bottom: 8px;
 }
 
-.btn-upload {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 9px 16px;
-    border-radius: 8px;
-    background: rgba(255,255,255,0.15);
-    border: 1.5px solid rgba(255,255,255,0.35);
-    color: #fff;
-    font-size: 13px;
-    font-weight: 600;
+/* 🎯 大頭照上傳按鈕：直接沿用 Resume.css 的 .btn-upload-photo 數值，
+   跟履歷表照片下方的按鈕樣式保持一致。 */
+.btn-upload-photo {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: #4a5568;
+    background: #f7fafc;
+    border: 1px dashed #a0aec0;
+    border-radius: 6px;
     cursor: pointer;
-    transition: background 0.2s;
-    white-space: nowrap;
-    font-family: inherit;
-    width: 100%;
-    justify-content: center;
-    box-sizing: border-box;
 }
 
-.btn-upload:hover {
-    background: rgba(255,255,255,0.25);
-}
+    .btn-upload-photo:hover {
+        background: #edf2f7;
+    }
 
 /* ── 右側內容 ── */
 .profile-content {

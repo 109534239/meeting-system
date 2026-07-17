@@ -21,28 +21,19 @@
     <div class="profile-wrap">
 
         <div class="profile-sidebar">
-            <div class="profile-avatar" id="avatar-preview">
+            @* 🎯 比照 Resume.cshtml 的證件照框樣式：矩形、有邊框，取代原本圓形大頭貼 *@
+            <div class="profile-photo-box" id="avatar-preview">
                 @if (!string.IsNullOrEmpty(Model.ProfileImagePath))
                 {
-                    <img src="@Model.ProfileImagePath" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
+                    <img src="@Model.ProfileImagePath" alt="個人照" />
                 }
                 else
                 {
-                    <svg width="54" height="54" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="8" r="4" fill="#fff" />
-                        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>
-                    </svg>
+                    <span>無照片</span>
                 }
             </div>
-            <div class="sidebar-name">@Model.Name</div>
-            <div class="sidebar-role">@roleLabel</div>
-            <label class="btn-upload">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    <polyline points="17 8 12 3 7 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-                更換大頭照
+            <label class="btn-upload-photo">
+                更換照片
                 <input type="file" id="avatar-file-input" accept="image/*" style="display:none" onchange="previewAvatar(event)" />
             </label>
         </div>
@@ -68,41 +59,23 @@
                     
                     <input type="hidden" id="profileImageBase64" name="profileImageBase64" value="@Model.ProfileImagePath" />
                     <input type="hidden" name="idNumber" value="@Model.IdNumber" />
+                    @* 🎯 姓名／性別／生年月日不開放使用者變更：畫面上顯示唯讀欄位，
+                       實際要送給後端的值改用 hidden input 帶原始資料，
+                       確保表單送出時這三個欄位一律維持資料庫原值，不會被竄改。 *@
+                    <input type="hidden" name="name" value="@Model.Name" />
+                    <input type="hidden" name="gender" value="@Model.Gender" />
+                    <input type="hidden" name="birthday" value="@Model.Birthday.ToString("yyyy-MM-dd")" />
 
                     <div class="fields-grid">
 
                         <div class="field-item">
-                            <label class="field-label">姓名 <span class="required" style="color: red;">*</span></label>
-                            <input class="field-input" name="name" type="text"
-                                   value="@Model.Name" placeholder="請輸入姓名" required />
+                            <label class="field-label">姓名</label>
+                            <input class="field-input field-readonly" type="text" value="@Model.Name" readonly />
                         </div>
 
                         <div class="field-item">
-                            <label class="field-label">性別 <span class="required" style="color: red;">*</span></label>
-                            <select class="field-input" name="gender" required>
-                                @{
-                                    if (string.IsNullOrEmpty(Model.Gender))
-                                    {
-                                        <option value="" disabled selected>-- 請選擇 --</option>
-                                    }
-                                    else
-                                    {
-                                        <option value="" disabled>-- 請選擇 --</option>
-                                    }
-                                    var genders = new[] { "男", "女" };
-                                    foreach (var g in genders)
-                                    {
-                                        if (Model.Gender == g)
-                                        {
-                                            <option value="@g" selected>@g</option>
-                                        }
-                                        else
-                                        {
-                                            <option value="@g">@g</option>
-                                        }
-                                    }
-                                }
-                            </select>
+                            <label class="field-label">性別</label>
+                            <input class="field-input field-readonly" type="text" value="@Model.Gender" readonly />
                         </div>
 
                         <div class="field-item">
@@ -111,19 +84,21 @@
                         </div>
 
                         <div class="field-item">
-                            <label class="field-label">生年月日 <span class="required" style="color: red;">*</span></label>
-                            <input class="field-input" name="birthday" type="date"
-                                   value="@Model.Birthday.ToString("yyyy-MM-dd")" required />
+                            <label class="field-label">生年月日</label>
+                            <input class="field-input field-readonly" type="text" value="@Model.Birthday.ToString("yyyy-MM-dd")" readonly />
                         </div>
 
+                        @* 🎯 手機號碼／電子郵件開放使用者變更，送出後要覆蓋資料庫原本的值 *@
                         <div class="field-item">
-                            <label class="field-label">手機號碼</label>
-                            <input class="field-input field-readonly" name="phone" type="tel" value="@Model.Phone" readonly />
+                            <label class="field-label">手機號碼 <span class="required" style="color: red;">*</span></label>
+                            <input class="field-input" name="phone" type="tel"
+                                   value="@Model.Phone" placeholder="請輸入手機號碼" required />
                         </div>
 
                         <div class="field-item field-item--full">
-                            <label class="field-label">電子郵件</label>
-                            <input class="field-input field-readonly" name="email" type="email" value="@Model.Email" readonly />
+                            <label class="field-label">電子郵件 <span class="required" style="color: red;">*</span></label>
+                            <input class="field-input" name="email" type="email"
+                                   value="@Model.Email" placeholder="請輸入電子郵件" required />
                         </div>
 
                         <div class="field-item field-item--full">
