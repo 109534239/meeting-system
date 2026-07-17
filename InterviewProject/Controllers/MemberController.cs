@@ -75,8 +75,10 @@ namespace InterviewProject.Controllers
         private string FormatComputerSkillString(List<ComputerSkills> skills)
         {
             if (skills == null || !skills.Any()) return "";
-            // 直接取出 ComputerSkill 欄位的文字並用逗號隔開
-            return string.Join(", ", skills.Select(s => s.ComputerSkill));
+            // 🎯 修正：分隔符號改成 "; "，跟 ResumeController 的 FormatComputerSkillString()、
+            //    UpdateComputerSkills() 存檔切割邏輯，以及 Resume.cshtml 前端 split('; ') 對齊，
+            //    否則電腦能力會被當成一整筆文字，無法像專長一樣一筆一列顯示。
+            return string.Join("; ", skills.Select(s => s.ComputerSkill));
         }
 
         // 🎯電腦能力方法 B：負責「去資料庫抓資料並呼叫方法 A」
@@ -253,15 +255,22 @@ namespace InterviewProject.Controllers
             if (userId == 0) return RedirectToAction("Index", "Login");
 
             var resume = await _db.Resumes
-                .Include(r => r.Job)
-                .Include(r => r.Educations) // 🎯 讀取詳細內容時要一併帶出學歷子表，不然唯讀畫面學歷區塊會是空的
-                .Include(r => r.WorkExperiences) // 🎯 同樣要帶出工作經歷子表
-                .FirstOrDefaultAsync(r => r.Id == id && r.MembersId == userId);
+                 .Include(r => r.Job)
+                 .Include(r => r.Educations) // 🎯 讀取詳細內容時要一併帶出學歷子表，不然唯讀畫面學歷區塊會是空的
+                 .Include(r => r.WorkExperiences) // 🎯 同樣要帶出工作經歷子表
+                 .Include(r => r.Portfolios) // 🎯 修正：補上作品集子表的 Include，不然唯讀畫面作品集區塊會是空的
+                 .FirstOrDefaultAsync(r => r.Id == id && r.MembersId == userId);
 
             if (resume == null) return NotFound();
 
             resume.LanguageSkills = await GetFormattedLanguageSkills(resume.Id);
             resume.ComputerSkills = await GetFormattedComputerSkills(resume.Id);
+
+            // 🎯 修正：Portfolios 需依 SortOrder 排序後重新指派，Include() 帶回來的順序不保證正確
+            resume.Portfolios = await _db.Portfolios
+                .Where(p => p.ResumeId == resume.Id)
+                .OrderBy(p => p.SortOrder)
+                .ToListAsync();
 
             var dbLicenses = await _db.DriverLicense
                 .Where(d => d.ResumeId == resume.Id)
