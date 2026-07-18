@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -15,11 +16,13 @@ namespace InterviewProject.Controllers
     {
         private readonly IWebHostEnvironment _env;
         private readonly AppDbContext _db;
+        private readonly IConfiguration _config; // 🎯 新增：讀取 appsettings.json 裡 LibreOffice:Path 設定用
 
-        public MemberController(AppDbContext db, IWebHostEnvironment env)
+        public MemberController(AppDbContext db, IWebHostEnvironment env, IConfiguration config)
         {
             _env = env;
             _db = db;
+            _config = config;
         }
 
         private int GetCurrentUserId()
@@ -117,6 +120,89 @@ namespace InterviewProject.Controllers
             );
 
             return string.Join(", ", certStrings);
+        }
+
+        // 🎯🎯🎯 以下同 ResumeController.cs 的 PDF 匯出輔助函式（履歷表.docx 改版後專用，兩邊維持同一套邏輯）
+
+        /// <summary>把一串文字組成「1. xxx\n2. yyy...」的編號清單字串，沒有資料就顯示「無」。</summary>
+        private string BuildNumberedList(IEnumerable<string?> items)
+        {
+            var list = (items ?? Enumerable.Empty<string?>())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x!.Trim())
+                .ToList();
+
+            if (!list.Any()) return "無";
+            return string.Join("\n", list.Select((x, i) => $"{i + 1}. {x}"));
+        }
+
+        /// <summary>駕照種類：只列出使用者實際勾選的類別與細項，例如「自用：小、大」「汽(機)車：無」，一類一行。</summary>
+        private string BuildDriverLicenseText(List<DriverLicense> licenses)
+        {
+            if (licenses == null || !licenses.Any()) return "無";
+
+            var lines = new List<string>();
+            string[] order = { "自用", "職業", "機車", "汽(機)車" };
+            foreach (var category in order)
+            {
+                var types = licenses.Where(l => l.Driver == category).Select(l => l.Type).ToList();
+                if (types.Any())
+                    lines.Add($"{category}：{string.Join("、", types)}");
+            }
+
+            return lines.Any() ? string.Join("\n", lines) : "無";
+        }
+
+        /// <summary>語文能力：不限筆數，逐筆列出「語言 熟練度」，例如「1. 中文 精通」「2. 英語 良好」。</summary>
+        private string BuildLanguageList(List<LanguageProficiency> langs)
+        {
+            var items = (langs ?? new List<LanguageProficiency>())
+                .Select(l => l.Language == "不具外文能力" ? "不具外文能力" : $"{l.Language} {l.Degree}");
+            return BuildNumberedList(items);
+        }
+
+        /// <summary>證照職類及級別：不限筆數，有級別就加註「　級別：X」，沒有就只顯示名稱。</summary>
+        private string BuildCertificateList(List<InterviewProject.Models.Certificates> certs)
+        {
+            var items = (certs ?? new List<InterviewProject.Models.Certificates>())
+                .Select(c => string.IsNullOrWhiteSpace(c.Levels) ? c.CName : $"{c.CName}　級別：{c.Levels}");
+            return BuildNumberedList(items);
+        }
+
+        /// <summary>使用電腦能力：不限筆數的自由輸入清單（不再是固定 6 個核取方塊）。</summary>
+        private string BuildComputerSkillList(List<ComputerSkills> skills)
+        {
+            var items = (skills ?? new List<ComputerSkills>()).Select(s => s.ComputerSkill);
+            return BuildNumberedList(items);
+        }
+
+        /// <summary>專長：不限筆數的自由輸入清單（不再是固定 Spec1/Spec2/Spec3 三格）。</summary>
+        private string BuildSpecialtyList(string? specialtyString)
+        {
+            var items = (specialtyString ?? "").Split(new[] { "; " }, StringSplitOptions.RemoveEmptyEntries);
+            return BuildNumberedList(items);
+        }
+
+        /// <summary>把日期格式化成「2024年7月」這種範本要的樣式，沒填就回傳空字串。</summary>
+        private string FormatYearMonth(DateTime? date) => date.HasValue ? $"{date.Value.Year}年{date.Value.Month}月" : "";
+
+        /// <summary>作品集「上傳檔案」欄：FilePath 用「|」存多個相對路徑，這裡拆開只取檔名、一個檔案一行。</summary>
+        private string BuildPortfolioFilesText(string? filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) return "";
+            var names = filePath.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => Path.GetFileName(p.Trim()))
+                .Where(n => !string.IsNullOrWhiteSpace(n));
+            return string.Join("\n", names);
+        }
+
+        /// <summary>PDF 檔名裡不能出現路徑分隔符號等字元，這裡把姓名/職稱裡的地雷字元換成底線。</summary>
+        private string SanitizeForFileName(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "";
+            var invalid = Path.GetInvalidFileNameChars();
+            var chars = text.Select(c => invalid.Contains(c) || c == '/' || c == '\\' ? '_' : c).ToArray();
+            return new string(chars).Trim();
         }
 
         // GET: 基本資料
@@ -318,23 +404,23 @@ namespace InterviewProject.Controllers
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Id == model.MembersId);
             if (member == null) return Content("找不到會員資料");
 
-            // 以下完全保留你原本寫的超強邏輯與欄位對齊：
+            // 🎯🎯🎯 2024 改版：範本（履歷表.docx）已經不是固定核取方塊／固定筆數的版面了，
+            //    而是「只印出使用者實際填寫/勾選的內容」，且學歷／工作經歷／作品集是可重複列的表格，
+            //    語文能力／專長／證照／電腦能力則是不限筆數的編號清單，跟 ResumeController.ExportToPdf() 邏輯一致。
             var dbLangs = await _db.LanguageProficiency.Where(l => l.ResumeId == model.Id).ToListAsync();
             var dbLicenses = await _db.DriverLicense.Where(d => d.ResumeId == model.Id).ToListAsync();
             var dbCompSkills = await _db.ComputerSkills.Where(s => s.ResumeId == model.Id).ToListAsync();
             var dbCertificates = await _db.Certificates.Where(s => s.ResumeId == model.Id).ToListAsync();
             var dbEducations = await _db.Educations.Where(e => e.ResumeId == model.Id).OrderBy(e => e.SortOrder).ToListAsync();
-            // 🎯 Word 範本是單一列版面，取「第一筆＝最高學歷」帶入既有欄位（跟 ResumeController.ExportToPdf 邏輯一致）
-            var topEducation = dbEducations.FirstOrDefault();
             var dbWorkExperiences = await _db.WorkExperiences.Where(w => w.ResumeId == model.Id).OrderBy(w => w.SortOrder).ToListAsync();
-            var topWorkExperience = dbWorkExperiences.FirstOrDefault();
+            var dbPortfolios = await _db.Portfolios.Where(p => p.ResumeId == model.Id).OrderBy(p => p.SortOrder).ToListAsync();
 
             string realName = member.Name ?? "";
             string realGender = member.Gender ?? "";
             string realIdNumber = member.IdNumber ?? "";
             string realBirthday = member.Birthday.ToString("yyyy/MM/dd");
             string realEmail = member.Email ?? "";
-            string realAddress = member.Address ?? "";
+            string realAddress = model.ContactAddress ?? member.Address ?? ""; // 🎯 優先用履歷自己存的聯絡地址，跟 ResumeController 對齊
 
             object photoData = "";
             if (!string.IsNullOrEmpty(member.ProfileImagePath) && member.ProfileImagePath.Contains(","))
@@ -362,176 +448,157 @@ namespace InterviewProject.Controllers
             string templatePath = Path.Combine(_env.WebRootPath, "file", "履歷表.docx");
             if (!System.IO.File.Exists(templatePath)) return Content($"找不到 Word 範本檔案：{templatePath}");
 
-            string ck = "■";
-            string un = "□";
-
-            Func<string, string, string> checkLang = (name, degree) => dbLangs.Any(x => x.Language == name && x.Degree == degree) ? ck : un;
-            Func<string, string, string> checkLic = (driver, type) => dbLicenses.Any(x => x.Driver == driver && x.Type == type) ? ck : un;
-            Func<string, string> checkcomp = (skillName) => dbCompSkills.Any(x => x.ComputerSkill == skillName) ? ck : un;
-
-            string[] knownLangs = { "英語", "日語", "台語", "客語", "不具外文能力" };
-            var otherLang = dbLangs.FirstOrDefault(x => !knownLangs.Contains(x.Language));
-
-            // 🎯 【核心修正】：不要直接讀 model.Specialty，請改用你寫好的獨立表查詢方法並 await 它！
-            string spec = await GetFormattedSpecialties(model.Id);
-            string cert = FormatCertificatesString(dbCertificates);
-            string edu = topEducation?.EduStatus ?? "";
-
             var value = new Dictionary<string, object>()
             {
+                ["ApplyJobTitle"] = model.Job?.Title ?? "未指定職缺", // model 已經用 .Include(r => r.Job) 撈出來了
+
                 ["Name"] = realName,
-                ["G_M"] = (realGender == "男") ? ck : un,
-                ["G_F"] = (realGender == "女") ? ck : un,
+                ["Gender"] = realGender,
                 ["IdNumber"] = realIdNumber,
                 ["Birthday"] = realBirthday,
                 ["Address"] = realAddress,
                 ["ProfileImagePath"] = photoData,
 
-                ["M_M"] = (model.MaritalStatus == "已婚") ? ck : un,
-                ["M_S"] = (model.MaritalStatus == "單身") ? ck : un,
-                ["MS_1"] = (model.MilitaryService == "免役") ? ck : un,
-                ["MS_2"] = (model.MilitaryService == "役畢") ? ck : un,
-                ["MS_3"] = (model.MilitaryService == "未役") ? ck : un,
-                ["MS_4"] = (model.MilitaryService == "待役中") ? ck : un,
+                ["MaritalStatus"] = model.MaritalStatus ?? "",
+                ["MilitaryService"] = model.MilitaryService ?? "",
                 ["Phone1"] = model.Phone1 ?? "",
                 ["Email"] = realEmail,
 
-                ["E_Dr"] = (topEducation?.EduLevel == "博士") ? ck : un,
-                ["E_Ms"] = (topEducation?.EduLevel == "碩士") ? ck : un,
-                ["E_Uni"] = (topEducation?.EduLevel == "大學") ? ck : un,
-                ["E_Col"] = (topEducation?.EduLevel == "專科") ? ck : un,
-                ["E_Voc"] = (topEducation?.EduLevel == "高職") ? ck : un,
-                ["E_High"] = (topEducation?.EduLevel == "高中") ? ck : un,
-                ["E_Jun"] = (topEducation?.EduLevel == "國中") ? ck : un,
-                ["E_Pri"] = (topEducation?.EduLevel == "國小") ? ck : un,
-                ["E_Other"] = (!string.IsNullOrEmpty(topEducation?.EduLevel) && !new[] { "博士", "碩士", "大學", "專科", "高職", "高中", "國中", "國小" }.Contains(topEducation?.EduLevel)) ? ck : un,
-                ["OtherEdu"] = topEducation?.EduLevel ?? "______",
-
-                ["SchoolName"] = topEducation?.SchoolName ?? "",
-                ["Major"] = topEducation?.Major ?? "",
-                ["E_Grad"] = edu.Contains("畢業") ? ck : un,
-                ["E_Under"] = edu.Contains("肄業") ? ck : un,
-                ["E_Stud"] = edu.Contains("在學") ? ck : un,
-
-                ["EduDate"] = topEducation?.EndDate?.ToString("yyyy/MM") ?? "",
-
-                ["WorkExp"] = (model.WorkExperienceYears >= 1) ? ck : un,
-                ["NoWorkExp"] = (model.WorkExperienceYears == 0) ? ck : un,
-                ["WorkExperienceYears"] = (model.WorkExperienceYears == -1) ? "0" : model.WorkExperienceYears.ToString(),
-
-                ["CompanyName"] = topWorkExperience?.CompanyName ?? "",
-                ["JobTitle"] = topWorkExperience?.JobTitle ?? "",
-                ["JobDescription"] = topWorkExperience?.JobDescription ?? "",
                 ["Autobiography"] = model.Autobiography ?? "",
 
-                ["L_None"] = dbLangs.Any(x => x.Language == "不具外文能力") ? ck : un,
-                ["L_Eng_1"] = checkLang("英語", "精通"),
-                ["L_Eng_2"] = checkLang("英語", "良好"),
-                ["L_Eng_3"] = checkLang("英語", "普通"),
-                ["L_Eng_4"] = checkLang("英語", "稍懂"),
-
-                ["L_Jap_1"] = checkLang("日語", "精通"),
-                ["L_Jap_2"] = checkLang("日語", "良好"),
-                ["L_Jap_3"] = checkLang("日語", "普通"),
-                ["L_Jap_4"] = checkLang("日語", "稍懂"),
-
-                ["L_Twn_1"] = checkLang("台語", "精通"),
-                ["L_Twn_2"] = checkLang("台語", "良好"),
-                ["L_Twn_3"] = checkLang("台語", "普通"),
-                ["L_Twn_4"] = checkLang("台語", "稍懂"),
-
-                ["L_Hakka_1"] = checkLang("客語", "精通"),
-                ["L_Hakka_2"] = checkLang("客語", "良好"),
-                ["L_Hakka_3"] = checkLang("客語", "普通"),
-                ["L_Hakka_4"] = checkLang("客語", "稍懂"),
-
-                ["L_Other_Name"] = otherLang?.Language ?? "",
-                ["L_Other_1"] = (otherLang?.Degree == "精通") ? ck : un,
-                ["L_Other_2"] = (otherLang?.Degree == "良好") ? ck : un,
-                ["L_Other_3"] = (otherLang?.Degree == "普通") ? ck : un,
-                ["L_Other_4"] = (otherLang?.Degree == "稍懂") ? ck : un,
-
-                ["D_Self_S"] = checkLic("自用", "小"),
-                ["D_Self_B"] = checkLic("自用", "大"),
-                ["D_Pro_S"] = checkLic("職業", "小"),
-                ["D_Pro_B"] = checkLic("職業", "大"),
-                ["D_Pro_K"] = checkLic("職業", "客"),
-                ["D_Moto_L"] = checkLic("機車", "輕型"),
-                ["D_Moto_H"] = checkLic("機車", "重型"),
-                ["D_None"] = checkLic("汽(機)車", "無"),
-                ["D_Own"] = checkLic("汽(機)車", "自備"),
-
-                // 🎯 這裡會成功切開由資料庫撈回並用 "; " 串接的專長字串
-                ["Spec1"] = spec.Split(new[] { "; " }, StringSplitOptions.None).ElementAtOrDefault(0) ?? "",
-                ["Spec2"] = spec.Split(new[] { "; " }, StringSplitOptions.None).ElementAtOrDefault(1) ?? "",
-                ["Spec3"] = spec.Split(new[] { "; " }, StringSplitOptions.None).ElementAtOrDefault(2) ?? "",
-
-                ["Cert"] = cert,
-
-                ["C_Base"] = checkcomp("電腦基本操作"),
-                ["C_Doc"] = checkcomp("文書處理"),
-                ["C_Net"] = checkcomp("網際網路"),
-                ["C_Web"] = checkcomp("網頁編輯"),
-                ["C_Biz"] = checkcomp("商業軟體"),
-                ["C_Prog"] = checkcomp("程式設計"),
+                ["LanguageList"] = BuildLanguageList(dbLangs),
+                ["DriverLicenseText"] = BuildDriverLicenseText(dbLicenses),
+                // 🎯 專長不要直接讀 model.Specialty，改用你寫好的獨立表查詢方法並 await 它，跟原本的做法一致
+                ["SpecialtyList"] = BuildSpecialtyList(await GetFormattedSpecialties(model.Id)),
+                ["CertificateList"] = BuildCertificateList(dbCertificates),
+                ["ComputerSkillList"] = BuildComputerSkillList(dbCompSkills),
             };
 
-            var certList = cert.Split(", ").ToList();
-            for (int i = 1; i <= 3; i++)
+            value["Educations"] = dbEducations.Select(e => new Dictionary<string, object>
             {
-                var currentCert = dbCertificates.ElementAtOrDefault(i - 1);
+                ["EduLevel"] = e.EduLevel ?? "",
+                ["SchoolName"] = e.SchoolName ?? "",
+                ["Major"] = e.Major ?? "",
+                ["EduStatus"] = e.EduStatus ?? "",
+                ["StartDate"] = FormatYearMonth(e.StartDate),
+                ["EndDate"] = FormatYearMonth(e.EndDate),
+            }).ToList();
 
-                if (currentCert != null)
-                {
-                    value[$"C{i}_Name"] = currentCert.CName ?? "";
-                    value[$"C{i}_A"] = (currentCert.Levels == "甲級" || currentCert.Levels == "甲") ? ck : un;
-                    value[$"C{i}_B"] = (currentCert.Levels == "乙級" || currentCert.Levels == "乙") ? ck : un;
-                    value[$"C{i}_C"] = (currentCert.Levels == "丙級" || currentCert.Levels == "丙") ? ck : un;
-                    value[$"C{i}_S"] = (currentCert.Levels == "單一級") ? ck : un;
-                }
-                else
-                {
-                    value[$"C{i}_Name"] = "";
-                    value[$"C{i}_A"] = un;
-                    value[$"C{i}_B"] = un;
-                    value[$"C{i}_C"] = un;
-                    value[$"C{i}_S"] = un;
-                }
-            }
+            value["WorkExperiences"] = dbWorkExperiences.Select(w => new Dictionary<string, object>
+            {
+                ["CompanyName"] = w.CompanyName ?? "",
+                ["JobTitle"] = w.JobTitle ?? "",
+                ["JobDescription"] = w.JobDescription ?? "",
+                ["StartDate"] = FormatYearMonth(w.StartDate),
+                ["EndDate"] = FormatYearMonth(w.EndDate),
+            }).ToList();
 
-            var otherComp = dbCompSkills.FirstOrDefault(s => s.ComputerSkill.StartsWith("其他:"));
-            if (otherComp != null)
+            value["Portfolios"] = dbPortfolios.Select(p => new Dictionary<string, object>
             {
-                value["C_Other"] = ck;
-                value["C_Other_Text"] = otherComp.ComputerSkill.Replace("其他:", "").Trim();
-            }
-            else
-            {
-                value["C_Other"] = un;
-                value["C_Other_Text"] = "";
-            }
+                ["Title"] = p.Title ?? "",
+                ["Description"] = p.Description ?? "",
+                ["Link"] = p.Link ?? "",
+                ["Files"] = BuildPortfolioFilesText(p.FilePath),
+            }).ToList();
 
             try
             {
+                byte[] docxBytes;
                 using (var ms = new MemoryStream())
                 {
                     MiniSoftware.MiniWord.SaveAsByTemplate(ms, templatePath, value);
-                    ms.Position = 0;
-
-                    Spire.Doc.Document doc = new Spire.Doc.Document();
-                    doc.LoadFromStream(ms, Spire.Doc.FileFormat.Docx);
-
-                    using (MemoryStream pdfStream = new MemoryStream())
-                    {
-                        doc.SaveToStream(pdfStream, Spire.Doc.FileFormat.PDF);
-                        return File(pdfStream.ToArray(), "application/pdf", $"{realName}_履歷表.pdf");
-                    }
+                    docxBytes = ms.ToArray();
                 }
+
+                // 🎯 改用 LibreOffice headless 轉檔（取代 Spire.Doc 免費版），原因和作法跟
+                //    ResumeController.ConvertDocxToPdfAsync() 完全一樣：Spire.Doc 免費版只能輸出前 3 頁，
+                //    而且處理儲存格橫向合併（w:gridSpan）時版面會跑掉。
+                byte[] pdfBytes = await ConvertDocxToPdfAsync(docxBytes);
+
+                string fileName = $"{SanitizeForFileName(realName)}_{SanitizeForFileName(model.Job?.Title ?? "未指定職缺")}_履歷表.pdf";
+                return File(pdfBytes, "application/pdf", fileName);
             }
             catch (Exception ex)
             {
                 return Content($"導出 PDF 過程發生錯誤：{ex.Message}");
             }
+        }
+
+        // 🎯🎯🎯 用 LibreOffice headless 模式把 Word 檔轉成 PDF，取代 Spire.Doc 免費版。
+        //    前提：伺服器要安裝 LibreOffice。
+        //    - Windows 預設安裝路徑通常是 C:\Program Files\LibreOffice\program\soffice.exe
+        //    - Linux 通常安裝好之後 "soffice" 指令就能直接在 PATH 裡執行
+        //    如果安裝路徑不是預設值，可以在 appsettings.json 加一段：
+        //      "LibreOffice": { "Path": "你的 soffice 執行檔完整路徑" }
+        private async Task<byte[]> ConvertDocxToPdfAsync(byte[] docxBytes)
+        {
+            string sofficePath = _config["LibreOffice:Path"] ?? GetDefaultSofficePath();
+
+            string workDir = Path.Combine(Path.GetTempPath(), "resume_pdf_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(workDir);
+            string docxPath = Path.Combine(workDir, "resume.docx");
+            string pdfPath = Path.Combine(workDir, "resume.pdf");
+
+            try
+            {
+                await System.IO.File.WriteAllBytesAsync(docxPath, docxBytes);
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = sofficePath,
+                    Arguments = $"--headless --norestore --convert-to pdf --outdir \"{workDir}\" " +
+                                $"-env:UserInstallation=file:///{workDir.Replace('\\', '/')}/.lo_profile \"{docxPath}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+
+                using var process = Process.Start(psi);
+                if (process == null)
+                    throw new Exception($"無法啟動 LibreOffice（soffice）轉檔程序，請確認伺服器已安裝 LibreOffice，且路徑設定正確：{sofficePath}");
+
+                var timeoutTask = Task.Delay(TimeSpan.FromSeconds(60));
+                var exitTask = process.WaitForExitAsync();
+                var completed = await Task.WhenAny(exitTask, timeoutTask);
+
+                if (completed == timeoutTask)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { /* 忽略終止程序時的例外 */ }
+                    throw new Exception("LibreOffice 轉檔逾時（超過 60 秒），請稍後再試一次。");
+                }
+
+                if (!System.IO.File.Exists(pdfPath))
+                {
+                    string stderr = await process.StandardError.ReadToEndAsync();
+                    throw new Exception($"LibreOffice 轉檔失敗，找不到輸出的 PDF 檔。錯誤訊息：{stderr}");
+                }
+
+                return await System.IO.File.ReadAllBytesAsync(pdfPath);
+            }
+            finally
+            {
+                try { Directory.Delete(workDir, recursive: true); } catch { /* 清暫存檔失敗不影響主要流程 */ }
+            }
+        }
+
+        /// <summary>依作業系統猜測 LibreOffice 的預設安裝路徑；建議還是在 appsettings.json 明確設定 LibreOffice:Path。</summary>
+        private string GetDefaultSofficePath()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                string[] candidates =
+                {
+                    @"C:\Program Files\LibreOffice\program\soffice.exe",
+                    @"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+                };
+                foreach (var c in candidates)
+                {
+                    if (System.IO.File.Exists(c)) return c;
+                }
+                return candidates[0];
+            }
+            return "soffice";
         }
 
         public async Task<IActionResult> Application()
