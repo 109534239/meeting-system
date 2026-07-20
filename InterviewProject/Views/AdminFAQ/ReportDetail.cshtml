@@ -1,10 +1,11 @@
 @model InterviewProject.Models.FAQReport
 
 @{
-    // 依回報者身份決定標題與返回時應停留在哪個分頁
     bool isJobseeker = Model.Role == "求職者";
+    bool isReplied = Model.Status == "已回覆";
     string pageTitle = isJobseeker ? "求職者回覆" : "訪客回覆";
     string backTab = isJobseeker ? "jobseeker" : "visitor";
+    string reporterTitle = isJobseeker ? "求職者提問" : "訪客提問";
 
     ViewData["Title"] = pageTitle;
 }
@@ -12,86 +13,155 @@
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/AdminFAQ.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
 }
 
 <div class="page-header">
     <div class="page-header-inner">
         <h1>@pageTitle</h1>
+        <p>Question &amp; Answer Management</p>
     </div>
 </div>
 
-<div class="faq-report-detail-wrap">
+<main class="admin-qa-detail-wrap">
 
     @if (TempData["Success"] != null)
     {
-        <div class="alert-success">
+        <div class="admin-qa-alert admin-qa-alert-success">
             @TempData["Success"]
         </div>
     }
 
     @if (TempData["Error"] != null)
     {
-        <div class="alert-error">
+        <div class="admin-qa-alert admin-qa-alert-error">
             @TempData["Error"]
         </div>
     }
 
-    <div class="report-detail-grid" style="grid-template-columns: 1fr; justify-items: center;">
+    <!-- 頁面摘要 -->
+    <section class="admin-qa-page-summary">
+        <div class="admin-qa-page-title">
+            <span class="admin-qa-category">
+                @Model.Category
+            </span>
+            <h2>@Model.Subject</h2>
 
-        <div class="report-card" style="width: 100%; max-width: 640px;">
+        </div>
 
-            <div class="field-item">
-                <label class="field-label">姓名</label>
-                <div class="field-input">@Model.Name</div>
-            </div>
+        <span class="admin-qa-status @(isReplied ? "is-replied" : "is-pending")">
+            <span class="admin-qa-status-dot"></span>
+            @(isReplied ? "已回覆" : "待處理")
+        </span>
 
-            <div class="field-item">
-                <label class="field-label">問題類別</label>
-                <div class="field-input">@Model.Category</div>
-            </div>
+    </section>
 
-            <div class="field-item field-item--full">
-                <label class="field-label">主旨</label>
-                <div class="field-input">@Model.Subject</div>
-            </div>
+    <!-- 基本資料摘要 -->
+    <section class="admin-qa-info-card">
 
-            <div class="field-item field-item--full">
-                <label class="field-label">內容</label>
-                <div class="report-content-box">@Model.Content</div>
-            </div>
+        <div class="admin-qa-info-item">
+            <span class="admin-qa-info-label">提問者身分</span>
+            <span class="admin-qa-info-value">@Model.Role</span>
+        </div>
+
+        <div class="admin-qa-info-item">
+            <span class="admin-qa-info-label">姓名</span>
+            <span class="admin-qa-info-value">
+                @(string.IsNullOrWhiteSpace(Model.Name) ? "未提供" : Model.Name)
+            </span>
+        </div>
+
+        <div class="admin-qa-info-item">
+            <span class="admin-qa-info-label">問題類別</span>
+            <span class="admin-qa-info-value">@Model.Category</span>
+        </div>
+
+        <div class="admin-qa-info-item">
+            <span class="admin-qa-info-label">處理狀態</span>
+            <span class="admin-qa-info-value">
+                @(isReplied ? "已完成回覆" : "等待處理")
+            </span>
+        </div>
+
+    </section>
+
+    <!-- 左右雙卡片 -->
+    <div class="admin-qa-content-grid">
+
+        <!-- 提問內容 -->
+        <article class="admin-qa-content-card admin-question-card">
+
+            <header class="admin-qa-card-header">
+
+                <div class="admin-qa-section-icon admin-question-icon">
+                    Q
+                </div>
+
+                <div>
+                    <h3>@reporterTitle</h3>
+                    <p>@Model.Name 提交給企業的問題內容</p>
+                </div>
+
+            </header>
+
+            <div class="admin-qa-question-content">@Model.Content</div>
+
+        </article>
+
+        <!-- 企業 回覆 -->
+        <article class="admin-qa-content-card admin-answer-card">
+
+            <header class="admin-qa-card-header">
+
+                <div class="admin-qa-section-icon admin-answer-icon">
+                    A
+                </div>
+
+                <div>
+                    <h3>企業 回覆</h3>
+                    <p>
+                        @(isReplied
+                            ? "您可以檢視或修改目前的回覆內容"
+                            : "請輸入企業對此問題的正式回覆")
+                    </p>
+                </div>
+
+            </header>
 
             <form asp-action="ReplyReport"
-                  method="post"
-                  class="field-item field-item--full report-inline-form">
+                method="post"
+                class="admin-qa-reply-form">
 
                 @Html.AntiForgeryToken()
 
-                <input type="hidden" name="id" value="@Model.Id" />
+                <input type="hidden"
+                    name="id"
+                    value="@Model.Id" />
 
-                <label class="field-label">回覆內容</label>
+                <textarea id="replyContent"
+                        name="replyContent"
+                        class="admin-qa-reply-textarea"
+                        rows="12"
+                        placeholder="請輸入要回覆的內容..."
+                        required>@Model.ReplyContent</textarea>
 
-                <textarea name="replyContent"
-                          class="field-input field-textarea reply-textarea"
-                          rows="6"
-                          placeholder="請輸入要回覆的內容...">@Model.ReplyContent</textarea>
+                <div class="admin-qa-form-actions">
 
-                <div class="form-actions report-detail-actions">
                     <a asp-action="Index"
-                       asp-route-tab="@backTab"
-                       class="btn-cancel">
-                        返回
+                    asp-route-tab="@backTab"
+                    class="admin-qa-btn-back">
+                        返回列表
                     </a>
 
-                    <button type="submit" class="btn-save">
-                        送出
+                    <button type="submit"
+                            class="admin-qa-btn-submit">
+                        @(isReplied ? "更新回覆" : "送出回覆")
                     </button>
                 </div>
 
             </form>
 
-        </div>
+        </article>
 
     </div>
 
-</div>
+</main>

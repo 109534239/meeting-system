@@ -433,14 +433,41 @@ namespace InterviewProject.Controllers
                     mailMessage.IsBodyHtml = true;
 
                     mailMessage.Body = $@"
-                        <h3>您好：</h3>
-                        <p>感謝您的來信，我們已回覆您所提出的問題。</p>
-                        <p><b>您的提問內容：</b></p>
-                        <p style='white-space: pre-wrap;'>{WebUtility.HtmlEncode(originalContent)}</p>
-                        <p><b>我們的回覆：</b></p>
-                        <p style='white-space: pre-wrap;'>{WebUtility.HtmlEncode(replyContent)}</p>
+                        <p>您好：</p>
+
+                        <p>感謝您透過 {companyName} Q&amp;A 系統提出問題。</p>
+
+                        <p>您所提出的問題已由相關單位完成回覆，內容如下：</p>
+
+                        <hr>
+
+                        <p><strong>提問主旨</strong></p>
+                        <p>{WebUtility.HtmlEncode(subject)}</p>
+
                         <br>
-                        <p>如有其他問題歡迎再次與我們聯繫。</p>";
+
+                        <p><strong>{companyName} 回覆</strong></p>
+
+                        <div style='white-space: pre-wrap; line-height:1.8;'>{WebUtility.HtmlEncode(replyContent).Trim()}</div>
+
+                        <p>若您仍有其他疑問，歡迎再次透過 {companyName} Q&amp;A 系統與我們聯繫。</p>
+
+                        <hr>
+
+                        <br>
+
+                        <p><strong>您的提問內容</strong></p>
+
+                        <div style='white-space: pre-wrap; line-height:1.8;'>{WebUtility.HtmlEncode(originalContent).Trim()}</div>
+
+                        <hr>
+
+                        <br>
+
+                        <p style='color:#888;font-size:12px;'>
+                        ※ 此信件由系統自動寄送，請勿直接回覆此郵件。
+                        </p>";
+                        
 
                     await smtpClient.SendMailAsync(mailMessage);
                 }

@@ -1,0 +1,841 @@
+/* =========================================
+   求職者－我的 Q&A 列表
+   JobseekerFAQ.css
+========================================= */
+
+/* ── 頁面內容區 ── */
+.faq-manage-wrap {
+    width: 100%;
+    max-width: 1200px;
+    margin: 32px auto 56px;
+    padding: 0 40px;
+    box-sizing: border-box;
+}
+
+/* ── 成功訊息 ── */
+.alert-success {
+    position: relative;
+    margin-bottom: 20px;
+    padding: 14px 18px 14px 46px;
+    border: 1px solid #b9ddc5;
+    border-radius: 10px;
+    background: #f1fbf4;
+    color: #287448;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.6;
+    box-shadow: 0 2px 8px rgba(46, 125, 79, 0.06);
+}
+
+.alert-success::before {
+    content: "✓";
+    position: absolute;
+    top: 50%;
+    left: 18px;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #3b9460;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ── Q&A 表格外框 ── */
+.faq-table {
+    width: 100%;
+    overflow: hidden;
+    background: #fff;
+    border: 1px solid #e2eaf0;
+    border-radius: 14px;
+    box-shadow: 0 4px 18px rgba(23, 79, 103, 0.08);
+}
+
+/* ── 表格標題與資料列共用設定 ── */
+.faq-table-head,
+.faq-row {
+    display: grid;
+
+    /* 時間｜類別｜主旨｜狀態｜操作 */
+    grid-template-columns:
+        minmax(145px, 165px)
+        minmax(100px, 130px)
+        minmax(220px, 1fr)
+        100px
+        86px;
+
+    column-gap: 18px;
+    align-items: center;
+}
+
+/* ── 表格標題列 ── */
+.faq-table-head {
+    padding: 15px 24px;
+    background: #f3f7f9;
+    border-bottom: 1px solid #dfe8ed;
+    color: #607681;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+}
+
+/* 操作欄置中 */
+.faq-table-head > div:last-child {
+    text-align: center;
+}
+
+/* ── Q&A 資料列 ── */
+.faq-row {
+    position: relative;
+    min-height: 68px;
+    padding: 16px 24px;
+    border-bottom: 1px solid #edf1f4;
+    color: var(--text-main);
+    font-size: 14px;
+    line-height: 1.5;
+    transition:
+        background-color 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+.faq-row:last-child {
+    border-bottom: none;
+}
+
+.faq-row:hover {
+    background: #f8fbfc;
+    box-shadow: inset 4px 0 0 var(--primary);
+}
+
+/* ── 時間欄位 ── */
+.faq-row > div:first-child {
+    color: #71838c;
+    font-size: 13px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── 類別欄位 ── */
+.faq-row > div:nth-child(2) {
+    color: var(--primary-dark);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* ── 主旨欄位 ── */
+.faq-title {
+    min-width: 0;
+    color: #253b45;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── 狀態標籤 ── */
+.btn-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    min-height: 28px;
+    padding: 5px 12px;
+    border: none;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    box-sizing: border-box;
+}
+
+/* 已回覆 */
+.btn-toggle.active {
+    background: #e7f5ec;
+    color: #287448;
+    box-shadow: inset 0 0 0 1px #c6e5d1;
+}
+
+/* 尚未回覆或處理中 */
+.btn-toggle.inactive {
+    background: #fff5e5;
+    color: #a56814;
+    box-shadow: inset 0 0 0 1px #f0d8aa;
+}
+
+/* ── 操作區 ── */
+.faq-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ── 查看按鈕 ── */
+.btn-edit {
+    min-width: 62px;
+    height: 34px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    transition:
+        background-color 0.18s ease,
+        color 0.18s ease,
+        border-color 0.18s ease,
+        transform 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+.btn-edit:hover {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+    box-shadow: 0 4px 10px rgba(23, 79, 103, 0.18);
+    transform: translateY(-1px);
+}
+
+.btn-edit:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+.btn-edit:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(23, 79, 103, 0.15);
+}
+
+/* ── 空資料狀態 ── */
+.faq-empty {
+    position: relative;
+    padding: 72px 24px 56px;
+    color: #8798a0;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.faq-empty::before {
+    content: "?";
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 34px;
+    height: 34px;
+    border: 2px solid #c7d8e0;
+    border-radius: 50%;
+    color: var(--primary);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 30px;
+    background: #f4f9fb;
+}
+
+/* =========================================
+   求職者－Q&A 詳細頁
+========================================= */
+
+/*
+   與列表頁及 Layout 主要內容一致：
+   最大寬度 1200px
+   桌機左右內距 40px
+*/
+.qa-detail-wrap {
+    width: 100%;
+    max-width: 1200px;
+    margin: 32px auto 64px;
+    padding: 0 40px;
+    box-sizing: border-box;
+}
+
+/* =========================================
+   頁面頂部摘要
+========================================= */
+
+.qa-page-summary {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    width: 100%;
+    margin-bottom: 18px;
+    padding: 28px 30px;
+    background: linear-gradient(135deg, #f8fbfc 0%, #edf6f9 100%);
+    border: 1px solid #dfe9ee;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(23, 79, 103, 0.07);
+    box-sizing: border-box;
+}
+
+.qa-page-title {
+    min-width: 0;
+}
+
+.qa-category {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    margin-bottom: 10px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.qa-page-title h2 {
+    margin: 0;
+    color: #253d47;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.qa-page-title p {
+    margin: 7px 0 0;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+/* =========================================
+   狀態標籤
+========================================= */
+
+.qa-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 92px;
+    min-height: 34px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.qa-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+
+.qa-status.is-replied {
+    background: #e8f6ed;
+    color: #287448;
+    border: 1px solid #c7e7d2;
+}
+
+.qa-status.is-replied .qa-status-dot {
+    background: #3b9460;
+}
+
+.qa-status.is-pending {
+    background: #fff5e4;
+    color: #9a651c;
+    border: 1px solid #efd9ad;
+}
+
+.qa-status.is-pending .qa-status-dot {
+    background: #d99732;
+}
+
+/* =========================================
+   問題與回覆左右雙卡片
+========================================= */
+
+.qa-content-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    width: 100%;
+    align-items: stretch;
+}
+
+.qa-content-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    background: #fff;
+    border: 1px solid #e1e9ee;
+    border-radius: 16px;
+    box-shadow: 0 4px 18px rgba(23, 79, 103, 0.07);
+}
+
+.qa-content-body,
+.qa-pending-box {
+    flex: 1;
+}
+
+/* 我的提問卡片 */
+.question-card {
+    border-top: 4px solid var(--primary);
+}
+
+/* HR 回覆卡片 */
+.answer-card {
+    border-top: 4px solid #4a9a69;
+}
+
+/* ── 卡片標題區 ── */
+.qa-content-card-header {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 20px 24px;
+    background: #fafcfd;
+    border-bottom: 1px solid #e8eef1;
+    flex-shrink: 0;
+}
+
+.qa-section-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    font-size: 15px;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.question-icon {
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+.answer-icon {
+    background: #e8f5ed;
+    color: #287448;
+}
+
+.qa-content-card-header h3 {
+    margin: 0;
+    color: #2c414a;
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.qa-content-card-header p {
+    margin: 3px 0 0;
+    color: #86979e;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+/* ── 卡片內容 ── */
+.qa-content-body {
+    min-height: 220px;
+    padding: 24px 26px;
+    color: #344a54;
+    font-size: 14px;
+    line-height: 1.9;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    background: #fff;
+    box-sizing: border-box;
+}
+
+
+/* =========================================
+   尚未回覆狀態
+========================================= */
+
+.qa-pending-box {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 220px;
+    padding: 24px 26px;
+    background: #ffffff;
+    box-sizing: border-box;
+}
+
+.qa-pending-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: #E8F5ED;
+    color: #909090;
+    font-size: 16px;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.qa-pending-box h4 {
+    margin: 0;
+    color: #757575;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.qa-pending-box p {
+    margin: 5px 0 0;
+    color: #9f9f9f;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+/* =========================================
+   頁尾按鈕
+========================================= */
+
+.qa-detail-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    width: 100%;
+    margin-top: 24px;
+    padding-top: 22px;
+    border-top: 1px solid #dfe8ec;
+    box-sizing: border-box;
+}
+
+.btn-back,
+.btn-close-page {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition:
+        background-color 0.18s ease,
+        border-color 0.18s ease,
+        color 0.18s ease,
+        transform 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+.btn-back {
+    background: #fff;
+    border: 1.5px solid #ccd9df;
+    color: #5d7079;
+}
+
+.btn-back:hover {
+    background: #f3f7f9;
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.btn-close-page {
+    background: var(--primary);
+    border: 1.5px solid var(--primary);
+    color: #fff;
+}
+
+.btn-close-page:hover {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px rgba(23, 79, 103, 0.18);
+}
+
+/* =========================================
+   平板版
+========================================= */
+
+@media (max-width: 900px) {
+    .faq-manage-wrap,
+    .qa-detail-wrap {
+        margin-top: 24px;
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+
+    .faq-table-head,
+    .faq-row {
+        grid-template-columns:
+            140px
+            100px
+            minmax(160px, 1fr)
+            90px
+            72px;
+
+        column-gap: 12px;
+        padding-left: 18px;
+        padding-right: 18px;
+    }
+
+    .qa-page-summary {
+        padding: 24px;
+    }
+
+    .qa-page-title h2 {
+        font-size: 21px;
+    }
+
+    .qa-summary-card {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .qa-summary-item:nth-child(2) {
+        border-right: none;
+    }
+
+    .qa-summary-item:nth-child(3) {
+        grid-column: 1 / -1;
+        margin-top: 18px;
+        padding: 18px 0 0;
+        border-top: 1px solid #e7edef;
+        border-right: none;
+    }
+
+    /* 平板以下改為上下排列 */
+    .qa-content-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .qa-content-body,
+    .qa-pending-box {
+        min-height: 150px;
+    }
+}
+
+/* =========================================
+   手機版：Q&A 詳細頁
+========================================= */
+
+@media (max-width: 560px) {
+    .qa-detail-wrap {
+        margin: 16px auto 48px;
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .qa-page-summary {
+        flex-direction: column;
+        gap: 16px;
+        padding: 21px 18px;
+    }
+
+    .qa-status {
+        align-self: flex-start;
+    }
+
+    .qa-page-title h2 {
+        font-size: 19px;
+    }
+
+    .qa-summary-card {
+        grid-template-columns: 1fr;
+        padding: 8px 18px;
+    }
+
+    .qa-summary-item,
+    .qa-summary-item:first-child,
+    .qa-summary-item:last-child,
+    .qa-summary-item:nth-child(3) {
+        grid-column: auto;
+        margin: 0;
+        padding: 16px 0;
+        border-top: none;
+        border-right: none;
+        border-bottom: 1px solid #edf2f5;
+    }
+
+    .qa-summary-item:last-child {
+        border-bottom: none;
+    }
+
+    .qa-content-card-header {
+        padding: 18px;
+    }
+
+    .qa-content-body,
+    .qa-pending-box {
+        min-height: 120px;
+        padding: 20px 18px;
+    }
+
+    .qa-pending-box {
+        align-items: flex-start;
+    }
+
+    .qa-detail-actions {
+        flex-direction: column-reverse;
+    }
+
+    .btn-back,
+    .btn-close-page {
+        width: 100%;
+    }
+}
+
+/* =========================================
+   手機版：Q&A 列表改為卡片排列
+========================================= */
+
+@media (max-width: 700px) {
+    .faq-manage-wrap {
+        margin: 20px auto 40px;
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .faq-table {
+        overflow: visible;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    /* 手機版隱藏表格標題 */
+    .faq-table-head {
+        display: none;
+    }
+
+    .faq-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px 16px;
+        min-height: auto;
+        margin-bottom: 14px;
+        padding: 18px;
+        background: #fff;
+        border: 1px solid #e1e9ee;
+        border-radius: 12px;
+        box-shadow: 0 3px 12px rgba(23, 79, 103, 0.07);
+    }
+
+    .faq-row:last-child {
+        margin-bottom: 0;
+        border-bottom: 1px solid #e1e9ee;
+    }
+
+    .faq-row:hover {
+        background: #fff;
+        box-shadow: 0 5px 16px rgba(23, 79, 103, 0.11);
+    }
+
+    /* 主旨移至最上方 */
+    .faq-row .faq-title {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #edf2f5;
+        font-size: 15px;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        word-break: break-word;
+    }
+
+    /* 時間 */
+    .faq-row > div:nth-child(1) {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    /* 類別 */
+    .faq-row > div:nth-child(2) {
+        grid-column: 1;
+        grid-row: 3;
+    }
+
+    /* 狀態 */
+    .faq-row > div:nth-child(4) {
+        grid-column: 2;
+        grid-row: 2;
+        justify-self: end;
+    }
+
+    /* 操作 */
+    .faq-actions {
+        grid-column: 2;
+        grid-row: 3;
+        justify-self: end;
+    }
+
+    .btn-edit {
+        min-width: 70px;
+    }
+
+    .faq-empty {
+        padding: 78px 20px 48px;
+        background: #fff;
+        border: 1px solid #e1e9ee;
+        border-radius: 12px;
+        box-shadow: 0 3px 12px rgba(23, 79, 103, 0.07);
+    }
+}
+
+/* =========================================
+   小尺寸手機
+========================================= */
+
+@media (max-width: 420px) {
+    .faq-row {
+        grid-template-columns: 1fr;
+    }
+
+    .faq-row > div:nth-child(1),
+    .faq-row > div:nth-child(2),
+    .faq-row > div:nth-child(4),
+    .faq-actions {
+        grid-column: 1;
+        justify-self: start;
+    }
+
+    .faq-row > div:nth-child(1) {
+        grid-row: 2;
+    }
+
+    .faq-row > div:nth-child(2) {
+        grid-row: 3;
+    }
+
+    .faq-row > div:nth-child(4) {
+        grid-row: 4;
+    }
+
+    .faq-actions {
+        grid-row: 5;
+        width: 100%;
+        padding-top: 4px;
+    }
+
+    .btn-edit {
+        width: 100%;
+    }
+}

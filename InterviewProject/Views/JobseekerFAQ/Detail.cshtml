@@ -2,91 +2,109 @@
 
 @{
     ViewData["Title"] = "查看 Q&A";
+    var isReplied = Model.Status == "已回覆";
 }
 
 @section Styles {
-    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/AdminFAQ.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/_Layout.css"asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/JobseekerFAQ.css"asp-append-version="true" />
 }
 
 <div class="page-header">
     <div class="page-header-inner">
         <h1>查看 Q&amp;A</h1>
+        <p>Question &amp; Answer Details</p>
     </div>
 </div>
 
-<div class="faq-report-detail-wrap">
+<main class="qa-detail-wrap">
 
-    <div class="report-detail-grid" style="grid-template-columns: 1fr; justify-items: center;">
+    <!-- 頁面頂部資訊 -->
+    <section class="qa-page-summary">
+        <div class="qa-page-title">
+            <span class="qa-category">@Model.Category</span>
+            <h2>@Model.Subject</h2>
+        </div>
+        <span class="qa-status @(isReplied ? "is-replied" : "is-pending")">
+            <span class="qa-status-dot"></span>
+            @Model.Status
+        </span>
 
-        <div class="report-card" style="width: 100%; max-width: 640px;">
+    </section>
 
-            <div class="field-item">
-                <label class="field-label">問題類別</label>
-                <div class="field-input">@Model.Category</div>
-            </div>
-
-            <div class="field-item">
-                <label class="field-label">狀態</label>
-                <div class="field-input">
-                    <span class="btn-toggle @(Model.Status == "已回覆" ? "active" : "inactive")">
-                        @Model.Status
-                    </span>
+    <!-- 問題與回覆雙卡片 -->
+    <div class="qa-content-grid">
+        <!-- 我的提問卡片 -->
+        <article class="qa-content-card question-card">
+            <header class="qa-content-card-header">
+                <div class="qa-section-icon question-icon">
+                    Q
                 </div>
-            </div>
-
-            <div class="field-item field-item--full">
-                <label class="field-label">主旨</label>
-                <div class="field-input">@Model.Subject</div>
-            </div>
-
-            <div class="field-item field-item--full">
-                <label class="field-label">我的提問內容</label>
-                <div class="report-content-box">@Model.Content</div>
-            </div>
-
-            <div class="field-item field-item--full">
-                <label class="field-label">回覆內容</label>
-                <div class="report-content-box">
-                    @(string.IsNullOrWhiteSpace(Model.ReplyContent) ? "尚未回覆，請耐心等候" : Model.ReplyContent)
+                <div>
+                    <h3>我的提問</h3>
+                    <p>您提交給企業的問題內容</p>
                 </div>
-            </div>
+            </header>
+            <div class="qa-content-body">@Model.Content</div>
+        </article>
 
-            @if (Model.RepliedAt != null)
+        <!-- 企業回覆卡片 -->
+        <article class="qa-content-card answer-card">
+            <header class="qa-content-card-header">
+                <div class="qa-section-icon answer-icon">
+                    A
+                </div>
+                <div>
+                    <h3>企業回覆</h3>
+                    <p>
+                        @(isReplied
+                            ? "企業對此問題的回覆內容"
+                            : "目前尚未收到企業的回覆")
+                    </p>
+                </div>
+            </header>
+
+            @if (!string.IsNullOrWhiteSpace(Model.ReplyContent))
             {
-                <div class="field-item field-item--full">
-                    <label class="field-label">回覆時間</label>
-                    <div class="field-input">@Model.RepliedAt?.ToString("yyyy/MM/dd HH:mm")</div>
+                <div class="qa-content-body answer-content">@Model.ReplyContent</div>
+            }
+            else
+            {
+                <div class="qa-pending-box">
+                    <div class="qa-pending-icon">
+                        •••
+                    </div>
+                    <div>
+                        <h4>問題等待回覆中</h4>
+                        <p>企業尚未回覆此問題，請耐心等候。</p>
+                    </div>
                 </div>
             }
-
-            <div class="form-actions report-detail-actions">
-                <button type="button"
-                        class="btn-save"
-                        onclick="closeThisTab()">
-                    關閉
-                </button>
-            </div>
-
-        </div>
+        </article>
 
     </div>
 
-</div>
+    <!-- 操作按鈕 -->
+    <div class="qa-detail-actions">
+        <a asp-controller="JobseekerFAQ"
+           asp-action="Index"
+           class="btn-back">
+            返回我的 Q&amp;A
+        </a>
+    </div>
+
+</main>
 
 @section Scripts {
     <script>
         function closeThisTab() {
-            // 這個頁面預期是從列表頁用 window.open 開出的新分頁，
-            // 因此 window.close() 可以正常運作。
-            // 若使用者是直接用網址列打開（沒有 opener），瀏覽器基於安全考量可能不會關閉，
-            // 這種情況就退回「返回列表」。
-            window.close();
+            if (window.opener && !window.opener.closed) {
+                window.close();
+                return;
+            }
 
-            setTimeout(function () {
-                window.location.href = '@Url.Action("Index", "JobseekerFAQ")';
-            }, 300);
+            window.location.href =
+                '@Url.Action("Index", "JobseekerFAQ")';
         }
     </script>
 }
