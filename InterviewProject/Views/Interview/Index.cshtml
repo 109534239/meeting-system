@@ -1,19 +1,42 @@
-﻿@model IEnumerable<InterviewProject.Models.InterviewSchedule>
+﻿@model IEnumerable<InterviewProject.Models.Room>
 
 @{
-    ViewData["Title"] = "面試排程管理";
+    ViewData["Title"] = "面試管理";
+    string role = ViewBag.CurrentRole as string ?? "";
+    bool canJoin = role == "manager" || role == "director";
 }
 
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+    <style>
+        .candidate-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+            .candidate-list span {
+                font-size: 13px;
+            }
+
+        .btn-join-disabled {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 6px;
+            background: #eee;
+            color: #999;
+            font-size: 13px;
+            cursor: not-allowed;
+        }
+    </style>
 }
 
 <div class="page-header">
     <div class="page-header-inner">
-        <h1>面試排程管理</h1>
-        <p>Interview Schedule Management</p>
+        <h1>面試管理</h1>
+        <p>Interview Management</p>
     </div>
 </div>
 
@@ -31,57 +54,49 @@
         <div class="alert-error">@TempData["Error"]</div>
     }
 
-    @* 新增按鈕 *@
-    <div class="interview-toolbar">
-        <a asp-action="Create" class="btn-add">
-            ＋ 新增面試排程
-        </a>
-    </div>
-
-    @* 面試排程列表 *@
+    @* 面試房間列表（資料來自 Rooms + RoomParticipants，職缺下架後自動產生） *@
     <div class="interview-table">
         <div class="interview-table-head">
-            <div>應徵者</div>
             <div>應徵職缺</div>
-            <div>面試房間</div>
             <div>面試時間</div>
-            <div>狀態</div>
-            <div>分數</div>
+            <div>房間代碼</div>
+            <div>應徵者</div>
+            <div>會議狀態</div>
             <div>操作</div>
         </div>
 
         @if (Model != null && Model.Any())
         {
-            foreach (var item in Model)
+            foreach (var room in Model)
             {
-                var status = item.Resume?.Status ?? "無狀態";
+                var candidates = room.Participants?
+                .Where(p => p.Role == InterviewProject.Models.ParticipantRole.Jobseeker)
+                .ToList() ?? new List<InterviewProject.Models.RoomParticipant>();
 
-                var statusClass = status == "已安排面試" || status == "面試中"
-                    ? "status-confirmed"
-                    : status == "面試結束" || status == "等待結果中" || status == "錄取"
-                        ? "status-done"
-                        : status == "不錄取" || status == "未通過" || status == "不通過"
-                            ? "status-cancelled"
-                            : "status-pending";
+                string meetingStatusText = room.MeetingStatus switch
+                {
+                    "InProgress" => "進行中",
+                    "Ended" => "已結束",
+                    _ => "尚未開始"
+                };
+
+                string meetingStatusClass = room.MeetingStatus switch
+                {
+                    "InProgress" => "status-confirmed",
+                    "Ended" => "status-done",
+                    _ => "status-pending"
+                };
 
                 <div class="interview-row">
-                    <div class="interview-name">
-                        @(item.Resume?.Member?.Name ?? "未知")
-                    </div>
-
                     <div class="interview-title">
-                        @(item.Resume?.Job?.Title ?? "未知")
-                    </div>
-
-                    <div>
-                        @(item.Room?.RoomName ?? "未指派房間")
+                        @(room.Job?.Title ?? "未指定職缺")
                     </div>
 
                     <div class="interview-time">
-                        @if (item.Room?.StartAt != null && item.Room?.EndAt != null)
+                        @if (room.StartAt != null)
                         {
-                            <span class="date">@item.Room.StartAt.Value.ToString("yyyy-MM-dd")</span>
-                            <span class="time">@item.Room.StartAt.Value.ToString("HH:mm") ~ @item.Room.EndAt.Value.ToString("HH:mm")</span>
+                            <span class="date">@room.StartAt.Value.ToString("yyyy-MM-dd")</span>
+                            <span class="time">@room.StartAt.Value.ToString("HH:mm")</span>
                         }
                         else
                         {
@@ -89,84 +104,52 @@
                         }
                     </div>
 
-                    <div>
-                        <span class="status-badge @statusClass">@status</span>
+                    <div>@room.JitsiRoomName</div>
+
+                    <div class="candidate-list">
+                        @if (candidates.Any())
+                        {
+                            foreach (var c in candidates)
+                            {
+                                <span>@(c.Resume?.Member?.Name ?? "未知")</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">尚無應徵者</span>
+                        }
                     </div>
 
                     <div>
-                        @(item.ResultScore.HasValue ? item.ResultScore.Value + " 分" : "尚未評分")
+                        <span class="status-badge @meetingStatusClass">@meetingStatusText</span>
                     </div>
 
                     <div class="interview-actions">
-                        <a asp-action="Edit"
-                           asp-route-id="@item.Id"
-                           class="btn-edit">編輯</a>
-
-                        @if (item.Resume?.Status == "已安排面試" || item.Resume?.Status == "面試中")
+                        @if (canJoin)
                         {
-                            <button type="button"
-                                    class="btn-complete"
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#completeModal-@item.Id">
-                                完成
-                            </button>
-
-                            <form asp-action="Cancel"
-                                  asp-route-id="@item.Id"
-                                  method="post"
-                                  onsubmit="return confirm('確定要取消此面試嗎？求職者狀態將改為不通過');">
-                                <button type="submit" class="btn-delete">取消</button>
-                            </form>
+                            @if (room.CanEnter())
+                            {
+                                <a class="btn-complete" href="@Url.Action("Join", "Room", new { code = room.JitsiRoomName })">
+                                    進入面試
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="btn-join-disabled" title="@room.StatusText()">@room.StatusText()</span>
+                            }
                         }
-                    </div>
-                </div>
-
-                <div class="modal fade" id="completeModal-@item.Id" tabindex="-1" aria-hidden="true">
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <form asp-action="Complete" method="post">
-                                <input type="hidden" name="id" value="@item.Id" />
-
-                                <div class="modal-header">
-                                    <h5 class="modal-title">填寫面試結果 - @(item.Resume?.Member?.Name ?? "未知")</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                </div>
-
-                                <div class="modal-body">
-                                    <div class="mb-3">
-                                        <label class="form-label">面試分數 (0-100) <span class="text-danger">*</span></label>
-                                        <input type="number" name="resultScore" class="form-control" min="0" max="100" required placeholder="請打分數" />
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <label class="form-label">面試評語</label>
-                                        <textarea name="resultNote" class="form-control" rows="3" placeholder="請輸入面試評語..."></textarea>
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <label class="form-label">變更履歷狀態至</label>
-                                        <select name="nextStatus" class="form-select">
-                                            <option value="面試結束">面試結束</option>
-                                            <option value="等待結果中">等待結果中</option>
-                                            <option value="錄取">錄取</option>
-                                            <option value="不錄取">不錄取</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="modal-footer">
-                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
-                                    <button type="submit" class="btn btn-success">提交結果</button>
-                                </div>
-                            </form>
-                        </div>
+                        else
+                        {
+                            <span class="text-muted">僅供檢視</span>
+                        }
                     </div>
                 </div>
             }
         }
         else
         {
-            <div class="interview-empty">目前沒有任何面試排程</div>
+            <div class="interview-empty">目前沒有任何面試房間</div>
         }
     </div>
+
 </div>

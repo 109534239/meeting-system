@@ -27,33 +27,37 @@ namespace InterviewProject.Controllers
         private int GetEmployeeId() => HttpContext.Session.GetInt32("MemberId") ?? 0;
         private int GetMemberId() => HttpContext.Session.GetInt32("MemberId") ?? 0;
 
-        // ── HR/主管：面試排程列表 ──
+        // ── 主管/最高主管專用：面試房間列表（新版，資料來自 Rooms + RoomParticipants） ──
+        //    🎯 HR 不參與會議，不開放這個頁面（即使直接打網址也一樣擋）
         public async Task<IActionResult> Index()
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (role != "manager" && role != "director")
+            {
+                TempData["Error"] = "此頁面僅供部門主管與最高主管使用";
+                return RedirectToAction("Dashboard", "AdminHome");
+            }
+
             int empId = GetEmployeeId();
 
-            // 🎯 修正關鍵：將舊有的 .Include(s => s.Member) 改為經由 Resume 的點出關聯
-            var query = _db.InterviewSchedules
-                .Include(s => s.Room)
-                .Include(s => s.ScheduledByEmployee)
-                .Include(s => s.Resume)
-                    .ThenInclude(r => r.Job)
-                .Include(s => s.Resume)
-                    .ThenInclude(r => r.Member) // 🎯 補上這行，確保前端 item.Resume.Member 有資料！
-                .AsQueryable();
+            // 🎯 只列「新系統」自動建立的面試房間（有掛 JobsId 的），舊的手動測試房間不顯示
+            var query = _db.Rooms
+                .Include(r => r.Job)
+                .Include(r => r.Participants)
+                    .ThenInclude(p => p.Resume)
+                        .ThenInclude(res => res!.Member)
+                .Where(r => r.JobsId != null)
+                // 主管/最高主管：只看自己被邀請（RoomParticipants.EmployeeId）的房間
+                .Where(r => r.Participants.Any(p => p.EmployeeId == empId));
 
-            if (role == "manager")
-                query = query.Where(s => s.ScheduledByEmployeeId == empId);
-
-            // 🎯 修正關鍵：排序由舊欄位 ScheduledAt 改用房間的 StartAt
-            var schedules = await query
-                .OrderByDescending(s => s.Room != null ? s.Room.StartAt : s.CreatedAt)
+            var rooms = await query
+                .OrderByDescending(r => r.StartAt)
                 .ToListAsync();
 
-            return View("~/Views/Interview/Index.cshtml", schedules);
+            ViewBag.CurrentRole = role;
+            return View("~/Views/Interview/Index.cshtml", rooms);
         }
 
         // ── HR/主管：新增排程 GET ──

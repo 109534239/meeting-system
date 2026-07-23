@@ -299,6 +299,13 @@ namespace InterviewProject.Controllers
 
                 // 修改狀態並更新資料庫
                 resume.Status = model.Status;
+
+                // 🎯 履歷審核就被刷掉的人，直接視為「未錄取」，不用等到面試階段
+                if (resume.Status == "未通過")
+                {
+                    resume.AdmissionResult = AdmissionResultValues.Rejected;
+                }
+
                 _db.Entry(resume).State = EntityState.Modified;
                 await _db.SaveChangesAsync();
 

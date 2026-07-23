@@ -57,9 +57,13 @@ namespace InterviewProject.Models
         public virtual Job? Job { get; set; }
 
         public string? Status { get; set; }
-        // 🎯 核心關鍵：加入對應面試資料表的導覽屬性
-        // 假設你的面試模型叫 Interview，一筆履歷對應一場面試（或是多場，這裡用單數為例）
-        //public virtual Interview? Interview { get; set; }
+
+        // 🎯 面試狀態（跟履歷審核狀態分開存）：
+        //    null → 等待安排面試 → 已安排面試 → 面試中 → 面試結束
+        public string? InterviewStatus { get; set; }
+
+        // 🎯 錄取結果：null → 等待結果中 → 未錄取 / 錄取
+        public string? AdmissionResult { get; set; }
 
         public int? AiScore { get; set; }
         public string? AiComment { get; set; }

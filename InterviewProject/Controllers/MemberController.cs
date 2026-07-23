@@ -613,6 +613,23 @@ namespace InterviewProject.Controllers
                 .OrderByDescending(r => r.ResumeTime)
                 .ToListAsync();
 
+            // 🎯 已安排面試（InterviewStatus = 已安排面試）的履歷，透過 RoomParticipants 反查對應的 Room
+            //    （用 RoomParticipants 查，而不是用 Room.JobsId 查，才不會受舊資料/手動建立的房間影響）
+            var scheduledResumeIds = applications
+                .Where(r => r.InterviewStatus == InterviewStatusValues.Scheduled)
+                .Select(r => r.Id)
+                .ToList();
+
+            var roomsByResumeId = await _db.RoomParticipants
+                .Where(p => p.Role == ParticipantRole.Jobseeker
+                            && p.ResumeId != null
+                            && scheduledResumeIds.Contains(p.ResumeId.Value))
+                .Include(p => p.Room)
+                .Where(p => p.Room != null)
+                .ToDictionaryAsync(p => p.ResumeId!.Value, p => p.Room!);
+
+            ViewBag.RoomsByResumeId = roomsByResumeId;
+
             return View(applications);
         }
 

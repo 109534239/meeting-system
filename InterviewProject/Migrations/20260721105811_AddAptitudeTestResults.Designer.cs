@@ -3,6 +3,7 @@ using System;
 using InterviewProject.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace InterviewProject.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260721105811_AddAptitudeTestResults")]
+    partial class AddAptitudeTestResults
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -655,9 +658,6 @@ namespace InterviewProject.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("AdmissionResult")
-                        .HasColumnType("text");
-
                     b.Property<string>("AiComment")
                         .HasColumnType("text");
 
@@ -669,9 +669,6 @@ namespace InterviewProject.Migrations
 
                     b.Property<string>("ContactAddress")
                         .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("InterviewStatus")
                         .HasColumnType("text");
 
                     b.Property<int>("JobsId")

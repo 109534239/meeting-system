@@ -4,12 +4,22 @@
     var memberName = Context.Session.GetString("MemberName") ?? "訪客";
     var memberRole = Context.Session.GetString("MemberRole")?.ToLower() ?? "";
     var isStaff = memberRole == "hr" || memberRole == "manager" || memberRole == "director";
-    var displayName = isStaff ? "面試官：" + memberName : "求職者：" + memberName;
+    var isHost = memberRole == "director"; // 🎯 只有最高主管是主持人，能開始/結束會議
+    string staffLabel = memberRole switch
+    {
+        "director" => "最高主管",
+        "manager" => "主管",
+        "hr" => "人資",
+        _ => "員工"
+    };
+    var displayName = isStaff ? staffLabel + "：" + memberName : "求職者：" + memberName;
     // Jitsi External API (JavaScript SDK)
     // 使用 meet.jit.si - External API 不受 5 分鐘限制
-    // 自架版：把 jitsiDomain 改成 "你的IP:18080"（需要 HTTPS）
-    var jitsiDomain = "meet.jit.si";
-    var jitsiRoom = "InterviewRoom-" + room.JitsiRoomName;
+    // 🎯 改用跟 AI 面試官（Services/JitsiBotService.cs）同一個 8x8.vc JaaS 房間，
+    //    不然人類跟 AI 面試官根本不在同一個會議室，而且 meet.jit.si 的公開嵌入模式有 5 分鐘限制
+    var jaasTenantId = "vpaas-magic-cookie-00203058b8f244a0a520be67d341b527";
+    var jitsiDomain = "8x8.vc";
+    var jitsiRoom = jaasTenantId + "/" + room.JitsiRoomName;
     var encodedName = Uri.EscapeDataString(displayName);
 }
 <!DOCTYPE html>
@@ -468,7 +478,7 @@
                 <span class="rec-dot" id="recDot"></span>
                 <span id="recTxt">等待開始</span>
             </span>
-            @if (isStaff)
+            @if (isHost)
             {
                 <button class="btn btn-green" id="startBtn" onclick="hostStart()">▶ 開始會議</button>
                 <button class="btn btn-orange" id="endBtn" onclick="showEndConfirm()" style="display:none">⏹ 結束會議</button>
@@ -548,15 +558,17 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
-    <script src="https://meet.jit.si/external_api.js"></script>
+    <script src="https://8x8.vc/vpaas-magic-cookie-00203058b8f244a0a520be67d341b527/external_api.js"></script>
     <script>
         // ══════════════════════════════════
         //  設定
         // ══════════════════════════════════
         const IS_STAFF   = @(isStaff ? "true" : "false");
+        const IS_HOST    = @(isHost ? "true" : "false");
         const MY_NAME    = "@Html.Raw(displayName.Replace("\"", "\\\""))";
         const ROOM_CODE  = "@room.JitsiRoomName";
         const JITSI_ROOM = "@jitsiRoom";
+        const JITSI_DOMAIN = "@jitsiDomain";
         const SIL_SEC    = 22;  // 冷場觸發秒數
 
         // ══════════════════════════════════
@@ -636,7 +648,7 @@
             b.className = 'banner live';
             b.textContent = '🔴 會議進行中';
 
-            if (IS_STAFF) {
+            if (IS_HOST) {
                 document.getElementById('startBtn').style.display = 'none';
                 document.getElementById('endBtn').style.display = '';
             }
@@ -1055,7 +1067,7 @@
                 return;
             }
 
-            jitsiApi = new JitsiMeetExternalAPI('meet.jit.si', {
+            jitsiApi = new JitsiMeetExternalAPI(JITSI_DOMAIN, {
                 roomName:   JITSI_ROOM,
                 parentNode: document.getElementById('jitsi-container'),
                 width:      '100%',
@@ -1063,6 +1075,7 @@
                 userInfo: { displayName: MY_NAME },
                 configOverwrite: {
                     prejoinPageEnabled:           false,
+                    readOnlyName:                 true,
                     startWithAudioMuted:          false,
                     startWithVideoMuted:          false,
                     disableDeepLinking:           true,
@@ -1091,6 +1104,15 @@
                     // ✅ 隱藏主持人相關 UI
                     SHOW_PROMOTIONAL_CLOSE_PAGE:      false,
                 }
+            });
+
+            // ✅ 使用者真的按下「加入會議」、實際進入 Jitsi 視訊房間時才觸發 —— 這時候才把 JoinedAt 寫進資料庫
+            jitsiApi.addEventListener('videoConferenceJoined', e => {
+                fetch('/Room/MarkJoined', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'code=' + encodeURIComponent(ROOM_CODE)
+                }).catch(() => {});
             });
 
             // ✅ 監聽 Jitsi 的音訊事件，直接用來做冷場偵測（不需另外取麥克風）
@@ -1122,8 +1144,8 @@
             // 立即初始化 Jitsi（進入視訊房間不需要等主管開始）
             initJitsi();
 
-            // 求職者進入：等 800ms 看是否收到 MeetingStarted，沒收到就顯示提示
-            if (!IS_STAFF) {
+            // 求職者/主管：等 800ms 看是否收到 MeetingStarted，沒收到就顯示提示（只有最高主管能開始會議）
+            if (!IS_HOST) {
                 setTimeout(()=>{
                     if (!started)
                         document.getElementById('notStartedModal').classList.add('show');

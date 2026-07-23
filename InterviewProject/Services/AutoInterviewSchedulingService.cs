@@ -44,7 +44,7 @@ namespace InterviewProject.Services
             if (approved.Count == 0) return false; // 全部未通過，沒人要面試
 
             var manager = await _db.Employees
-                .FirstOrDefaultAsync(e => e.Name == job.EmployeesName);
+                .FirstOrDefaultAsync(e => e.Department == job.Department && e.Role == "manager");
 
             var director = await _db.Employees
                 .FirstOrDefaultAsync(e => e.Department == job.Department && e.Role == "director");
@@ -72,7 +72,10 @@ namespace InterviewProject.Services
                     ResumeId = resume.Id,
                     Status = ParticipantStatus.Invited
                 });
-                resume.Status = "已安排面試";
+
+                // 🎯 這個人現在已經「被排進房間」了，重新計算他的面試狀態
+                //    （履歷狀態本身維持「已通過」不變）
+                await RecomputeInterviewStatusAsync(resume, hasRoomInvite: true);
             }
 
             if (manager != null)
@@ -106,6 +109,40 @@ namespace InterviewProject.Services
 
             await _db.SaveChangesAsync();
             return true;
+        }
+
+        /// <summary>
+        /// 求職者完成適性測驗後呼叫：重新計算他的 InterviewStatus。
+        /// </summary>
+        public async Task<bool> OnAptitudeTestCompletedAsync(int resumeId)
+        {
+            var resume = await _db.Resumes.FindAsync(resumeId);
+            if (resume == null) return false;
+            if (resume.Status != "已通過") return false; // 不是「已通過」不用管（待審核/未通過都不該有測驗）
+
+            var isInvited = await _db.RoomParticipants.AnyAsync(p => p.ResumeId == resumeId);
+            await RecomputeInterviewStatusAsync(resume, hasRoomInvite: isInvited);
+            await _db.SaveChangesAsync();
+            return true;
+        }
+
+        /// <summary>
+        /// 核心狀態機：依「測驗有沒有完成」跟「有沒有被排進房間」這兩項，算出 InterviewStatus。
+        /// 兩項都到齊 → 已安排面試；只到一項 → 等待安排面試；兩項都沒有 → null（維持已通過原樣）。
+        /// </summary>
+        private async Task RecomputeInterviewStatusAsync(Resume resume, bool hasRoomInvite)
+        {
+            var hasCompletedTest = await _db.AptitudeTestResults.AnyAsync(t => t.ResumeId == resume.Id);
+
+            if (hasCompletedTest && hasRoomInvite)
+            {
+                resume.InterviewStatus = InterviewStatusValues.Scheduled; // 已安排面試
+            }
+            else if (hasCompletedTest || hasRoomInvite)
+            {
+                resume.InterviewStatus = InterviewStatusValues.WaitingSchedule; // 等待安排面試
+            }
+            // 兩項都沒有就不動，維持 null（履歷已通過，但還沒開始這個流程）
         }
     }
 }

@@ -1,0 +1,65 @@
+﻿@using InterviewProject.Models
+@{
+    ViewData["Title"] = "無法進入會議室";
+    var room = ViewBag.Room as Room;
+}
+
+<style>
+    .enter-code-container {
+        max-width: 450px;
+        margin: 80px auto;
+        padding: 30px;
+        background: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        text-align: center;
+        font-family: "Segoe UI", Microsoft JhengHei, sans-serif;
+    }
+
+        .enter-code-container h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+    .room-name {
+        color: #7f8c8d;
+        margin-bottom: 15px;
+    }
+
+    .error-msg {
+        color: #e74c3c;
+        margin: 20px 0;
+        font-size: 16px;
+        font-weight: 500;
+    }
+
+    .back-link {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 10px 20px;
+        background-color: #3498db;
+        color: white;
+        border-radius: 6px;
+        text-decoration: none;
+    }
+
+        .back-link:hover {
+            background-color: #2980b9;
+        }
+</style>
+
+<div class="enter-code-container">
+    <h2>⚠️ 無法進入會議室</h2>
+
+    @if (room != null)
+    {
+        <p class="room-name">@room.RoomName</p>
+    }
+
+    <p class="error-msg">
+        @(ViewBag.ErrorMessage ?? ViewBag.StatusText ?? "目前無法進入此會議室")
+    </p>
+
+    <a class="back-link" href="/Room/EnterCode">返回重新輸入代碼</a>
+</div>

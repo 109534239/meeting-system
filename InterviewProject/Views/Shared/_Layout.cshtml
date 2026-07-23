@@ -63,9 +63,9 @@
                       @*   <a class="nav-btn @(controller == "AdminApplication" ? "active" : "")"
                            asp-controller="AdminApplication" asp-action="Index">應徵管理</a> *@
 
-                        @* ✅ 新增：面試排程（HR） *@
-                        <a class="nav-btn @(controller == "Interview" ? "active" : "")"
-                           asp-controller="Interview" asp-action="Index">面試排程</a>
+                        @* 🎯 HR 不參與會議，不需要面試管理選單（已移除，避免看到空列表/誤點） *@
+                        @* <a class="nav-btn @(controller == "Interview" ? "active" : "")"
+                           asp-controller="Interview" asp-action="Index">面試管理</a> *@
 
                         <a class="nav-btn @(controller == "AdminAnnouncement" ? "active" : "")"
                            asp-controller="AdminAnnouncement" asp-action="Index">公告管理</a>
@@ -87,7 +87,7 @@
 
                         @* ✅ 新增：面試會議（主管） *@
                         <a class="nav-btn @(controller == "Interview" ? "active" : "")"
-                           asp-controller="Interview" asp-action="Index">面試排程</a>
+                           asp-controller="Interview" asp-action="Index">面試管理</a>
 
                         @* 主管：只有 Report *@
                         @* <a class="nav-btn @(controller == "AdminFAQ" && action == "Report" ? "active" : "")"
@@ -107,7 +107,7 @@
 
                         @* ✅ 新增：面試排程（Director） *@
                         <a class="nav-btn @(controller == "Interview" ? "active" : "")"
-                           asp-controller="Interview" asp-action="Index">面試排程</a>
+                           asp-controller="Interview" asp-action="Index">面試管理</a>
 
                         @* ✅ 新增：主管管理 *@
                         <a class="nav-btn @(controller == "DirectorManager" ? "active" : "")"

@@ -1,12 +1,92 @@
 @model IEnumerable<InterviewProject.Models.Resume>
 @{
     ViewData["Title"] = "應徵管理";
+    var roomsByResumeId = ViewBag.RoomsByResumeId as Dictionary<int, InterviewProject.Models.Room>
+                        ?? new Dictionary<int, InterviewProject.Models.Room>();
 }
 
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Application.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <style>
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+            .modal-overlay.active {
+                display: flex;
+            }
+
+        .modal-box {
+            position: relative;
+            background: #fff;
+            border-radius: 10px;
+            max-width: 560px;
+            width: 92%;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 28px 26px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            border: none;
+            background: none;
+            font-size: 22px;
+            line-height: 1;
+            cursor: pointer;
+            color: #888;
+        }
+
+            .modal-close:hover {
+                color: #333;
+            }
+
+        .modal-loading, .modal-error {
+            text-align: center;
+            padding: 30px 0;
+            color: #888;
+        }
+
+        .apt-question {
+            margin-bottom: 16px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .apt-question-text {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .apt-scale {
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+        }
+
+        .apt-scale-option {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #666;
+            cursor: pointer;
+        }
+    </style>
 }
 
 <!-- PAGE HEADER -->
@@ -55,9 +135,27 @@
         {
             @foreach (var item in Model)
             {
-                bool isPassed = item.Status == "通過";
+                string status = item.Status ?? "待審核";
+                string? interviewStatus = item.InterviewStatus;   // null / 等待安排面試 / 已安排面試 / 面試中 / 面試結束
+                string? admissionResult = item.AdmissionResult;   // null / 等待結果中 / 未錄取 / 錄取
+                InterviewProject.Models.Room? room = roomsByResumeId.TryGetValue(item.Id, out var r) ? r : null;
 
-                @* 💡 加上 app-row-wrap 容器，解決 JS toggle 找不到外層的問題 *@
+                // 🎯 依 9 種狀態組合，決定「查看」按鈕要不要顯示、顯示了要打開哪種內容
+                string viewAction = "";
+                if (status == "已通過")
+                {
+                    if (string.IsNullOrEmpty(interviewStatus))
+                        viewAction = "aptitude";                                                  // 狀態3：去做適性測驗
+                    else if (interviewStatus == InterviewProject.Models.InterviewStatusValues.WaitingSchedule)
+                        viewAction = "waiting";                                                    // 狀態4：等待安排面試
+                    else if (interviewStatus == InterviewProject.Models.InterviewStatusValues.Scheduled)
+                        viewAction = "interview";                                                  // 狀態5：面試資訊
+                    else if (interviewStatus == InterviewProject.Models.InterviewStatusValues.Ended
+                    && admissionResult == InterviewProject.Models.AdmissionResultValues.Admitted)
+                        viewAction = "onboarding";                                                  // 狀態9：報到資訊
+                                                                                                    // 面試中(狀態6)／面試結束+等待結果中(狀態7)／面試結束+未錄取(狀態8) → 不顯示按鈕
+                }
+
                 <div class="app-row-wrap">
                     <div class="app-row">
                         @* 1. 投遞時間 *@
@@ -66,22 +164,16 @@
                         @* 2. 職缺名稱 *@
                         <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>
 
-                        @* 3. 審核狀態 *@
+                        @* 3. 履歷狀態 *@
                         <div class="row-status text-center">
-                            <span class="@GetStatusClass(item.Status ?? "待審核") status-label">
-                                @(string.IsNullOrEmpty(item.Status) ? "待審核" : item.Status)
-                            </span>
+                            <span class="@GetStatusClass(status) status-label">@status</span>
                         </div>
 
-                        @* 4. 面試狀態 (動態套用對應標籤樣式) *@
+                        @* 4. 面試狀態 *@
                         <div class="text-center">
-                            @if (isPassed)
+                            @if (!string.IsNullOrEmpty(interviewStatus))
                             {
-                                @* 💡 預設抓取資料庫面試狀態，若無則顯示 "等待安排面試" *@
-                                var interviewStatus = item.Status ?? "等待安排面試";
-                                <span class="@GetInterviewStatusClass(interviewStatus) status-label">
-                                    @interviewStatus
-                                </span>
+                                <span class="@GetInterviewStatusClass(interviewStatus) status-label">@interviewStatus</span>
                             }
                             else
                             {
@@ -91,105 +183,76 @@
 
                         @* 5. 錄取/未錄取 *@
                         <div class="text-center">
-                            @* {
-                                // 先取得當前的面試狀態（防呆 Null）
-                                var currentInterviewStatus = item.Interview?.Status ?? "等待安排面試";
-                                // 取得當前的資料庫錄取結果（假設欄位叫 AdmissionResult，可依你實際的改，如 item.Interview?.Result）
-                                var dbResult = item.Interview?.AdmissionResult ?? "";
-
-                                // 呼叫動態判斷方法
-                                var admission = GetAdmissionStatus(item.Status ?? "待審核", currentInterviewStatus, dbResult);
-                            }
-
-                            @if (admission.Text != "-")
+                            @if (!string.IsNullOrEmpty(admissionResult))
                             {
-                                <span class="@admission.Class status-label">
-                                    @admission.Text
-                                </span>
+                                <span class="status-label">@admissionResult</span>
                             }
                             else
                             {
                                 <span>-</span>
-                            }*@
+                            }
                         </div>
 
                         @* 6. 查看詳細按鈕 *@
                         <div class="text-center">
-                            @if (isPassed)
+                            @if (!string.IsNullOrEmpty(viewAction))
                             {
-                                <button class="btn-view" onclick="toggleDetail(this)">
+                                <button class="btn-view" data-resume-id="@item.Id" data-view-action="@viewAction" onclick="openDetailByAction(this)">
                                     查看 <i class="fa fa-chevron-down"></i>
                                 </button>
                             }
                         </div>
                     </div>
 
-                    @if (isPassed)
+                    @if (viewAction == "interview")
                     {
-                        <div class="app-detail" style="display: none;">
-                            <div class="detail-grid">
-                                <div class="detail-section">
-                                    <div class="detail-section-title">
-                                        <span class="title-text">
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                                                <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="2" />
-                                            </svg>
-                                            適性測驗
-                                        </span>
-                                        <span class="detail-badge badge-pending">未完成</span>
-                                    </div>
-                                    <div class="detail-card">
-                                        <div class="detail-notice-box">
-                                            <p>1. 測驗時間約 15 分鐘，請確保網路穩定</p>
-                                            <p>2. 測驗開始後不可中途離開</p>
-                                            <p>3. 請於截止日期前完成</p>
-                                        </div>
-                                        <div class="detail-info-group">
-                                            <div class="detail-row">
-                                                <span class="detail-label">截止日期</span>
-                                                <span class="detail-value">2026/05/10</span>
-                                            </div>
-                                        </div>
-                                        <div class="detail-action">
-                                            <button class="btn-action btn-action--primary">前往測驗</button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="detail-section">
-                                    <div class="detail-section-title">
-                                        <span class="title-text">
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                                <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2" />
-                                                <path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                                            </svg>
-                                            面試資訊
-                                        </span>
-                                        <span class="detail-badge badge-waiting">@(item.Status ?? "等待安排面試")</span>
-                                    </div>
-                                    <div class="detail-card">
-                                        <div class="detail-notice-box">
-                                            <p>1. 請於面試時間前 10 分鐘登入</p>
-                                            <p>2. 請確保視訊與音訊設備正常</p>
-                                        </div>
-                                        <div class="detail-info-group">
-                                            <div class="detail-row">
-                                                <span class="detail-label">面試方式</span>
-                                                <span class="detail-value">視訊面試</span>
-                                            </div>
-                                            <div class="detail-row">
-                                                <span class="detail-label">面試時間</span>
-                                                <span class="detail-value">2026/05/15 14:00</span>
-                                            </div>
-                                        </div>
-                                        <div class="detail-action">
-                                            <button class="btn-action btn-action--primary">前往面試</button>
-                                        </div>
-                                    </div>
-                                </div>
+                        <template id="tpl-interview-@item.Id">
+                            <div class="detail-section-title">
+                                <span class="title-text">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2" />
+                                        <path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                                    </svg>
+                                    面試資訊
+                                </span>
+                                <span class="detail-badge @(room != null ? "badge-scheduled" : "badge-waiting")">@interviewStatus</span>
                             </div>
-                        </div>
+                            <div class="detail-card">
+                                @if (room != null)
+                                {
+                                    <div class="detail-notice-box">
+                                        <p>1. 請於面試時間前 10 分鐘登入</p>
+                                        <p>2. 請確保視訊與音訊設備正常</p>
+                                        <p>3. 會議尚未開始前無法進入，請準時上線</p>
+                                    </div>
+                                    <div class="detail-info-group">
+                                        <div class="detail-row">
+                                            <span class="detail-label">面試方式</span>
+                                            <span class="detail-value">視訊面試</span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">面試時間</span>
+                                            <span class="detail-value">@(room.StartAt?.ToString("yyyy/MM/dd HH:mm") ?? "尚未排定")</span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">會議碼</span>
+                                            <span class="detail-value">@room.JitsiRoomName</span>
+                                        </div>
+                                    </div>
+                                    <div class="detail-action">
+                                        <a class="btn-action btn-action--primary" href="@Url.Action("Join", "Room", new { code = room.JitsiRoomName })">
+                                            進入面試
+                                        </a>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="detail-notice-box">
+                                        <p>資料異常：目前查不到對應的面試房間，請聯繫人資確認。</p>
+                                    </div>
+                                }
+                            </div>
+                        </template>
                     }
                 </div>
             }
@@ -198,6 +261,14 @@
         {
             <div class="no-data">目前尚無投遞紀錄。</div>
         }
+    </div>
+
+    <!-- 🎯 共用置中彈窗（適性測驗 / 面試資訊 都用這個顯示，不跳轉頁面） -->
+    <div id="detailModalOverlay" class="modal-overlay" onclick="if(event.target===this) closeDetailModal()">
+        <div class="modal-box">
+            <button type="button" class="modal-close" onclick="closeDetailModal()">&times;</button>
+            <div id="detailModalContent"></div>
+        </div>
     </div>
 
 </div>
@@ -232,20 +303,24 @@
     public (string Text, string Class) GetAdmissionStatus(string resumeStatus, string interviewStatus, string dbAdmissionResult)
     {
         // 情況 A：履歷根本沒通過審核
-        if (resumeStatus == "不通過") {
+        if (resumeStatus == "不通過")
+        {
             return ("未錄取", "status-fail");
         }
-        if (resumeStatus == "待審核") {
+        if (resumeStatus == "待審核")
+        {
             return ("-", "");
         }
 
         // 情況 B：履歷通過了，但面試還沒到最後階段
-        if (interviewStatus == "等待安排面試" || interviewStatus == "已安排面試" || interviewStatus == "面試中") {
+        if (interviewStatus == "等待安排面試" || interviewStatus == "已安排面試" || interviewStatus == "面試中")
+        {
             return ("等待結果中", "status-pending-result");
         }
 
         // 情況 C：面試結束了，顯示真正的結果（例如資料庫存的 "錄取" / "未錄取"）
-        if (interviewStatus == "面試結束") {
+        if (interviewStatus == "面試結束")
+        {
             if (dbAdmissionResult == "錄取") return ("錄取", "status-pass");
             if (dbAdmissionResult == "未錄取") return ("未錄取", "status-fail");
             return ("等待結果中", "status-pending-result"); // 防呆：面試結束但主管還沒點選結果
@@ -257,19 +332,166 @@
 
 @section Scripts {
     <script>
-        function toggleDetail(btn) {
-            const wrap = btn.closest('.app-row-wrap');
-            const detail = wrap.querySelector('.app-detail');
-            const icon = btn.querySelector('i');
+        function openDetailModal() {
+            document.getElementById('detailModalOverlay').classList.add('active');
+        }
+        function closeDetailModal() {
+            document.getElementById('detailModalOverlay').classList.remove('active');
+        }
 
-            if (detail.style.display === 'none' || detail.style.display === '') {
-                detail.style.display = 'block';
-                btn.classList.add('active');
-                if(icon) icon.className = 'fa fa-chevron-up';
-            } else {
-                detail.style.display = 'none';
-                btn.classList.remove('active');
-                if(icon) icon.className = 'fa fa-chevron-down';
+        // 🎯 依「查看」按鈕上的 data-view-action 分流到對應的彈窗內容
+        function openDetailByAction(btn) {
+            const resumeId = btn.dataset.resumeId;
+            const action = btn.dataset.viewAction;
+            if (action === 'aptitude') openAptitudeModal(resumeId);
+            else if (action === 'waiting') openWaitingModal();
+            else if (action === 'interview') openInterviewModal(resumeId);
+            else if (action === 'onboarding') openOnboardingModal();
+        }
+
+        // 狀態4：已通過，但測驗/房間其中一項還沒到齊
+        function openWaitingModal() {
+            const content = document.getElementById('detailModalContent');
+            content.innerHTML =
+                '<div class="detail-section-title">' +
+                '  <span class="title-text">面試資訊</span>' +
+                '  <span class="detail-badge badge-waiting">等待安排面試</span>' +
+                '</div>' +
+                '<div class="detail-card">' +
+                '  <div class="detail-notice-box">' +
+                '    <p>目前正在安排面試中，排定後會顯示面試時間與會議碼，請耐心等候通知。</p>' +
+                '  </div>' +
+                '</div>';
+            openDetailModal();
+        }
+
+        // 狀態9：面試結束且錄取（報到資訊，目前先用提示文字佔位，之後會接評分/報到流程做完的內容）
+        function openOnboardingModal() {
+            const content = document.getElementById('detailModalContent');
+            content.innerHTML =
+                '<div class="detail-section-title">' +
+                '  <span class="title-text">錄取通知</span>' +
+                '  <span class="detail-badge badge-scheduled">錄取</span>' +
+                '</div>' +
+                '<div class="detail-card">' +
+                '  <div class="detail-notice-box">' +
+                '    <p>恭喜您錄取本次職缺！詳細報到時間與注意事項，人資將會另行通知您。</p>' +
+                '  </div>' +
+                '</div>';
+            openDetailModal();
+        }
+
+        // 🎯 面試資訊：直接把該筆履歷的隱藏樣板複製進彈窗顯示（資料已經在頁面上，不用另外打 API）
+        function openInterviewModal(resumeId) {
+            const tpl = document.getElementById('tpl-interview-' + resumeId);
+            const content = document.getElementById('detailModalContent');
+            content.innerHTML = '';
+            if (tpl) content.appendChild(tpl.content.cloneNode(true));
+            openDetailModal();
+        }
+
+        // 🎯 適性測驗：開啟時打 API 問「這份履歷測驗完成了沒」，動態渲染題目或已完成畫面
+        async function openAptitudeModal(resumeId) {
+            const content = document.getElementById('detailModalContent');
+            content.innerHTML = '<p class="modal-loading">載入中...</p>';
+            openDetailModal();
+
+            try {
+                const res = await fetch('/AptitudeTest/GetStatus?resumeId=' + resumeId);
+                const data = await res.json();
+
+                if (!data.success) {
+                    content.innerHTML = '<p class="modal-error">' + (data.message || '載入失敗，請稍後再試') + '</p>';
+                    return;
+                }
+
+                if (data.completed) {
+                    content.innerHTML =
+                        '<div class="detail-section-title">' +
+                        '  <span class="title-text">適性測驗</span>' +
+                        '  <span class="detail-badge badge-scheduled">已完成</span>' +
+                        '</div>' +
+                        '<div class="detail-card">' +
+                        '  <div class="detail-notice-box">' +
+                        '    <p>您已於 ' + data.submittedAt + ' 完成適性測驗，感謝您的作答。</p>' +
+                        '    <p>系統會依照職缺招募進度安排後續面試，請耐心等候通知。</p>' +
+                        '  </div>' +
+                        '</div>';
+                    return;
+                }
+
+                const questionsHtml = data.questions.map(function (q) {
+                    const options = [1, 2, 3, 4, 5].map(function (s) {
+                        return '<label class="apt-scale-option">' +
+                               '<input type="radio" name="q_' + q.id + '" value="' + s + '" required />' +
+                               '<span>' + s + '</span></label>';
+                    }).join('');
+                    return '<div class="apt-question">' +
+                           '<p class="apt-question-text">' + q.id + '. ' + q.text + '</p>' +
+                           '<div class="apt-scale">' + options + '</div>' +
+                           '</div>';
+                }).join('');
+
+                content.innerHTML =
+                    '<div class="detail-section-title">' +
+                    '  <span class="title-text">適性測驗</span>' +
+                    '  <span class="detail-badge badge-pending">未完成</span>' +
+                    '</div>' +
+                    '<div class="detail-card">' +
+                    '  <div class="detail-notice-box">' +
+                    '    <p>1. 共 ' + data.questions.length + ' 題，採 1～5 分量表作答（1：非常不同意 ～ 5：非常同意）</p>' +
+                    '    <p>2. 請依真實情況作答，送出後即完成測驗，無法重測</p>' +
+                    '  </div>' +
+                    '  <form id="aptitudeForm">' + questionsHtml +
+                    '    <div class="detail-action">' +
+                    '      <button type="submit" class="btn-action btn-action--primary">送出測驗</button>' +
+                    '    </div>' +
+                    '  </form>' +
+                    '</div>';
+
+                document.getElementById('aptitudeForm').addEventListener('submit', async function (e) {
+                    e.preventDefault();
+
+                    const answers = data.questions.map(function (q) {
+                        const checked = document.querySelector('input[name="q_' + q.id + '"]:checked');
+                        return { questionId: q.id, score: checked ? parseInt(checked.value) : 0 };
+                    });
+
+                    if (answers.some(function (a) { return a.score === 0; })) {
+                        alert('請完成所有題目再送出');
+                        return;
+                    }
+
+                    const submitBtn = e.target.querySelector('button[type="submit"]');
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = '送出中...';
+
+                    try {
+                        const submitRes = await fetch('/AptitudeTest/Submit', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ resumeId: resumeId, answers: answers })
+                        });
+                        const submitData = await submitRes.json();
+
+                        if (submitData.success) {
+                            alert('測驗已送出，感謝您的作答！');
+                            closeDetailModal();
+                            location.reload();
+                        } else {
+                            alert(submitData.message || '送出失敗，請稍後再試');
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = '送出測驗';
+                        }
+                    } catch (err) {
+                        alert('送出失敗，請稍後再試');
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = '送出測驗';
+                    }
+                });
+
+            } catch (err) {
+                content.innerHTML = '<p class="modal-error">載入失敗，請稍後再試</p>';
             }
         }
     </script>
