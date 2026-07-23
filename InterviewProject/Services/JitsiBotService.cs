@@ -15,6 +15,12 @@ namespace InterviewProject.Services
         }
 
         private static readonly Dictionary<string, BotInstance> _activeBots = new();
+        private readonly JaasJwtService _jaasJwt;
+
+        public JitsiBotService(JaasJwtService jaasJwt)
+        {
+            _jaasJwt = jaasJwt;
+        }
 
         public async Task JoinRoomAsync(string roomCode, string videoPath)
         {
@@ -58,15 +64,18 @@ namespace InterviewProject.Services
                 var context = await localBrowser.NewContextAsync();
                 var page = await context.NewPageAsync();
 
-                // 🚀 【官方標準網址結構】：https://8x8.vc/你的AppID/房間代碼
-                string jitsiDomain = "https://8x8.vc"; 
-                string tenantId = "vpaas-magic-cookie-00203058b8f244a0a520be67d341b527";
+                // 🚀 換成你自己申請的 JaaS AppID（原本那組是別人的示範帳號）
+                string jitsiDomain = "https://8x8.vc";
+                string tenantId = "vpaas-magic-cookie-c12aeb6abc7a4349bc799bb8cb31436a";
 
-                // 組合完整的 URL 並注入跳過確認畫面參數
-                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.prejoinPageEnabled=false&config.lobby.enableLobby=false";
+                // 🎯 JaaS 需要 JWT 才能真的加入會議，AI 面試官不是主持人，moderator=false
+                string botJwt = _jaasJwt.GenerateToken(roomCode, "ai-interviewer", "AI 面試官（王大明）", isModerator: false);
+
+                // 組合完整的 URL 並注入跳過確認畫面參數 + JWT
+                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.prejoinPageEnabled=false&config.lobby.enableLobby=false";
 
                 Console.WriteLine($"[JitsiBot 導航] AI 面試官正在前往官方雲端會議室：{targetUrl}");
-                
+
                 await page.GotoAsync(targetUrl, new PageGotoOptions { Timeout = 60000 });
 
                 _activeBots[roomCode] = new BotInstance

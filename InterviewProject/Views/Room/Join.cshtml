@@ -1,8 +1,11 @@
-﻿@{
+﻿@using InterviewProject.Services
+@inject JaasJwtService JaasJwt
+@{
     Layout = null;
     var room = ViewBag.Room as InterviewProject.Models.Room;
     var memberName = Context.Session.GetString("MemberName") ?? "訪客";
     var memberRole = Context.Session.GetString("MemberRole")?.ToLower() ?? "";
+    var sessionMemberId = Context.Session.GetInt32("MemberId") ?? 0;
     var isStaff = memberRole == "hr" || memberRole == "manager" || memberRole == "director";
     var isHost = memberRole == "director"; // 🎯 只有最高主管是主持人，能開始/結束會議
     string staffLabel = memberRole switch
@@ -13,14 +16,14 @@
         _ => "員工"
     };
     var displayName = isStaff ? staffLabel + "：" + memberName : "求職者：" + memberName;
-    // Jitsi External API (JavaScript SDK)
-    // 使用 meet.jit.si - External API 不受 5 分鐘限制
-    // 🎯 改用跟 AI 面試官（Services/JitsiBotService.cs）同一個 8x8.vc JaaS 房間，
-    //    不然人類跟 AI 面試官根本不在同一個會議室，而且 meet.jit.si 的公開嵌入模式有 5 分鐘限制
-    var jaasTenantId = "vpaas-magic-cookie-00203058b8f244a0a520be67d341b527";
+    // 🎯 換成你自己申請的 JaaS AppID（原本那組是別人的示範帳號，難怪一直卡在驗證失敗）
+    var jaasTenantId = "vpaas-magic-cookie-c12aeb6abc7a4349bc799bb8cb31436a";
     var jitsiDomain = "8x8.vc";
     var jitsiRoom = jaasTenantId + "/" + room.JitsiRoomName;
     var encodedName = Uri.EscapeDataString(displayName);
+
+    // 🎯 簽發這次進場要用的 JWT：只有 director 拿到 moderator=true
+    var jitsiJwt = JaasJwt.GenerateToken(room.JitsiRoomName, sessionMemberId.ToString(), displayName, isHost);
 }
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -558,7 +561,7 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
-    <script src="https://8x8.vc/vpaas-magic-cookie-00203058b8f244a0a520be67d341b527/external_api.js"></script>
+    <script src="https://8x8.vc/vpaas-magic-cookie-c12aeb6abc7a4349bc799bb8cb31436a/external_api.js"></script>
     <script>
         // ══════════════════════════════════
         //  設定
@@ -569,6 +572,7 @@
         const ROOM_CODE  = "@room.JitsiRoomName";
         const JITSI_ROOM = "@jitsiRoom";
         const JITSI_DOMAIN = "@jitsiDomain";
+        const JITSI_JWT = "@jitsiJwt";
         const SIL_SEC    = 22;  // 冷場觸發秒數
 
         // ══════════════════════════════════
@@ -1069,6 +1073,7 @@
 
             jitsiApi = new JitsiMeetExternalAPI(JITSI_DOMAIN, {
                 roomName:   JITSI_ROOM,
+                jwt:        JITSI_JWT,
                 parentNode: document.getElementById('jitsi-container'),
                 width:      '100%',
                 height:     '100%',

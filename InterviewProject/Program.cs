@@ -15,6 +15,9 @@ builder.Services.AddControllersWithViews();
 // 🚀 2. 註冊 AI 機器人服務（解決 Unable to resolve service 錯誤）
 builder.Services.AddSingleton<JitsiBotService>();
 
+// 🚀 JaaS (8x8.vc) JWT 簽發服務
+builder.Services.AddSingleton<JaasJwtService>();
+
 // 🚀 Step B：職缺下架後自動判斷履歷結果、自動建立面試房間
 builder.Services.AddScoped<AutoInterviewSchedulingService>();
 
