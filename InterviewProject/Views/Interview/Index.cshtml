@@ -93,10 +93,10 @@
                     </div>
 
                     <div class="interview-time">
-                        @if (room.StartAt != null)
+                        @if (room.ScheduledAt != null)
                         {
-                            <span class="date">@room.StartAt.Value.ToString("yyyy-MM-dd")</span>
-                            <span class="time">@room.StartAt.Value.ToString("HH:mm")</span>
+                            <span class="date">@room.ScheduledAt.Value.ToString("yyyy-MM-dd")</span>
+                            <span class="time">@room.ScheduledAt.Value.ToString("HH:mm")</span>
                         }
                         else
                         {

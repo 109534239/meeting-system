@@ -53,8 +53,8 @@ namespace InterviewProject.Controllers
                 .Where(r => r.Participants.Any(p => p.EmployeeId == empId));
 
             var rooms = await query
-                .OrderByDescending(r => r.StartAt)
-                .ToListAsync();
+               .OrderByDescending(r => r.ScheduledAt)
+               .ToListAsync();
 
             ViewBag.CurrentRole = role;
             return View("~/Views/Interview/Index.cshtml", rooms);

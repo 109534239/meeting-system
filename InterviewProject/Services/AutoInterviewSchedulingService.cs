@@ -55,6 +55,7 @@ namespace InterviewProject.Services
                 RoomName = $"{job.Title}－面試會議室",
                 JitsiRoomName = Guid.NewGuid().ToString("N")[..10],
                 CreatedTime = DateTime.Now,
+                ScheduledAt = DateTime.Now.AddDays(1), // 預計面試時間（隔天），實際 StartAt 要等主持人真的按下開始會議
                 StartAt = DateTime.Now.AddDays(1),
                 EndAt = null,
                 IsActive = true,

@@ -513,7 +513,7 @@
                     </svg>
                 </div>
                 <div class="ai-nm">王大明</div>
-                <div class="ai-rl">部門主管 · AI 面試官</div>
+                <div class="ai-rl">AI 面試官</div>
                 <div class="ai-st wa" id="aiSt">⏳ 等待開始</div>
             </div>
             <div class="ai-body">
@@ -570,6 +570,7 @@
         const IS_HOST    = @(isHost ? "true" : "false");
         const MY_NAME    = "@Html.Raw(displayName.Replace("\"", "\\\""))";
         const ROOM_CODE  = "@room.JitsiRoomName";
+        const ALREADY_IN_PROGRESS = @(room.MeetingStatus == "InProgress" ? "true" : "false");
         const JITSI_ROOM = "@jitsiRoom";
         const JITSI_DOMAIN = "@jitsiDomain";
         const JITSI_JWT = "@jitsiJwt";
@@ -645,6 +646,10 @@
         function onMeetingStart() {
             if (started) return;
             started = true;
+
+            // 🎯 這裡才是真正連線進 Jitsi 視訊會議的時機——大家（含主持人自己）
+            //    收到「會議開始」廣播的當下才一起連線，計時器才會是共同、從 0 起算的
+            initJitsi();
 
             document.getElementById('notStartedModal').classList.remove('show');
 
@@ -900,7 +905,7 @@
 
             setSt('th','💭 思考中...');
             const ctx = recentSpeech.slice(-3).map(s=>`${s.name}：${s.text}`).join('；') || "面試進行中";
-            const prompt = `你是面試主管王大明，主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場（${SIL_SEC}秒無人說話）。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
+            const prompt = `你是AI面試官王大明，協助主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場（${SIL_SEC}秒無人說話）。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
 
             let q = null;
             try {
@@ -1146,16 +1151,23 @@
                 window.speechSynthesis.onvoiceschanged = ()=>window.speechSynthesis.getVoices();
             }
 
-            // 立即初始化 Jitsi（進入視訊房間不需要等主管開始）
-            initJitsi();
-
-            // 求職者/主管：等 800ms 看是否收到 MeetingStarted，沒收到就顯示提示（只有最高主管能開始會議）
-            if (!IS_HOST) {
+            // 🎯 只有「會議已經在進行中」才立即連線（遲到 / 重新整理頁面的情況）
+            //    否則一律等主持人真的按下「開始會議」，收到廣播才連線 —— 這樣所有人的視訊時鐘才會一起從 0 開始算，
+            //    而不是誰先載入頁面誰的計時器就先跑
+            if (ALREADY_IN_PROGRESS) {
+                started = true;
+                initJitsi();
+                const b = document.getElementById('banner');
+                b.className = 'banner live';
+                b.textContent = '🔴 會議進行中';
+            } else if (!IS_HOST) {
+                // 求職者/主管：等待主持人開始，800ms 沒收到通知就顯示提示
                 setTimeout(()=>{
                     if (!started)
                         document.getElementById('notStartedModal').classList.add('show');
                 }, 800);
             }
+            // 主持人：什麼都不做，等自己按下「開始會議」才會連線視訊（見 onMeetingStart）
         });
     </script>
 </body>

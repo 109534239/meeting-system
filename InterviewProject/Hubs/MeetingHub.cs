@@ -29,6 +29,7 @@ namespace InterviewProject.Hubs
             if (room.MeetingStatus != "InProgress")
             {
                 room.MeetingStatus = "InProgress";
+                room.StartAt = DateTime.Now; // 🎯 這裡才是真正的開始時間，不是排程時預先填的
                 await _db.SaveChangesAsync();
             }
 
