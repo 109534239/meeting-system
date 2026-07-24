@@ -33,7 +33,7 @@ for details on configuring this project to bundle and minify static web assets. 
     width: 46px;
     height: 46px;
     border-radius: 50%;
-    background: var(--white);
+    background: url('../img/面試力達母LOGO.png') center 20% / cover no-repeat;
     display: flex;
     align-items: center;
     justify-content: center;

@@ -414,7 +414,7 @@ namespace InterviewProject.Controllers
         {
             string fromEmail = "angela296123@gmail.com";
             string appPassword = "zgpj hcew cyqc qxiy";
-            string companyName = "XXX公司";
+            string companyName = "面試力達母";
 
             using (var smtpClient = new SmtpClient("smtp.gmail.com", 587))
             {
