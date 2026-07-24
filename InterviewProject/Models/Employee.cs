@@ -9,5 +9,6 @@ namespace InterviewProject.Models
         public string Role { get; set; } = "hr";       // hr / manager
         public string? Department { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public string? ProfileImagePath { get; set; }
     }
 }

@@ -1,7 +1,7 @@
 @model InterviewProject.Models.Employee
 
 @{
-    ViewData["Title"] = "個人資料";
+    ViewData["Title"] = "基本資料";
 }
 
 @section Styles {
@@ -11,7 +11,7 @@
 
 <div class="page-header">
     <div class="page-header-inner">
-        <h1>個人資料</h1>
+        <h1>基本資料</h1>
         <p>Profile Management</p>
     </div>
 </div>
@@ -21,19 +21,35 @@
 
         @* ── 左側 Sidebar ── *@
         <div class="profile-sidebar">
-            <div class="profile-avatar">
-                @* 這裡預留頭像圖示，例如 SVG 或大字 *@
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-            </div>
             <div class="sidebar-name">@Model.Name</div>
             <div class="sidebar-role">
                 @(Model.Role == "director" ? "部門最高主管"
-                    : Model.Role == "manager"  ? "部門主管"
-                    : "人資")
+                                : Model.Role == "manager" ? "部門主管"
+                                : "人資")
             </div>
+            @* 🎯 比照 Resume.cshtml 的證件照框樣式：矩形、有邊框，取代原本圓形大頭貼 *@
+            <div class="profile-photo-box" id="avatar-preview">
+                @if (!string.IsNullOrEmpty(Model.ProfileImagePath))
+                {
+                    <img src="@Model.ProfileImagePath" alt="個人照" />
+                }
+                else
+                {
+                    <span>無照片</span>
+                }
+            </div>
+            <div class="avatar-actions mt-2" style="display: flex; gap: 8px; justify-content: center;">
+                <label class="btn-upload-photo" style="cursor: pointer; margin: 0;">
+                    更換照片
+                    <input type="file" id="avatar-file-input" accept="image/*" style="display:none" onchange="previewAvatar(event)" />
+                </label>
+
+                @* 🎯 新增：儲存變更按鈕 (選取新照片後才會顯示) *@
+                <button type="button" id="btn-save-avatar" class="btn-save-photo" style="display: none; padding: 4px 12px; font-size: 14px;" onclick="uploadAvatar()">
+                    儲存照片
+                </button>
+            </div>
+            
         </div>
 
         @* ── 右側內容 ── *@
@@ -49,10 +65,10 @@
                 <div class="pw-error">@TempData["PwError"]</div>
             }
 
-            @* 基本資料卡片 *@
+            @* 個人資料卡片 *@
             <div class="profile-card">
                 <div class="card-header">
-                    <h2>基本資料</h2>
+                    <h2>個人資料</h2>
                 </div>
                 <div class="fields-grid">
                     <div class="field-item">
@@ -113,3 +129,86 @@
 
     </div>
 </div>
+@section Scripts {
+    <script>
+        function togglePw(btn) {
+            const input = btn.closest('.input-password-wrap').querySelector('input');
+            const isText = input.type === 'text';
+            input.type = isText ? 'password' : 'text';
+            btn.style.opacity = isText ? '0.4' : '1';
+        }
+
+        // 預覽照片並顯示「儲存照片」按鈕
+        function previewAvatar(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = e => {
+                const av = document.getElementById('avatar-preview');
+                av.innerHTML = `<img src="${e.target.result}" id="current-avatar-img" alt="avatar" style="width:100%;height:100%;object-fit:cover;" />`;
+
+                // 顯示儲存按鈕，並確保狀態重設
+                const saveBtn = document.getElementById('btn-save-avatar');
+                if (saveBtn) {
+                    saveBtn.innerText = '儲存照片';
+                    saveBtn.disabled = false;
+                    saveBtn.style.display = 'inline-block';
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // 🎯 點擊「儲存照片」：立即顯示「儲存中...」並發送 AJAX
+        function uploadAvatar() {
+            const img = document.querySelector('#avatar-preview img');
+            const base64Data = img ? img.src : '';
+
+            if (!base64Data || !base64Data.startsWith('data:image')) {
+                alert('請先選擇有效的照片！');
+                return;
+            }
+
+            const saveBtn = document.getElementById('btn-save-avatar');
+
+            // ⚡ 1. 瞬間反應：更改按鈕文字並鎖定，防止連點
+            saveBtn.innerText = '⏳儲存中';
+            saveBtn.disabled = true;
+
+            // ⚡ 2. 發送背景請求
+            fetch('/Employee/UploadAvatar', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(base64Data)
+            })
+            .then(async response => {
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    alert('🎉照片更新成功！');
+                    // 成功後隱藏儲存按鈕
+                    saveBtn.style.display = 'none';
+                } else {
+                    alert('更新失敗：' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('上傳發生錯誤，請稍後再試。');
+            })
+            .finally(() => {
+                // ⚡ 3. 結束後還原按鈕狀態
+                saveBtn.innerText = '儲存照片';
+                saveBtn.disabled = false;
+            });
+        }
+    </script>
+}
