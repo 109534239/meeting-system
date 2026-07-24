@@ -247,6 +247,27 @@ namespace InterviewProject.Controllers
             return Json(new { success = true });
         }
 
+        // 🎯 對應前端 videoConferenceLeft 事件（不管是自己按掛斷、還是被斷線），記錄離開時間
+        [HttpPost]
+        public async Task<IActionResult> MarkLeft(string code)
+        {
+            var sessionMemberId = HttpContext.Session.GetInt32("MemberId");
+            var sessionRole = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (sessionMemberId == null || string.IsNullOrEmpty(sessionRole))
+                return Json(new { success = false });
+
+            var room = await _context.Rooms.FirstOrDefaultAsync(x => x.JitsiRoomName == code);
+            if (room == null) return Json(new { success = false });
+
+            var participant = await FindParticipantAsync(room, sessionMemberId.Value, sessionRole);
+            if (participant == null) return Json(new { success = false });
+
+            participant.LeftAt = DateTime.Now;
+            await _context.SaveChangesAsync();
+
+            return Json(new { success = true });
+        }
+
         // 🎯 Step C：依目前登入者身分，查出他在這個房間的受邀紀錄
         //    求職者：session 存的是 Member.Id，要透過 Resume 反查
         //    員工（manager / director / hr）：session 存的是 Employee.Id，直接比對

@@ -600,6 +600,12 @@
             .withAutomaticReconnect()
             .build();
 
+        // 🎯 重要修正：斷線重連後，之前用 JoinRoom 加入的群組會消失，一定要重新加入，
+        //    不然主持人開始會議的廣播會收不到（卡在等待畫面不會動）
+        hub.onreconnected(() => {
+            hub.invoke("JoinRoom", ROOM_CODE).catch(() => {});
+        });
+
         hub.on("MeetingStarted", () => { if (!started) onMeetingStart(); });
         hub.on("MeetingEnded",   () => { if (!ended)   onMeetingEnd(); });
 
@@ -724,7 +730,7 @@
         }
 
         // ══════════════════════════════════
-        //  錄影（螢幕錄製，含畫面+聲音）— 僅主管端
+        //  錄影（螢幕錄製，含畫面+聲音）— 僅主管端；免費，但需要主持人同意分享畫面
         // ══════════════════════════════════
         async function initAudio() {
             if (!IS_STAFF) {
@@ -1110,11 +1116,19 @@
                     enableWelcomePage:            false,
                     // ✅ 避免 5 分鐘限制：不使用嵌入模式的限制端點
                     p2p:                          { enabled: false },
-                    toolbarButtons: [
-                        'microphone', 'camera', 'desktop', 'fullscreen',
-                        'fodeviceselection', 'hangup', 'chat', 'settings',
-                        'raisehand', 'videoquality', 'filmstrip', 'tileview', 'participants-pane'
-                    ]
+                    toolbarButtons: IS_HOST
+                        ? [
+                            // 🎯 主持人不給原生「掛斷」按鈕，避免誤按只是自己離開視訊、卻沒有真的結束會議
+                            //    主持人只能用畫面上方的「結束會議」按鈕，才會真正結束、寫入 EndAt、通知所有人
+                            'microphone', 'camera', 'desktop', 'fullscreen',
+                            'fodeviceselection', 'chat', 'settings',
+                            'raisehand', 'videoquality', 'filmstrip', 'tileview', 'participants-pane'
+                          ]
+                        : [
+                            'microphone', 'camera', 'desktop', 'fullscreen',
+                            'fodeviceselection', 'hangup', 'chat', 'settings',
+                            'raisehand', 'videoquality', 'filmstrip', 'tileview', 'participants-pane'
+                          ]
                 },
                 interfaceConfigOverwrite: {
                     SHOW_JITSI_WATERMARK:             false,
@@ -1130,6 +1144,16 @@
             // ✅ 使用者真的按下「加入會議」、實際進入 Jitsi 視訊房間時才觸發 —— 這時候才把 JoinedAt 寫進資料庫
             jitsiApi.addEventListener('videoConferenceJoined', e => {
                 fetch('/Room/MarkJoined', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'code=' + encodeURIComponent(ROOM_CODE)
+                }).catch(() => {});
+            });
+
+            // 🎯 使用者離開視訊（不管是自己按掛斷、還是斷線），記錄離開時間
+            //    這只代表「他自己離開」，不會影響會議本身，會議只有主持人按「結束會議」才會真的結束
+            jitsiApi.addEventListener('videoConferenceLeft', e => {
+                fetch('/Room/MarkLeft', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: 'code=' + encodeURIComponent(ROOM_CODE)
