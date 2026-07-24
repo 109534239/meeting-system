@@ -37,7 +37,7 @@ namespace InterviewProject.Controllers
             return string.Join(", ", langs.Select(l =>
                 l.Language == "不具外文能力" ? l.Language : $"{l.Language}({l.Degree})"));
         }
-        
+
         private async Task<string> GetFormattedLanguageSkills(int resumeId)
         {
             var langs = await _db.LanguageProficiency
@@ -629,6 +629,15 @@ namespace InterviewProject.Controllers
                 .ToDictionaryAsync(p => p.ResumeId!.Value, p => p.Room!);
 
             ViewBag.RoomsByResumeId = roomsByResumeId;
+
+            // 🎯 修正：InterviewStatus=等待安排面試 有兩種可能（測驗做完了/測驗還沒做），
+            //    要靠這份清單分辨，「查看」按鈕才知道該打開適性測驗還是安排中提示
+            var allResumeIds = applications.Select(r => r.Id).ToList();
+            var completedTestResumeIds = await _db.AptitudeTestResults
+                .Where(t => allResumeIds.Contains(t.ResumeId))
+                .Select(t => t.ResumeId)
+                .ToListAsync();
+            ViewBag.CompletedTestResumeIds = new HashSet<int>(completedTestResumeIds);
 
             return View(applications);
         }

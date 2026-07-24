@@ -43,11 +43,10 @@ namespace InterviewProject.Services
             var approved = resumes.Where(r => r.Status == "已通過").ToList();
             if (approved.Count == 0) return false; // 全部未通過，沒人要面試
 
-            var manager = await _db.Employees
-                .FirstOrDefaultAsync(e => e.Department == job.Department && e.Role == "manager");
-
-            var director = await _db.Employees
-                .FirstOrDefaultAsync(e => e.Department == job.Department && e.Role == "director");
+            // 🎯 修正：同部門的 manager、director 全部都要通知，不是只挑一個
+            var deptStaff = await _db.Employees
+                .Where(e => e.Department == job.Department && (e.Role == "manager" || e.Role == "director"))
+                .ToListAsync();
 
             var room = new Room
             {
@@ -56,7 +55,7 @@ namespace InterviewProject.Services
                 JitsiRoomName = Guid.NewGuid().ToString("N")[..10],
                 CreatedTime = DateTime.Now,
                 ScheduledAt = DateTime.Now.AddDays(1), // 預計面試時間（隔天），實際 StartAt 要等主持人真的按下開始會議
-                StartAt = DateTime.Now.AddDays(1),
+                StartAt = null,
                 EndAt = null,
                 IsActive = true,
                 MeetingStatus = "NotStarted"
@@ -79,24 +78,13 @@ namespace InterviewProject.Services
                 await RecomputeInterviewStatusAsync(resume, hasRoomInvite: true);
             }
 
-            if (manager != null)
+            foreach (var staff in deptStaff)
             {
                 _db.RoomParticipants.Add(new RoomParticipant
                 {
                     RoomId = room.Id,
-                    Role = ParticipantRole.Manager,
-                    EmployeeId = manager.Id,
-                    Status = ParticipantStatus.Invited
-                });
-            }
-
-            if (director != null)
-            {
-                _db.RoomParticipants.Add(new RoomParticipant
-                {
-                    RoomId = room.Id,
-                    Role = ParticipantRole.Director,
-                    EmployeeId = director.Id,
+                    Role = staff.Role == "director" ? ParticipantRole.Director : ParticipantRole.Manager,
+                    EmployeeId = staff.Id,
                     Status = ParticipantStatus.Invited
                 });
             }

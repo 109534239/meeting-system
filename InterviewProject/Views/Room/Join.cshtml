@@ -476,6 +476,9 @@
     <div class="topbar">
         <div class="room-name">🎥 @Html.Raw(room.RoomName)</div>
         <span class="room-code" onclick="copyCode()" title="點擊複製">@room.JitsiRoomName</span>
+        <span class="room-code" id="scheduledAtDisplay" title="預計面試時間">
+            🕒 @(room.ScheduledAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "未設定時間")
+        </span>
         <div class="topbar-mid">
             <span class="btn btn-gray">
                 <span class="rec-dot" id="recDot"></span>
@@ -599,6 +602,14 @@
 
         hub.on("MeetingStarted", () => { if (!started) onMeetingStart(); });
         hub.on("MeetingEnded",   () => { if (!ended)   onMeetingEnd(); });
+
+        // 🎯 最高主管改了面試時間，正在這個房間頁面等待的人（含主持人自己）立刻收到通知並更新畫面
+        hub.on("ScheduledAtChanged", (newTimeText) => {
+            const el = document.getElementById('scheduledAtDisplay');
+            if (el) el.textContent = '🕒 ' + newTimeText;
+            showMsg('⏰ 主持人已更改面試時間，新的時間是：' + newTimeText);
+            alert('面試時間已更新為：' + newTimeText);
+        });
 
         // 冷場同步：主管廣播給所有人「有聲音了」
         hub.on("SpeechDetected", () => {

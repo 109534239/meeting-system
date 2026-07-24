@@ -30,6 +30,39 @@
             font-size: 13px;
             cursor: not-allowed;
         }
+
+        .btn-reschedule {
+            margin-left: 6px;
+            font-size: 12px;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 4px;
+            padding: 2px 8px;
+            cursor: pointer;
+        }
+
+        .reschedule-box {
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .btn-reschedule-save {
+            font-size: 12px;
+            border: none;
+            background: #2c7a7b;
+            color: #fff;
+            border-radius: 4px;
+            padding: 3px 10px;
+            cursor: pointer;
+        }
+
+        .reschedule-msg {
+            font-size: 12px;
+            color: #c0392b;
+        }
     </style>
 }
 
@@ -92,15 +125,25 @@
                         @(room.Job?.Title ?? "未指定職缺")
                     </div>
 
-                    <div class="interview-time">
+                    <div class="interview-time" id="time-@room.Id">
                         @if (room.ScheduledAt != null)
                         {
                             <span class="date">@room.ScheduledAt.Value.ToString("yyyy-MM-dd")</span>
-                            <span class="time">@room.ScheduledAt.Value.ToString("HH:mm")</span>
+                            <span class="time">@room.ScheduledAt.Value.ToString("HH:mm:ss")</span>
                         }
                         else
                         {
                             <span class="text-muted">未設定時間</span>
+                        }
+                        @if (role == "director" && room.MeetingStatus == "NotStarted")
+                        {
+                            <button type="button" class="btn-reschedule" onclick="openReschedule(@room.Id)">修改時間</button>
+                            <div class="reschedule-box" id="reschedule-@room.Id" style="display:none">
+                                <input type="datetime-local" id="reschedule-input-@room.Id" step="1"
+                                       min="@DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")" />
+                                <button type="button" class="btn-reschedule-save" onclick="saveReschedule(@room.Id)">更新</button>
+                                <span class="reschedule-msg" id="reschedule-msg-@room.Id"></span>
+                            </div>
                         }
                     </div>
 
@@ -153,3 +196,38 @@
     </div>
 
 </div>
+
+@section Scripts {
+    <script>
+        function openReschedule(roomId) {
+            const box = document.getElementById('reschedule-' + roomId);
+            box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+        }
+
+        async function saveReschedule(roomId) {
+            const input = document.getElementById('reschedule-input-' + roomId);
+            const msg = document.getElementById('reschedule-msg-' + roomId);
+            if (!input.value) {
+                msg.textContent = '請先選擇時間';
+                return;
+            }
+            msg.textContent = '';
+
+            try {
+                const res = await fetch('/Interview/UpdateScheduledAt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'roomId=' + roomId + '&newTime=' + encodeURIComponent(input.value)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    location.reload(); // 簡單直接：重新整理，時間立刻是最新的
+                } else {
+                    msg.textContent = data.message || '更新失敗';
+                }
+            } catch (err) {
+                msg.textContent = '更新失敗，請稍後再試';
+            }
+        }
+    </script>
+}

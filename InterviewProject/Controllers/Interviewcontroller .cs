@@ -1,6 +1,8 @@
 ﻿using InterviewProject.Data;
 using InterviewProject.Models;
+using InterviewProject.Hubs;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -12,10 +14,12 @@ namespace InterviewProject.Controllers
     public class InterviewController : Controller
     {
         private readonly AppDbContext _db;
+        private readonly IHubContext<MeetingHub> _meetingHub;
 
-        public InterviewController(AppDbContext db)
+        public InterviewController(AppDbContext db, IHubContext<MeetingHub> meetingHub)
         {
             _db = db;
+            _meetingHub = meetingHub;
         }
 
         private bool IsEmployee()
@@ -58,6 +62,43 @@ namespace InterviewProject.Controllers
 
             ViewBag.CurrentRole = role;
             return View("~/Views/Interview/Index.cshtml", rooms);
+        }
+
+        // 🎯 只有最高主管能改自己主持的房間的預計面試時間，會議還沒開始才能改
+        [HttpPost]
+        public async Task<IActionResult> UpdateScheduledAt(int roomId, DateTime newTime)
+        {
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (role != "director")
+                return Json(new { success = false, message = "只有最高主管可以修改面試時間" });
+
+            int empId = GetEmployeeId();
+
+            var room = await _db.Rooms.FirstOrDefaultAsync(r => r.Id == roomId);
+            if (room == null)
+                return Json(new { success = false, message = "找不到這個房間" });
+
+            var isDirectorOfThisRoom = await _db.RoomParticipants.AnyAsync(p =>
+                p.RoomId == roomId && p.Role == ParticipantRole.Director && p.EmployeeId == empId);
+            if (!isDirectorOfThisRoom)
+                return Json(new { success = false, message = "你不是這場面試的主持人" });
+
+            if (room.MeetingStatus != "NotStarted")
+                return Json(new { success = false, message = "會議已經開始或結束，無法再改時間" });
+
+            if (newTime <= DateTime.Now)
+                return Json(new { success = false, message = "時間只能選現在之後" });
+
+            room.ScheduledAt = newTime;
+            await _db.SaveChangesAsync();
+
+            // 🎯 即時通知：正在這個房間頁面（等待畫面）的人會立刻收到最新時間
+            //    不在頁面上的人（例如還沒打開應徵管理／面試管理），下次打開頁面時本來就會看到資料庫裡的新時間
+            await _meetingHub.Clients.Group(room.JitsiRoomName).SendAsync(
+                "ScheduledAtChanged",
+                newTime.ToString("yyyy-MM-dd HH:mm:ss"));
+
+            return Json(new { success = true, newTime = newTime.ToString("yyyy-MM-dd HH:mm:ss") });
         }
 
         // ── HR/主管：新增排程 GET ──

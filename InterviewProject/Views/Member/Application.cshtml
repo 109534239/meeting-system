@@ -3,6 +3,8 @@
     ViewData["Title"] = "應徵管理";
     var roomsByResumeId = ViewBag.RoomsByResumeId as Dictionary<int, InterviewProject.Models.Room>
                         ?? new Dictionary<int, InterviewProject.Models.Room>();
+    var completedTestResumeIds = ViewBag.CompletedTestResumeIds as HashSet<int>
+                        ?? new HashSet<int>();
 }
 
 @section Styles {
@@ -147,7 +149,11 @@
                     if (string.IsNullOrEmpty(interviewStatus))
                         viewAction = "aptitude";                                                  // 狀態3：去做適性測驗
                     else if (interviewStatus == InterviewProject.Models.InterviewStatusValues.WaitingSchedule)
-                        viewAction = "waiting";                                                    // 狀態4：等待安排面試
+                    {
+                        // 🎯 修正：等待安排面試有兩種原因，要分開處理
+                        //    測驗還沒做 → 讓他繼續做測驗；測驗做完了、只差房間還沒排好 → 顯示安排中提示
+                        viewAction = completedTestResumeIds.Contains(item.Id) ? "waiting" : "aptitude";
+                    }
                     else if (interviewStatus == InterviewProject.Models.InterviewStatusValues.Scheduled)
                         viewAction = "interview";                                                  // 狀態5：面試資訊
                     else if (interviewStatus == InterviewProject.Models.InterviewStatusValues.Ended
