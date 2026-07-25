@@ -213,8 +213,9 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
+    background-color: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(4px); /* 背景高斯模糊效果 */
+    z-index: 1050;
     align-items: center;
     justify-content: center;
 }
@@ -224,11 +225,138 @@
     background: #ffffff;
     border-radius: 16px;
     width: 90%;
-    max-width: 600px;
-    padding: 32px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    max-width: 580px;
+    padding: 28px 32px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
     position: relative;
-    animation: modalFadeIn 0.3s ease;
+    animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 右上角關閉按鈕 */
+.modal-close-btn {
+    position: absolute;
+    top: 20px;
+    right: 24px;
+    background: transparent;
+    border: none;
+    font-size: 26px;
+    color: #888;
+    cursor: pointer;
+    line-height: 1;
+    transition: all 0.2s ease;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+    .modal-close-btn:hover {
+        background-color: #f0f0f0;
+        color: #333;
+        transform: rotate(90deg);
+    }
+
+/* 元資料區塊 (日期 + 標籤) */
+.modal-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+/* 分類標籤 */
+.modal-badge {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+}
+
+/* ── 類別 Badge 通用樣式 ── */
+.badge-category {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* 各分類對應顏色 */
+.badge-最新 {
+    background: #e8f4ff;
+    color: #1a6fb5;
+}
+
+.badge-公告 {
+    background: #eef1f4;
+    color: #555555;
+}
+
+.badge-活動 {
+    background: #fff3e0;
+    color: #e07b3a;
+}
+
+.badge-預設 {
+    background: #f0f0f0;
+    color: #666666;
+}
+
+/* 發布日期 */
+.modal-date {
+    font-size: 13px;
+    color: #777777;
+    font-weight: 500;
+}
+
+/* 公告標題 */
+.modal-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0 0 16px 0;
+    line-height: 1.4;
+    padding-right: 24px; /* 避免擋到關閉按鈕 */
+}
+
+/* 分隔線 */
+.modal-divider {
+    height: 1px;
+    background-color: #eef2f5;
+    margin-bottom: 18px;
+}
+
+/* 公告內文區塊 */
+.modal-content {
+    font-size: 15px;
+    line-height: 1.7;
+    color: #4a5568;
+    background-color: #f8fafc;
+    padding: 16px 20px;
+    border-radius: 10px;
+    border: 1px solid #edf2f7;
+    max-height: 350px;
+    overflow-y: auto;
+    white-space: pre-wrap; /* 自動保留換行與空格 */
+    word-break: break-word;
+}
+
+/* 彈出動畫 */
+@keyframes modalSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 @keyframes modalFadeIn {

@@ -28,11 +28,29 @@ namespace InterviewProject.Controllers
                 .ToListAsync();
 
             // 💡 撈取啟用中的公告
-            var announcements = await _db.Announcements
+            var announcementsData = await _db.Announcements
                 .Where(a => a.IsActive)
                 .OrderByDescending(a => a.Date)
                 .Take(5)
                 .ToListAsync();
+
+            // 🎯 在 Controller 計算好分類對應的 Badge Class
+            var announcements = announcementsData.Select(a => new
+            {
+                a.Id,
+                a.Date,
+                a.Category,
+                a.Title,
+                a.Content,
+                // 根據 Category 欄位決定對應的 CSS Class 名稱
+                BadgeClass = a.Category switch
+                {
+                    "最新" => "badge-最新",
+                    "公告" => "badge-公告",
+                    "活動" => "badge-活動",
+                    _ => "badge-預設" // 其他分類時的預設樣式
+                }
+            }).ToList();
 
             ViewBag.Announcements = announcements;
 

@@ -25,14 +25,13 @@
             <div class="section-label">最新公告</div>
             <div class="announce-card">
                 <ul class="announce-list">
-                    @if (ViewBag.Announcements != null && ((IEnumerable<InterviewProject.Models.Announcement>)ViewBag.Announcements).Any())
+                    @if (ViewBag.Announcements != null)
                     {
-                        foreach (var a in (IEnumerable<InterviewProject.Models.Announcement>)ViewBag.Announcements)
+                        foreach (var a in ViewBag.Announcements)
                         {
-                            @* 🎯 點擊事件精準綁定，並用 JavaScriptStringEncode 安全處理字串，避免單雙引號或斷行造成 JS 報錯 *@
-                            <li class="announce-item" onclick="openAnnounceModal('@a.Date.ToString("yyyy-MM-dd")', '@a.Category', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Title)', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Content)')">
+                            <li class="announce-item" onclick="openAnnounceModal('@a.Date.ToString("yyyy-MM-dd")', '@a.Category', '@a.BadgeClass', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Title)', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Content)')">
                                 <span class="announce-date">@a.Date.ToString("yyyy-MM-dd")</span>
-                                <span class="announce-badge">@a.Category</span>
+                                <span class="badge-category @a.BadgeClass">@a.Category</span>
                                 <span class="announce-title">@a.Title</span>
                             </li>
                         }
@@ -85,34 +84,48 @@
 @* ── 🎯 隱藏的彈出視窗 HTML 結構 ── *@
 <div id="announceModal" class="announce-modal" onclick="closeAnnounceModal(event)">
     <div class="announce-modal-card" onclick="event.stopPropagation()">
-        <button class="modal-close-btn" onclick="document.getElementById('announceModal').style.display = 'none'">&times;</button>
+        <!-- 右上角關閉按鈕 -->
+        <button class="modal-close-btn" onclick="closeAnnounceModalDirectly()">&times;</button>
+
         <div class="modal-meta">
+            <!-- 🎯 Modal 裡面的分類標籤 -->
+            <span id="modalBadge" class="badge-category"></span>
             <span id="modalDate" class="modal-date"></span>
-            <span id="modalBadge" class="modal-badge"></span>
         </div>
-        <div id="modalTitle" class="modal-title"></div>
+
+        <h3 id="modalTitle" class="modal-title"></h3>
+        <div class="modal-divider"></div>
         <div id="modalContent" class="modal-content"></div>
     </div>
 </div>
 
 @section Scripts {
     <script>
-        // 🎯 開啟公告視窗並寫入內容
-        function openAnnounceModal(date, category, title, content) {
+        // 🎯 接收 5 個參數（包含 badgeClass）
+        function openAnnounceModal(date, category, badgeClass, title, content) {
             document.getElementById('modalDate').innerText = date;
-            document.getElementById('modalBadge').innerText = category;
             document.getElementById('modalTitle').innerText = title;
             document.getElementById('modalContent').innerText = content;
-            
-            // 顯示視窗（樣式已由 Home.css 的 flex 進行垂直水平置中控制）
+
+            // 🎯 設定 Modal 標籤的文字與 dynamic CSS class
+            const badgeElem = document.getElementById('modalBadge');
+            badgeElem.innerText = category;
+
+            // 重新賦予 className（保留基礎 .badge-category 並加上如 .badge-最新 / .badge-活動）
+            badgeElem.className = `badge-category ${badgeClass}`;
+
+            // 顯示 Modal
             document.getElementById('announceModal').style.display = 'flex';
         }
 
-        // 🎯 點擊半透明遮罩區塊時可關閉視窗
         function closeAnnounceModal(event) {
             if (event.target.id === 'announceModal') {
                 document.getElementById('announceModal').style.display = 'none';
             }
+        }
+
+        function closeAnnounceModalDirectly() {
+            document.getElementById('announceModal').style.display = 'none';
         }
     </script>
 }
