@@ -563,6 +563,7 @@
         <button class="btn btn-gray" onclick="window.location.href='/Interview/Index'" style="margin-top:14px;display:none" id="backBtn">← 返回面試管理</button>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
     <script src="https://8x8.vc/vpaas-magic-cookie-c12aeb6abc7a4349bc799bb8cb31436a/external_api.js"></script>
     <script>
@@ -586,6 +587,7 @@
         let silT = 0, isSp = false;
         let audioStream = null, mediaRec = null, recChunks = [];
         let recBlob = null;
+        let recStartMs = 0;
         let recognition = null;
         let trxLines = [];
         let lastSpeechMs = 0;
@@ -608,6 +610,11 @@
 
         hub.on("MeetingStarted", () => { if (!started) onMeetingStart(); });
         hub.on("MeetingEnded",   () => { if (!ended)   onMeetingEnd(); });
+
+        // 🎯 收到別人講話的逐字稿內容，併進自己這份（讓最後下載的逐字稿是完整的，不是只有自己說的話）
+        hub.on("TranscriptReceived", (speaker, text, time) => {
+            trxLines.push({ sp: speaker, tx: text, time: time });
+        });
 
         // 🎯 最高主管改了面試時間，正在這個房間頁面等待的人（含主持人自己）立刻收到通知並更新畫面
         hub.on("ScheduledAtChanged", (newTimeText) => {
@@ -666,7 +673,13 @@
 
             // 🎯 這裡才是真正連線進 Jitsi 視訊會議的時機——大家（含主持人自己）
             //    收到「會議開始」廣播的當下才一起連線，計時器才會是共同、從 0 起算的
-            initJitsi();
+            //    修正：非主持人延遲一點點再連線，讓主持人的連線先把會議室在 Jitsi 那邊真的建立起來，
+            //    不然求職者/主管的連線有時候會比主持人早一步，變成「conference not found」連不進去
+            if (IS_HOST) {
+                initJitsi();
+            } else {
+                setTimeout(initJitsi, 2000);
+            }
 
             document.getElementById('notStartedModal').classList.remove('show');
 
@@ -719,12 +732,9 @@
                     showEndedScreen();
                 }
             } else {
-                // ✅ 求職者：直接關閉面試會議分頁
+                // ✅ 求職者：回到應徵管理頁面（原本連到 /Interview/MyInterviews 是錯的路徑，那是給員工用的）
                 setTimeout(() => {
-                    window.close(); // 若是從連結開啟的分頁可以關閉
-                    setTimeout(() => {
-                        window.location.href = '/Interview/MyInterviews';
-                    }, 500);
+                    window.location.href = '/Member/Application';
                 }, 1200);
             }
         }
@@ -771,10 +781,22 @@
 
                 mediaRec = new MediaRecorder(combined, mime ? { mimeType: mime, videoBitsPerSecond: 1500000 } : {});
                 recChunks = [];
+                recStartMs = Date.now();
                 mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
                 mediaRec.onstop = () => {
-                    recBlob = new Blob(recChunks, { type: mime || 'video/webm' });
-                    showEndedScreen();
+                    const rawBlob = new Blob(recChunks, { type: mime || 'video/webm' });
+                    const durationMs = Date.now() - recStartMs;
+                    // 🎯 修正：MediaRecorder 產出的 webm 預設沒有寫入總長度，播放器沒辦法拖拉進度條，
+                    //    用 fix-webm-duration 把正確的時長補進檔案標頭
+                    if (window.ysFixWebmDuration) {
+                        ysFixWebmDuration(rawBlob, durationMs, fixedBlob => {
+                            recBlob = fixedBlob;
+                            showEndedScreen();
+                        });
+                    } else {
+                        recBlob = rawBlob;
+                        showEndedScreen();
+                    }
                 };
 
                 // 螢幕停止分享時同步停止錄製
@@ -797,10 +819,20 @@
                     for (const t of types) { if (MediaRecorder.isTypeSupported(t)) { mime=t; break; } }
                     mediaRec = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {});
                     recChunks = [];
+                    recStartMs = Date.now();
                     mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
                     mediaRec.onstop = () => {
-                        recBlob = new Blob(recChunks, { type: mime || 'audio/webm' });
-                        showEndedScreen();
+                        const rawBlob = new Blob(recChunks, { type: mime || 'audio/webm' });
+                        const durationMs = Date.now() - recStartMs;
+                        if (window.ysFixWebmDuration) {
+                            ysFixWebmDuration(rawBlob, durationMs, fixedBlob => {
+                                recBlob = fixedBlob;
+                                showEndedScreen();
+                            });
+                        } else {
+                            recBlob = rawBlob;
+                            showEndedScreen();
+                        }
                     };
                     mediaRec.start(1000);
                 } catch (err2) {
@@ -838,7 +870,9 @@
                             recentSpeech.push({ name: MY_NAME, text: txt });
                             if (recentSpeech.length > 6) recentSpeech.shift();
 
-                            // 廣播給所有人（主要給 AI 冷場偵測用）
+                            // 🎯 修正：把「文字內容」廣播出去，不只是一個空訊號 —— 每個人的 SpeechRecognition
+                            //    只能聽到自己麥克風的聲音，不廣播內容的話，其他人的話永遠不會出現在逐字稿裡
+                            try { hub.invoke('BroadcastTranscript', ROOM_CODE, MY_NAME, txt, now); } catch {}
                             try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
                         }
                     }
@@ -976,29 +1010,39 @@
             const scr = document.getElementById('endedScreen');
             scr.classList.add('show');
             const dl = document.getElementById('dlItems');
-            document.getElementById('endSubtitle').textContent = '檔案正在自動下載中...';
+            document.getElementById('endSubtitle').textContent = '檔案正在儲存至專案伺服器...';
             dl.innerHTML = '';
 
-            // 1. 逐字稿
+            // 1. 逐字稿 —— 存到專案的「逐字稿」資料夾（不再下載到瀏覽器）
             if (trxLines.length > 0) {
                 const txt = trxLines.map(l=>`[${l.time}] ${l.sp}：${l.tx}`).join('\n');
-                dlFile(txt, `逐字稿_${ts()}.txt`, 'text/plain;charset=utf-8');
-                dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿（${trxLines.length} 條）已下載</div>`;
+                try {
+                    const fd = new FormData();
+                    fd.append('roomCode', ROOM_CODE);
+                    fd.append('content', txt);
+                    const r = await fetch('/Room/SaveTranscript', { method: 'POST', body: fd });
+                    const d = await r.json();
+                    dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿（${trxLines.length} 條）已存至專案「逐字稿」資料夾：${d.fileName}</div>`;
+                } catch (e) {
+                    dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿儲存失敗：${e.message}</div>`;
+                }
             } else {
                 dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿為空（請確認麥克風已授權給 Chrome）</div>`;
             }
 
-            // 2. 錄影/錄音
+            // 2. 錄影/錄音 —— 存到專案的「錄影錄音」資料夾
             if (recBlob) {
-                const isVideo = recBlob.type.includes('video');
-                const ext = isVideo ? 'webm' : 'webm';
-                const label = isVideo ? '🎬 錄影檔' : '🎵 錄音檔';
-                const u = URL.createObjectURL(recBlob);
-                const a = document.createElement('a'); a.href = u;
-                a.download = `面試錄影_${ts()}.${ext}`;
-                document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                setTimeout(()=>URL.revokeObjectURL(u),8000);
-                dl.innerHTML += `<div class="dl-item ok">✅ ${label}已下載（.webm 可用 VLC 播放）</div>`;
+                try {
+                    const fd = new FormData();
+                    fd.append('roomCode', ROOM_CODE);
+                    fd.append('file', recBlob, 'recording.webm');
+                    const r = await fetch('/Room/SaveRecording', { method: 'POST', body: fd });
+                    const d = await r.json();
+                    const label = recBlob.type.includes('video') ? '🎬 錄影檔' : '🎵 錄音檔';
+                    dl.innerHTML += `<div class="dl-item ok">✅ ${label}已存至專案「錄影錄音」資料夾：${d.fileName}（.webm 可用 VLC 播放）</div>`;
+                } catch (e) {
+                    dl.innerHTML += `<div class="dl-item ng">⚠️ 錄影檔儲存失敗：${e.message}</div>`;
+                }
             } else {
                 dl.innerHTML += `<div class="dl-item ng">⚠️ 無錄影（螢幕錄製未授權或被取消）</div>`;
             }
@@ -1020,7 +1064,7 @@
                 dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿不足，跳過 AI 分析</div>`;
             }
 
-            document.getElementById('endSubtitle').textContent = '所有檔案已自動儲存至下載資料夾';
+            document.getElementById('endSubtitle').textContent = '所有檔案已儲存至專案伺服器';
             document.getElementById('backBtn').style.display = '';
         }
 
@@ -1138,6 +1182,14 @@
                     TOOLBAR_ALWAYS_VISIBLE:           true,
                     // ✅ 隱藏主持人相關 UI
                     SHOW_PROMOTIONAL_CLOSE_PAGE:      false,
+                }
+            });
+
+            // 🎯 使用者自己按「掛斷」離開視訊（不是主持人結束會議），只影響自己，不影響會議本身
+            //    求職者離開後導回應徵管理頁面；主管/主持人維持原本行為（留在頁面上）
+            jitsiApi.addEventListener('readyToClose', () => {
+                if (!IS_STAFF && !ended) {
+                    window.location.href = '/Member/Application';
                 }
             });
 

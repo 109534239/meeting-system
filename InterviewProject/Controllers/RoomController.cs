@@ -5,6 +5,7 @@ using InterviewProject.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -268,7 +269,110 @@ namespace InterviewProject.Controllers
             return Json(new { success = true });
         }
 
-        // 🎯 Step C：依目前登入者身分，查出他在這個房間的受邀紀錄
+        // 🎯 JaaS 錄影完成後會呼叫這個網址（RECORDING_UPLOADED webhook），把下載連結傳過來
+        //    要在 JaaS 後台設定 Webhook 網址是「你的公開網址/Room/RecordingWebhook」才收得到
+        //    ⚠️ 目前欄位名稱是照 JaaS 文件推測寫的，實際收到的 JSON 格式要等正式串接時再核對調整
+        [HttpPost]
+        public async Task<IActionResult> RecordingWebhook()
+        {
+            using var reader = new System.IO.StreamReader(Request.Body);
+            var raw = await reader.ReadToEndAsync();
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+
+                string? link = null;
+                if (root.TryGetProperty("preAuthenticatedLink", out var linkEl))
+                {
+                    link = linkEl.GetString();
+                }
+                else if (root.TryGetProperty("data", out var dataEl)
+                         && dataEl.TryGetProperty("preAuthenticatedLink", out var linkEl2))
+                {
+                    link = linkEl2.GetString();
+                }
+
+                string? meetingFqn = null;
+                if (root.TryGetProperty("meetingFqn", out var fqnEl))
+                {
+                    meetingFqn = fqnEl.GetString();
+                }
+                // meetingFqn 格式通常是 "{appId}/{roomCode}"，取最後一段當作 JitsiRoomName 比對
+                string? roomCode = meetingFqn?.Split('/').LastOrDefault();
+
+                if (link != null && roomCode != null)
+                {
+                    var room = await _context.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
+                    if (room != null)
+                    {
+                        room.RecordingUrl = link;
+                        await _context.SaveChangesAsync();
+                    }
+                }
+            }
+            catch
+            {
+                // 先不擋，避免 JaaS 收到非 200 一直重送；之後正式串接時再依實際 payload 調整解析邏輯
+            }
+
+            return Ok();
+        }
+
+        // 🎯 逐字稿存到專案裡的「逐字稿」資料夾，不是存到瀏覽器下載資料夾
+        //    ⚠️ 注意：如果部署在 Render 免費方案，磁碟是「非永久性」的，服務重啟/休眠喚醒後這裡存的檔案會消失，
+        //    要保留檔案得另外接雲端儲存或升級成有 Persistent Disk 的方案
+        [HttpPost]
+        public async Task<IActionResult> SaveTranscript([FromForm] string roomCode, [FromForm] string content)
+        {
+            var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
+            if (room == null) return NotFound();
+
+            var folder = Path.Combine(_env.ContentRootPath, "逐字稿");
+            Directory.CreateDirectory(folder);
+
+            var fileName = BuildFileName(room, "txt");
+            var path = Path.Combine(folder, fileName);
+            await System.IO.File.WriteAllTextAsync(path, content, System.Text.Encoding.UTF8);
+
+            return Ok(new { success = true, fileName });
+        }
+
+        // 🎯 錄影錄音存到專案裡的「錄影錄音」資料夾
+        [HttpPost]
+        [RequestSizeLimit(500_000_000)] // 放寬到 500MB，避免長時間會議的錄影檔案被擋掉
+        public async Task<IActionResult> SaveRecording([FromForm] string roomCode, IFormFile file)
+        {
+            if (file == null || file.Length == 0) return BadRequest();
+
+            var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
+            if (room == null) return NotFound();
+
+            var folder = Path.Combine(_env.ContentRootPath, "錄影錄音");
+            Directory.CreateDirectory(folder);
+
+            var fileName = BuildFileName(room, "webm");
+            var path = Path.Combine(folder, fileName);
+            using (var stream = System.IO.File.Create(path))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            return Ok(new { success = true, fileName });
+        }
+
+        // 「面試會議_日期_職缺.副檔名」，職缺名稱裡不能當檔名的符號換成底線
+        private static string BuildFileName(Room room, string ext)
+        {
+            var jobTitle = room.Job?.Title ?? "未知職缺";
+            foreach (var c in Path.GetInvalidFileNameChars())
+                jobTitle = jobTitle.Replace(c, '_');
+            jobTitle = jobTitle.Replace('/', '_').Replace('－', '_').Replace('-', '_');
+
+            var dateText = (room.StartAt ?? room.ScheduledAt ?? DateTime.Now).ToString("yyyy-MM-dd");
+            return $"面試會議_{dateText}_{jobTitle}.{ext}";
+        }
         //    求職者：session 存的是 Member.Id，要透過 Resume 反查
         //    員工（manager / director / hr）：session 存的是 Employee.Id，直接比對
         private async Task<RoomParticipant?> FindParticipantAsync(Room room, int sessionMemberId, string role)

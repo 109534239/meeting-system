@@ -28,6 +28,9 @@ namespace InterviewProject.Models
         // Ended：已結束
         public string MeetingStatus { get; set; } = "NotStarted";
 
+        // 🎯 JaaS 伺服器端錄影完成後，透過 Webhook 收到的下載連結（24小時內有效）
+        public string? RecordingUrl { get; set; }
+
         public virtual ICollection<RoomParticipant> Participants { get; set; } = new List<RoomParticipant>();
 
         // 判斷房間目前是否可進入

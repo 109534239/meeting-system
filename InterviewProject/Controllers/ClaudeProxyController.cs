@@ -37,8 +37,9 @@ namespace InterviewProject.Controllers
 
             var client = _httpClientFactory.CreateClient();
 
-            // Gemini 1.5 Flash（免費，速度快）
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
+            // 🎯 修正：gemini-1.5-flash 已經被 Google 停用（呼叫一律回傳 404），跟你的 API Key 對不對無關，
+            //    換成目前還在服務的模型。之後如果 Google 又停用新的模型，這裡的名稱要再更新
+            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
 
             // 把 system prompt 合併進 user message（Gemini 免費版不支援獨立 system role）
             var systemPart = request.System ?? "你是台灣企業面試主管王大明。說繁體中文，語氣專業親切，像真人一樣思考。";
