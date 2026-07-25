@@ -1,4 +1,5 @@
 ﻿using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Security.Cryptography;
 using Microsoft.IdentityModel.Tokens;
 
@@ -22,11 +23,22 @@ namespace InterviewProject.Services
                 ?? throw new InvalidOperationException("appsettings.json 缺少 JaaS:KeyId 設定");
 
             var pemFileName = config["JaaS:PrivateKeyPath"] ?? "jaas-private-key.pem";
-            var pemPath = Path.Combine(env.ContentRootPath, pemFileName);
 
-            if (!File.Exists(pemPath))
+            // 🎯 依序嘗試幾個可能的位置：
+            //    1. Render 的 Secret Files 掛載路徑（正式環境用這個，私鑰不用進 Git）
+            //    2. 專案根目錄（本機開發用這個）
+            var candidatePaths = new[]
+            {
+                Path.Combine("/etc/secrets", pemFileName),
+                Path.Combine(env.ContentRootPath, pemFileName)
+            };
+
+            var pemPath = candidatePaths.FirstOrDefault(File.Exists);
+
+            if (pemPath == null)
                 throw new FileNotFoundException(
-                    $"找不到 JaaS 私鑰檔案：{pemPath}。請把從 jaas.8x8.vc 下載的 .pem 私鑰檔放到專案根目錄，檔名要跟 appsettings.json 的 JaaS:PrivateKeyPath 一致。");
+                    $"找不到 JaaS 私鑰檔案，已嘗試以下路徑：{string.Join("、", candidatePaths)}。" +
+                    "本機開發請把 .pem 檔放到專案根目錄；部署在 Render 請透過 Environment 頁面的 Secret Files 上傳，檔名要跟 appsettings.json 的 JaaS:PrivateKeyPath 一致。");
 
             _privateKey = RSA.Create();
             _privateKey.ImportFromPem(File.ReadAllText(pemPath));
