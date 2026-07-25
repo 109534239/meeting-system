@@ -60,8 +60,118 @@ namespace InterviewProject.Controllers
                .OrderByDescending(r => r.ScheduledAt)
                .ToListAsync();
 
+            // 🎯 面試評分頁要用：這個人針對每份履歷，是否已經評過分
+            var roomIds = rooms.Select(r => r.Id).ToList();
+            var allEvaluations = await _db.InterviewEvaluations
+                .Include(e => e.EvaluatorEmployee)
+                .Where(e => roomIds.Contains(e.RoomId))
+                .ToListAsync();
+
+            var myEvaluations = allEvaluations.Where(e => e.EvaluatorEmployeeId == empId).ToList();
+            ViewBag.MyEvaluations = myEvaluations.ToDictionary(e => e.ResumeId, e => e);
+
+            // 🎯 最高主管要能看到「部門主管」的評分紀錄作為參考，同時也用來判斷「主管是否已評分」
+            ViewBag.ManagerEvaluationsByResume = allEvaluations
+                .Where(e => e.EvaluatorEmployee != null && e.EvaluatorEmployee.Role == "manager")
+                .GroupBy(e => e.ResumeId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(e => e.EvaluatorEmployee!.Name).ToList());
+
             ViewBag.CurrentRole = role;
+            ViewBag.CurrentEmployeeId = empId;
             return View("~/Views/Interview/Index.cshtml", rooms);
+        }
+
+        // 🎯 主管/最高主管針對某位求職者送出這場面試的評分評語
+        [HttpPost]
+        public async Task<IActionResult> SubmitEvaluation(int roomId, int resumeId, int score, string? comment)
+        {
+            if (!IsEmployee()) return RedirectToAction("Index", "Login");
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (role != "manager" && role != "director")
+                return Json(new { success = false, message = "只有主管/最高主管能評分" });
+
+            if (score < 1 || score > 5)
+                return Json(new { success = false, message = "請選擇分數（1~5分）" });
+
+            // 🎯 評語必填，不可空白
+            if (string.IsNullOrWhiteSpace(comment))
+                return Json(new { success = false, message = "評語為必填，請輸入評語" });
+
+            int empId = GetEmployeeId();
+
+            // 一定要是這場面試受邀的主管/最高主管才能評
+            var isInvited = await _db.RoomParticipants.AnyAsync(p =>
+                p.RoomId == roomId && p.EmployeeId == empId
+                && (p.Role == ParticipantRole.Manager || p.Role == ParticipantRole.Director));
+            if (!isInvited) return Json(new { success = false, message = "你不是這場面試受邀的主管" });
+
+            var existing = await _db.InterviewEvaluations.FirstOrDefaultAsync(e =>
+                e.RoomId == roomId && e.ResumeId == resumeId && e.EvaluatorEmployeeId == empId);
+
+            if (existing != null)
+            {
+                existing.Score = score;
+                existing.Comment = comment;
+                existing.CreatedAt = DateTime.Now;
+            }
+            else
+            {
+                _db.InterviewEvaluations.Add(new InterviewEvaluation
+                {
+                    RoomId = roomId,
+                    ResumeId = resumeId,
+                    EvaluatorEmployeeId = empId,
+                    Score = score,
+                    Comment = comment
+                });
+            }
+
+            await _db.SaveChangesAsync();
+            return Json(new { success = true });
+        }
+
+        // 🎯 只有最高主管能定案錄取/未錄取，且這場面試「所有」受邀的部門主管都要先評完分
+        [HttpPost]
+        public async Task<IActionResult> SetAdmission(int roomId, int resumeId, string result)
+        {
+            if (!IsEmployee()) return RedirectToAction("Index", "Login");
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (role != "director")
+                return Json(new { success = false, message = "只有最高主管能定案錄取結果" });
+
+            if (result != AdmissionResultValues.Admitted && result != AdmissionResultValues.Rejected)
+                return Json(new { success = false, message = "結果只能是錄取或未錄取" });
+
+            var resume = await _db.Resumes.FindAsync(resumeId);
+            if (resume == null) return Json(new { success = false, message = "找不到這份履歷" });
+
+            // 🎯 這場面試受邀的所有部門主管（Role=Manager）都要對這位求職者評完分，才能定案錄取結果
+            var invitedManagerIds = await _db.RoomParticipants
+                .Where(p => p.RoomId == roomId && p.Role == ParticipantRole.Manager && p.EmployeeId != null)
+                .Select(p => p.EmployeeId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            if (invitedManagerIds.Any())
+            {
+                var evaluatedManagerIds = await _db.InterviewEvaluations
+                    .Where(e => e.RoomId == roomId && e.ResumeId == resumeId && invitedManagerIds.Contains(e.EvaluatorEmployeeId))
+                    .Select(e => e.EvaluatorEmployeeId)
+                    .Distinct()
+                    .ToListAsync();
+
+                if (evaluatedManagerIds.Count < invitedManagerIds.Count)
+                    return Json(new
+                    {
+                        success = false,
+                        message = $"尚有部門主管未完成評分（{evaluatedManagerIds.Count}/{invitedManagerIds.Count} 位已評分），須所有主管評分完成後才能定案錄取結果"
+                    });
+            }
+
+            resume.AdmissionResult = result;
+            await _db.SaveChangesAsync();
+
+            return Json(new { success = true });
         }
 
         // 🎯 只有最高主管能改自己主持的房間的預計面試時間，會議還沒開始才能改

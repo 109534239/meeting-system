@@ -1,0 +1,108 @@
+﻿@{
+    ViewData["Title"] = "面試檔案下載";
+    var transcripts = ViewBag.Transcripts as List<string?> ?? new List<string?>();
+    var recordings = ViewBag.Recordings as List<string?> ?? new List<string?>();
+    var aiAnalyses = ViewBag.AiAnalyses as List<string?> ?? new List<string?>();
+}
+
+<style>
+    .files-wrap {
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 0 20px;
+    }
+
+    .files-section {
+        margin-bottom: 32px;
+    }
+
+        .files-section h2 {
+            font-size: 18px;
+            margin-bottom: 12px;
+            color: #2c3e50;
+        }
+
+    .file-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 16px;
+        border: 1px solid #eee;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        background: #fafafa;
+    }
+
+        .file-row a {
+            background: #2c7a7b;
+            color: #fff;
+            padding: 5px 14px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+    .empty-note {
+        color: #999;
+        padding: 12px 0;
+    }
+</style>
+
+<div class="files-wrap">
+    <h1>面試檔案下載</h1>
+    <p style="color:#888;">這裡列出目前存在專案伺服器上的逐字稿與錄影錄音檔案（本機測試才會持久保存，部署在 Render 免費方案上重啟後會消失）。</p>
+
+    <div class="files-section">
+        <h2>📝 逐字稿</h2>
+        @if (transcripts.Any())
+        {
+            foreach (var f in transcripts)
+            {
+                <div class="file-row">
+                    <span>@f</span>
+                    <a href="@Url.Action("DownloadFile", "Room", new { folder = "逐字稿", fileName = f })">下載</a>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="empty-note">目前沒有任何逐字稿檔案</div>
+        }
+    </div>
+
+    <div class="files-section">
+        <h2>🎬 錄影錄音</h2>
+        @if (recordings.Any())
+        {
+            foreach (var f in recordings)
+            {
+                <div class="file-row">
+                    <span>@f</span>
+                    <a href="@Url.Action("DownloadFile", "Room", new { folder = "錄影錄音", fileName = f })">下載</a>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="empty-note">目前沒有任何錄影錄音檔案</div>
+        }
+    </div>
+
+    <div class="files-section">
+        <h2>🤖 AI 分析報告</h2>
+        @if (aiAnalyses.Any())
+        {
+            foreach (var f in aiAnalyses)
+            {
+                <div class="file-row">
+                    <span>@f</span>
+                    <a href="@Url.Action("DownloadFile", "Room", new { folder = "AI分析", fileName = f })">下載</a>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="empty-note">目前沒有任何 AI 分析報告</div>
+        }
+    </div>
+</div>

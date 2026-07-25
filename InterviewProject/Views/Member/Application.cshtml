@@ -154,12 +154,13 @@
                         //    測驗還沒做 → 讓他繼續做測驗；測驗做完了、只差房間還沒排好 → 顯示安排中提示
                         viewAction = completedTestResumeIds.Contains(item.Id) ? "waiting" : "aptitude";
                     }
-                    else if (interviewStatus == InterviewProject.Models.InterviewStatusValues.Scheduled)
-                        viewAction = "interview";                                                  // 狀態5：面試資訊
+                    else if (interviewStatus == InterviewProject.Models.InterviewStatusValues.Scheduled
+                    || interviewStatus == InterviewProject.Models.InterviewStatusValues.InProgress)
+                        viewAction = "interview";                                                  // 狀態5/6：面試資訊（面試中也給查看，避免中途斷線後回不去）
                     else if (interviewStatus == InterviewProject.Models.InterviewStatusValues.Ended
                     && admissionResult == InterviewProject.Models.AdmissionResultValues.Admitted)
                         viewAction = "onboarding";                                                  // 狀態9：報到資訊
-                                                                                                    // 面試中(狀態6)／面試結束+等待結果中(狀態7)／面試結束+未錄取(狀態8) → 不顯示按鈕
+                                                                                                    // 面試結束+等待結果中(狀態7)／面試結束+未錄取(狀態8) → 不顯示按鈕
                 }
 
                 <div class="app-row-wrap">

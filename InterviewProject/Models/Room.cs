@@ -31,6 +31,11 @@ namespace InterviewProject.Models
         // 🎯 JaaS 伺服器端錄影完成後，透過 Webhook 收到的下載連結（24小時內有效）
         public string? RecordingUrl { get; set; }
 
+        // 🎯 存進 wwwroot 資料夾後的檔名，讓「面試評分」頁面可以直接連到對應檔案，不用用猜的
+        public string? TranscriptFileName { get; set; }
+        public string? RecordingFileName { get; set; }
+        public string? AiAnalysisFileName { get; set; }
+
         public virtual ICollection<RoomParticipant> Participants { get; set; } = new List<RoomParticipant>();
 
         // 判斷房間目前是否可進入

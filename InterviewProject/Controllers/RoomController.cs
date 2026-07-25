@@ -7,6 +7,9 @@ using Microsoft.AspNetCore.Http;
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace InterviewProject.Controllers
@@ -329,12 +332,15 @@ namespace InterviewProject.Controllers
             var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            var folder = Path.Combine(_env.ContentRootPath, "逐字稿");
+            var folder = Path.Combine(_env.WebRootPath, "逐字稿");
             Directory.CreateDirectory(folder);
 
             var fileName = BuildFileName(room, "txt");
             var path = Path.Combine(folder, fileName);
             await System.IO.File.WriteAllTextAsync(path, content, System.Text.Encoding.UTF8);
+
+            room.TranscriptFileName = fileName;
+            await _context.SaveChangesAsync();
 
             return Ok(new { success = true, fileName });
         }
@@ -349,7 +355,7 @@ namespace InterviewProject.Controllers
             var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            var folder = Path.Combine(_env.ContentRootPath, "錄影錄音");
+            var folder = Path.Combine(_env.WebRootPath, "錄影錄音");
             Directory.CreateDirectory(folder);
 
             var fileName = BuildFileName(room, "webm");
@@ -359,7 +365,171 @@ namespace InterviewProject.Controllers
                 await file.CopyToAsync(stream);
             }
 
+            room.RecordingFileName = fileName;
+            await _context.SaveChangesAsync();
+
             return Ok(new { success = true, fileName });
+        }
+
+        // 🎯 AI 面試分析結果也存到專案裡的「AI分析」資料夾
+        [HttpPost]
+        public async Task<IActionResult> SaveAiAnalysis([FromForm] string roomCode, [FromForm] string content)
+        {
+            var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
+            if (room == null) return NotFound();
+
+            var folder = Path.Combine(_env.WebRootPath, "AI分析");
+            Directory.CreateDirectory(folder);
+
+            var fileName = BuildFileName(room, "txt");
+            var path = Path.Combine(folder, fileName);
+            await System.IO.File.WriteAllTextAsync(path, content, System.Text.Encoding.UTF8);
+
+            room.AiAnalysisFileName = fileName;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, fileName });
+        }
+
+        // 🎯 檔案總管：列出「逐字稿」「錄影錄音」「AI分析」資料夾裡目前存了哪些檔案，並提供下載連結
+        //    只有 HR/主管/最高主管能看（求職者不用看到這個）
+        public IActionResult Files()
+        {
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (role != "hr" && role != "manager" && role != "director")
+                return RedirectToAction("Index", "Login");
+
+            var transcriptFolder = Path.Combine(_env.WebRootPath, "逐字稿");
+            var recordingFolder = Path.Combine(_env.WebRootPath, "錄影錄音");
+            var aiFolder = Path.Combine(_env.WebRootPath, "AI分析");
+
+            ViewBag.Transcripts = Directory.Exists(transcriptFolder)
+                ? Directory.GetFiles(transcriptFolder).Select(Path.GetFileName).OrderByDescending(f => f).ToList()
+                : new List<string?>();
+
+            ViewBag.Recordings = Directory.Exists(recordingFolder)
+                ? Directory.GetFiles(recordingFolder).Select(Path.GetFileName).OrderByDescending(f => f).ToList()
+                : new List<string?>();
+
+            ViewBag.AiAnalyses = Directory.Exists(aiFolder)
+                ? Directory.GetFiles(aiFolder).Select(Path.GetFileName).OrderByDescending(f => f).ToList()
+                : new List<string?>();
+
+            return View("~/Views/Room/Files.cshtml");
+        }
+
+        // 下載指定資料夾裡的檔案（folder 只允許這三個固定值，避免被拿去讀取其他任意路徑）
+        public IActionResult DownloadFile(string folder, string fileName)
+        {
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (role != "hr" && role != "manager" && role != "director")
+                return RedirectToAction("Index", "Login");
+
+            if (folder != "逐字稿" && folder != "錄影錄音" && folder != "AI分析") return BadRequest();
+
+            var safeFileName = Path.GetFileName(fileName); // 防止路徑跳脫
+            var filePath = Path.Combine(_env.WebRootPath, folder, safeFileName);
+            if (!System.IO.File.Exists(filePath)) return NotFound();
+
+            var contentType = folder == "錄影錄音" ? "video/webm" : "text/plain";
+            return PhysicalFile(filePath, contentType, safeFileName);
+        }
+
+        // 🎯 直接查看檔案內容（不強制下載）：逐字稿/AI分析瀏覽器會直接顯示純文字，錄影錄音則當作影片播放來源
+        //    跟 DownloadFile 的差別只在於沒有帶 fileDownloadName，瀏覽器不會強制跳出「另存新檔」
+        public IActionResult ViewFile(string folder, string fileName)
+        {
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (role != "hr" && role != "manager" && role != "director")
+                return RedirectToAction("Index", "Login");
+
+            if (folder != "逐字稿" && folder != "錄影錄音" && folder != "AI分析") return BadRequest();
+
+            var safeFileName = Path.GetFileName(fileName); // 防止路徑跳脫
+            var filePath = Path.Combine(_env.WebRootPath, folder, safeFileName);
+            if (!System.IO.File.Exists(filePath)) return NotFound();
+
+            var contentType = folder == "錄影錄音" ? "video/webm" : "text/plain; charset=utf-8";
+            return PhysicalFile(filePath, contentType, enableRangeProcessing: true); // 支援影片拖拉進度條的Range請求
+        }
+
+        // 🎯 依逐字稿內容產生 WebVTT 字幕檔，讓影片播放器的「CC 字幕」按鈕可以顯示逐字稿
+        //    ⚠️ 時間軸是用逐字稿裡每行的時間戳，相對「第一句話」往後換算出來的估算值，
+        //       不是跟錄影檔案逐格對齊（錄影是使用者按下畫面分享授權才真正開始錄，跟第一句話開口的時間可能有幾秒落差），
+        //       僅供對照參考，不保證完全同步
+        public async Task<IActionResult> TranscriptVtt(int roomId)
+        {
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (role != "hr" && role != "manager" && role != "director")
+                return RedirectToAction("Index", "Login");
+
+            var room = await _context.Rooms.FirstOrDefaultAsync(r => r.Id == roomId);
+            if (room == null || string.IsNullOrEmpty(room.TranscriptFileName))
+                return Content("WEBVTT\n", "text/vtt", Encoding.UTF8);
+
+            var filePath = Path.Combine(_env.WebRootPath, "逐字稿", room.TranscriptFileName);
+            if (!System.IO.File.Exists(filePath))
+                return Content("WEBVTT\n", "text/vtt", Encoding.UTF8);
+
+            var lines = await System.IO.File.ReadAllLinesAsync(filePath, Encoding.UTF8);
+            var vtt = BuildVttFromTranscript(lines);
+            return Content(vtt, "text/vtt", Encoding.UTF8);
+        }
+
+        // 逐字稿固定格式是「[HH:MM:SS] 姓名：內容」，用第一句話的時間當基準點（t0 = 00:00.000）往後推算每句話的時間
+        private string BuildVttFromTranscript(string[] lines)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("WEBVTT");
+            sb.AppendLine();
+
+            var regex = new Regex(@"^\[(\d{2}):(\d{2}):(\d{2})\]\s*(.+)$");
+            var cues = new List<(TimeSpan time, string text)>();
+
+            foreach (var raw in lines)
+            {
+                var line = raw?.Trim();
+                if (string.IsNullOrEmpty(line)) continue;
+
+                var m = regex.Match(line);
+                if (!m.Success) continue;
+
+                var t = new TimeSpan(0, int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value));
+                cues.Add((t, m.Groups[4].Value));
+            }
+
+            if (!cues.Any()) return sb.ToString();
+
+            var t0 = cues[0].time;
+            int index = 1;
+            for (int i = 0; i < cues.Count; i++)
+            {
+                var start = cues[i].time - t0;
+                if (start < TimeSpan.Zero) start = TimeSpan.Zero;
+
+                // 每句字幕預設顯示 4 秒，但如果下一句提早出現就提早結束，避免字幕重疊
+                var end = start + TimeSpan.FromSeconds(4);
+                if (i + 1 < cues.Count)
+                {
+                    var nextStart = cues[i + 1].time - t0;
+                    if (nextStart < end && nextStart > start) end = nextStart;
+                }
+                if (end <= start) end = start + TimeSpan.FromSeconds(1);
+
+                sb.AppendLine(index.ToString());
+                sb.AppendLine($"{FormatVttTime(start)} --> {FormatVttTime(end)}");
+                sb.AppendLine(cues[i].text);
+                sb.AppendLine();
+                index++;
+            }
+
+            return sb.ToString();
+        }
+
+        private string FormatVttTime(TimeSpan t)
+        {
+            if (t < TimeSpan.Zero) t = TimeSpan.Zero;
+            return $"{(int)t.TotalHours:D2}:{t.Minutes:D2}:{t.Seconds:D2}.{t.Milliseconds:D3}";
         }
 
         // 「面試會議_日期_職缺.副檔名」，職缺名稱裡不能當檔名的符號換成底線

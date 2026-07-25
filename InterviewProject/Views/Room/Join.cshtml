@@ -671,15 +671,23 @@
             if (started) return;
             started = true;
 
-            // 🎯 這裡才是真正連線進 Jitsi 視訊會議的時機——大家（含主持人自己）
-            //    收到「會議開始」廣播的當下才一起連線，計時器才會是共同、從 0 起算的
-            //    修正：非主持人延遲一點點再連線，讓主持人的連線先把會議室在 Jitsi 那邊真的建立起來，
-            //    不然求職者/主管的連線有時候會比主持人早一步，變成「conference not found」連不進去
-            if (IS_HOST) {
-                initJitsi();
-            } else {
-                setTimeout(initJitsi, 2000);
-            }
+            // 🎯 修正：麥克風容易被 Jitsi 搶走獨佔權，導致語音辨識完全抓不到聲音（逐字稿整場空白）。
+            //    改成先讓語音辨識/錄音去搶麥克風，搶到之後才連 Jitsi，提高語音辨識搶到麥克風的機率。
+            //    這是瀏覽器/作業系統層級的裝置獨占限制，無法 100% 保證解決，需要實測確認。
+            initAudio().then(() => {
+                initSTT();
+                startSilenceDetect();
+
+                // 這裡才是真正連線進 Jitsi 視訊會議的時機——大家（含主持人自己）
+                // 收到「會議開始」廣播的當下才一起連線，計時器才會是共同、從 0 起算的
+                // 非主持人延遲一點點再連線，讓主持人的連線先把會議室在 Jitsi 那邊真的建立起來，
+                // 不然求職者/主管的連線有時候會比主持人早一步，變成「conference not found」連不進去
+                if (IS_HOST) {
+                    initJitsi();
+                } else {
+                    setTimeout(initJitsi, 2000);
+                }
+            });
 
             document.getElementById('notStartedModal').classList.remove('show');
 
@@ -697,11 +705,6 @@
             setSt('li', '👂 聆聽中');
             showMsg('會議已開始。我會在冷場時適時提問。');
             lastSpeechMs = Date.now(); // 會議開始當下不算冷場
-
-            initAudio().then(() => {
-                initSTT();
-                startSilenceDetect();
-            });
         }
 
         // ══════════════════════════════════
@@ -1013,21 +1016,26 @@
             document.getElementById('endSubtitle').textContent = '檔案正在儲存至專案伺服器...';
             dl.innerHTML = '';
 
-            // 1. 逐字稿 —— 存到專案的「逐字稿」資料夾（不再下載到瀏覽器）
-            if (trxLines.length > 0) {
-                const txt = trxLines.map(l=>`[${l.time}] ${l.sp}：${l.tx}`).join('\n');
+            // 1. 逐字稿 —— 存到專案的「逐字稿」資料夾（不再下載到瀏覽器），就算是空的也要存一份
+            {
+                const isEmpty = trxLines.length === 0;
+                const txt = isEmpty
+                    ? '（本場會議未收集到逐字稿內容，可能原因：瀏覽器語音辨識的麥克風權限被 Jitsi 視訊佔用，或麥克風未授權給瀏覽器）'
+                    : trxLines.map(l=>`[${l.time}] ${l.sp}：${l.tx}`).join('\n');
                 try {
                     const fd = new FormData();
                     fd.append('roomCode', ROOM_CODE);
                     fd.append('content', txt);
                     const r = await fetch('/Room/SaveTranscript', { method: 'POST', body: fd });
                     const d = await r.json();
-                    dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿（${trxLines.length} 條）已存至專案「逐字稿」資料夾：${d.fileName}</div>`;
+                    if (isEmpty) {
+                        dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿為空已存檔：${d.fileName}（請確認麥克風已授權給 Chrome，且沒有被其他分頁佔用）</div>`;
+                    } else {
+                        dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿（${trxLines.length} 條）已存至專案「逐字稿」資料夾：${d.fileName}</div>`;
+                    }
                 } catch (e) {
                     dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿儲存失敗：${e.message}</div>`;
                 }
-            } else {
-                dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿為空（請確認麥克風已授權給 Chrome）</div>`;
             }
 
             // 2. 錄影/錄音 —— 存到專案的「錄影錄音」資料夾
@@ -1047,15 +1055,24 @@
                 dl.innerHTML += `<div class="dl-item ng">⚠️ 無錄影（螢幕錄製未授權或被取消）</div>`;
             }
 
-            // 3. AI 分析
+            // 3. AI 分析 —— 存到專案的「AI分析」資料夾
             if (trxLines.length >= 2) {
                 dl.innerHTML += `<div class="dl-item wait" id="aStatus">⏳ AI 分析中...</div>`;
                 const analysis = await runAnalysis();
                 const aEl = document.getElementById('aStatus');
                 if (analysis) {
-                    dlFile(analysis, `面試分析_${ts()}.txt`, 'text/plain;charset=utf-8');
-                    aEl.className = 'dl-item ok';
-                    aEl.textContent = '✅ 面試分析報告已下載';
+                    try {
+                        const fd = new FormData();
+                        fd.append('roomCode', ROOM_CODE);
+                        fd.append('content', analysis);
+                        const r = await fetch('/Room/SaveAiAnalysis', { method: 'POST', body: fd });
+                        const d = await r.json();
+                        aEl.className = 'dl-item ok';
+                        aEl.textContent = `✅ 面試分析報告已存至專案「AI分析」資料夾：${d.fileName}`;
+                    } catch (e) {
+                        aEl.className = 'dl-item ng';
+                        aEl.textContent = `⚠️ 分析報告儲存失敗：${e.message}`;
+                    }
                 } else {
                     aEl.className = 'dl-item ng';
                     aEl.textContent = '⚠️ AI 分析失敗（appsettings.json 中的 Gemini:ApiKey 是否正確？）';
@@ -1128,6 +1145,26 @@
         //  Jitsi External API 初始化
         // ══════════════════════════════════
         let jitsiApi = null;
+
+        // 🎯 用 sendBeacon 記錄離開時間，就算分頁被直接關掉、來不及跑完 fetch，瀏覽器也會確保這個請求送出去
+        let leftBeaconSent = false;
+        function markLeftBeacon() {
+            if (leftBeaconSent) return;
+            leftBeaconSent = true;
+            try {
+                const data = new URLSearchParams();
+                data.append('code', ROOM_CODE);
+                navigator.sendBeacon('/Room/MarkLeft', data);
+            } catch {
+                fetch('/Room/MarkLeft', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'code=' + encodeURIComponent(ROOM_CODE)
+                }).catch(() => {});
+            }
+        }
+        window.addEventListener('pagehide', markLeftBeacon);
+        window.addEventListener('beforeunload', markLeftBeacon);
 
         function initJitsi() {
             if (jitsiApi) return;
@@ -1205,11 +1242,7 @@
             // 🎯 使用者離開視訊（不管是自己按掛斷、還是斷線），記錄離開時間
             //    這只代表「他自己離開」，不會影響會議本身，會議只有主持人按「結束會議」才會真的結束
             jitsiApi.addEventListener('videoConferenceLeft', e => {
-                fetch('/Room/MarkLeft', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'code=' + encodeURIComponent(ROOM_CODE)
-                }).catch(() => {});
+                markLeftBeacon();
             });
 
             // ✅ 監聽 Jitsi 的音訊事件，直接用來做冷場偵測（不需另外取麥克風）
