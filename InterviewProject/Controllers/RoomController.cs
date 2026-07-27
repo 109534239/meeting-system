@@ -19,12 +19,14 @@ namespace InterviewProject.Controllers
         private readonly AppDbContext _context;
         private readonly JitsiBotService _botService;
         private readonly IWebHostEnvironment _env;
+        private readonly R2StorageService _storage;
 
-        public RoomController(AppDbContext context, JitsiBotService botService, IWebHostEnvironment env)
+        public RoomController(AppDbContext context, JitsiBotService botService, IWebHostEnvironment env, R2StorageService storage)
         {
             _context = context;
             _botService = botService;
             _env = env;
+            _storage = storage;
         }
 
         private bool IsEmployee()
@@ -323,21 +325,23 @@ namespace InterviewProject.Controllers
             return Ok();
         }
 
-        // 🎯 逐字稿存到專案裡的「逐字稿」資料夾，不是存到瀏覽器下載資料夾
-        //    ⚠️ 注意：如果部署在 Render 免費方案，磁碟是「非永久性」的，服務重啟/休眠喚醒後這裡存的檔案會消失，
-        //    要保留檔案得另外接雲端儲存或升級成有 Persistent Disk 的方案
+        // 🎯 逐字稿改存到 Cloudflare R2，不再存本機 wwwroot
+        //    這樣本機執行跟部署到 Render，讀到的都是同一份雲端檔案，不會再有兩邊結果不一致的問題
         [HttpPost]
         public async Task<IActionResult> SaveTranscript([FromForm] string roomCode, [FromForm] string content)
         {
             var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            var folder = Path.Combine(_env.WebRootPath, "逐字稿");
-            Directory.CreateDirectory(folder);
-
             var fileName = BuildFileName(room, "txt");
-            var path = Path.Combine(folder, fileName);
-            await System.IO.File.WriteAllTextAsync(path, content, System.Text.Encoding.UTF8);
+            try
+            {
+                await _storage.UploadTextAsync($"逐字稿/{fileName}", content);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "逐字稿上傳到雲端儲存失敗：" + ex.Message });
+            }
 
             room.TranscriptFileName = fileName;
             await _context.SaveChangesAsync();
@@ -345,7 +349,7 @@ namespace InterviewProject.Controllers
             return Ok(new { success = true, fileName });
         }
 
-        // 🎯 錄影錄音存到專案裡的「錄影錄音」資料夾
+        // 🎯 錄影錄音改存到 Cloudflare R2
         [HttpPost]
         [RequestSizeLimit(500_000_000)] // 放寬到 500MB，避免長時間會議的錄影檔案被擋掉
         public async Task<IActionResult> SaveRecording([FromForm] string roomCode, IFormFile file)
@@ -355,14 +359,15 @@ namespace InterviewProject.Controllers
             var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            var folder = Path.Combine(_env.WebRootPath, "錄影錄音");
-            Directory.CreateDirectory(folder);
-
             var fileName = BuildFileName(room, "webm");
-            var path = Path.Combine(folder, fileName);
-            using (var stream = System.IO.File.Create(path))
+            try
             {
-                await file.CopyToAsync(stream);
+                using var stream = file.OpenReadStream();
+                await _storage.UploadStreamAsync($"錄影錄音/{fileName}", stream, "video/webm");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "錄影上傳到雲端儲存失敗：" + ex.Message });
             }
 
             room.RecordingFileName = fileName;
@@ -371,19 +376,22 @@ namespace InterviewProject.Controllers
             return Ok(new { success = true, fileName });
         }
 
-        // 🎯 AI 面試分析結果也存到專案裡的「AI分析」資料夾
+        // 🎯 AI 面試分析結果改存到 Cloudflare R2
         [HttpPost]
         public async Task<IActionResult> SaveAiAnalysis([FromForm] string roomCode, [FromForm] string content)
         {
             var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            var folder = Path.Combine(_env.WebRootPath, "AI分析");
-            Directory.CreateDirectory(folder);
-
             var fileName = BuildFileName(room, "txt");
-            var path = Path.Combine(folder, fileName);
-            await System.IO.File.WriteAllTextAsync(path, content, System.Text.Encoding.UTF8);
+            try
+            {
+                await _storage.UploadTextAsync($"AI分析/{fileName}", content);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "AI分析上傳到雲端儲存失敗：" + ex.Message });
+            }
 
             room.AiAnalysisFileName = fileName;
             await _context.SaveChangesAsync();
@@ -391,35 +399,37 @@ namespace InterviewProject.Controllers
             return Ok(new { success = true, fileName });
         }
 
-        // 🎯 檔案總管：列出「逐字稿」「錄影錄音」「AI分析」資料夾裡目前存了哪些檔案，並提供下載連結
+        // 🎯 檔案總管：列出 R2 上「逐字稿」「錄影錄音」「AI分析」三個前綴底下目前存了哪些檔案，並提供下載連結
         //    只有 HR/主管/最高主管能看（求職者不用看到這個）
-        public IActionResult Files()
+        public async Task<IActionResult> Files()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
             if (role != "hr" && role != "manager" && role != "director")
                 return RedirectToAction("Index", "Login");
 
-            var transcriptFolder = Path.Combine(_env.WebRootPath, "逐字稿");
-            var recordingFolder = Path.Combine(_env.WebRootPath, "錄影錄音");
-            var aiFolder = Path.Combine(_env.WebRootPath, "AI分析");
+            if (!_storage.IsConfigured)
+            {
+                ViewBag.NotConfigured = true;
+                ViewBag.Transcripts = new List<string?>();
+                ViewBag.Recordings = new List<string?>();
+                ViewBag.AiAnalyses = new List<string?>();
+                return View("~/Views/Room/Files.cshtml");
+            }
 
-            ViewBag.Transcripts = Directory.Exists(transcriptFolder)
-                ? Directory.GetFiles(transcriptFolder).Select(Path.GetFileName).OrderByDescending(f => f).ToList()
-                : new List<string?>();
+            var transcriptKeys = await _storage.ListKeysAsync("逐字稿/");
+            var recordingKeys = await _storage.ListKeysAsync("錄影錄音/");
+            var aiKeys = await _storage.ListKeysAsync("AI分析/");
 
-            ViewBag.Recordings = Directory.Exists(recordingFolder)
-                ? Directory.GetFiles(recordingFolder).Select(Path.GetFileName).OrderByDescending(f => f).ToList()
-                : new List<string?>();
-
-            ViewBag.AiAnalyses = Directory.Exists(aiFolder)
-                ? Directory.GetFiles(aiFolder).Select(Path.GetFileName).OrderByDescending(f => f).ToList()
-                : new List<string?>();
+            ViewBag.Transcripts = transcriptKeys.Select(k => k.Substring("逐字稿/".Length)).ToList();
+            ViewBag.Recordings = recordingKeys.Select(k => k.Substring("錄影錄音/".Length)).ToList();
+            ViewBag.AiAnalyses = aiKeys.Select(k => k.Substring("AI分析/".Length)).ToList();
 
             return View("~/Views/Room/Files.cshtml");
         }
 
-        // 下載指定資料夾裡的檔案（folder 只允許這三個固定值，避免被拿去讀取其他任意路徑）
-        public IActionResult DownloadFile(string folder, string fileName)
+        // 下載指定「資料夾」（R2 key 前綴）裡的檔案（folder 只允許這三個固定值，避免被拿去讀取其他任意路徑）
+        // 直接 302 導向 R2 的簽名網址，不用把大檔案的位元組再繞經我們自己的伺服器
+        public async Task<IActionResult> DownloadFile(string folder, string fileName)
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
             if (role != "hr" && role != "manager" && role != "director")
@@ -428,16 +438,18 @@ namespace InterviewProject.Controllers
             if (folder != "逐字稿" && folder != "錄影錄音" && folder != "AI分析") return BadRequest();
 
             var safeFileName = Path.GetFileName(fileName); // 防止路徑跳脫
-            var filePath = Path.Combine(_env.WebRootPath, folder, safeFileName);
-            if (!System.IO.File.Exists(filePath)) return NotFound();
+            var key = $"{folder}/{safeFileName}";
 
-            var contentType = folder == "錄影錄音" ? "video/webm" : "text/plain";
-            return PhysicalFile(filePath, contentType, safeFileName);
+            if (!await _storage.ExistsAsync(key)) return NotFound();
+
+            var url = _storage.GetPresignedUrl(key, TimeSpan.FromMinutes(15), downloadFileName: safeFileName);
+            return Redirect(url);
         }
 
-        // 🎯 直接查看檔案內容（不強制下載）：逐字稿/AI分析瀏覽器會直接顯示純文字，錄影錄音則當作影片播放來源
-        //    跟 DownloadFile 的差別只在於沒有帶 fileDownloadName，瀏覽器不會強制跳出「另存新檔」
-        public IActionResult ViewFile(string folder, string fileName)
+        // 🎯 直接查看檔案內容（不強制下載）
+        //    逐字稿/AI分析：檔案小，直接由我們的伺服器讀出文字內容回傳（給前端 fetch() 用，同源不用處理 CORS）
+        //    錄影錄音：302 導向 R2 簽名網址，讓 <video> 標籤直接播放（R2 原生支援 Range 請求，拖拉進度條沒問題）
+        public async Task<IActionResult> ViewFile(string folder, string fileName)
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
             if (role != "hr" && role != "manager" && role != "director")
@@ -445,12 +457,26 @@ namespace InterviewProject.Controllers
 
             if (folder != "逐字稿" && folder != "錄影錄音" && folder != "AI分析") return BadRequest();
 
-            var safeFileName = Path.GetFileName(fileName); // 防止路徑跳脫
-            var filePath = Path.Combine(_env.WebRootPath, folder, safeFileName);
-            if (!System.IO.File.Exists(filePath)) return NotFound();
+            var safeFileName = Path.GetFileName(fileName);
+            var key = $"{folder}/{safeFileName}";
 
-            var contentType = folder == "錄影錄音" ? "video/webm" : "text/plain; charset=utf-8";
-            return PhysicalFile(filePath, contentType, enableRangeProcessing: true); // 支援影片拖拉進度條的Range請求
+            if (!await _storage.ExistsAsync(key)) return NotFound();
+
+            if (folder == "錄影錄音")
+            {
+                var url = _storage.GetPresignedUrl(key, TimeSpan.FromMinutes(15));
+                return Redirect(url);
+            }
+
+            try
+            {
+                var text = await _storage.DownloadTextAsync(key);
+                return Content(text, "text/plain; charset=utf-8", System.Text.Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "讀取雲端檔案失敗：" + ex.Message);
+            }
         }
 
         // 🎯 依逐字稿內容產生 WebVTT 字幕檔，讓影片播放器的「CC 字幕」按鈕可以顯示逐字稿
@@ -467,11 +493,12 @@ namespace InterviewProject.Controllers
             if (room == null || string.IsNullOrEmpty(room.TranscriptFileName))
                 return Content("WEBVTT\n", "text/vtt", Encoding.UTF8);
 
-            var filePath = Path.Combine(_env.WebRootPath, "逐字稿", room.TranscriptFileName);
-            if (!System.IO.File.Exists(filePath))
+            var key = $"逐字稿/{room.TranscriptFileName}";
+            if (!await _storage.ExistsAsync(key))
                 return Content("WEBVTT\n", "text/vtt", Encoding.UTF8);
 
-            var lines = await System.IO.File.ReadAllLinesAsync(filePath, Encoding.UTF8);
+            var content = await _storage.DownloadTextAsync(key);
+            var lines = content.Split('\n');
             var vtt = BuildVttFromTranscript(lines);
             return Content(vtt, "text/vtt", Encoding.UTF8);
         }

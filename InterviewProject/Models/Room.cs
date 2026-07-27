@@ -39,11 +39,19 @@ namespace InterviewProject.Models
         public virtual ICollection<RoomParticipant> Participants { get; set; } = new List<RoomParticipant>();
 
         // 判斷房間目前是否可進入
+        //   🐛 修正兩個問題：
+        //   1. 原本只看 StartAt/EndAt 的時間比對，完全沒看 MeetingStatus，
+        //      會出現「MeetingStatus 已經是 Ended，但因為時間比對邏輯又判斷成尚未開放」的矛盾畫面
+        //   2. 原本用 StartAt 判斷「是否到了可以打開頁面的時間」，但 StartAt 在主持人真正按下開始之前一直是 null，
+        //      這個判斷式在會議開始前形同虛設（永遠不會擋人），實際上應該要用 ScheduledAt（預計面試時間）來卡
         public bool CanEnter()
         {
             if (!IsActive) return false;
+            if (MeetingStatus == "Ended") return false;
+
             var now = DateTime.Now;
-            if (StartAt.HasValue && now < StartAt.Value) return false;
+            // 會議還沒開始（NotStarted）時，用「預計面試時間」卡進場時機；已經 InProgress 就不用再卡了
+            if (MeetingStatus == "NotStarted" && ScheduledAt.HasValue && now < ScheduledAt.Value) return false;
             if (EndAt.HasValue && now > EndAt.Value) return false;
             return true;
         }

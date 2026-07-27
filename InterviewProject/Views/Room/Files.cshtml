@@ -3,6 +3,7 @@
     var transcripts = ViewBag.Transcripts as List<string?> ?? new List<string?>();
     var recordings = ViewBag.Recordings as List<string?> ?? new List<string?>();
     var aiAnalyses = ViewBag.AiAnalyses as List<string?> ?? new List<string?>();
+    var notConfigured = ViewBag.NotConfigured as bool? ?? false;
 }
 
 <style>
@@ -50,7 +51,14 @@
 
 <div class="files-wrap">
     <h1>面試檔案下載</h1>
-    <p style="color:#888;">這裡列出目前存在專案伺服器上的逐字稿與錄影錄音檔案（本機測試才會持久保存，部署在 Render 免費方案上重啟後會消失）。</p>
+    <p style="color:#888;">這裡列出目前存在 Cloudflare R2 雲端儲存的逐字稿、錄影錄音與 AI 分析檔案，本機執行或部署到 Render 看到的都是同一份。</p>
+
+    @if (notConfigured)
+    {
+        <div style="background:#fff3cd;border:1px solid #ffe69c;border-radius:8px;padding:14px 16px;margin-bottom:20px;color:#664d03;">
+            ⚠️ 尚未設定 Cloudflare R2（環境變數 R2:AccountId / AccessKeyId / SecretAccessKey / BucketName），所以目前看不到任何檔案清單。
+        </div>
+    }
 
     <div class="files-section">
         <h2>📝 逐字稿</h2>

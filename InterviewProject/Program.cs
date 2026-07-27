@@ -21,6 +21,9 @@ builder.Services.AddSingleton<JaasJwtService>();
 // 🚀 Step B：職缺下架後自動判斷履歷結果、自動建立面試房間
 builder.Services.AddScoped<AutoInterviewSchedulingService>();
 
+// 🚀 Cloudflare R2 雲端檔案儲存（逐字稿/錄影錄音/AI分析報告），本機與 Render 共用同一個 bucket
+builder.Services.AddSingleton<R2StorageService>();
+
 //註冊 SignalR 服務
 builder.Services.AddSignalR();
 

@@ -692,8 +692,10 @@ namespace InterviewProject.Controllers
             var applications = await query.ToListAsync();
 
             // 5. 房間資料反查（維護原功能）
+            //    🐛 修正：原本漏了「面試中」，導致中途斷線的求職者回來查看時，字典查不到房間、被誤判成「資料異常」
             var scheduledResumeIds = applications
-                .Where(r => r.InterviewStatus == InterviewStatusValues.Scheduled)
+                .Where(r => r.InterviewStatus == InterviewStatusValues.Scheduled
+                            || r.InterviewStatus == InterviewStatusValues.InProgress)
                 .Select(r => r.Id)
                 .ToList();
 
