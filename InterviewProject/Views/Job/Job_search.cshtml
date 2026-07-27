@@ -5,6 +5,19 @@
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+}
+@{
+    ViewData["Title"] = "職缺搜尋";
+
+    var categories = ViewBag.Categories as List<string> ?? new List<string>();
+    var locations = ViewBag.Locations as List<string> ?? new List<string>();
+    var jobTypes = ViewBag.JobTypes as List<string> ?? new List<string>();
+
+    string selectedCategory = ViewBag.SelectedCategory as string ?? "";
+    string selectedLocation = ViewBag.SelectedLocation as string ?? "";
+    string selectedType = ViewBag.SelectedType as string ?? "";
+    string keyword = ViewBag.Keyword as string ?? "";
 }
 
 <div class="page-wrapper">
@@ -15,55 +28,72 @@
         </div>
     </div>
 
+    <!-- SEARCH BAR -->
     <div class="search-bar">
         <div class="search-inner">
+            @* 1. 職缺類別 (Department) *@
             <div class="search-field">
-                <label>職缺類別</label>
+                <label for="sel-category"><i class="fa-solid fa-layer-group"></i> 職缺類別</label>
                 <select id="sel-category">
                     <option value="">全部類別</option>
-                    <option value="pm" selected="@(ViewBag.SelectedCategory == "pm")">專案管理</option>
-                    <option value="it" selected="@(ViewBag.SelectedCategory == "it")">資訊技術</option>
-                    <option value="mkt" selected="@(ViewBag.SelectedCategory == "mkt")">行銷企劃</option>
-                    <option value="fin" selected="@(ViewBag.SelectedCategory == "fin")">財務會計</option>
-                    <option value="sales" selected="@(ViewBag.SelectedCategory == "sales")">業務銷售</option>
+                    @foreach (var cat in categories)
+                    {
+                        <option value="@cat" selected="@(selectedCategory == cat)">@cat</option>
+                    }
                 </select>
             </div>
+
+            @* 2. 工作地址 (Location) *@
             <div class="search-field">
-                <label>工作地址</label>
+                <label for="sel-location"><i class="fa-solid fa-location-dot"></i> 工作地址</label>
                 <select id="sel-location">
                     <option value="">全部地址</option>
-                    <option value="taipei" selected="@(ViewBag.SelectedLocation == "taipei")">台北內湖</option>
-                    <option value="xinbei" selected="@(ViewBag.SelectedLocation == "xinbei")">新北汐止</option>
-                    <option value="hsinchu1" selected="@(ViewBag.SelectedLocation == "hsinchu1")">新竹竹北</option>
-                    <option value="hsinchu2" selected="@(ViewBag.SelectedLocation == "hsinchu2")">新竹湖口</option>
+                    @foreach (var loc in locations)
+                    {
+                        <option value="@loc" selected="@(selectedLocation == loc)">@loc</option>
+                    }
                 </select>
             </div>
+
+            @* 3. 工作性質 (JobType) *@
             <div class="search-field">
-                <label>工作性質</label>
+                <label for="sel-type"><i class="fa-solid fa-briefcase"></i> 工作性質</label>
                 <select id="sel-type">
                     <option value="">全部性質</option>
-                    <option value="full" selected="@(ViewBag.SelectedType == "full")">全職</option>
-                    <option value="part" selected="@(ViewBag.SelectedType == "part")">兼職</option>
-                    <option value="intern" selected="@(ViewBag.SelectedType == "intern")">實習</option>
+                    @foreach (var type in jobTypes)
+                    {
+                        string typeDisplay = type switch
+                        {
+                            "fulltime" => "全職",
+                            "parttime" => "兼職",
+                            "intern" => "實習",
+                            _ => type
+                        };
+                        <option value="@type" selected="@(selectedType == type)">@typeDisplay</option>
+                    }
                 </select>
             </div>
+
+            @* 4. 關鍵字搜尋 *@
             <div class="search-field keyword">
-                <label>關鍵字搜尋</label>
-                <input type="text" id="kw-input" value="@ViewBag.Keyword" placeholder="輸入職缺、技能、證照等關鍵字" />
+                <label for="kw-input"><i class="fa-solid fa-font"></i> 關鍵字搜尋</label>
+                <input type="text" id="kw-input" value="@keyword" placeholder="輸入職缺、技能、證照等關鍵字" />
             </div>
-            <button class="search-btn" onclick="doSearch()">搜尋</button>
-            <button class="reset-btn" onclick="resetSearch()">重置</button>
+
+            @* 5. 按鈕區域 *@
+            <div class="filter-actions">
+                <button class="search-btn" onclick="doSearch()"><i class="fa-solid fa-magnifying-glass"></i> 搜尋</button>
+                <button class="reset-btn" onclick="resetSearch()"><i class="fa-solid fa-rotate-left"></i> 重置</button>
+
+                <!-- 【修正點】傳入 this 讓按鈕可以切換高亮 active 樣式 -->
+                <button class="fav-filter-btn" id="btn-toggle-fav-filter" onclick="toggleFavoriteFilter(this)" title="僅顯示收藏職缺">
+                    <i class="fa-regular fa-heart"></i> 我的收藏
+                </button>
+            </div>
         </div>
     </div>
 
     <main class="main">
-
-        <div class="result-meta">
-            <div class="filter-tag" id="active-filter" style="display:none">
-                專案管理 <button onclick="removeFilter()">×</button>
-            </div>
-        </div>
-
         <div class="job-table-head">
             <div>職缺類型</div>
             <div>職缺名稱</div>
@@ -81,7 +111,7 @@
             {
                 foreach (var job in Model)
                 {
-                    <div class="job-row">
+                    <div class="job-row" data-job-id="@job.Id">
 
                         @* 1. 職缺類型（部門） *@
                         <div class="job-type-text">@job.Department</div>
@@ -109,17 +139,28 @@
                         <div class="job-cell">
                             @switch (job.EducationRequired)
                             {
-                                case "highschool": @:高中職以上
+                                case "highschool":
+                                    @:高中職以上
                                     break;
-                                case "college": @:專科以上
+                                case "college":
+
+                                    @:專科以上
                                     break;
-                                case "bachelor": @:大學以上
+                                case "bachelor":
+
+                                    @:大學以上
                                     break;
-                                case "master": @:碩士以上
+                                case "master":
+
+                                    @:碩士以上
                                     break;
-                                case "phd": @:博士以上
+                                case "phd":
+
+                                    @:博士以上
                                     break;
-                                default: @:不限
+                                default:
+
+                                    @:不限
                                     break;
                             }
                         </div>
@@ -140,10 +181,11 @@
                             <button class="btn-icon btn-favorite"
                                     title="收藏"
                                     data-job-id="@job.Id"
-                                    data-job-title="@job.Title">
+                                    data-job-title="@job.Title"
+                                    onclick="toggleFavorite(this)">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                                     <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z"
-                                        stroke="#206c8b" stroke-width="2" fill="none" />
+                                          stroke="#206c8b" stroke-width="2" fill="none" />
                                 </svg>
                             </button>
                         </div>
@@ -165,33 +207,59 @@
 
 @section Scripts {
     <script>
-        // 💡 修正：View 裡要用 HttpContext
-        const IS_LOGGED_IN = @Json.Serialize((bool)ViewBag.IsLoggedIn);
-        const MEMBER_ID    = @Json.Serialize((int)ViewBag.MemberId);
+        const IS_LOGGED_IN = @Json.Serialize((bool)(ViewBag.IsLoggedIn ?? false));
+        const MEMBER_ID    = @Json.Serialize((int)(ViewBag.MemberId ?? 0));
 
         const PAGE_SIZE = 10;
         let currentPage = 1;
+        let isOnlyShowFavorites = false; // 愛心篩選開關狀態
 
         // ============================
-        // 收藏功能
+        // 收藏功能 (LocalStorage)
         // ============================
         function getFavorites() {
-            return JSON.parse(localStorage.getItem(`favorites_${MEMBER_ID}`) || '[]');
+            const list = JSON.parse(localStorage.getItem(`favorites_${MEMBER_ID}`) || '[]');
+            return list.map(id => String(id));
         }
 
         function saveFavorites(list) {
             localStorage.setItem(`favorites_${MEMBER_ID}`, JSON.stringify(list));
         }
 
+        // ============================
+        // 愛心篩選開關 (點擊「我的收藏」按鈕)
+        // ============================
+        function toggleFavoriteFilter(filterBtn) {
+            if (!IS_LOGGED_IN) {
+                const go = confirm('需要登入才能看到你的收藏\n\n是否前往登入頁面？');
+                if (go) window.location.href = '/Login';
+                return;
+            }
+
+            // 1. 切換開關狀態
+            isOnlyShowFavorites = !isOnlyShowFavorites;
+
+            // 2. 切換按鈕的高亮視覺樣式
+            if (filterBtn) {
+                filterBtn.classList.toggle('active', isOnlyShowFavorites);
+            }
+
+            // 3. 重置頁碼回到第 1 頁並重新渲染
+            currentPage = 1;
+            renderPagination();
+        }
+
+        // ============================
+        // 單一職缺卡片上的收藏/取消收藏
+        // ============================
         function toggleFavorite(btn) {
-            // 未登入 → 提示並跳轉
             if (!IS_LOGGED_IN) {
                 const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
                 if (go) window.location.href = '/Login';
                 return;
             }
 
-            const jobId = btn.dataset.jobId;
+            const jobId = String(btn.dataset.jobId);
             const favorites = getFavorites();
             const index = favorites.indexOf(jobId);
 
@@ -203,46 +271,54 @@
                 btn.classList.remove('favorited');
             }
             saveFavorites(favorites);
+
+            // 若目前正好在「只看收藏」模式下，即時更新列表與動態分頁
+            if (isOnlyShowFavorites) {
+                renderPagination();
+            }
         }
 
-        // 頁面載入時，還原已收藏的按鈕狀態
         function restoreFavorites() {
             if (!IS_LOGGED_IN) return;
             const favorites = getFavorites();
             document.querySelectorAll('.btn-favorite').forEach(btn => {
-                if (favorites.includes(btn.dataset.jobId)) {
+                if (favorites.includes(String(btn.dataset.jobId))) {
                     btn.classList.add('favorited');
                 }
             });
         }
 
-        // 綁定所有收藏按鈕
-        document.querySelectorAll('.btn-favorite').forEach(btn => {
-            btn.addEventListener('click', () => toggleFavorite(btn));
-        });
-
-        // ============================
-        // 分頁
-        // ============================
-        function getTotalRows() {
-            return document.querySelectorAll('#job-list .job-row').length;
+        // 取得當前符合條件的職缺 DOM
+        function getEligibleRows() {
+            const allRows = Array.from(document.querySelectorAll('#job-list .job-row'));
+            if (!isOnlyShowFavorites) {
+                return allRows;
+            }
+            const favorites = getFavorites();
+            return allRows.filter(row => favorites.includes(String(row.dataset.jobId)));
         }
 
-         // 依目前頁碼，只顯示該頁應出現的職缺列，其餘隱藏
+        // ============================
+        // 動態分頁
+        // ============================
         function showPage(page) {
-            const rows = document.querySelectorAll('#job-list .job-row');
+            const allRows = document.querySelectorAll('#job-list .job-row');
+            const eligibleRows = getEligibleRows();
             const start = (page - 1) * PAGE_SIZE;
             const end = start + PAGE_SIZE;
-            rows.forEach((row, idx) => {
-                row.style.display = (idx >= start && idx < end) ? '' : 'none';
+
+            allRows.forEach(row => row.style.display = 'none');
+
+            eligibleRows.slice(start, end).forEach(row => {
+                row.style.display = '';
             });
         }
 
         function renderPagination() {
-            const total = getTotalRows();
+            const eligibleRows = getEligibleRows();
+            const total = eligibleRows.length;
             const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-             // 頁碼超出範圍時自動修正（例如篩選後總筆數變少）
             if (currentPage > totalPages) currentPage = totalPages;
             if (currentPage < 1) currentPage = 1;
 
@@ -250,12 +326,20 @@
             if (!pg) return;
             pg.innerHTML = '';
 
+            if (total === 0) {
+                document.querySelectorAll('#job-list .job-row').forEach(row => row.style.display = 'none');
+                pg.innerHTML = '<span class="no-data-text" style="color:#888;">無符合的職缺</span>';
+                return;
+            }
+
+            // 上一頁
             const prev = document.createElement('button');
             prev.className = 'page-arrow';
             prev.innerHTML = '&#8249;';
             prev.onclick = () => { if (currentPage > 1) goPage(currentPage - 1); };
             pg.appendChild(prev);
 
+            // 頁碼按鈕
             for (let i = 1; i <= totalPages; i++) {
                 const btn = document.createElement('button');
                 btn.className = 'page-num' + (i === currentPage ? ' active' : '');
@@ -264,13 +348,14 @@
                 pg.appendChild(btn);
             }
 
+            // 下一頁
             const next = document.createElement('button');
             next.className = 'page-arrow';
             next.innerHTML = '&#8250;';
             next.onclick = () => { if (currentPage < totalPages) goPage(currentPage + 1); };
             pg.appendChild(next);
 
-             // 總筆數文字，顯示在頁碼按鈕之後
+            // 總筆數提示
             const countText = document.createElement('span');
             countText.className = 'page-total-count';
             countText.style.marginLeft = '12px';
@@ -287,10 +372,9 @@
             renderPagination();
         }
 
-        function removeFilter() {
-            document.getElementById('active-filter').style.display = 'none';
-        }
-
+        // ============================
+        // 搜尋與重置
+        // ============================
         function doSearch() {
             const category = document.getElementById('sel-category').value;
             const location = document.getElementById('sel-location').value;
@@ -310,9 +394,7 @@
             window.location.href = '/Job/Job_search';
         }
 
-        // ============================
         // 初始化
-        // ============================
         window.addEventListener('load', function () {
             restoreFavorites();
             renderPagination();

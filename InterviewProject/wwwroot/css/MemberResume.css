@@ -11,176 +11,353 @@
     padding: 20px 40px;
 }
 
-/* ── 篩選欄位 ── */
-.app-filter {
+/* ── Search Bar 優化 ── */
+.search-bar {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 20px 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    margin-bottom: 24px;
+    border: 1px solid #f0f4f8;
+}
+
+.search-inner {
     display: flex;
     align-items: flex-end;
-    gap: 16px;
-    margin-bottom: 30px;
-    background: #fff;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    gap: 20px;
+    flex-wrap: wrap;
 }
 
-.filter-group {
+.search-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+    flex: 1;
+    min-width: 200px;
 }
 
-    .filter-group label {
+    .search-field label {
         font-size: 13px;
-        font-weight: 700;
+        font-weight: 600;
         color: #64748b;
+        display: flex;
+        align-items: center;
+        gap: 6px;
     }
 
-    .filter-group select {
-        padding: 8px 12px;
-        border: 1.5px solid #e2e8f0;
-        border-radius: 8px;
-        min-width: 160px;
+    .search-field select {
+        padding: 10px 14px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background-color: #f8fafc;
+        color: #334155;
+        font-size: 14px;
+        font-weight: 500;
         outline: none;
+        transition: all 0.2s ease;
+        cursor: pointer;
     }
 
-.filter-btn {
-    padding: 9px 24px;
-    background: var(--primary);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: 0.2s;
+        .search-field select:focus {
+            border-color: #3b82f6;
+            background-color: #fff;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+.filter-actions {
+    display: flex;
+    gap: 10px;
 }
 
-/* ── 核心 Grid 定義 (4欄對齊) ── */
-.app-table-head, .app-row {
+.search-btn, .reset-btn {
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+}
+
+.search-btn {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+    .search-btn:hover {
+        background: #1d4ed8;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    }
+
+.reset-btn {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+    .reset-btn:hover {
+        background: #e2e8f0;
+        color: #334155;
+    }
+
+/* ── 表格標頭 (Grid) ── */
+.app-table-head {
     display: grid;
-    /* 時間(150px) | 職缺(彈性) | 狀態(150px) | 按鈕區(180px) */
-    grid-template-columns: 150px 1fr 150px 180px;
+    grid-template-columns: 180px 1fr 140px 200px;
     align-items: center;
     padding: 12px 24px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+    .app-table-head div:nth-child(1),
+    .app-table-head div:nth-child(3),
+    .app-table-head div:nth-child(4) {
+        text-align: center;
+    }
+
+/* ── 資料列卡片 ── */
+.app-list {
+    display: flex;
+    flex-direction: column;
     gap: 12px;
 }
 
-.app-table-head {
-    font-weight: 700;
-    color: #475569;
-    font-size: 14px;
-    text-align: center;
-}
-
-    .app-table-head div:nth-child(2) {
-        text-align: left;
-        padding-left: 10px;
-    }
-
-/* ── 資料列卡片樣式 ── */
 .app-row {
-    background: #fff;
-    border-radius: 12px;
-    margin-bottom: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-    transition: transform 0.2s;
+    display: grid;
+    grid-template-columns: 180px 1fr 140px 200px;
+    align-items: center;
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 16px 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    border: 1px solid #f1f5f9;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
     .app-row:hover {
-        transform: translateY(-2px);
+        transform: translateY(-3px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.07);
+        border-color: #e2e8f0;
     }
 
+/* 投遞時間 */
 .row-time {
-    color: #64748b;
     text-align: center;
 }
 
-.row-position {
-    font-weight: 700;
-    color: #1e293b;
-    text-align: left;
-    padding-left: 10px;
+.time-text {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 500;
 }
 
-/* ── 狀態標籤 ── */
-.status-pass {
-    color: #10b981;
+.mobile-label {
+    display: none;
+}
+
+/* 職缺名稱 */
+.row-position {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-right: 15px;
+}
+
+.job-badge {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    font-size: 12px;
     font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin-right: 8px;
+    white-space: nowrap;
+}
+
+.job-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1e293b;
+    line-height: 1.4;
+}
+
+/* 狀態 Capsule */
+.row-status {
+    display: flex;
+    justify-content: center;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+    .status-pill .dot {
+        font-size: 6px;
+    }
+
+.status-pass {
     background: #ecfdf5;
-    padding: 4px 12px;
-    border-radius: 20px;
+    color: #059669;
 }
 
 .status-fail {
-    color: #ef4444;
-    font-weight: 700;
     background: #fef2f2;
-    padding: 4px 12px;
-    border-radius: 20px;
+    color: #dc2626;
 }
 
 .status-waiting {
-    color: #3b82f6;
-    font-weight: 700;
     background: #eff6ff;
-    padding: 4px 12px;
-    border-radius: 20px;
+    color: #2563eb;
 }
 
 .status-review {
+    background: #f8fafc;
     color: #64748b;
-    font-weight: 700;
-    background: #f1f5f9;
-    padding: 4px 12px;
-    border-radius: 20px;
 }
-.row-status {
-    display: flex;
-    gap: 8px;
-    justify-content: center;
-}
-/* ── 按鈕區 ── */
+
+/* 操作按鈕 */
 .row-actions {
     display: flex;
-    gap: 8px;
     justify-content: center;
+    gap: 8px;
+}
+
+.btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
 }
 
 .btn-view {
-    padding: 6px 16px;
-    background: #e0f2fe;
-    color: #0369a1;
-    border-radius: 50px;
-    font-size: 13px;
-    font-weight: 700;
-    text-decoration: none;
-    transition: 0.2s;
+    background: #f0f9ff;
+    color: #0284c7;
 }
 
     .btn-view:hover {
-        background: #0369a1;
-        color: #fff;
+        background: #0284c7;
+        color: #ffffff;
     }
 
 .btn-pdf {
-    padding: 6px 16px;
-    background: #f3f4f6; /* 淺灰色背景 */
-    color: #4b5563; /* 深灰色文字 */
-    border-radius: 50px;
-    font-size: 13px;
-    font-weight: 700;
-    text-decoration: none;
-    transition: 0.2s;
+    background: #f8fafc;
+    color: #475569;
+    border: 1px solid #e2e8f0;
 }
 
     .btn-pdf:hover {
-        background: #4b5563; /* 滑過時變成深灰色背景 */
-        color: #fff; /* 滑过時文字變成白色 */
+        background: #475569;
+        color: #ffffff;
+        border-color: #475569;
     }
 
+/* ── 無資料區塊 ── */
 .no-data {
     text-align: center;
-    padding: 60px;
-    background: #fff;
-    border-radius: 12px;
-    color: #94a3b8;
+    padding: 60px 20px;
+    background: #ffffff;
+    border-radius: 16px;
+    border: 2px dashed #e2e8f0;
+    color: #64748b;
+}
+
+.no-data-icon {
+    font-size: 48px;
+    color: #cbd5e1;
+    margin-bottom: 12px;
+}
+
+.no-data p {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.btn-go-search {
+    display: inline-block;
+    padding: 10px 24px;
+    background: #2563eb;
+    color: #fff;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: 0.2s;
+}
+
+    .btn-go-search:hover {
+        background: #1d4ed8;
+    }
+
+/* ── 響應式手機版適配 (RWD) ── */
+@media (max-width: 868px) {
+    .app-table-head {
+        display: none; /* 手機版隱藏表頭 */
+    }
+
+    .app-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 16px;
+    }
+
+    .row-time {
+        text-align: left;
+        font-size: 13px;
+    }
+
+    .mobile-label {
+        display: inline;
+        color: #94a3b8;
+        font-weight: 600;
+    }
+
+    .row-position {
+        padding-right: 0;
+    }
+
+    .row-status {
+        justify-content: flex-start;
+    }
+
+    .row-actions {
+        justify-content: flex-end;
+        margin-top: 8px;
+        padding-top: 12px;
+        border-top: 1px solid #f1f5f9;
+    }
+
+    .search-inner {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .filter-actions {
+        margin-top: 8px;
+    }
+
+    .search-btn, .reset-btn {
+        flex: 1;
+        justify-content: center;
+    }
 }

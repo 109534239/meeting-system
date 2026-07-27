@@ -1,11 +1,16 @@
 @{
     ViewData["Title"] = "我的收藏";
+
+    var categories = ViewBag.Categories as List<string> ?? new List<string>();
+    var locations = ViewBag.Locations as List<string> ?? new List<string>();
+    var jobTypes = ViewBag.JobTypes as List<string> ?? new List<string>();
 }
 
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Favorites.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 }
 
 <div class="page-wrapper">
@@ -15,6 +20,66 @@
         <div class="page-header-inner">
             <h1>我的收藏</h1>
             <p>My Favorites</p>
+        </div>
+    </div>
+
+    <!-- SEARCH BAR -->
+    <div class="search-bar">
+        <div class="search-inner">
+            @* 1. 職缺類別 (Department) *@
+            <div class="search-field">
+                <label for="sel-category"><i class="fa-solid fa-layer-group"></i> 職缺類別</label>
+                <select id="sel-category">
+                    <option value="">全部類別</option>
+                    @foreach (var cat in categories)
+                    {
+                        <option value="@cat">@cat</option>
+                    }
+                </select>
+            </div>
+
+            @* 2. 工作地址 (Location) *@
+            <div class="search-field">
+                <label for="sel-location"><i class="fa-solid fa-location-dot"></i> 工作地址</label>
+                <select id="sel-location">
+                    <option value="">全部地址</option>
+                    @foreach (var loc in locations)
+                    {
+                        <option value="@loc">@loc</option>
+                    }
+                </select>
+            </div>
+
+            @* 3. 工作性質 (JobType) *@
+            <div class="search-field">
+                <label for="sel-type"><i class="fa-solid fa-briefcase"></i> 工作性質</label>
+                <select id="sel-type">
+                    <option value="">全部性質</option>
+                    @foreach (var type in jobTypes)
+                    {
+                        string typeDisplay = type switch
+                        {
+                            "fulltime" => "全職",
+                            "parttime" => "兼職",
+                            "intern" => "實習",
+                            _ => type
+                        };
+                        <option value="@type">@typeDisplay</option>
+                    }
+                </select>
+            </div>
+
+            @* 4. 關鍵字搜尋 *@
+            <div class="search-field keyword">
+                <label for="kw-input"><i class="fa-solid fa-font"></i> 關鍵字搜尋</label>
+                <input type="text" id="kw-input" placeholder="輸入職缺關鍵字" />
+            </div>
+
+            @* 5. 按鈕區域 *@
+            <div class="filter-actions">
+                <button class="search-btn" onclick="applyFilter()"><i class="fa-solid fa-magnifying-glass"></i> 搜尋</button>
+                <button class="reset-btn" onclick="resetFilter()"><i class="fa-solid fa-rotate-left"></i> 重置</button>
+            </div>
         </div>
     </div>
 
@@ -43,9 +108,9 @@
         </div>
 
         <!-- 無收藏提示 -->
-        <div class="empty-msg" id="empty-msg" style="display:none">
-            <p>目前沒有收藏的職缺</p>
-            <a asp-controller="Job" asp-action="Job_search" class="btn-go-search">前往搜尋職缺</a>
+        <div class="no-data" id="empty-msg" style="display: none; text-align: center; padding: 40px; color: #888;">
+            <p id="empty-text">目前沒有收藏的職缺</p>
+            <a asp-controller="Job" asp-action="Job_search" class="btn-go-search" style="margin-top: 10px; display: inline-block;">前往搜尋職缺</a>
         </div>
 
     </main>
@@ -53,44 +118,90 @@
 
 @section Scripts {
     <script>
-        const MEMBER_ID = @Json.Serialize((int)ViewBag.MemberId);
+        const MEMBER_ID = @Json.Serialize((int)(ViewBag.MemberId ?? 0));
+        let rawFavoriteJobs = []; // 暫存從 API 取回來的全部收藏職缺資料
 
         function getFavorites() {
-            return JSON.parse(localStorage.getItem(`favorites_${MEMBER_ID}`) || '[]');
+            const raw = JSON.parse(localStorage.getItem(`favorites_${MEMBER_ID}`) || '[]');
+            return raw.map(id => String(id));
         }
 
         function saveFavorites(list) {
             localStorage.setItem(`favorites_${MEMBER_ID}`, JSON.stringify(list));
         }
 
-        async function renderFavorites() {
+        // 初次載入並向 API 請求收藏資料
+        async function fetchFavorites() {
             const favorites = getFavorites();
-            const list      = document.getElementById('favorites-list');
-            const emptyMsg  = document.getElementById('empty-msg');
+            const emptyMsg = document.getElementById('empty-msg');
+            const emptyText = document.getElementById('empty-text');
+            const resultNum = document.getElementById('result-num');
+
+            if (favorites.length === 0) {
+                rawFavoriteJobs = [];
+                resultNum.textContent = '0';
+                emptyText.textContent = '目前沒有收藏的職缺';
+                emptyMsg.style.display = 'block';
+                document.getElementById('favorites-list').innerHTML = '';
+                return;
+            }
+
+            try {
+                const res = await fetch(`/Job/GetJobsByIds?ids=${favorites.join(',')}`);
+                if (!res.ok) throw new Error("網路回應不成功");
+
+                rawFavoriteJobs = await res.json();
+                applyFilter(); // Fetch 完後直接執行動態過濾與渲染
+            } catch (err) {
+                console.error("載入收藏失敗：", err);
+                emptyText.textContent = '載入收藏失敗，請稍後再試';
+                emptyMsg.style.display = 'block';
+            }
+        }
+
+        // 前端本地動態篩選 logic
+        function applyFilter() {
+            const category = document.getElementById('sel-category').value.toLowerCase();
+            const location = document.getElementById('sel-location').value.toLowerCase();
+            const type     = document.getElementById('sel-type').value.toLowerCase();
+            const keyword  = document.getElementById('kw-input').value.trim().toLowerCase();
+
+            const list = document.getElementById('favorites-list');
+            const emptyMsg = document.getElementById('empty-msg');
+            const emptyText = document.getElementById('empty-text');
             const resultNum = document.getElementById('result-num');
 
             list.innerHTML = '';
 
-            if (favorites.length === 0) {
-                resultNum.textContent = 0;
-                emptyMsg.style.display = 'block';
-                return;
-            }
+            // 進行條件比對過濾
+            const filtered = rawFavoriteJobs.filter(job => {
+                const matchCategory = !category || (job.department && job.department.toLowerCase().includes(category));
+                const matchLocation = !location || (job.location && job.location.toLowerCase().includes(location));
+                const matchType     = !type || (job.jobType && job.jobType.toLowerCase() === type);
+                const matchKeyword  = !keyword || (
+                    (job.title && job.title.toLowerCase().includes(keyword)) ||
+                    (job.department && job.department.toLowerCase().includes(keyword))
+                );
 
-            // 💡 向後端查詢這些 Id 的職缺資料
-            const res  = await fetch(`/Job/GetJobsByIds?ids=${favorites.join(',')}`);
-            const jobs = await res.json();
+                return matchCategory && matchLocation && matchType && matchKeyword;
+            });
 
-            resultNum.textContent = jobs.length;
+            resultNum.textContent = filtered.length;
 
-            if (jobs.length === 0) {
+            if (filtered.length === 0) {
+                if (rawFavoriteJobs.length === 0) {
+                    emptyText.textContent = '目前沒有收藏的職缺';
+                } else {
+                    emptyText.textContent = '沒有符合篩選條件的收藏職缺';
+                }
                 emptyMsg.style.display = 'block';
                 return;
             }
 
             emptyMsg.style.display = 'none';
 
-            jobs.forEach(job => {
+            // 動態渲染 HTML
+            filtered.forEach(job => {
                 const eduMap = {
                     highschool: '高中職以上', college: '專科以上',
                     bachelor: '大學以上', master: '碩士以上', phd: '博士以上'
@@ -98,17 +209,17 @@
                 const edu     = eduMap[job.educationRequired] || '不限';
                 const exp     = job.experienceRequired || '不限';
                 const jobType = job.jobType === 'fulltime' ? '全職'
-                            : job.jobType === 'parttime' ? '兼職' : '實習';
+                              : job.jobType === 'parttime' ? '兼職' : '實習';
 
                 const row = document.createElement('div');
                 row.className = 'job-row';
                 row.innerHTML = `
-                    <div class="job-type-text">${job.department}</div>
+                    <div class="job-type-text">${job.department || ''}</div>
                     <div class="job-name-cell">
                         <span class="job-fulltime">${jobType}</span>
                         <a class="job-title-link" href="/Job/Job_detail/${job.id}">${job.title}</a>
                     </div>
-                    <div class="job-cell">${job.location}</div>
+                    <div class="job-cell">${job.location || ''}</div>
                     <div class="job-cell">${exp}</div>
                     <div class="job-cell">${edu}</div>
                     <div class="job-actions">
@@ -118,10 +229,10 @@
                         <button class="btn-icon btn-favorite favorited"
                                 title="取消收藏"
                                 data-job-id="${job.id}"
-                                onclick="removeFavorite('${job.id}', this)">
+                                onclick="removeFavorite('${job.id}')">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                                 <path d="M12 21C12 21 3 14 3 8a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6-9 13-9 13z"
-                                    stroke="#206c8b" stroke-width="2" fill="#206c8b"/>
+                                      stroke="#206c8b" stroke-width="2" fill="#206c8b"/>
                             </svg>
                         </button>
                     </div>
@@ -130,16 +241,39 @@
             });
         }
 
-        function removeFavorite(jobId, btn) {
+        // 移除收藏
+        function removeFavorite(jobId) {
             const favorites = getFavorites();
-            const index = favorites.indexOf(String(jobId));
+            const targetId = String(jobId);
+            const index = favorites.indexOf(targetId);
+
             if (index !== -1) {
                 favorites.splice(index, 1);
                 saveFavorites(favorites);
             }
-            renderFavorites();
+
+            // 更新記憶體陣列並重新執行篩選與渲染
+            rawFavoriteJobs = rawFavoriteJobs.filter(j => String(j.id) !== targetId);
+            applyFilter();
         }
 
-        window.addEventListener('load', renderFavorites);
+        // 重置搜尋條件
+        function resetFilter() {
+            document.getElementById('sel-category').value = '';
+            document.getElementById('sel-location').value = '';
+            document.getElementById('sel-type').value = '';
+            document.getElementById('kw-input').value = '';
+            applyFilter();
+        }
+
+        // 按 Enter 鍵自動觸發搜尋
+        document.getElementById('kw-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                applyFilter();
+            }
+        });
+
+        // 頁面載入後發起 Request
+        document.addEventListener('DOMContentLoaded', fetchFavorites);
     </script>
 }

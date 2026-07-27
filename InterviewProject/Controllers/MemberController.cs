@@ -210,7 +210,7 @@ namespace InterviewProject.Controllers
         {
             var id = HttpContext.Session.GetInt32("MemberId");
             if (id == null) return RedirectToAction("Index", "Login");
-
+            
             var member = await _db.Members.FindAsync(id);
             if (member == null) return RedirectToAction("Index", "Login");
 
@@ -320,16 +320,45 @@ namespace InterviewProject.Controllers
         }
 
         // 顯示履歷列表 (第一層)
-        public async Task<IActionResult> Resume()
+        public async Task<IActionResult> Resume(string visitorSort = "desc", string status = "")
         {
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            var resumeList = await _db.Resumes
+            // 1. 基礎查詢：篩選該會員的履歷
+            var query = _db.Resumes
                 .Include(r => r.Job)
-                .Where(r => r.MembersId == userId)
-                .OrderByDescending(r => r.ResumeTime)
+                .Where(r => r.MembersId == userId);
+
+            // 2. 抓取目前資料庫中「該會員所有履歷」出現過的 Status（供前端下拉式選單使用）
+            var availableStatuses = await query
+                .Where(r => !string.IsNullOrEmpty(r.Status))
+                .Select(r => r.Status)
+                .Distinct()
                 .ToListAsync();
+
+            // 3. 狀態篩選條件
+            if (!string.IsNullOrEmpty(status))
+            {
+                query = query.Where(r => r.Status == status);
+            }
+
+            // 4. 投遞時間排序條件
+            if (visitorSort == "asc")
+            {
+                query = query.OrderBy(r => r.ResumeTime);
+            }
+            else
+            {
+                query = query.OrderByDescending(r => r.ResumeTime);
+            }
+
+            var resumeList = await query.ToListAsync();
+
+            // 5. 透過 ViewBag 將篩選條件與下拉選項傳給 View
+            ViewBag.VisitorSort = visitorSort;
+            ViewBag.SelectedStatus = status;
+            ViewBag.StatusList = availableStatuses;
 
             return View(resumeList);
         }
@@ -601,20 +630,68 @@ namespace InterviewProject.Controllers
             return "soffice";
         }
 
-        public async Task<IActionResult> Application()
+        public async Task<IActionResult> Application(
+    string visitorSort = "desc",
+    string status = "",
+    string interviewStatus = "",
+    string admissionResult = "")
         {
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            var applications = await _db.Resumes
+            // 1. 建立基礎查詢：該會員所有的履歷紀錄
+            var query = _db.Resumes
                 .Include(r => r.Job)
-                //.Include(r => r.Interview) // 🎯 關鍵：把面試資料表也 Join 進來！
-                .Where(r => r.MembersId == userId)
-                .OrderByDescending(r => r.ResumeTime)
+                .Where(r => r.MembersId == userId);
+
+            // 2. 抓取資料庫中出現過的不重複選單選項（供前端下拉選單使用）
+            var statusList = await query
+                .Where(r => !string.IsNullOrEmpty(r.Status))
+                .Select(r => r.Status)
+                .Distinct()
                 .ToListAsync();
 
-            // 🎯 已安排面試（InterviewStatus = 已安排面試）的履歷，透過 RoomParticipants 反查對應的 Room
-            //    （用 RoomParticipants 查，而不是用 Room.JobsId 查，才不會受舊資料/手動建立的房間影響）
+            var interviewStatusList = await query
+                .Where(r => !string.IsNullOrEmpty(r.InterviewStatus))
+                .Select(r => r.InterviewStatus!)
+                .Distinct()
+                .ToListAsync();
+
+            var admissionResultList = await query
+                .Where(r => !string.IsNullOrEmpty(r.AdmissionResult))
+                .Select(r => r.AdmissionResult!)
+                .Distinct()
+                .ToListAsync();
+
+            // 3. 依據傳入的條件進行動態篩選
+            if (!string.IsNullOrEmpty(status))
+            {
+                query = query.Where(r => r.Status == status);
+            }
+
+            if (!string.IsNullOrEmpty(interviewStatus))
+            {
+                query = query.Where(r => r.InterviewStatus == interviewStatus);
+            }
+
+            if (!string.IsNullOrEmpty(admissionResult))
+            {
+                query = query.Where(r => r.AdmissionResult == admissionResult);
+            }
+
+            // 4. 排序條件處理（投遞時間）
+            if (visitorSort == "asc")
+            {
+                query = query.OrderBy(r => r.ResumeTime);
+            }
+            else
+            {
+                query = query.OrderByDescending(r => r.ResumeTime);
+            }
+
+            var applications = await query.ToListAsync();
+
+            // 5. 房間資料反查（維護原功能）
             var scheduledResumeIds = applications
                 .Where(r => r.InterviewStatus == InterviewStatusValues.Scheduled)
                 .Select(r => r.Id)
@@ -630,8 +707,7 @@ namespace InterviewProject.Controllers
 
             ViewBag.RoomsByResumeId = roomsByResumeId;
 
-            // 🎯 修正：InterviewStatus=等待安排面試 有兩種可能（測驗做完了/測驗還沒做），
-            //    要靠這份清單分辨，「查看」按鈕才知道該打開適性測驗還是安排中提示
+            // 6. 適性測驗完成狀態檢查（維護原功能）
             var allResumeIds = applications.Select(r => r.Id).ToList();
             var completedTestResumeIds = await _db.AptitudeTestResults
                 .Where(t => allResumeIds.Contains(t.ResumeId))
@@ -639,13 +715,63 @@ namespace InterviewProject.Controllers
                 .ToListAsync();
             ViewBag.CompletedTestResumeIds = new HashSet<int>(completedTestResumeIds);
 
+            // 7. 將當前選取的條件與選單清單傳遞至 View
+            ViewBag.VisitorSort = visitorSort;
+            ViewBag.SelectedStatus = status;
+            ViewBag.SelectedInterviewStatus = interviewStatus;
+            ViewBag.SelectedAdmissionResult = admissionResult;
+
+            ViewBag.StatusList = statusList;
+            ViewBag.InterviewStatusList = interviewStatusList;
+            ViewBag.AdmissionResultList = admissionResultList;
+
             return View(applications);
         }
 
-        public IActionResult Favorites()
+        // 1. 收藏頁面 View
+        public async Task<IActionResult> Favorites()
         {
             ViewBag.MemberId = HttpContext.Session.GetInt32("MemberId") ?? 0;
+
+            // 準備下拉選單的選項資料
+            ViewBag.Categories = await _db.Jobs.Select(j => j.Department).Distinct().Where(x => x != null).ToListAsync();
+            ViewBag.Locations = await _db.Jobs.Select(j => j.Location).Distinct().Where(x => x != null).ToListAsync();
+            ViewBag.JobTypes = await _db.Jobs.Select(j => j.JobType).Distinct().Where(x => x != null).ToListAsync();
+
             return View();
+        }
+
+        // 2. 供前端 Fetch 依據 ID 陣列取得職缺列表 API
+        [HttpGet]
+        public async Task<IActionResult> GetJobsByIds(string ids)
+        {
+            if (string.IsNullOrEmpty(ids))
+            {
+                return Json(new object[] { });
+            }
+
+            var idList = ids.Split(',')
+                            .Select(id => int.TryParse(id, out var parsedId) ? parsedId : (int?)null)
+                            .Where(id => id.HasValue)
+                            .Select(id => id.Value)
+                            .ToList();
+
+            var jobs = await _db.Jobs
+                .Where(j => idList.Contains(j.Id))
+                .Select(j => new
+                {
+                    id = j.Id,
+                    title = j.Title,
+                    department = j.Department,
+                    location = j.Location,
+                    jobType = j.JobType,
+                    experienceRequired = j.ExperienceRequired,
+                    educationRequired = j.EducationRequired,
+                    deadline = j.Deadline.ToString("yyyy/MM/dd")
+                })
+                .ToListAsync();
+
+            return Json(jobs);
         }
 
         private static string HashPassword(string password)

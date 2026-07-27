@@ -10,6 +10,13 @@
     <link rel="stylesheet" href="~/css/MemberResume.css" asp-append-version="true" />
     @* 套用 Job_Search 的篩選欄樣式 *@
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+}
+
+@{
+    string currentSort = ViewBag.VisitorSort as string ?? "desc";
+    string currentStatus = ViewBag.SelectedStatus as string ?? "";
+    var statusList = ViewBag.StatusList as List<string> ?? new List<string>();
 }
 
 <div class="page-header">
@@ -19,72 +26,122 @@
     </div>
 </div>
 
-<div class="search-bar">
-    <div class="search-inner">
-        <div class="search-field">
-            <label>投遞時間</label>
-            <select id="sel-date">
-                <option value="">請選擇</option>
-                <option value="2026-05">2026/05</option>
-            </select>
+<!-- 搜尋篩選區 -->
+<form id="filterForm" method="get" action="@Url.Action("Resume", "Member")">
+    <div class="search-bar">
+        <div class="search-inner">
+            <div class="search-field">
+                <label><i class="fa-regular fa-clock"></i> 投遞時間</label>
+                <select name="visitorSort" onchange="this.form.submit()">
+                    <option value="desc" selected="@(currentSort == "desc")">時間由新到舊</option>
+                    <option value="asc" selected="@(currentSort == "asc")">時間由舊到新</option>
+                </select>
+            </div>
+            <div class="search-field">
+                <label for="sel-type"><i class="fa-solid fa-list-check"></i> 履歷狀態</label>
+                <select id="sel-type" name="status">
+                    <option value="">全部狀態</option>
+                    @foreach (var st in statusList)
+                    {
+                        <option value="@st" selected="@(currentStatus == st)">@st</option>
+                    }
+                </select>
+            </div>
+            <div class="filter-actions">
+                <button type="submit" class="search-btn"><i class="fa-solid fa-filter"></i> 篩選</button>
+                <button type="button" class="reset-btn" onclick="resetFilter()"><i class="fa-solid fa-rotate-left"></i> 重置</button>
+            </div>
         </div>
-        <div class="search-field">
-            <label>職缺類型</label>
-            <select id="sel-type">
-                <option value="">請選擇</option>
-            </select>
-        </div>
-        <button class="search-btn" onclick="doFilter()">篩選</button>
-        <button class="reset-btn" onclick="resetFilter()">重置</button>
     </div>
-</div>
+</form>
 
-<div class="main">
-
+<main class="main">
+    <!-- 表格標頭（僅電腦版顯示） -->
     <div class="app-table-head">
         <div>投遞時間</div>
-        <div>職缺名稱</div>
+        <div>應徵職缺</div>
         <div>目前狀態</div>
-        <div>操作區域</div>
+        <div>功能操作</div>
     </div>
 
+    <!-- 履歷列表 -->
     <div class="app-list">
         @if (Model == null || !Model.Any())
         {
-            <div class="no-data">目前尚無履歷投遞紀錄。</div>
+            <div class="no-data">
+                <div class="no-data-icon"><i class="fa-regular fa-folder-open"></i></div>
+                <p>目前尚無履歷投遞紀錄</p>
+                <a href="@Url.Action("Job_search", "Job")" class="btn-go-search">前往搜尋職缺</a>
+            </div>
         }
         else
         {
             @foreach (var item in Model)
             {
+                string statusClass = item.Status switch
+                {
+                    "待審核" => "status-waiting",
+                    "未通過" => "status-fail",
+                    "已通過" => "status-pass",
+                    _ => "status-review"
+                };
+
                 <div class="app-row">
-                    <div class="row-time">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm:ss")</div>
-                    <div class="row-position">@(item.Job?.Title ?? "未指定職缺")</div>
-                    @{
-                        string statusClass = item.Status switch
-                        {
-                            "通過" => "status-pass",
-                            "不通過" => "status-fail",
-                            _ => "status-review"
-                        };
-                    }
+                    <div class="row-time">
+                        <span class="mobile-label">投遞時間：</span>
+                        <span class="time-text">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm")</span>
+                    </div>
+                    <div class="row-position">
+                        @{
+                            // 抓取 Job 的 JobType
+                            string jobType = item.Job?.JobType ?? "";
+
+                            // 依照類型決定顯示文字與 CSS class
+                            string badgeText = "未指定";
+                            string badgeClass = "badge-secondary"; // 預設樣式
+
+                            if (jobType == "fulltime")
+                            {
+                                badgeText = "全職";
+                                badgeClass = "badge-full";
+                            }
+                            else if (jobType == "parttime")
+                            {
+                                badgeText = "兼職";
+                                badgeClass = "badge-part";
+                            }
+                            else if (jobType == "intern")
+                            {
+                                badgeText = "實習";
+                                badgeClass = "badge-intern";
+                            }
+                        }
+
+                        <span class="job-badge @badgeClass">@badgeText</span>
+                        <span class="job-title">@(item.Job?.Title ?? "未指定職缺")</span>
+                    </div>
                     <div class="row-status">
-                        <span class="@statusClass">@item.Status</span>
+                        <span class="status-pill @statusClass">
+                            <i class="fa-solid fa-circle dot"></i>
+                            @item.Status
+                        </span>
                     </div>
                     <div class="row-actions">
-                        @* 查看按鈕維持不變 *@
-                        <a href="@Url.Action("ResumeDetail", "Member", new { id = item.Id })"
-                           class="btn-view">查看</a>
-
-                        @* 🎯 修改點：直接導向 MemberController 的 ExportToPdf，不需繞進 Detail 頁面 *@
-                        <a href="@Url.Action("ExportToPdf", "Member", new { id = item.Id })"
-                           class="btn-pdf">
-                            列印 PDF
+                        <a href="@Url.Action("ResumeDetail", "Member", new { id = item.Id })" class="btn-action btn-view" title="查看履歷">
+                            <i class="fa-regular fa-eye"></i> 查看
+                        </a>
+                        <a href="@Url.Action("ExportToPdf", "Member", new { id = item.Id })" class="btn-action btn-pdf" title="匯出PDF">
+                            <i class="fa-regular fa-file-pdf"></i> PDF
                         </a>
                     </div>
                 </div>
             }
         }
     </div>
+</main>
 
-</div>
+<script>
+    function resetFilter() {
+        window.location.href = '@Url.Action("Resume", "Member")';
+    }
+</script>

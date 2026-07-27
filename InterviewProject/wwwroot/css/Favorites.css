@@ -25,3 +25,11 @@
     background: var(--primary-dark);
     color: var(--white);
 }
+
+.no-data {
+    text-align: center;
+    padding: 60px;
+    background: #fff;
+    border-radius: 12px;
+    color: #94a3b8;
+}

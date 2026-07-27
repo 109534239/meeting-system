@@ -86,6 +86,33 @@
 }
     .reset-btn:hover { border-color: var(--primary); color: var(--primary); }
 
+.fav-filter-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #fca5a5;
+    background-color: #fef2f2;
+    color: #ef4444;
+}
+
+    .fav-filter-btn:hover {
+        background-color: #fee2e2;
+        transform: translateY(-1px);
+    }
+
+    .fav-filter-btn.active {
+        background-color: #ef4444;
+        color: #ffffff;
+        border-color: #ef4444;
+        box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
+    }
+
 /* ── MAIN LAYOUT ── */
 .main {
     max-width: 1200px;
