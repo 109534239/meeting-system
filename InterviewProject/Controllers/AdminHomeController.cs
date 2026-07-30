@@ -13,7 +13,6 @@ namespace InterviewProject.Controllers
             _db = db;
         }
 
-        // 🎯 方法名改為 Dashboard，完美對應 Dashboard.cshtml 檔案
         // GET: /AdminHome/Dashboard
         public async Task<IActionResult> Dashboard()
         {
@@ -63,27 +62,55 @@ namespace InterviewProject.Controllers
                 ViewData["DepartmentInfo"] = $"您目前正以主管身分審視【{department}】的內部招募數據";
             }
 
-            // 🎯 KPI 統計
+            // 🎯 KPI 總數
             int totalResumes = await resumeQuery.CountAsync();
-            int pendingResumes = await resumeQuery.CountAsync(r => r.Status == "待審核");
-            int interviewCount = await resumeQuery.CountAsync(r => r.Status == "已安排面試" || r.Status == "面試中");
-            int hiredCount = await resumeQuery.CountAsync(r => r.Status == "錄取");
-            int rejectedCount = await resumeQuery.CountAsync(r => r.Status == "未通過" || r.Status == "不錄取" || r.Status == "不通過");
 
-            double hireRate = totalResumes == 0 ? 0 : Math.Round(hiredCount * 100.0 / totalResumes, 1);
+            // -------------------------------------------------------------
+            // 1. 履歷狀態分布 (抓取 Status 欄位)
+            // -------------------------------------------------------------
+            int pendingResumes = await resumeQuery.CountAsync(r => r.Status == "待審核");
+            int passedResumes = await resumeQuery.CountAsync(r => r.Status == "已通過" || r.Status == "通過");
+            int rejectedResumes = await resumeQuery.CountAsync(r => r.Status == "未通過" || r.Status == "不通過");
 
             ViewData["TotalResumes"] = totalResumes;
             ViewData["PendingResumes"] = pendingResumes;
-            ViewData["InterviewCount"] = interviewCount;
-            ViewData["HiredCount"] = hiredCount;
-            ViewData["RejectedCount"] = rejectedCount;
-            ViewData["HireRate"] = hireRate;
+            ViewData["PassedResumes"] = passedResumes;
+            ViewData["RejectedCount"] = rejectedResumes;
 
-            // 🎯 百分比條狀圖用
             ViewData["PendingPercent"] = totalResumes == 0 ? 0 : Math.Round(pendingResumes * 100.0 / totalResumes, 1);
-            ViewData["InterviewPercent"] = totalResumes == 0 ? 0 : Math.Round(interviewCount * 100.0 / totalResumes, 1);
+            ViewData["InterviewPercent"] = totalResumes == 0 ? 0 : Math.Round(passedResumes * 100.0 / totalResumes, 1);
+            ViewData["RejectedPercent"] = totalResumes == 0 ? 0 : Math.Round(rejectedResumes * 100.0 / totalResumes, 1);
+
+            // -------------------------------------------------------------
+            // 2. 面試狀態分布 (抓取 InterviewStatus 欄位 & AdmissionResult 欄位)
+            // -------------------------------------------------------------
+            // InterviewStatus 欄位統計
+            int interviewScheduledCount = await resumeQuery.CountAsync(r => r.InterviewStatus == "已安排面試");
+            int waitingScheduleCount = await resumeQuery.CountAsync(r => r.InterviewStatus == "等待安排面試");
+            int waitingResultCount = await resumeQuery.CountAsync(r => r.InterviewStatus == "等待結果中");
+
+            // AdmissionResult 欄位統計
+            int hiredCount = await resumeQuery.CountAsync(r => r.AdmissionResult == "已錄取" || r.AdmissionResult == "錄取");
+            int notHiredCount = await resumeQuery.CountAsync(r => r.AdmissionResult == "未錄取" || r.AdmissionResult == "不錄取");
+
+            // 存入 ViewData (數量)
+            ViewData["InterviewScheduledCount"] = interviewScheduledCount;
+            ViewData["WaitingScheduleCount"] = waitingScheduleCount;
+            ViewData["WaitingResultCount"] = waitingResultCount;
+            ViewData["HiredCount"] = hiredCount;
+            ViewData["NotHiredCount"] = notHiredCount;
+
+            // 存入 ViewData (百分比)
+            ViewData["InterviewScheduledPercent"] = totalResumes == 0 ? 0 : Math.Round(interviewScheduledCount * 100.0 / totalResumes, 1);
+            ViewData["WaitingSchedulePercent"] = totalResumes == 0 ? 0 : Math.Round(waitingScheduleCount * 100.0 / totalResumes, 1);
+            ViewData["WaitingResultPercent"] = totalResumes == 0 ? 0 : Math.Round(waitingResultCount * 100.0 / totalResumes, 1);
             ViewData["HiredPercent"] = totalResumes == 0 ? 0 : Math.Round(hiredCount * 100.0 / totalResumes, 1);
-            ViewData["RejectedPercent"] = totalResumes == 0 ? 0 : Math.Round(rejectedCount * 100.0 / totalResumes, 1);
+            ViewData["NotHiredPercent"] = totalResumes == 0 ? 0 : Math.Round(notHiredCount * 100.0 / totalResumes, 1);
+
+            // 頂部卡片使用的錄取率與面試流程數
+            double hireRate = totalResumes == 0 ? 0 : Math.Round(hiredCount * 100.0 / totalResumes, 1);
+            ViewData["HireRate"] = hireRate;
+            ViewData["InterviewCount"] = interviewScheduledCount + waitingScheduleCount + waitingResultCount;
 
             // 🎯 今日 / 本月履歷
             var today = DateTime.Today;
@@ -126,7 +153,6 @@ namespace InterviewProject.Controllers
 
             ViewData["LatestResumes"] = latestResumes;
 
-            // 💡 這樣呼叫，MVC 就會自動去抓 Views/AdminHome/Dashboard.cshtml
             return View();
         }
     }

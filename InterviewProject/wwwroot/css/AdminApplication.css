@@ -99,10 +99,23 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.07);
 }
 
+/* 基礎樣式：處理過的列呈現淡底色與半透明效果 */
 .row-handled {
     background: #f7f7f9 !important;
     opacity: 0.85;
-    border-left: 5px solid #b0bec5;
+}
+
+/* 狀態別左側邊框顏色 */
+.hrapp-row.status-pending {
+    border-left: 5px solid #f39c12 !important; /* 待審核 */
+}
+
+.hrapp-row.status-passed {
+    border-left: 5px solid #15803d !important; /* 已通過 */
+}
+
+.hrapp-row.status-failed {
+    border-left: 5px solid #b91c1c !important; /* 未通過 */
 }
 
 /* ── 各欄位文字細節 ── */

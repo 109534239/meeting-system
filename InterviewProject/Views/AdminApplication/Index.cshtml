@@ -67,13 +67,18 @@
                 bool isUnhandled = (item.Status == "待審核");
                 string rowClass = isUnhandled ? "row-unhandled" : "row-handled";
 
+                // 🎯 新增 statusClass 判斷
+                string statusClass = item.Status == "待審核" ? "status-pending"
+                : item.Status == "已通過" ? "status-passed"
+                : "status-failed";
+
                 int score = aiScores != null && aiScores.ContainsKey(item.Id) ? aiScores[item.Id] : 0;
                 string comment = aiComments != null && aiComments.ContainsKey(item.Id) ? aiComments[item.Id] : "暫無評語";
                 string memberName = memberNames != null && memberNames.ContainsKey(item.Id) ? memberNames[item.Id] : "";
                 string memberPhone = memberPhones != null && memberPhones.ContainsKey(item.Id) ? memberPhones[item.Id] : "";
 
-                @* 🎯 在整橫列加上 data-row-id 方便 JavaScript 動態變更整列的 row-unhandled / row-handled 樣式 *@
-                <div class="hrapp-row hrapp-cols @rowClass"
+                @* 🎯 在 class 注入 statusClass *@
+                <div class="hrapp-row hrapp-cols @rowClass @statusClass"
                      data-row-id="@item.Id"
                      onclick="location.href='@Url.Action("Details", "AdminApplication", new { id = item.Id })'">
 
@@ -227,60 +232,68 @@
                 }
             });
 
-            // === 2. 下拉選單非同步更新資料庫狀態 (AJAX) ===
-            document.querySelectorAll(".status-select").forEach(select => {
-                select.addEventListener("change", function () {
-                    const resumeId = this.getAttribute("data-resume-id");
-                    const newStatus = this.value;
-                    const currentSelect = this;
+                    // === 2. 下拉選單非同步更新資料庫狀態 (AJAX) ===
+        document.querySelectorAll(".status-select").forEach(select => {
+            select.addEventListener("change", function () {
+                const resumeId = this.getAttribute("data-resume-id");
+                const newStatus = this.value;
+                const currentSelect = this;
 
-                    // 🎯 找尋外層的整橫列容器元素
-                    const parentRow = document.querySelector(`.hrapp-row[data-row-id="${resumeId}"]`);
+                // 🎯 找尋外層的整橫列容器元素
+                const parentRow = document.querySelector(`.hrapp-row[data-row-id="${resumeId}"]`);
 
-                    // 🎯 【關鍵修正】在使用者點擊完的「第一時間」立刻變更下拉選單與整列的外觀 Class
-                    currentSelect.classList.remove("select-wait", "select-pass", "select-fail");
+                // 清除下拉選單的外觀 Class
+                currentSelect.classList.remove("select-wait", "select-pass", "select-fail");
 
+                if (parentRow) {
+                    // 🎯 移除原本的狀態與邊框 Class
+                    parentRow.classList.remove("row-unhandled", "row-handled", "status-pending", "status-passed", "status-failed");
+                }
+
+                if (newStatus === "待審核") {
+                    currentSelect.classList.add("select-wait");
                     if (parentRow) {
-                        parentRow.classList.remove("row-unhandled", "row-handled");
+                        parentRow.classList.add("row-unhandled", "status-pending");
                     }
+                } else if (newStatus === "已通過") {
+                    currentSelect.classList.add("select-pass");
+                    if (parentRow) {
+                        parentRow.classList.add("row-handled", "status-passed");
+                    }
+                } else if (newStatus === "未通過") {
+                    currentSelect.classList.add("select-fail");
+                    if (parentRow) {
+                        parentRow.classList.add("row-handled", "status-failed");
+                    }
+                }
 
-                    if (newStatus === "待審核") {
-                        currentSelect.classList.add("select-wait");
-                        if (parentRow) parentRow.classList.add("row-unhandled");
+                // 發送非同步 POST 請求至後端儲存
+                fetch('@Url.Action("UpdateStatus", "AdminApplication")', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: parseInt(resumeId),
+                        status: newStatus
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log(`[成功] 履歷編號 ${resumeId} 狀態已儲存：${newStatus}`);
                     } else {
-                        // 只要改為已通過或未通過，下拉選單換色，並且整列改為 row-handled 底色
-                        if (newStatus === "已通過") currentSelect.classList.add("select-pass");
-                        if (newStatus === "未通過") currentSelect.classList.add("select-fail");
-                        if (parentRow) parentRow.classList.add("row-handled");
-                    }
-
-                    // 發送非同步 POST 請求至後端儲存
-                    fetch('@Url.Action("UpdateStatus", "AdminApplication")', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            id: parseInt(resumeId),
-                            status: newStatus
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            console.log(`[成功] 履歷編號 ${resumeId} 狀態已儲存：${newStatus}`);
-                        } else {
-                            alert("狀態更新失敗：" + data.message);
-                            location.reload();
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        alert("連線發生錯誤，無法成功儲存狀態。");
+                        alert("狀態更新失敗：" + data.message);
                         location.reload();
-                    });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert("連線發生錯誤，無法成功儲存狀態。");
+                    location.reload();
                 });
             });
+        });
         });
     </script>
 }

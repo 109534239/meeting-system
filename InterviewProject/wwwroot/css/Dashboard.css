@@ -56,7 +56,7 @@
 
 .dashboard-grid {
     display: grid;
-    grid-template-columns: 1.4fr 1fr;
+    grid-template-columns: 1fr 1fr; /* 改為左右平分相同寬度 (1:1) */
     gap: 20px;
     margin-bottom: 24px;
 }
