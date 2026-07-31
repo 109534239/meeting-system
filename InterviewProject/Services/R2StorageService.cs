@@ -62,7 +62,10 @@ namespace InterviewProject.Services
                 BucketName = _bucket,
                 Key = key,
                 ContentBody = content,
-                ContentType = "text/plain; charset=utf-8"
+                ContentType = "text/plain; charset=utf-8",
+                // 🐛 R2 不支援 AWS SDK 預設的「串流簽章」上傳方式（Streaming SigV4），
+                //    不關掉這個會直接被 R2 拒絕，噴出 "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER not implemented"
+                DisablePayloadSigning = true
             };
             await _client!.PutObjectAsync(request);
         }
@@ -76,7 +79,8 @@ namespace InterviewProject.Services
                 Key = key,
                 InputStream = stream,
                 ContentType = contentType,
-                AutoCloseStream = true
+                AutoCloseStream = true,
+                DisablePayloadSigning = true // 同上，R2 不支援串流簽章
             };
             await _client!.PutObjectAsync(request);
         }
