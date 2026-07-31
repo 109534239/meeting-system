@@ -646,6 +646,22 @@
         }
         startHub();
 
+        // 🎯 保底輪詢：不管 SignalR 廣播這次有沒有送達（長時間閒置等待時 SignalR 群組可能悄悄失效），
+        //    每 4 秒主動問一次伺服器「會議現在到底是什麼狀態」，用真實資料庫狀態校正畫面，
+        //    避免整個「開始/結束會議」的即時性完全依賴單一條 WebSocket 廣播是否成功送達
+        setInterval(async () => {
+            if (started && ended) return; // 都結束了就不用再問
+            try {
+                const res = await fetch('/Room/GetMeetingStatus?code=' + encodeURIComponent(ROOM_CODE));
+                const d = await res.json();
+                if (!started && d.meetingStatus === 'InProgress') onMeetingStart();
+                if (!ended && d.meetingStatus === 'Ended') {
+                    if (!started) onMeetingStart(); // 保險：萬一連「開始」都沒同步到，先補上再結束
+                    onMeetingEnd();
+                }
+            } catch (e) { /* 輪詢失敗就等下一次，不用特別處理 */ }
+        }, 4000);
+
         // ══════════════════════════════════
         //  主管操作
         // ══════════════════════════════════

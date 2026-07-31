@@ -174,6 +174,20 @@ namespace InterviewProject.Controllers
         }
 
         // 🎯 修正：加入安全性阻擋與非同步優化
+        // 🎯 保底輪詢用：不管 SignalR 廣播有沒有送達，前端每隔幾秒問一次「會議現在到底是什麼狀態」，
+        //    避免長時間閒置等待時 SignalR 群組悄悄失效，導致畫面永遠卡在等待畫面
+        [HttpGet]
+        public async Task<IActionResult> GetMeetingStatus(string code)
+        {
+            var sessionMemberId = HttpContext.Session.GetInt32("MemberId");
+            if (sessionMemberId == null) return Json(new { meetingStatus = "" });
+
+            var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(x => x.JitsiRoomName == code);
+            if (room == null) return Json(new { meetingStatus = "" });
+
+            return Json(new { meetingStatus = room.MeetingStatus });
+        }
+
         public async Task<IActionResult> Join(string code)
         {
             // 安全限制：至少必須是登入的使用者（求職者或員工皆可）才可以進去
