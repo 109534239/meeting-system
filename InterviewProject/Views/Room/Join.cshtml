@@ -1016,7 +1016,7 @@
             document.getElementById('endSubtitle').textContent = '檔案正在儲存至專案伺服器...';
             dl.innerHTML = '';
 
-            // 1. 逐字稿 —— 存到專案的「逐字稿」資料夾（不再下載到瀏覽器），就算是空的也要存一份
+            // 1. 逐字稿 —— 存到 Cloudflare R2（不再存本機 wwwroot），就算是空的也要存一份
             {
                 const isEmpty = trxLines.length === 0;
                 const txt = isEmpty
@@ -1028,17 +1028,19 @@
                     fd.append('content', txt);
                     const r = await fetch('/Room/SaveTranscript', { method: 'POST', body: fd });
                     const d = await r.json();
-                    if (isEmpty) {
+                    if (!r.ok || !d.success) {
+                        dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿儲存失敗（HTTP ${r.status}）：${d.message || '未知錯誤'}</div>`;
+                    } else if (isEmpty) {
                         dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿為空已存檔：${d.fileName}（請確認麥克風已授權給 Chrome，且沒有被其他分頁佔用）</div>`;
                     } else {
-                        dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿（${trxLines.length} 條）已存至專案「逐字稿」資料夾：${d.fileName}</div>`;
+                        dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿（${trxLines.length} 條）已存至雲端「逐字稿」資料夾：${d.fileName}</div>`;
                     }
                 } catch (e) {
                     dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿儲存失敗：${e.message}</div>`;
                 }
             }
 
-            // 2. 錄影/錄音 —— 存到專案的「錄影錄音」資料夾
+            // 2. 錄影/錄音 —— 存到 Cloudflare R2
             if (recBlob) {
                 try {
                     const fd = new FormData();
@@ -1047,7 +1049,11 @@
                     const r = await fetch('/Room/SaveRecording', { method: 'POST', body: fd });
                     const d = await r.json();
                     const label = recBlob.type.includes('video') ? '🎬 錄影檔' : '🎵 錄音檔';
-                    dl.innerHTML += `<div class="dl-item ok">✅ ${label}已存至專案「錄影錄音」資料夾：${d.fileName}（.webm 可用 VLC 播放）</div>`;
+                    if (!r.ok || !d.success) {
+                        dl.innerHTML += `<div class="dl-item ng">⚠️ ${label}儲存失敗（HTTP ${r.status}）：${d.message || '未知錯誤'}</div>`;
+                    } else {
+                        dl.innerHTML += `<div class="dl-item ok">✅ ${label}已存至雲端「錄影錄音」資料夾：${d.fileName}（.webm 可用 VLC 播放）</div>`;
+                    }
                 } catch (e) {
                     dl.innerHTML += `<div class="dl-item ng">⚠️ 錄影檔儲存失敗：${e.message}</div>`;
                 }
@@ -1055,7 +1061,7 @@
                 dl.innerHTML += `<div class="dl-item ng">⚠️ 無錄影（螢幕錄製未授權或被取消）</div>`;
             }
 
-            // 3. AI 分析 —— 存到專案的「AI分析」資料夾
+            // 3. AI 分析 —— 存到 Cloudflare R2
             if (trxLines.length >= 2) {
                 dl.innerHTML += `<div class="dl-item wait" id="aStatus">⏳ AI 分析中...</div>`;
                 const analysis = await runAnalysis();
@@ -1067,15 +1073,20 @@
                         fd.append('content', analysis);
                         const r = await fetch('/Room/SaveAiAnalysis', { method: 'POST', body: fd });
                         const d = await r.json();
-                        aEl.className = 'dl-item ok';
-                        aEl.textContent = `✅ 面試分析報告已存至專案「AI分析」資料夾：${d.fileName}`;
+                        if (!r.ok || !d.success) {
+                            aEl.className = 'dl-item ng';
+                            aEl.textContent = `⚠️ 分析報告儲存失敗（HTTP ${r.status}）：${d.message || '未知錯誤'}`;
+                        } else {
+                            aEl.className = 'dl-item ok';
+                            aEl.textContent = `✅ 面試分析報告已存至雲端「AI分析」資料夾：${d.fileName}`;
+                        }
                     } catch (e) {
                         aEl.className = 'dl-item ng';
                         aEl.textContent = `⚠️ 分析報告儲存失敗：${e.message}`;
                     }
                 } else {
                     aEl.className = 'dl-item ng';
-                    aEl.textContent = '⚠️ AI 分析失敗（appsettings.json 中的 Gemini:ApiKey 是否正確？）';
+                    aEl.textContent = '⚠️ AI 分析失敗（Gemini:ApiKey 是否正確？）';
                 }
             } else {
                 dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿不足，跳過 AI 分析</div>`;
