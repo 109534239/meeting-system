@@ -97,8 +97,14 @@
                     <div class="hrjob-dept-text">@job.Department</div>
 
                     @* 2. 職缺名稱與類型 *@
+                    @{
+                        string bgStyle = job.JobType == "fulltime" ? "background:#e8f4ff; color:#1a6fb5;" :
+                        job.JobType == "parttime" ? "background:#fff3e0; color:#e07b3a;" :
+                        "background:#e8f5e9; color:#2e7d32;";
+                    }
+
                     <div class="hrjob-title-cell">
-                        <span class="job-fulltime">
+                        <span class="job-fulltime" style="@bgStyle">
                             @(job.JobType == "fulltime" ? "全職" : job.JobType == "parttime" ? "兼職" : "實習")
                         </span>
                         <span class="hrjob-title-text">@job.Title</span>

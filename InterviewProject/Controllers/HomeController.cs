@@ -20,11 +20,10 @@ namespace InterviewProject.Controllers
 
         public async Task<IActionResult> Index()
         {
-            // 最新職缺
+            // 🎯 修改重點：移除 .Take(4)，撈出「所有」開放中的職缺供前端 JS 進行全域排序
             var latestJobs = await _db.Jobs
                 .Where(j => j.IsActive)
                 .OrderByDescending(j => j.CreatedAt)
-                .Take(4)
                 .ToListAsync();
 
             // 💡 撈取啟用中的公告
@@ -42,13 +41,12 @@ namespace InterviewProject.Controllers
                 a.Category,
                 a.Title,
                 a.Content,
-                // 根據 Category 欄位決定對應的 CSS Class 名稱
                 BadgeClass = a.Category switch
                 {
                     "最新" => "badge-最新",
                     "公告" => "badge-公告",
                     "活動" => "badge-活動",
-                    _ => "badge-預設" // 其他分類時的預設樣式
+                    _ => "badge-預設"
                 }
             }).ToList();
 

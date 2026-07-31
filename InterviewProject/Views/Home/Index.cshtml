@@ -47,14 +47,31 @@
         </section>
 
         <section>
-            <div class="section-label">最新職缺</div>
+            <!-- 🎯 標頭區：包含標題與排序切換控制項 -->
+            <div class="job-header-bar">
+                <div class="section-label">最新職缺</div>
+                <div class="sort-controls">
+                    <label for="jobSortSelect" class="sort-label">排序方式：</label>
+                    <select id="jobSortSelect" class="sort-select">
+                        <option value="desc">最新發表 (由新到舊)</option>
+                        <option value="asc">最早發表 (由舊到新)</option>
+                    </select>
+                </div>
+            </div>
 
-            <div class="job-grid">
+            <!-- 🎯 職缺列表 (印出全部 Model) -->
+            <div class="job-grid" id="jobGrid">
                 @if (Model != null && Model.Any())
                 {
                     @foreach (var job in Model)
                     {
-                        <a asp-controller="Job" asp-action="Job_detail" asp-route-id="@job.Id" class="job-card">
+                        <a asp-controller="Job"
+                           asp-action="Job_detail"
+                           asp-route-id="@job.Id"
+                           class="job-card"
+                           data-id="@job.Id"
+                           data-created-at="@job.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ss.ffffff")">
+
                             <div class="job-dept">@job.Department</div>
                             <div class="job-title">@job.Title</div>
                             <div class="job-tags">
@@ -77,7 +94,6 @@
                 }
             </div>
         </section>
-
     </div>
 </main>
 
@@ -127,5 +143,59 @@
         function closeAnnounceModalDirectly() {
             document.getElementById('announceModal').style.display = 'none';
         }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            const sortSelect = document.getElementById("jobSortSelect");
+            const jobGrid = document.getElementById("jobGrid");
+
+            if (!jobGrid) return;
+
+            // 🎯 核心排序與數量限制控制函式
+            function renderJobs() {
+                const sortOrder = sortSelect ? sortSelect.value : "desc"; // 預設由新到舊
+                const cards = Array.from(jobGrid.querySelectorAll(".job-card"));
+
+                if (cards.length === 0) return;
+
+                // 1. 針對「全部職缺」進行排序
+                cards.sort((a, b) => {
+                    const rawDateA = a.getAttribute("data-created-at");
+                    const rawDateB = b.getAttribute("data-created-at");
+
+                    const dateA = new Date(rawDateA).getTime() || 0;
+                    const dateB = new Date(rawDateB).getTime() || 0;
+
+                    let diff = sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+
+                    // 時間相同時，降級用 ID 排序
+                    if (diff === 0) {
+                        const idA = parseInt(a.getAttribute("data-id") || "0", 10);
+                        const idB = parseInt(b.getAttribute("data-id") || "0", 10);
+                        return sortOrder === "desc" ? idB - idA : idA - idB;
+                    }
+
+                    return diff;
+                });
+
+                // 2. 清空容器並重新掛載排序後的卡片，同時限制「只顯示前 4 個」
+                jobGrid.innerHTML = "";
+                cards.forEach((card, index) => {
+                    if (index < 4) {
+                        card.style.display = ""; // 顯示前 4 個 (恢復原本 css display)
+                    } else {
+                        card.style.display = "none"; // 隱藏第 5 個以後的職缺
+                    }
+                    jobGrid.appendChild(card);
+                });
+            }
+
+            // 🎯 初次載入頁面時執行一次 (確保預設即為最新前 4 個)
+            renderJobs();
+
+            // 🎯 監聽下拉選單切換事件
+            if (sortSelect) {
+                sortSelect.addEventListener("change", renderJobs);
+            }
+        });
     </script>
 }
