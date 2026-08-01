@@ -595,5 +595,18 @@
                 content.innerHTML = '<p class="modal-error">載入失敗，請稍後再試</p>';
             }
         }
+
+        // 🎯 從面試房間被導回來、要求先完成適性測驗時，網址會帶 ?openTest=履歷Id，
+        //    頁面一載入就自動彈出測驗彈窗，不用使用者自己在列表裡再找一次「查看」按鈕
+        (function autoOpenTestFromRedirect() {
+            const params = new URLSearchParams(window.location.search);
+            const openTestResumeId = params.get('openTest');
+            if (openTestResumeId) {
+                openAptitudeModal(openTestResumeId);
+                // 清掉網址上的參數，避免使用者重新整理又跳出一次
+                const cleanUrl = window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
+            }
+        })();
     </script>
 }

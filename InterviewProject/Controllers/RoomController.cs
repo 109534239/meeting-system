@@ -159,13 +159,13 @@ namespace InterviewProject.Controllers
                 }
 
                 // 🎯 求職者一定要先完成適性測驗，才能真的進入會議室（就算已經受邀、知道代碼也一樣）
+                //    改成直接導回應徵管理頁、自動彈出測驗彈窗，不管是點「查看」按鈕還是這裡手動輸入代碼進來都一樣
                 if (participant.Role == ParticipantRole.Jobseeker)
                 {
                     var hasTest = await _context.AptitudeTestResults.AnyAsync(t => t.ResumeId == participant.ResumeId);
                     if (!hasTest)
                     {
-                        ViewBag.ErrorMessage = "請先完成適性測驗，才能進入面試";
-                        return View();
+                        return Redirect($"/Member/Application?openTest={participant.ResumeId}");
                     }
                 }
             }
@@ -218,28 +218,39 @@ namespace InterviewProject.Controllers
                     return View("RoomNotAvailable");
                 }
 
+                // 🎯 先記住這次 request 進來之前，DB 裡原本的 JoinedAt/LeftAt，
+                //    候審室判斷要用「原本」的值，不能用下面馬上要覆蓋成 DateTime.Now 的新值
+                var originalJoinedAt = participant.JoinedAt;
+                var originalLeftAt = participant.LeftAt;
+
                 participant.Status = ParticipantStatus.Admitted;
                 participant.JoinedAt = DateTime.Now;
 
                 // 🎯 求職者一定要先完成適性測驗，才能真的進入會議室（就算已經受邀、知道代碼也一樣）
+                //    改成直接導回應徵管理頁、自動彈出測驗彈窗，而不是顯示一個死路錯誤畫面
+                //    （不管是點「查看」按鈕進來、還是直接在網址列打會議代碼手動進來，都會一樣被擋在這裡）
                 if (participant.Role == ParticipantRole.Jobseeker)
                 {
                     var hasTest = await _context.AptitudeTestResults.AnyAsync(t => t.ResumeId == participant.ResumeId);
                     if (!hasTest)
                     {
-                        ViewBag.Room = room;
-                        ViewBag.ErrorMessage = "請先完成適性測驗，才能進入面試";
-                        return View("RoomNotAvailable");
+                        return Redirect($"/Member/Application?openTest={participant.ResumeId}");
                     }
                 }
 
-                // 🎯 候審室機制（原始需求 6）：只要會議「已經開始」，非主持人的每一次進場動作都要候審——
-                //    不管是這場會議第一次打開連結，還是中途退出（LeftAt 有值）之後想再進來，一律都要重新
-                //    送出候審請求給最高主管，不會因為「之前已經同意過一次」就自動放行。
+                // 🎯 候審室機制（原始需求 6）：只要會議「已經開始」，非主持人每一次「重新需要授權」的進場都要候審——
+                //    包含這場會議第一次打開連結、以及中途退出（LeftAt 較新）之後想再進來。
+                //    但「剛被最高主管同意、Lobby 頁面自動重新整理進來」這次不能再擋一次，
+                //    不然核准後永遠卡在候審室，變成無限迴圈——用「原本」的 JoinedAt 跟 LeftAt 誰比較新來分辨：
+                //      JoinedAt 比較新（或還沒 LeftAt）＝ 目前處於「已核准、正要進場」的狀態，放行
+                //      LeftAt 比較新（或從沒被核准過）＝ 需要重新候審
                 //    唯一不受影響的情況：會議開始「當下」本來就在等待畫面、跟主持人同步進場的人——
                 //    那批人的 Join() 是在 MeetingStatus 還是 NotStarted 的時候就執行過了，不會走到這裡。
                 //    🎯 最高主管本人一律排除在候審機制之外——他是核准別人的人，不能把自己也卡住（不然沒人能核准他）
-                if (room.MeetingStatus == "InProgress" && participant.Role != ParticipantRole.Director)
+                var currentlyAuthorized = originalJoinedAt.HasValue
+                    && (!originalLeftAt.HasValue || originalJoinedAt > originalLeftAt);
+
+                if (room.MeetingStatus == "InProgress" && participant.Role != ParticipantRole.Director && !currentlyAuthorized)
                 {
                     participant.Status = ParticipantStatus.Pending;
                     await _context.SaveChangesAsync();
