@@ -11,14 +11,14 @@ namespace InterviewProject.Hubs
     {
         private readonly AppDbContext _db;
         private readonly JitsiBotService _botService;
-        private readonly R2StorageService _storage;
+        private readonly IServiceScopeFactory _scopeFactory;
         private readonly IWebHostEnvironment _env;
 
-        public MeetingHub(AppDbContext db, JitsiBotService botService, R2StorageService storage, IWebHostEnvironment env)
+        public MeetingHub(AppDbContext db, JitsiBotService botService, IServiceScopeFactory scopeFactory, IWebHostEnvironment env)
         {
             _db = db;
             _botService = botService;
-            _storage = storage;
+            _scopeFactory = scopeFactory;
             _env = env;
         }
 
@@ -44,22 +44,25 @@ namespace InterviewProject.Hubs
             }
 
             // 🎯 先讓大家（含主持人自己）收到「會議開始」廣播，不要卡在等 AI 面試官加入會議
-            //    （Playwright 開一個無頭瀏覽器大概要幾秒鐘，不該讓真人一起等）
             await Clients.Group(roomCode).SendAsync("MeetingStarted");
 
-            // 🎯 讓 AI 面試官真的加入這場 Jitsi 會議（不是只有前端畫一個假面板），
-            //    用 男性面試官.y4m 當假攝影機畫面，並開始錄下它自己在會議室裡看到的畫面——
-            //    Jitsi 預設排版就是「目前誰在說話就放大顯示、其他人縮圖排在旁邊」，
-            //    這樣錄出來的檔案自然就是「以說話者為主」的視角，不受任何一位真人視窗縮放/被蓋住影響
+            // 🎯 讓 AI 面試官真的加入這場 Jitsi 會議，改成背景執行（fire-and-forget），
+            //    不能用 await 卡住這個 Hub 方法——SignalR 的 hub.invoke() 在前端是要等這個方法完整跑完
+            //    才會 resolve，如果 Playwright 開瀏覽器卡住或變慢，會讓主持人那邊「開始會議」按鈕像當機一樣沒反應。
+            //    用 IServiceScopeFactory 開一個新的 DI scope，是因為背景工作執行的時候，
+            //    這次 Hub 呼叫本身的 _db（scoped）已經被釋放了，不能繼續用同一個。
             var videoPath = Path.Combine(_env.WebRootPath, "video", "男性面試官.y4m");
-            try
+            _ = Task.Run(async () =>
             {
-                await _botService.JoinRoomAsync(roomCode, videoPath);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[MeetingHub] AI 面試官加入房間 {roomCode} 失敗：{ex.Message}");
-            }
+                try
+                {
+                    await _botService.JoinRoomAsync(roomCode, videoPath);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MeetingHub] AI 面試官加入房間 {roomCode} 失敗：{ex.Message}");
+                }
+            });
         }
 
         // 🎯 只有主持人能結束會議，結束的當下把 EndAt 寫回資料庫，並把求職者狀態推進到「面試結束/等待結果中」
@@ -73,33 +76,61 @@ namespace InterviewProject.Hubs
 
             await UpdateJobseekerInterviewStatusAsync(room.Id, InterviewStatusValues.Ended, AdmissionResultValues.PendingResult);
 
-            // 🎯 AI 面試官離開會議室，把它錄到的畫面（=以說話者為主的視角）上傳到 R2，
-            //    這份取代掉「主管自己螢幕分享」那種畫面，成為這場面試唯一、正式保存的錄影
-            string? localVideoPath = null;
-            try
-            {
-                localVideoPath = await _botService.LeaveRoomAsync(roomCode);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[MeetingHub] AI 面試官離開房間 {roomCode} 失敗：{ex.Message}");
-            }
+            await _db.SaveChangesAsync();
 
-            if (!string.IsNullOrEmpty(localVideoPath) && File.Exists(localVideoPath))
+            // 🎯 先讓大家收到「會議結束」廣播，畫面立刻正常結束——不要讓真人等 AI 面試官收尾
+            await Clients.Group(roomCode).SendAsync("MeetingEnded");
+
+            // 🎯 AI 面試官離開會議室、把錄影上傳到 R2，改成背景執行（fire-and-forget），理由同 StartMeeting：
+            //    這是比較花時間的操作（關瀏覽器、上傳影片檔），不能讓「結束會議」這個按鈕卡住等它做完。
+            //    背景工作用 IServiceScopeFactory 開一個全新的 DI scope 拿 DbContext/R2StorageService，
+            //    不能沿用這次 Hub 呼叫的 _db，因為這個方法一返回，該次呼叫的 scoped 服務就會被釋放掉。
+            _ = Task.Run(async () =>
             {
+                string? localVideoPath = null;
                 try
                 {
-                    var roomWithJob = await _db.Rooms.Include(r => r.Job).FirstAsync(r => r.Id == room.Id);
+                    localVideoPath = await _botService.LeaveRoomAsync(roomCode);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MeetingHub] AI 面試官離開房間 {roomCode} 失敗：{ex.Message}");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(localVideoPath) || !File.Exists(localVideoPath))
+                {
+                    Console.WriteLine($"[MeetingHub] 房間 {roomCode} 沒有取得 AI 面試官的錄影檔，這場面試不會有錄影。");
+                    return;
+                }
+
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var storage = scope.ServiceProvider.GetRequiredService<R2StorageService>();
+
+                try
+                {
+                    var roomWithJob = await db.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.Id == room.Id);
+                    if (roomWithJob == null) return;
+
                     var fileName = RoomController.BuildFileName(roomWithJob, "webm");
 
                     await using (var stream = File.OpenRead(localVideoPath))
                     {
-                        await _storage.UploadStreamAsync($"錄影錄音/{fileName}", stream, "video/webm");
+                        await storage.UploadStreamAsync($"錄影錄音/{fileName}", stream, "video/webm");
                     }
 
-                    room.RecordingFileName = fileName;
+                    roomWithJob.RecordingFileName = fileName;
+                    await db.SaveChangesAsync();
 
-                    // 上傳完就可以刪暫存檔了，不要一直堆在伺服器磁碟上
+                    Console.WriteLine($"[MeetingHub] 房間 {roomCode} 的 AI 面試官錄影已上傳完成：{fileName}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MeetingHub] 錄影上傳到 R2 失敗：{ex.Message}");
+                }
+                finally
+                {
                     try
                     {
                         File.Delete(localVideoPath);
@@ -109,19 +140,7 @@ namespace InterviewProject.Hubs
                     }
                     catch { /* 刪暫存檔失敗不影響主流程，忽略即可 */ }
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[MeetingHub] 錄影上傳到 R2 失敗：{ex.Message}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"[MeetingHub] 房間 {roomCode} 沒有取得 AI 面試官的錄影檔，這場面試不會有錄影。");
-            }
-
-            await _db.SaveChangesAsync();
-
-            await Clients.Group(roomCode).SendAsync("MeetingEnded");
+            });
         }
 
         // ✅ 任何人偵測到聲音 → 廣播給所有人重置冷場計時（不含逐字稿內容，純粹只是「有人在講話」的訊號）

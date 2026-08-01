@@ -510,31 +510,6 @@
         <div class="video-wrap" id="videoWrap">
             <div id="jitsi-container" style="width:100%;height:100%"></div>
         </div>
-
-        <div class="ai-panel">
-            <div class="ai-head">
-                <div class="avw">
-                    <div class="sring" id="sring"></div>
-                    <svg class="ai-svg" viewBox="0 0 66 66" xmlns="http://www.w3.org/2000/svg">
-                        <rect width="66" height="66" rx="33" fill="#21262d" />
-                        <circle cx="33" cy="25" r="13" fill="#388bfd" />
-                        <ellipse cx="33" cy="61" rx="21" ry="14" fill="#388bfd" />
-                        <rect x="27" y="38" width="12" height="13" rx="3" fill="#1f6feb" />
-                        <polygon points="33,40 30,46 33,44 36,46" fill="#1158c7" />
-                    </svg>
-                </div>
-                <div class="ai-nm">王大明</div>
-                <div class="ai-rl">AI 面試官</div>
-                <div class="ai-st wa" id="aiSt">⏳ 等待開始</div>
-            </div>
-            <div class="ai-body">
-                <div class="ai-msg" id="aiMsg">等待主管開始會議。<br><br>會議開始後，我會在冷場時適時提問。</div>
-                <div class="si-wrap">
-                    <div class="si-lbl" id="siLbl">冷場偵測（會議開始後啟動）</div>
-                    <div class="si-bar"><div class="si-fill" id="siFill"></div></div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- 確認結束 -->
@@ -1082,15 +1057,18 @@
             setTimeout(()=>URL.revokeObjectURL(u),5000);
         }
         function ts() { return new Date().toISOString().slice(0,16).replace('T','-'); }
-        function setSt(cls,txt){ const e=document.getElementById('aiSt'); e.className='ai-st '+cls; e.textContent=txt; }
-        function setRing(on){ document.getElementById('sring').classList.toggle('on',on); }
-        function showDots(){ document.getElementById('aiMsg').innerHTML='<span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>'; }
-        function showMsg(t){ document.getElementById('aiMsg').innerHTML=t.replace(/\n/g,'<br>'); }
+        function setSt(cls,txt){ const e=document.getElementById('aiSt'); if (e) { e.className='ai-st '+cls; e.textContent=txt; } }
+        function setRing(on){ document.getElementById('sring')?.classList.toggle('on',on); }
+        function showDots(){ const e=document.getElementById('aiMsg'); if (e) e.innerHTML='<span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>'; }
+        function showMsg(t){ const e=document.getElementById('aiMsg'); if (e) e.innerHTML=t.replace(/\n/g,'<br>'); }
         function setSilBar(pct){
             const f=document.getElementById('siFill');
-            f.style.width=pct+'%';
-            f.className='si-fill'+(pct>80?' h':pct>50?' w':'');
-            document.getElementById('siLbl').textContent=pct>0?`冷場偵測 ${Math.round(pct)}%`:'冷場偵測';
+            if (f) {
+                f.style.width=pct+'%';
+                f.className='si-fill'+(pct>80?' h':pct>50?' w':'');
+            }
+            const lbl = document.getElementById('siLbl');
+            if (lbl) lbl.textContent=pct>0?`冷場偵測 ${Math.round(pct)}%`:'冷場偵測';
         }
         function copyCode(){
             navigator.clipboard.writeText(ROOM_CODE).then(()=>{
