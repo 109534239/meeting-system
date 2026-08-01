@@ -218,6 +218,8 @@ namespace InterviewProject.Controllers
                     return View("RoomNotAvailable");
                 }
 
+                var originalStatus = participant.Status; // 先記住這次 request 進來之前，DB 裡原本的狀態
+
                 participant.Status = ParticipantStatus.Admitted;
                 participant.JoinedAt = DateTime.Now;
 
@@ -233,6 +235,24 @@ namespace InterviewProject.Controllers
                     }
                 }
 
+                // 🎯 候審室機制（原始需求 6）：會議「已經開始」之後才打開連結進來的人，
+                //    要先卡在候審畫面，等最高主管同意才能真的進去；
+                //    會議開始「當下」本來就在等待畫面、跟主持人同時進場的人不受影響（那批人的 Join() 是在
+                //    MeetingStatus 還是 NotStarted 的時候就執行過了，不會走到這個判斷式）。
+                //    判斷依據：這次 request 進來之前，DB 裡的狀態還不是 Admitted，代表他是之後才第一次進來的。
+                //    🎯 最高主管本人一律排除在候審機制之外——他是核准別人的人，不能把自己也卡住（不然沒人能核准他）
+                if (room.MeetingStatus == "InProgress"
+                    && originalStatus != ParticipantStatus.Admitted
+                    && participant.Role != ParticipantRole.Director)
+                {
+                    participant.Status = ParticipantStatus.Pending;
+                    await _context.SaveChangesAsync();
+
+                    ViewBag.Room = room;
+                    ViewBag.ParticipantId = participant.Id;
+                    return View("Lobby");
+                }
+
                 // 🎯 注意：這裡只做資格檢查，不寫入資料庫。
                 //    Status=Admitted、JoinedAt 要等使用者在 Jitsi 畫面真的按下「加入會議」才算數，
                 //    由前端 videoConferenceJoined 事件呼叫 /Room/MarkJoined 來記錄（見下方 MarkJoined action）。
@@ -242,6 +262,80 @@ namespace InterviewProject.Controllers
 
             ViewBag.Room = room;
             return View();
+        }
+
+        // 🎯 候審室機制：卡在候審畫面的人，每隔幾秒問一次「我被同意了嗎」
+        [HttpGet]
+        public async Task<IActionResult> GetMyAdmissionStatus(string code)
+        {
+            var sessionMemberId = HttpContext.Session.GetInt32("MemberId");
+            var sessionRole = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (sessionMemberId == null || string.IsNullOrEmpty(sessionRole))
+                return Json(new { status = "" });
+
+            var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(x => x.JitsiRoomName == code);
+            if (room == null) return Json(new { status = "" });
+
+            var participant = await FindParticipantAsync(room, sessionMemberId.Value, sessionRole);
+            if (participant == null) return Json(new { status = "" });
+
+            return Json(new { status = participant.Status });
+        }
+
+        // 🎯 候審室機制：最高主管專用，列出這場會議目前候審中（Pending）的人，主持人畫面靠這個每隔幾秒刷新名單
+        [HttpGet]
+        public async Task<IActionResult> GetPendingParticipants(string code)
+        {
+            var sessionRole = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (sessionRole != "director") return Json(new List<object>());
+
+            var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(x => x.JitsiRoomName == code);
+            if (room == null) return Json(new List<object>());
+
+            var pending = await _context.RoomParticipants
+                .Where(p => p.RoomId == room.Id && p.Status == ParticipantStatus.Pending)
+                .Include(p => p.Resume).ThenInclude(r => r!.Member)
+                .Include(p => p.Employee)
+                .ToListAsync();
+
+            var result = pending.Select(p => new
+            {
+                id = p.Id,
+                name = p.Role == ParticipantRole.Jobseeker
+                    ? (p.Resume?.Member?.Name ?? "求職者")
+                    : (p.Employee?.Name ?? "員工"),
+                role = p.Role
+            });
+
+            return Json(result);
+        }
+
+        // 🎯 候審室機制：最高主管按下「同意」或「拒絕」
+        [HttpPost]
+        public async Task<IActionResult> AdmitParticipant(int participantId, bool approve)
+        {
+            var sessionMemberId = HttpContext.Session.GetInt32("MemberId");
+            var sessionRole = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (sessionMemberId == null || sessionRole != "director")
+                return Json(new { success = false, message = "只有最高主管能同意或拒絕候審申請" });
+
+            var participant = await _context.RoomParticipants.FirstOrDefaultAsync(p => p.Id == participantId);
+            if (participant == null) return Json(new { success = false, message = "找不到這位候審中的人" });
+
+            // 🎯 一定要確認這個最高主管真的是「這位候審者所在房間」受邀的主持人，不能跨房間操作別人的候審名單
+            var isDirectorOfThisRoom = await _context.RoomParticipants.AnyAsync(p =>
+                p.RoomId == participant.RoomId
+                && p.Role == ParticipantRole.Director
+                && p.EmployeeId == sessionMemberId.Value);
+            if (!isDirectorOfThisRoom)
+                return Json(new { success = false, message = "你不是這場面試的主持人" });
+
+            participant.Status = approve ? ParticipantStatus.Admitted : ParticipantStatus.Denied;
+            if (approve) participant.JoinedAt = DateTime.Now;
+
+            await _context.SaveChangesAsync();
+
+            return Json(new { success = true });
         }
 
         // 🎯 只有前端在 Jitsi 真的觸發 videoConferenceJoined（使用者按下「加入會議」）時才會呼叫這裡，
@@ -574,7 +668,8 @@ namespace InterviewProject.Controllers
         }
 
         // 「面試會議_日期_職缺.副檔名」，職缺名稱裡不能當檔名的符號換成底線
-        private static string BuildFileName(Room room, string ext)
+        // 🎯 public static：MeetingHub 結束會議時，AI 面試官錄影上傳也要用同一套命名規則
+        public static string BuildFileName(Room room, string ext)
         {
             var jobTitle = room.Job?.Title ?? "未知職缺";
             foreach (var c in Path.GetInvalidFileNameChars())

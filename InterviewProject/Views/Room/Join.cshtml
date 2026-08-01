@@ -498,6 +498,14 @@
 
     <div class="banner wait" id="banner">⏳ 等待主管開始會議...</div>
 
+    @if (isHost)
+    {
+        <div id="pendingPanel" style="display:none; background:#fffaf0; border-bottom:1px solid #f6d998; padding:10px 20px;">
+            <div style="font-size:13px; font-weight:700; color:#b7791f; margin-bottom:6px;">⏳ 有人正在候審，等你同意才能進入：</div>
+            <div id="pendingList"></div>
+        </div>
+    }
+
     <div class="main">
         <div class="video-wrap" id="videoWrap">
             <div id="jitsi-container" style="width:100%;height:100%"></div>
@@ -585,9 +593,7 @@
         // ══════════════════════════════════
         let started = false, ended = false;
         let silT = 0, isSp = false;
-        let audioStream = null, mediaRec = null, recChunks = [];
-        let recBlob = null;
-        let recStartMs = 0;
+        let audioStream = null;
         let recognition = null;
         let trxLines = [];
         let lastSpeechMs = 0;
@@ -661,6 +667,44 @@
                 }
             } catch (e) { /* 輪詢失敗就等下一次，不用特別處理 */ }
         }, 4000);
+
+        // 🎯 候審室機制：最高主管每隔幾秒問一次「現在有誰在候審」，有的話就顯示同意/拒絕按鈕
+        if (IS_HOST) {
+            async function pollPending() {
+                if (ended) return;
+                try {
+                    const res = await fetch('/Room/GetPendingParticipants?code=' + encodeURIComponent(ROOM_CODE));
+                    const list = await res.json();
+                    const panel = document.getElementById('pendingPanel');
+                    const box = document.getElementById('pendingList');
+                    if (list.length === 0) {
+                        panel.style.display = 'none';
+                    } else {
+                        panel.style.display = 'block';
+                        box.innerHTML = list.map(p => `
+                            <div style="display:flex; align-items:center; gap:10px; padding:4px 0; font-size:13px;">
+                                <span>${p.name}（${p.role === 'Jobseeker' ? '求職者' : p.role === 'Manager' ? '部門主管' : p.role}）</span>
+                                <button onclick="admitParticipant(${p.id}, true)" style="background:#2c7a7b;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;">同意</button>
+                                <button onclick="admitParticipant(${p.id}, false)" style="background:#fff;color:#c0392b;border:1px solid #c0392b;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;">拒絕</button>
+                            </div>
+                        `).join('');
+                    }
+                } catch (e) { /* 輪詢失敗就等下一次 */ }
+                setTimeout(pollPending, 3000);
+            }
+            pollPending();
+
+            window.admitParticipant = async function (participantId, approve) {
+                try {
+                    await fetch('/Room/AdmitParticipant', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'participantId=' + participantId + '&approve=' + approve
+                    });
+                    pollPending(); // 立刻刷新一次名單
+                } catch (e) { alert('操作失敗，請稍後再試'); }
+            };
+        }
 
         // ══════════════════════════════════
         //  主管操作
@@ -743,13 +787,8 @@
             b.textContent = '🔒 面試已結束';
 
             if (IS_STAFF) {
-                // 主管：停止錄影，觸發下載流程
-                if (mediaRec && mediaRec.state !== 'inactive') {
-                    mediaRec.stop(); // onstop → showEndedScreen()
-                } else {
-                    recBlob = null;
-                    showEndedScreen();
-                }
+                // 主管：不用再等本機錄影停止（錄影已經改成 AI 面試官在伺服器端負責），直接顯示結束畫面
+                showEndedScreen();
             } else {
                 // ✅ 求職者：回到應徵管理頁面（原本連到 /Interview/MyInterviews 是錯的路徑，那是給員工用的）
                 setTimeout(() => {
@@ -759,106 +798,17 @@
         }
 
         // ══════════════════════════════════
-        //  錄影（螢幕錄製，含畫面+聲音）— 僅主管端；免費，但需要主持人同意分享畫面
+        //  麥克風（給語音辨識/冷場偵測用）
+        //  🎯 錄影不再由主管的瀏覽器螢幕分享負責——已經改成 AI 面試官在伺服器端用 Playwright
+        //     真的加入 Jitsi 會議室、直接錄下它自己看到的畫面（Jitsi 預設就是「目前誰在說話就放大顯示，
+        //     其他人縮圖排在旁邊」的排版），不再受任何一位真人視窗縮放/被蓋住/切分頁影響，
+        //     主管也不用再被瀏覽器跳出來要求「選擇要分享的畫面」
         // ══════════════════════════════════
         async function initAudio() {
-            if (!IS_STAFF) {
-                // 求職者：只啟動 STT 用的麥克風，不錄影
-                try {
-                    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                } catch {
-                    audioStream = null;
-                }
-                return;
-            }
-
-            // 主管端：先嘗試螢幕錄製（含畫面+聲音）
             try {
-                // 螢幕錄製：會要求使用者選擇要錄的視窗/分頁
-                const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { frameRate: 15, width: 1280, height: 720 },
-                    audio: true  // 含系統聲音（需瀏覽器支援）
-                });
-
-                // 同時取麥克風（混音）
-                let micStream = null;
-                try {
-                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                    audioStream = micStream; // 供 STT 和冷場偵測用
-                } catch {}
-
-                // 合併螢幕+麥克風
-                const tracks = [...screenStream.getTracks()];
-                if (micStream) {
-                    micStream.getAudioTracks().forEach(t => tracks.push(t));
-                }
-                const combined = new MediaStream(tracks);
-
-                const types = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'];
-                let mime = '';
-                for (const t of types) { if (MediaRecorder.isTypeSupported(t)) { mime=t; break; } }
-
-                mediaRec = new MediaRecorder(combined, mime ? { mimeType: mime, videoBitsPerSecond: 1500000 } : {});
-                recChunks = [];
-                recStartMs = Date.now();
-                mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
-                mediaRec.onstop = () => {
-                    const rawBlob = new Blob(recChunks, { type: mime || 'video/webm' });
-                    const durationMs = Date.now() - recStartMs;
-                    // 🎯 修正：MediaRecorder 產出的 webm 預設沒有寫入總長度，播放器沒辦法拖拉進度條，
-                    //    用 fix-webm-duration 把正確的時長補進檔案標頭
-                    if (window.ysFixWebmDuration) {
-                        ysFixWebmDuration(rawBlob, durationMs, fixedBlob => {
-                            recBlob = fixedBlob;
-                            showEndedScreen();
-                        });
-                    } else {
-                        recBlob = rawBlob;
-                        showEndedScreen();
-                    }
-                };
-
-                // 螢幕停止分享時同步停止錄製
-                screenStream.getVideoTracks()[0].onended = () => {
-                    if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
-                };
-
-                mediaRec.start(1000);
-                document.getElementById('recDot').style.background = '#f85149';
-                document.getElementById('recTxt').textContent = '🎬 錄影中';
-                console.log('螢幕錄影已啟動，格式：', mime);
-
-            } catch (err) {
-                console.warn('螢幕錄影失敗，改為純音訊：', err.message);
-                // fallback：純音訊錄音
-                try {
-                    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                    const types = ['audio/webm;codecs=opus','audio/webm','audio/ogg'];
-                    let mime = '';
-                    for (const t of types) { if (MediaRecorder.isTypeSupported(t)) { mime=t; break; } }
-                    mediaRec = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {});
-                    recChunks = [];
-                    recStartMs = Date.now();
-                    mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
-                    mediaRec.onstop = () => {
-                        const rawBlob = new Blob(recChunks, { type: mime || 'audio/webm' });
-                        const durationMs = Date.now() - recStartMs;
-                        if (window.ysFixWebmDuration) {
-                            ysFixWebmDuration(rawBlob, durationMs, fixedBlob => {
-                                recBlob = fixedBlob;
-                                showEndedScreen();
-                            });
-                        } else {
-                            recBlob = rawBlob;
-                            showEndedScreen();
-                        }
-                    };
-                    mediaRec.start(1000);
-                } catch (err2) {
-                    console.warn('純音訊也失敗：', err2.message);
-                    audioStream = null;
-                    showEndedScreen();
-                }
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            } catch {
+                audioStream = null;
             }
         }
 
@@ -1056,26 +1006,9 @@
                 }
             }
 
-            // 2. 錄影/錄音 —— 存到 Cloudflare R2
-            if (recBlob) {
-                try {
-                    const fd = new FormData();
-                    fd.append('roomCode', ROOM_CODE);
-                    fd.append('file', recBlob, 'recording.webm');
-                    const r = await fetch('/Room/SaveRecording', { method: 'POST', body: fd });
-                    const d = await r.json();
-                    const label = recBlob.type.includes('video') ? '🎬 錄影檔' : '🎵 錄音檔';
-                    if (!r.ok || !d.success) {
-                        dl.innerHTML += `<div class="dl-item ng">⚠️ ${label}儲存失敗（HTTP ${r.status}）：${d.message || '未知錯誤'}</div>`;
-                    } else {
-                        dl.innerHTML += `<div class="dl-item ok">✅ ${label}已存至雲端「錄影錄音」資料夾：${d.fileName}（.webm 可用 VLC 播放）</div>`;
-                    }
-                } catch (e) {
-                    dl.innerHTML += `<div class="dl-item ng">⚠️ 錄影檔儲存失敗：${e.message}</div>`;
-                }
-            } else {
-                dl.innerHTML += `<div class="dl-item ng">⚠️ 無錄影（螢幕錄製未授權或被取消）</div>`;
-            }
+            // 2. 錄影 —— 現在改由 AI 面試官在伺服器端（主持人結束會議的當下）錄好並上傳到 R2，
+            //    不再需要瀏覽器端錄影/上傳，這裡只是告知使用者去哪裡看
+            dl.innerHTML += `<div class="dl-item ok">✅ 錄影由 AI 面試官在後台完成並上傳，稍後可在「面試評分」頁查看／下載（.webm 可用 VLC 播放）</div>`;
 
             // 3. AI 分析 —— 存到 Cloudflare R2
             if (trxLines.length >= 2) {

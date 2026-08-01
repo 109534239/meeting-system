@@ -1,0 +1,119 @@
+﻿@using InterviewProject.Models
+@{
+    ViewData["Title"] = "候審室";
+    var room = ViewBag.Room as Room;
+    var code = room?.JitsiRoomName ?? "";
+}
+
+<style>
+    .enter-code-container {
+        max-width: 450px;
+        margin: 80px auto;
+        padding: 30px;
+        background: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        text-align: center;
+        font-family: "Segoe UI", Microsoft JhengHei, sans-serif;
+    }
+
+        .enter-code-container h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+    .room-name {
+        color: #7f8c8d;
+        margin-bottom: 15px;
+    }
+
+    .lobby-msg {
+        color: #b7791f;
+        margin: 20px 0;
+        font-size: 16px;
+        font-weight: 500;
+    }
+
+    .lobby-denied {
+        color: #e74c3c;
+        margin: 20px 0;
+        font-size: 16px;
+        font-weight: 500;
+    }
+
+    .spinner {
+        width: 34px;
+        height: 34px;
+        margin: 10px auto 0;
+        border: 4px solid #f1c86a;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+    }
+
+    @@keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .back-link {
+        display: inline-block;
+        margin-top: 20px;
+        padding: 10px 20px;
+        background-color: #3498db;
+        color: white;
+        border-radius: 6px;
+        text-decoration: none;
+    }
+
+        .back-link:hover {
+            background-color: #2980b9;
+        }
+</style>
+
+<div class="enter-code-container">
+    <h2>⏳ 候審室</h2>
+
+    @if (room != null)
+    {
+        <p class="room-name">@room.RoomName</p>
+    }
+
+    <div id="lobbyBody">
+        <p class="lobby-msg">會議已經開始了，正在等最高主管同意你進入…</p>
+        <div class="spinner"></div>
+    </div>
+</div>
+
+<script>
+    const ROOM_CODE = "@code";
+    let polling = true;
+
+    async function poll() {
+        if (!polling) return;
+        try {
+            const res = await fetch('/Room/GetMyAdmissionStatus?code=' + encodeURIComponent(ROOM_CODE));
+            const d = await res.json();
+
+            if (d.status === 'Admitted') {
+                polling = false;
+                document.getElementById('lobbyBody').innerHTML = '<p class="lobby-msg">✅ 已經同意，正在進入會議室…</p>';
+                setTimeout(() => { window.location.reload(); }, 800);
+                return;
+            }
+            if (d.status === 'Denied') {
+                polling = false;
+                document.getElementById('lobbyBody').innerHTML =
+                    '<p class="lobby-denied">❌ 主持人拒絕了你的進入申請</p>' +
+                    '<a class="back-link" href="/Member/Application">返回</a>';
+                return;
+            }
+        } catch (e) { /* 輪詢失敗就等下一次 */ }
+
+        setTimeout(poll, 3000);
+    }
+
+    poll();
+</script>
