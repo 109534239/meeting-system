@@ -82,7 +82,12 @@ namespace InterviewProject.Controllers
                                          x.SkillTags.Any(t => t.Tag.Contains(keyword)));
             }
 
-            var data = await query.OrderByDescending(x => x.CreatedAt).ToListAsync();
+            // 📌 【主要修正點】依據截止日期（Deadline）由近到遠排序 (昇順 OrderBy)
+            // 若截止日期相同，則再以最新建立的 (CreatedAt) 優先排序
+            var data = await query
+                .OrderBy(x => x.Deadline)
+                .ThenByDescending(x => x.CreatedAt)
+                .ToListAsync();
 
             // 保留已選擇的搜尋條件給前端 View 呈現
             ViewBag.SelectedCategory = category;
