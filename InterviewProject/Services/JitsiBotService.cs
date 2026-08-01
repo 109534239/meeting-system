@@ -88,11 +88,46 @@ namespace InterviewProject.Services
                 // 組合完整的 URL 並注入跳過確認畫面參數 + JWT
                 //   🎯 disableTileView：讓畫面固定用「目前誰在說話就放大顯示、其他人縮圖排在旁邊」的排版，
                 //      不要讓 Jitsi 切成棋盤格 tile view（新版 Jitsi 在人數少時有時會預設用 tile view）
-                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.prejoinPageEnabled=false&config.lobby.enableLobby=false&config.disableTileView=true";
+                //   🎯 prejoinPageEnabled=false + prejoinConfig.enabled=false：兩個都帶，
+                //      因為新版 Jitsi 把這個設定從舊的扁平 key 改成巢狀的 prejoinConfig.enabled，
+                //      只帶舊的 key 在新版 JaaS 上可能完全沒作用，畫面還是會卡在「預備加入」那頁
+                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.prejoinPageEnabled=false&config.prejoinConfig.enabled=false&config.lobby.enableLobby=false&config.disableTileView=true";
 
                 Console.WriteLine($"[JitsiBot 導航] AI 面試官正在前往官方雲端會議室：{targetUrl}");
 
                 await page.GotoAsync(targetUrl, new PageGotoOptions { Timeout = 60000 });
+
+                // 🎯 保險：就算上面兩個設定都帶了，還是可能因為 JaaS 那邊的版本/設定鎖死而繼續顯示「預備加入」畫面，
+                //    這裡再主動找一次常見的「加入會議」按鈕，找得到就點掉；找不到就當作正常直接進了會議，不影響流程
+                try
+                {
+                    var joinButton = page.Locator(
+                        "[data-testid='prejoin.joinMeeting'], " +
+                        "button:has-text('加入會議'), button:has-text('Join Meeting'), button:has-text('Join meeting')"
+                    );
+                    await joinButton.First.ClickAsync(new LocatorClickOptions { Timeout = 8000 });
+                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 偵測到「預備加入」畫面，已自動點擊加入。");
+                    await page.WaitForTimeoutAsync(1500); // 給一點時間讓畫面真的切換進會議室
+                }
+                catch
+                {
+                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 沒有偵測到「預備加入」畫面（正常情況，代表已直接進入會議）。");
+                }
+
+                // 🎯 除錯用：不管有沒有點到按鈕，都存一張目前畫面的截圖，
+                //    下次如果錄影內容還是不對，直接看這張截圖就知道機器人卡在哪個畫面，不用再靠猜的
+                try
+                {
+                    var debugDir = Path.Combine(Path.GetTempPath(), "jitsibot_debug");
+                    Directory.CreateDirectory(debugDir);
+                    var debugPath = Path.Combine(debugDir, $"{roomCode}_after_join.png");
+                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = debugPath });
+                    Console.WriteLine($"[JitsiBot] 除錯截圖已存到：{debugPath}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[JitsiBot] 存除錯截圖失敗：{ex.Message}");
+                }
 
                 _activeBots[roomCode] = new BotInstance
                 {
