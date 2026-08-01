@@ -219,12 +219,9 @@ namespace InterviewProject.Controllers
                 }
 
                 // 🎯 先記住這次 request 進來之前，DB 裡原本的 JoinedAt/LeftAt，
-                //    候審室判斷要用「原本」的值，不能用下面馬上要覆蓋成 DateTime.Now 的新值
+                //    候審室判斷要用「原本」的值，不能用下面（等真的放行才會設定的）新值
                 var originalJoinedAt = participant.JoinedAt;
                 var originalLeftAt = participant.LeftAt;
-
-                participant.Status = ParticipantStatus.Admitted;
-                participant.JoinedAt = DateTime.Now;
 
                 // 🎯 求職者一定要先完成適性測驗，才能真的進入會議室（就算已經受邀、知道代碼也一樣）
                 //    改成直接導回應徵管理頁、自動彈出測驗彈窗，而不是顯示一個死路錯誤畫面
@@ -252,6 +249,9 @@ namespace InterviewProject.Controllers
 
                 if (room.MeetingStatus == "InProgress" && participant.Role != ParticipantRole.Director && !currentlyAuthorized)
                 {
+                    // 🐛 修正：這個分支下面的 SaveChangesAsync 只能存 Status=Pending，
+                    //    絕對不能連 JoinedAt 都一起存進去——不然候審者的 JoinedAt 會被污染成「有值」，
+                    //    下次如果被拒絕（Denied）後又重試，會被誤判成「已經核准過」而直接跳過候審室
                     participant.Status = ParticipantStatus.Pending;
                     await _context.SaveChangesAsync();
 
@@ -263,6 +263,8 @@ namespace InterviewProject.Controllers
                 // 🎯 注意：這裡只做資格檢查，不寫入資料庫。
                 //    Status=Admitted、JoinedAt 要等使用者在 Jitsi 畫面真的按下「加入會議」才算數，
                 //    由前端 videoConferenceJoined 事件呼叫 /Room/MarkJoined 來記錄（見下方 MarkJoined action）。
+                participant.Status = ParticipantStatus.Admitted;
+                participant.JoinedAt = DateTime.Now;
 
                 ViewBag.ParticipantRole = participant.Role;
             }
