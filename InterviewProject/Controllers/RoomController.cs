@@ -218,8 +218,6 @@ namespace InterviewProject.Controllers
                     return View("RoomNotAvailable");
                 }
 
-                var originalStatus = participant.Status; // 先記住這次 request 進來之前，DB 裡原本的狀態
-
                 participant.Status = ParticipantStatus.Admitted;
                 participant.JoinedAt = DateTime.Now;
 
@@ -235,15 +233,13 @@ namespace InterviewProject.Controllers
                     }
                 }
 
-                // 🎯 候審室機制（原始需求 6）：會議「已經開始」之後才打開連結進來的人，
-                //    要先卡在候審畫面，等最高主管同意才能真的進去；
-                //    會議開始「當下」本來就在等待畫面、跟主持人同時進場的人不受影響（那批人的 Join() 是在
-                //    MeetingStatus 還是 NotStarted 的時候就執行過了，不會走到這個判斷式）。
-                //    判斷依據：這次 request 進來之前，DB 裡的狀態還不是 Admitted，代表他是之後才第一次進來的。
+                // 🎯 候審室機制（原始需求 6）：只要會議「已經開始」，非主持人的每一次進場動作都要候審——
+                //    不管是這場會議第一次打開連結，還是中途退出（LeftAt 有值）之後想再進來，一律都要重新
+                //    送出候審請求給最高主管，不會因為「之前已經同意過一次」就自動放行。
+                //    唯一不受影響的情況：會議開始「當下」本來就在等待畫面、跟主持人同步進場的人——
+                //    那批人的 Join() 是在 MeetingStatus 還是 NotStarted 的時候就執行過了，不會走到這裡。
                 //    🎯 最高主管本人一律排除在候審機制之外——他是核准別人的人，不能把自己也卡住（不然沒人能核准他）
-                if (room.MeetingStatus == "InProgress"
-                    && originalStatus != ParticipantStatus.Admitted
-                    && participant.Role != ParticipantRole.Director)
+                if (room.MeetingStatus == "InProgress" && participant.Role != ParticipantRole.Director)
                 {
                     participant.Status = ParticipantStatus.Pending;
                     await _context.SaveChangesAsync();
