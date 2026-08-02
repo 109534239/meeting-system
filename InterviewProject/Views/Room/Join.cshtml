@@ -1016,8 +1016,10 @@
                 dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿不足，跳過 AI 分析</div>`;
             }
 
-            document.getElementById('endSubtitle').textContent = '所有檔案已儲存至專案伺服器';
-            document.getElementById('backBtn').style.display = '';
+            document.getElementById('endSubtitle').textContent = '所有檔案已儲存，正在返回面試管理列表...';
+
+            // 🎯 不用再讓主管自己按「返回面試管理」，存檔一完成就直接導回列表
+            setTimeout(() => { window.location.href = '/Interview/Index'; }, 1200);
         }
 
         async function runAnalysis() {
@@ -1161,21 +1163,42 @@
             });
 
             // 🎯 使用者自己按「掛斷」離開視訊（不是主持人結束會議），只影響自己，不影響會議本身
-            //    求職者離開後導回應徵管理頁面；主管/主持人維持原本行為（留在頁面上）
+            //    求職者離開後導回應徵管理頁面；主管/主持人離開後導回面試管理列表（面試排程分頁）
             jitsiApi.addEventListener('readyToClose', () => {
-                if (!IS_STAFF && !ended) {
+                if (ended) return; // 如果是走「結束會議」流程，交給 showEndedScreen() 最後自己導頁，這裡不用重複處理
+                if (!IS_STAFF) {
                     window.location.href = '/Member/Application';
+                } else {
+                    window.location.href = '/Interview/Index';
                 }
             });
 
             // ✅ 使用者真的按下「加入會議」、實際進入 Jitsi 視訊房間時才觸發 —— 這時候才把 JoinedAt 寫進資料庫
+            //    🎯 加上重試機制：這支 API 沒送到伺服器，JoinedAt 就永遠不會被記錄，
+            //    之前這裡是完全靜默失敗（.catch(() => {})），部分人同步失敗查不出原因就是這裡造成的
             jitsiApi.addEventListener('videoConferenceJoined', e => {
-                fetch('/Room/MarkJoined', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'code=' + encodeURIComponent(ROOM_CODE)
-                }).catch(() => {});
+                markJoinedWithRetry(3);
             });
+
+            async function markJoinedWithRetry(retriesLeft) {
+                try {
+                    const r = await fetch('/Room/MarkJoined', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'code=' + encodeURIComponent(ROOM_CODE)
+                    });
+                    const d = await r.json().catch(() => ({}));
+                    if (!r.ok || d.success === false) {
+                        console.warn('[MarkJoined] 失敗 HTTP ' + r.status + '，剩餘重試次數：' + retriesLeft, d);
+                        if (retriesLeft > 0) setTimeout(() => markJoinedWithRetry(retriesLeft - 1), 2000);
+                    } else {
+                        console.log('[MarkJoined] 成功');
+                    }
+                } catch (err) {
+                    console.warn('[MarkJoined] 網路錯誤：' + err.message + '，剩餘重試次數：' + retriesLeft);
+                    if (retriesLeft > 0) setTimeout(() => markJoinedWithRetry(retriesLeft - 1), 2000);
+                }
+            }
 
             // 🎯 使用者離開視訊（不管是自己按掛斷、還是斷線），記錄離開時間
             //    這只代表「他自己離開」，不會影響會議本身，會議只有主持人按「結束會議」才會真的結束
