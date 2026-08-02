@@ -592,10 +592,9 @@
         hub.on("MeetingStarted", () => { if (!started) onMeetingStart(); });
         hub.on("MeetingEnded",   () => { if (!ended)   onMeetingEnd(); });
 
-        // 🎯 收到別人講話的逐字稿內容，併進自己這份（讓最後下載的逐字稿是完整的，不是只有自己說的話）
-        hub.on("TranscriptReceived", (speaker, text, time) => {
-            trxLines.push({ sp: speaker, tx: text, time: time });
-        });
+        // 🎯 已移除：原本靠 SignalR 的 TranscriptReceived 事件接收別人講話的內容併進自己這份，
+        //    但這個機制不可靠（長時間連線容易悄悄失效），改成每個人各自把自己聽到的內容直接送到伺服器，
+        //    由伺服器合併，不再依賴任何人轉傳。詳見 submitMyTranscript() 函式。
 
         // 🎯 最高主管改了面試時間，正在這個房間頁面等待的人（含主持人自己）立刻收到通知並更新畫面
         hub.on("ScheduledAtChanged", (newTimeText) => {
@@ -766,10 +765,12 @@
                 //    不能每個在場的主管都各自觸發一次（會變成大家搶著存、甚至重複呼叫 Gemini API）
                 showEndedScreen();
             } else if (IS_STAFF) {
-                // 部門主管（不是主持人）：跟求職者一樣，直接導回列表，不用等待任何存檔動作
+                // 部門主管（不是主持人）：送出自己聽到的片段後，跟求職者一樣直接導回列表
+                submitMyTranscript();
                 window.location.href = '/Interview/Index';
             } else {
-                // ✅ 求職者：回到應徵管理頁面（原本連到 /Interview/MyInterviews 是錯的路徑，那是給員工用的）
+                // ✅ 求職者：送出自己聽到的片段後，回到應徵管理頁面
+                submitMyTranscript();
                 setTimeout(() => {
                     window.location.href = '/Member/Application';
                 }, 1200);
@@ -818,9 +819,7 @@
                             recentSpeech.push({ name: MY_NAME, text: txt });
                             if (recentSpeech.length > 6) recentSpeech.shift();
 
-                            // 🎯 修正：把「文字內容」廣播出去，不只是一個空訊號 —— 每個人的 SpeechRecognition
-                            //    只能聽到自己麥克風的聲音，不廣播內容的話，其他人的話永遠不會出現在逐字稿裡
-                            try { hub.invoke('BroadcastTranscript', ROOM_CODE, MY_NAME, txt, now); } catch {}
+                            // 🎯 不再用 SignalR 廣播給其他人（不可靠），本機先累積，離開/結束時再一次送去伺服器
                             try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
                         }
                     }
@@ -954,31 +953,58 @@
         // ══════════════════════════════════
         //  主管端：下載畫面
         // ══════════════════════════════════
+        // 🎯 把自己（這個瀏覽器）目前累積的逐字稿片段送到伺服器，不管求職者/主管/主持人，
+        //    離開視訊或會議結束時都要呼叫一次，伺服器那邊會依收到時間把大家的片段合併成完整逐字稿
+        //    用 sendBeacon（跟 markLeftBeacon 同一套手法），確保就算馬上要跳轉頁面也送得出去
+        function submitMyTranscript() {
+            if (trxLines.length === 0) return;
+            const payload = JSON.stringify(trxLines.map(l => ({ sp: l.sp, tx: l.tx, time: l.time })));
+            const url = '/Room/SubmitTranscriptChunk?roomCode=' + encodeURIComponent(ROOM_CODE);
+            try {
+                const blob = new Blob([payload], { type: 'application/json' });
+                const ok = navigator.sendBeacon(url, blob);
+                if (!ok) throw new Error('sendBeacon 排入失敗');
+            } catch (e) {
+                fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: payload
+                }).catch(() => {});
+            }
+        }
+
         async function showEndedScreen() {
             const scr = document.getElementById('endedScreen');
             scr.classList.add('show');
             const dl = document.getElementById('dlItems');
-            document.getElementById('endSubtitle').textContent = '檔案正在儲存至專案伺服器...';
+            document.getElementById('endSubtitle').textContent = '正在等待所有人送出逐字稿片段...';
             dl.innerHTML = '';
 
-            // 1. 逐字稿 —— 存到 Cloudflare R2（不再存本機 wwwroot），就算是空的也要存一份
+            // 🎯 先送出主持人自己這段時間聽到的內容
+            await submitMyTranscript();
+
+            // 🎯 給其他參與者一點緩衝時間，讓他們各自的 submitMyTranscript() 也送到伺服器
+            //    （他們是收到「會議結束」廣播/輪詢後才觸發送出，網路來回需要一點時間，不能主持人這邊一結束就馬上合併）
+            document.getElementById('endSubtitle').textContent = '檔案正在儲存至專案伺服器...';
+            await new Promise(resolve => setTimeout(resolve, 2500));
+
+            // 1. 逐字稿 —— 伺服器端合併這個房間所有人各自送來的片段（不再是主持人自己拼的內容）
+            let mergedTranscript = '';
+            let transcriptIsEmpty = true;
             {
-                const isEmpty = trxLines.length === 0;
-                const txt = isEmpty
-                    ? '（本場會議未收集到逐字稿內容，可能原因：瀏覽器語音辨識的麥克風權限被 Jitsi 視訊佔用，或麥克風未授權給瀏覽器）'
-                    : trxLines.map(l=>`[${l.time}] ${l.sp}：${l.tx}`).join('\n');
                 try {
                     const fd = new FormData();
                     fd.append('roomCode', ROOM_CODE);
-                    fd.append('content', txt);
                     const r = await fetch('/Room/SaveTranscript', { method: 'POST', body: fd });
                     const d = await r.json();
                     if (!r.ok || !d.success) {
                         dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿儲存失敗（HTTP ${r.status}）：${d.message || '未知錯誤'}</div>`;
-                    } else if (isEmpty) {
-                        dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿為空已存檔：${d.fileName}（請確認麥克風已授權給 Chrome，且沒有被其他分頁佔用）</div>`;
+                    } else if (d.isEmpty) {
+                        dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿為空已存檔：${d.fileName}（請確認所有人的麥克風都有授權給瀏覽器）</div>`;
                     } else {
-                        dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿（${trxLines.length} 條）已存至雲端「逐字稿」資料夾：${d.fileName}</div>`;
+                        mergedTranscript = d.content || '';
+                        transcriptIsEmpty = false;
+                        dl.innerHTML += `<div class="dl-item ok">✅ 逐字稿已存至雲端「逐字稿」資料夾：${d.fileName}</div>`;
                     }
                 } catch (e) {
                     dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿儲存失敗：${e.message}</div>`;
@@ -989,15 +1015,14 @@
             //    不再需要瀏覽器端錄影/上傳，這裡只是告知使用者去哪裡看
             dl.innerHTML += `<div class="dl-item ok">✅ 錄影由 AI 面試官在後台完成並上傳，稍後可在「面試評分」頁查看／下載（.webm 可用 VLC 播放）</div>`;
 
-            // 3. AI 分析 —— 改成伺服器端「每位求職者各自分析、各自存檔」，不再是前端組一次性的 prompt
-            if (trxLines.length >= 2) {
+            // 3. AI 分析 —— 用伺服器合併後的完整逐字稿（不是只有主持人自己聽到的），伺服器端逐位求職者各自分析、各自存檔
+            if (!transcriptIsEmpty && mergedTranscript.split('\n').length >= 2) {
                 dl.innerHTML += `<div class="dl-item wait" id="aStatus">⏳ AI 分析中（依人數可能要一點時間）...</div>`;
                 const aEl = document.getElementById('aStatus');
                 try {
-                    const transcriptText = trxLines.map(l=>`[${l.time}] ${l.sp}：${l.tx}`).join('\n');
                     const fd = new FormData();
                     fd.append('roomCode', ROOM_CODE);
-                    fd.append('transcript', transcriptText);
+                    fd.append('transcript', mergedTranscript);
                     const r = await fetch('/Room/SaveAiAnalysis', { method: 'POST', body: fd });
                     const d = await r.json();
                     if (!r.ok || !d.success) {
@@ -1111,7 +1136,7 @@
                 }).catch(() => {});
             }
         }
-        window.addEventListener('pagehide', markLeftBeacon);
+        window.addEventListener('pagehide', () => { markLeftBeacon(); submitMyTranscript(); });
         window.addEventListener('beforeunload', markLeftBeacon);
 
         function initJitsi() {
@@ -1174,6 +1199,7 @@
             //    求職者離開後導回應徵管理頁面；主管/主持人離開後導回面試管理列表（面試排程分頁）
             jitsiApi.addEventListener('readyToClose', () => {
                 if (ended) return; // 如果是走「結束會議」流程，交給 showEndedScreen() 最後自己導頁，這裡不用重複處理
+                submitMyTranscript(); // 🎯 中途自己離開也要送出目前為止聽到的內容，不然這段話會整個消失
                 if (!IS_STAFF) {
                     window.location.href = '/Member/Application';
                 } else {

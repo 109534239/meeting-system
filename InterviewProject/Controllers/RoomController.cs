@@ -444,13 +444,70 @@ namespace InterviewProject.Controllers
             return Ok();
         }
 
+        // 🎯 逐字稿改成「每個人各自把自己聽到的內容直接送到伺服器」，不再依賴 SignalR 廣播給其他人再由主持人彙整
+        //    （SignalR 對這種長時間會議連線不夠可靠，之前發現只有主持人自己的話會被記錄下來，就是廣播失敗造成的）
+        //    用房間代碼分組暫存在記憶體，主持人結束會議時觸發合併、上傳，合併完就清掉
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<TranscriptChunk>> _transcriptBuffer = new();
+
+        public class TranscriptChunkDto
+        {
+            public string Sp { get; set; } = "";
+            public string Tx { get; set; } = "";
+            public string Time { get; set; } = "";
+        }
+
+        private class TranscriptChunk
+        {
+            public string Sp = "";
+            public string Tx = "";
+            public string Time = "";
+            public DateTime ReceivedAt;
+        }
+
+        // 🎯 每個人（不管求職者/主管/主持人）自己講的話，直接送這裡，不透過任何人轉傳
+        [HttpPost]
+        public IActionResult SubmitTranscriptChunk([FromQuery] string roomCode, [FromBody] List<TranscriptChunkDto>? lines)
+        {
+            if (string.IsNullOrEmpty(roomCode) || lines == null || lines.Count == 0)
+                return Ok(new { success = true });
+
+            var list = _transcriptBuffer.GetOrAdd(roomCode, _ => new List<TranscriptChunk>());
+            lock (list)
+            {
+                foreach (var l in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(l.Tx)) continue;
+                    list.Add(new TranscriptChunk { Sp = l.Sp, Tx = l.Tx, Time = l.Time, ReceivedAt = DateTime.UtcNow });
+                }
+            }
+            return Ok(new { success = true });
+        }
+
         // 🎯 逐字稿改存到 Cloudflare R2，不再存本機 wwwroot
         //    這樣本機執行跟部署到 Render，讀到的都是同一份雲端檔案，不會再有兩邊結果不一致的問題
+        //    🐛 內容不再信任客戶端傳來的單一字串（那是舊架構，只有主持人自己聽到的+SignalR廣播成功的部分）
+        //    改成合併 _transcriptBuffer 裡「這個房間所有人各自送來」的片段，依伺服器收到的時間排序
         [HttpPost]
-        public async Task<IActionResult> SaveTranscript([FromForm] string roomCode, [FromForm] string content)
+        public async Task<IActionResult> SaveTranscript([FromForm] string roomCode)
         {
             var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
+
+            // 🎯 合併這個房間所有人各自送來的逐字稿片段，依伺服器收到的時間排序（不是靠客戶端自己拼的順序）
+            bool isEmpty;
+            string content;
+            if (_transcriptBuffer.TryGetValue(roomCode, out var chunks) && chunks.Count > 0)
+            {
+                List<TranscriptChunk> sorted;
+                lock (chunks) { sorted = chunks.OrderBy(c => c.ReceivedAt).ToList(); }
+                content = string.Join("\n", sorted.Select(c => $"[{c.Time}] {c.Sp}：{c.Tx}"));
+                isEmpty = false;
+            }
+            else
+            {
+                content = "（本場會議未收集到逐字稿內容，可能原因：所有參與者的麥克風權限都被 Jitsi 視訊佔用，或麥克風未授權給瀏覽器）";
+                isEmpty = true;
+            }
 
             var fileName = BuildFileName(room, "txt");
             try
@@ -462,10 +519,12 @@ namespace InterviewProject.Controllers
                 return StatusCode(500, new { success = false, message = "逐字稿上傳到雲端儲存失敗：" + ex.Message });
             }
 
+            _transcriptBuffer.TryRemove(roomCode, out _); // 合併完成，暫存的可以清掉了
+
             room.TranscriptFileName = fileName;
             await _context.SaveChangesAsync();
 
-            return Ok(new { success = true, fileName });
+            return Ok(new { success = true, fileName, content, isEmpty });
         }
 
         // 🎯 錄影錄音改存到 Cloudflare R2
