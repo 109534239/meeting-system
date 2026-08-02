@@ -60,7 +60,16 @@ namespace InterviewProject.Services
                         "--use-fake-device-for-media-stream",
                         $"--use-file-for-fake-video-capture={videoPath}",
                         "--no-sandbox",
-                        "--disable-setuid-sandbox"
+                        "--disable-setuid-sandbox",
+                        // 🐛 修正：Docker 容器預設的共享記憶體（/dev/shm）只有 64MB，
+                        //    Chromium 不知道這件事，會照平常桌機的用法去用，馬上爆記憶體被系統強制關閉，
+                        //    症狀就是啟動幾秒後直接噴 "Target page, context or browser has been closed"，
+                        //    這個參數會讓 Chromium 改用 /tmp（吃主程式的記憶體額度）而不是 /dev/shm，避開這個問題
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-software-rasterizer",
+                        "--disable-extensions",
+                        "--no-zygote"
                     }
                 };
 

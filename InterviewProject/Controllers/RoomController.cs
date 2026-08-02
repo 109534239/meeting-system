@@ -20,13 +20,15 @@ namespace InterviewProject.Controllers
         private readonly JitsiBotService _botService;
         private readonly IWebHostEnvironment _env;
         private readonly R2StorageService _storage;
+        private readonly GeminiService _gemini;
 
-        public RoomController(AppDbContext context, JitsiBotService botService, IWebHostEnvironment env, R2StorageService storage)
+        public RoomController(AppDbContext context, JitsiBotService botService, IWebHostEnvironment env, R2StorageService storage, GeminiService gemini)
         {
             _context = context;
             _botService = botService;
             _env = env;
             _storage = storage;
+            _gemini = gemini;
         }
 
         private bool IsEmployee()
@@ -493,27 +495,59 @@ namespace InterviewProject.Controllers
             return Ok(new { success = true, fileName });
         }
 
-        // 🎯 AI 面試分析結果改存到 Cloudflare R2
+        // 🎯 AI 面試分析結果改存到 Cloudflare R2，而且改成「每位求職者各自分析、各自存一份檔案」
+        //    （不再是所有人塞進同一次 Gemini 呼叫裡分析，那樣字數會被瓜分，容易被截斷到講一半）
         [HttpPost]
-        public async Task<IActionResult> SaveAiAnalysis([FromForm] string roomCode, [FromForm] string content)
+        public async Task<IActionResult> SaveAiAnalysis([FromForm] string roomCode, [FromForm] string transcript)
         {
             var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            var fileName = BuildFileName(room, "txt");
-            try
+            // 這場面試受邀的所有求職者（一個房間理論上可能不只一位）
+            var jobseekers = await _context.RoomParticipants
+                .Where(p => p.RoomId == room.Id && p.Role == ParticipantRole.Jobseeker && p.ResumeId != null)
+                .Include(p => p.Resume).ThenInclude(r => r!.Member)
+                .ToListAsync();
+
+            if (jobseekers.Count == 0)
+                return Ok(new { success = true, files = new List<object>() });
+
+            var results = new List<object>();
+
+            foreach (var jobseeker in jobseekers)
             {
-                await _storage.UploadTextAsync($"AI分析/{fileName}", content);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { success = false, message = "AI分析上傳到雲端儲存失敗：" + ex.Message });
+                var candidateName = jobseeker.Resume?.Member?.Name ?? $"求職者{jobseeker.Id}";
+
+                // 🎯 只針對這位求職者出的分析，maxTokens 也拉高，不用再跟其他候選人瓜分字數
+                var prompt =
+                    $"以下是一場面試的完整逐字稿（可能包含多位求職者，發言前有標示姓名），" +
+                    $"請只針對「{candidateName}」這位求職者的發言與表現進行分析（繁體中文，不用分析其他人）：\n\n{transcript}\n\n" +
+                    $"請提供：1.語氣表達 2.答題品質 3.綜合評分(1-10) 4.錄取建議 5.整體評語（完整寫完，不要中途省略）";
+
+                var analysis = await _gemini.AskAsync(
+                    prompt,
+                    "你是專業人資顧問，說繁體中文，格式清晰條列，內容要完整寫完，不能寫到一半就停。",
+                    maxTokens: 3000);
+
+                if (analysis == null)
+                {
+                    results.Add(new { candidateName, success = false, message = "AI 分析失敗（Gemini:ApiKey 是否正確、或 API 額度用完）" });
+                    continue;
+                }
+
+                var fileName = BuildFileName(room, "txt", candidateName);
+                try
+                {
+                    await _storage.UploadTextAsync($"AI分析/{fileName}", analysis);
+                    results.Add(new { candidateName, success = true, fileName });
+                }
+                catch (Exception ex)
+                {
+                    results.Add(new { candidateName, success = false, message = "上傳到雲端儲存失敗：" + ex.Message });
+                }
             }
 
-            room.AiAnalysisFileName = fileName;
-            await _context.SaveChangesAsync();
-
-            return Ok(new { success = true, fileName });
+            return Ok(new { success = true, files = results });
         }
 
         // 🎯 檔案總管：列出 R2 上「逐字稿」「錄影錄音」「AI分析」三個前綴底下目前存了哪些檔案，並提供下載連結
@@ -678,7 +712,8 @@ namespace InterviewProject.Controllers
 
         // 「面試會議_日期_職缺.副檔名」，職缺名稱裡不能當檔名的符號換成底線
         // 🎯 public static：MeetingHub 結束會議時，AI 面試官錄影上傳也要用同一套命名規則
-        public static string BuildFileName(Room room, string ext)
+        //    candidateName 有值時（AI 分析逐位存檔用），檔名會多一段求職者姓名後綴
+        public static string BuildFileName(Room room, string ext, string? candidateName = null)
         {
             var jobTitle = room.Job?.Title ?? "未知職缺";
             foreach (var c in Path.GetInvalidFileNameChars())
@@ -686,7 +721,16 @@ namespace InterviewProject.Controllers
             jobTitle = jobTitle.Replace('/', '_').Replace('－', '_').Replace('-', '_');
 
             var dateText = (room.StartAt ?? room.ScheduledAt ?? DateTime.Now).ToString("yyyy-MM-dd");
-            return $"面試會議_{dateText}_{jobTitle}.{ext}";
+
+            if (string.IsNullOrWhiteSpace(candidateName))
+                return $"面試會議_{dateText}_{jobTitle}.{ext}";
+
+            var safeName = candidateName;
+            foreach (var c in Path.GetInvalidFileNameChars())
+                safeName = safeName.Replace(c, '_');
+            safeName = safeName.Replace('/', '_');
+
+            return $"面試會議_{dateText}_{jobTitle}_{safeName}.{ext}";
         }
         //    求職者：session 存的是 Member.Id，要透過 Resume 反查
         //    員工（manager / director / hr）：session 存的是 Employee.Id，直接比對

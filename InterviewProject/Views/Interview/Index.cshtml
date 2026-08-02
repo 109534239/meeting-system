@@ -9,6 +9,8 @@
                          ?? new Dictionary<int, InterviewProject.Models.InterviewEvaluation>();
     var managerEvaluationsByResume = ViewBag.ManagerEvaluationsByResume as Dictionary<int, List<InterviewProject.Models.InterviewEvaluation>>
                          ?? new Dictionary<int, List<InterviewProject.Models.InterviewEvaluation>>();
+    var aiAnalysisByRoom = ViewBag.AiAnalysisByRoom as Dictionary<int, List<string>>
+                         ?? new Dictionary<int, List<string>>();
     var endedRooms = (Model ?? new List<InterviewProject.Models.Room>()).Where(r => r.MeetingStatus == "Ended").ToList();
 }
 
@@ -498,12 +500,20 @@
                                 <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "逐字稿", fileName = room.TranscriptFileName })">下載</a>
                             </div>
                         }
-                        @if (!string.IsNullOrEmpty(room.AiAnalysisFileName))
+                        @{
+                            var roomAiFiles = aiAnalysisByRoom.TryGetValue(room.Id, out var aif) ? aif : new List<string>();
+                        }
+                        @foreach (var aiFileName in roomAiFiles)
                         {
+                            // 檔名格式：面試會議_日期_職缺_求職者姓名.txt，取最後一段當標籤
+                            var labelName = aiFileName.Replace(".txt", "");
+                            var parts = labelName.Split('_');
+                            var candidateLabel = parts.Length > 0 ? parts[^1] : labelName;
+                            var panelId = "aianalysis-" + room.Id + "-" + aiFileName.GetHashCode().ToString().Replace("-", "n");
                             <div class="file-item">
-                                <span class="file-label">🤖 AI分析報告</span>
-                                <button type="button" class="btn-file-view" onclick="toggleTextPanel('aianalysis-@room.Id', '@Url.Action("ViewFile", "Room", new { folder = "AI分析", fileName = room.AiAnalysisFileName })')">查看</button>
-                                <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "AI分析", fileName = room.AiAnalysisFileName })">下載</a>
+                                <span class="file-label">🤖 AI分析（@candidateLabel）</span>
+                                <button type="button" class="btn-file-view" onclick="toggleTextPanel('@panelId', '@Url.Action("ViewFile", "Room", new { folder = "AI分析", fileName = aiFileName })')">查看</button>
+                                <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "AI分析", fileName = aiFileName })">下載</a>
                             </div>
                         }
                         @if (!string.IsNullOrEmpty(room.RecordingFileName))
@@ -513,7 +523,7 @@
                                 <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "錄影錄音", fileName = room.RecordingFileName })">下載</a>
                             </div>
                         }
-                        @if (string.IsNullOrEmpty(room.TranscriptFileName) && string.IsNullOrEmpty(room.RecordingFileName) && string.IsNullOrEmpty(room.AiAnalysisFileName))
+                        @if (string.IsNullOrEmpty(room.TranscriptFileName) && string.IsNullOrEmpty(room.RecordingFileName) && !roomAiFiles.Any())
                         {
                             <span class="text-muted" style="font-size:13px;">尚無檔案</span>
                         }
@@ -523,9 +533,10 @@
                     {
                         <pre class="text-panel" id="panel-transcript-@room.Id" style="display:none;"></pre>
                     }
-                    @if (!string.IsNullOrEmpty(room.AiAnalysisFileName))
+                    @foreach (var aiFileName in roomAiFiles)
                     {
-                        <pre class="text-panel" id="panel-aianalysis-@room.Id" style="display:none;"></pre>
+                        var panelId = "aianalysis-" + room.Id + "-" + aiFileName.GetHashCode().ToString().Replace("-", "n");
+                        <pre class="text-panel" id="panel-@panelId" style="display:none;"></pre>
                     }
 
                     @if (!string.IsNullOrEmpty(room.RecordingFileName))

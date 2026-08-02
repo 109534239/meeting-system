@@ -985,32 +985,36 @@
             //    不再需要瀏覽器端錄影/上傳，這裡只是告知使用者去哪裡看
             dl.innerHTML += `<div class="dl-item ok">✅ 錄影由 AI 面試官在後台完成並上傳，稍後可在「面試評分」頁查看／下載（.webm 可用 VLC 播放）</div>`;
 
-            // 3. AI 分析 —— 存到 Cloudflare R2
+            // 3. AI 分析 —— 改成伺服器端「每位求職者各自分析、各自存檔」，不再是前端組一次性的 prompt
             if (trxLines.length >= 2) {
-                dl.innerHTML += `<div class="dl-item wait" id="aStatus">⏳ AI 分析中...</div>`;
-                const analysis = await runAnalysis();
+                dl.innerHTML += `<div class="dl-item wait" id="aStatus">⏳ AI 分析中（依人數可能要一點時間）...</div>`;
                 const aEl = document.getElementById('aStatus');
-                if (analysis) {
-                    try {
-                        const fd = new FormData();
-                        fd.append('roomCode', ROOM_CODE);
-                        fd.append('content', analysis);
-                        const r = await fetch('/Room/SaveAiAnalysis', { method: 'POST', body: fd });
-                        const d = await r.json();
-                        if (!r.ok || !d.success) {
-                            aEl.className = 'dl-item ng';
-                            aEl.textContent = `⚠️ 分析報告儲存失敗（HTTP ${r.status}）：${d.message || '未知錯誤'}`;
-                        } else {
-                            aEl.className = 'dl-item ok';
-                            aEl.textContent = `✅ 面試分析報告已存至雲端「AI分析」資料夾：${d.fileName}`;
-                        }
-                    } catch (e) {
+                try {
+                    const transcriptText = trxLines.map(l=>`[${l.time}] ${l.sp}：${l.tx}`).join('\n');
+                    const fd = new FormData();
+                    fd.append('roomCode', ROOM_CODE);
+                    fd.append('transcript', transcriptText);
+                    const r = await fetch('/Room/SaveAiAnalysis', { method: 'POST', body: fd });
+                    const d = await r.json();
+                    if (!r.ok || !d.success) {
                         aEl.className = 'dl-item ng';
-                        aEl.textContent = `⚠️ 分析報告儲存失敗：${e.message}`;
+                        aEl.textContent = `⚠️ AI 分析失敗（HTTP ${r.status}）：${d.message || '未知錯誤'}`;
+                    } else if (!d.files || d.files.length === 0) {
+                        aEl.className = 'dl-item ng';
+                        aEl.textContent = '⚠️ 沒有找到求職者資料，跳過 AI 分析';
+                    } else {
+                        aEl.remove();
+                        d.files.forEach(f => {
+                            if (f.success) {
+                                dl.innerHTML += `<div class="dl-item ok">✅ ${f.candidateName} 的分析報告已存至雲端「AI分析」資料夾：${f.fileName}</div>`;
+                            } else {
+                                dl.innerHTML += `<div class="dl-item ng">⚠️ ${f.candidateName} 的分析失敗：${f.message}</div>`;
+                            }
+                        });
                     }
-                } else {
+                } catch (e) {
                     aEl.className = 'dl-item ng';
-                    aEl.textContent = '⚠️ AI 分析失敗（Gemini:ApiKey 是否正確？）';
+                    aEl.textContent = `⚠️ AI 分析失敗：${e.message}`;
                 }
             } else {
                 dl.innerHTML += `<div class="dl-item ng">⚠️ 逐字稿不足，跳過 AI 分析</div>`;

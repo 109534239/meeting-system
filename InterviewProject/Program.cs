@@ -24,6 +24,9 @@ builder.Services.AddScoped<AutoInterviewSchedulingService>();
 // 🚀 Cloudflare R2 雲端檔案儲存（逐字稿/錄影錄音/AI分析報告），本機與 Render 共用同一個 bucket
 builder.Services.AddSingleton<R2StorageService>();
 
+// 🚀 共用的 Gemini API 呼叫服務（ClaudeProxyController 跟 RoomController 都會用到）
+builder.Services.AddScoped<GeminiService>();
+
 //註冊 SignalR 服務
 builder.Services.AddSignalR();
 

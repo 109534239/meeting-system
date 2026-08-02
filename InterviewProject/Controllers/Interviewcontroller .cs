@@ -1,6 +1,7 @@
 ﻿using InterviewProject.Data;
 using InterviewProject.Models;
 using InterviewProject.Hubs;
+using InterviewProject.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -15,11 +16,13 @@ namespace InterviewProject.Controllers
     {
         private readonly AppDbContext _db;
         private readonly IHubContext<MeetingHub> _meetingHub;
+        private readonly R2StorageService _storage;
 
-        public InterviewController(AppDbContext db, IHubContext<MeetingHub> meetingHub)
+        public InterviewController(AppDbContext db, IHubContext<MeetingHub> meetingHub, R2StorageService storage)
         {
             _db = db;
             _meetingHub = meetingHub;
+            _storage = storage;
         }
 
         private bool IsEmployee()
@@ -78,6 +81,19 @@ namespace InterviewProject.Controllers
 
             ViewBag.CurrentRole = role;
             ViewBag.CurrentEmployeeId = empId;
+
+            // 🎯 面試評分頁要用：列出每個「已結束」房間目前有哪些 AI 分析檔案
+            //    （現在是一位求職者一份檔案，不是單一檔名，所以要用前綴去 R2 列出來，不能只認一個欄位）
+            var aiAnalysisByRoom = new Dictionary<int, List<string>>();
+            foreach (var r in rooms.Where(r => r.MeetingStatus == "Ended"))
+            {
+                var baseName = RoomController.BuildFileName(r, "txt"); // 面試會議_date_job.txt
+                var prefix = "AI分析/" + baseName.Substring(0, baseName.Length - 4) + "_"; // 去掉副檔名，加底線當前綴
+                var keys = await _storage.ListKeysAsync(prefix);
+                aiAnalysisByRoom[r.Id] = keys.Select(k => k.Substring("AI分析/".Length)).ToList();
+            }
+            ViewBag.AiAnalysisByRoom = aiAnalysisByRoom;
+
             return View("~/Views/Interview/Index.cshtml", rooms);
         }
 
