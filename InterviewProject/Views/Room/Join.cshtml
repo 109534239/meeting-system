@@ -787,7 +787,9 @@
         async function initAudio() {
             try {
                 audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            } catch {
+                console.log('[initAudio] 成功取得麥克風（' + MY_NAME + '）');
+            } catch (e) {
+                console.warn('[initAudio] 取得麥克風失敗：' + e.message + '（' + MY_NAME + '）');
                 audioStream = null;
             }
         }
@@ -809,6 +811,7 @@
             recognition.interimResults = true;
 
             recognition.onresult = e => {
+                console.log('[STT] onresult 觸發，收到', e.results.length - e.resultIndex, '筆結果');
                 for (let i = e.resultIndex; i < e.results.length; i++) {
                     if (e.results[i].isFinal) {
                         const txt = e.results[i][0].transcript.trim();
@@ -828,10 +831,16 @@
                     silT = 0; setSilBar(0);
                 }
             };
+            recognition.onstart = () => {
+                console.log('[STT] recognition 已啟動，正在聆聽（' + MY_NAME + '）');
+            };
             recognition.onerror = e => {
-                if (e.error === 'not-allowed') {
-                    console.warn('麥克風被 Jitsi 佔用，改用 Jitsi 事件偵測');
-                }
+                // 🎯 補完整：之前只記錄 not-allowed，其他錯誤類型完全沒有記錄，
+                //    導致「到底為什麼沒抓到聲音」查不出原因。現在全部錯誤類型都印出來，
+                //    常見的有：not-allowed（權限被拒）、audio-capture（抓不到麥克風裝置，
+                //    很可能就是被 Jitsi 佔用）、no-speech（一段時間沒偵測到語音，通常會自動重啟不用擔心）、
+                //    network（網路問題）
+                console.warn('[STT] onerror：' + e.error + '（' + MY_NAME + '）');
             };
             recognition.onend = () => {
                 if (!ended && !isSp)

@@ -14,8 +14,95 @@ namespace InterviewProject.Services
             public IBrowser BrowserInstance { get; set; } = null!;
             public IBrowserContext ContextInstance { get; set; } = null!;
             public IPage PageInstance { get; set; } = null!;
-            public string RecordDir { get; set; } = "";
         }
+
+        // 🎯 注入到頁面裡的錄影機腳本：Canvas 畫格 + Web Audio API 混音，錄成一份有畫面又有聲音的 webm
+        private const string RecorderInitScript = @"
+(function () {
+    window.__recChunks = [];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280; canvas.height = 720;
+    const ctx = canvas.getContext('2d');
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const dest = audioCtx.createMediaStreamDestination();
+    const connected = new WeakSet();
+
+    function connectAudio(el) {
+        if (connected.has(el)) return;
+        connected.add(el);
+        try {
+            const src = audioCtx.createMediaElementSource(el);
+            src.connect(dest);
+        } catch (e) { /* 某些元素可能不支援或已連過，忽略即可 */ }
+    }
+
+    function scanMedia() {
+        document.querySelectorAll('video, audio').forEach(connectAudio);
+    }
+    scanMedia();
+
+    const observer = new MutationObserver(scanMedia);
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.__mediaObserver = observer;
+
+    function drawFrame() {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const videos = Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0);
+        if (videos.length > 0) {
+            const cols = Math.ceil(Math.sqrt(videos.length));
+            const rows = Math.ceil(videos.length / cols);
+            const cellW = canvas.width / cols, cellH = canvas.height / rows;
+            videos.forEach((v, i) => {
+                const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
+                try { ctx.drawImage(v, x, y, cellW, cellH); } catch (e) {}
+            });
+        }
+        window.__rafId = requestAnimationFrame(drawFrame);
+    }
+    drawFrame();
+
+    const canvasStream = canvas.captureStream(15);
+    const combined = new MediaStream([
+        ...canvasStream.getVideoTracks(),
+        ...dest.stream.getAudioTracks()
+    ]);
+
+    const mimeCandidates = ['video/webm;codecs=vp8,opus', 'video/webm'];
+    let mime = '';
+    for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
+
+    const rec = new MediaRecorder(combined, mime ? { mimeType: mime } : {});
+    rec.ondataavailable = e => { if (e.data && e.data.size > 0) window.__recChunks.push(e.data); };
+    rec.start(1000);
+    window.__mediaRecorder = rec;
+})();
+";
+
+        // 🎯 停止錄影機、把錄到的內容轉成 base64 字串回傳給 C# 端（頁面關閉前一定要呼叫，不然錄到的內容會直接消失）
+        private const string RecorderStopScript = @"
+(function () {
+    return new Promise((resolve) => {
+        if (window.__mediaObserver) { try { window.__mediaObserver.disconnect(); } catch (e) {} }
+        if (window.__rafId) { try { cancelAnimationFrame(window.__rafId); } catch (e) {} }
+
+        if (!window.__mediaRecorder || window.__mediaRecorder.state === 'inactive') {
+            resolve(null);
+            return;
+        }
+        window.__mediaRecorder.onstop = () => {
+            const blob = new Blob(window.__recChunks, { type: 'video/webm' });
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result); // data:video/webm;base64,....
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+        };
+        window.__mediaRecorder.stop();
+    });
+})();
+";
 
         private static readonly Dictionary<string, BotInstance> _activeBots = new();
         private readonly JaasJwtService _jaasJwt;
@@ -75,15 +162,12 @@ namespace InterviewProject.Services
 
                 localBrowser = await localPlaywright.Chromium.LaunchAsync(launchOptions);
 
-                // 🎯 這場面試專屬的暫存錄影資料夾（結束時會把裡面的 .webm 讀出來上傳到 R2，之後就可以刪掉）
-                var recordDir = Path.Combine(Path.GetTempPath(), "jitsibot_rec_" + roomCode);
-                Directory.CreateDirectory(recordDir);
-
                 localContext = await localBrowser.NewContextAsync(new BrowserNewContextOptions
                 {
-                    ViewportSize = new ViewportSize { Width = 1280, Height = 720 },
-                    RecordVideoDir = recordDir,
-                    RecordVideoSize = new RecordVideoSize { Width = 1280, Height = 720 }
+                    ViewportSize = new ViewportSize { Width = 1280, Height = 720 }
+                    // 🐛 拿掉了 RecordVideoDir：Playwright 官方已知限制，這個內建錄影功能只錄「畫面」，
+                    //    完全沒有任何錄音能力（GitHub 上從 2021 年就有人要求加音訊支援，到現在還沒做），
+                    //    改成下面用頁面內部注入的自訂錄影機（Canvas 畫面 + Web Audio API 混音）取代
                 });
                 var page = await localContext.NewPageAsync();
 
@@ -138,13 +222,26 @@ namespace InterviewProject.Services
                     Console.WriteLine($"[JitsiBot] 存除錯截圖失敗：{ex.Message}");
                 }
 
+                // 🎯 注入自訂錄影機：用 Canvas 每禎把畫面上所有人的 <video> 畫格畫進去（簡單網格排版），
+                //    用 Web Audio API 把所有人的 <video>/<audio> 元素的聲音混在一起，
+                //    兩個一起餵進同一個 MediaRecorder，才會是「有畫面又有聲音」的完整檔案。
+                //    用 MutationObserver 持續偵測新加入的參與者（他們的 <video>/<audio> 元素是動態加進 DOM 的）。
+                try
+                {
+                    await page.EvaluateAsync(RecorderInitScript);
+                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 自訂錄影機（畫面+聲音）已啟動。");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[JitsiBot] 啟動自訂錄影機失敗：{ex.Message}（這場面試會沒有錄影）");
+                }
+
                 _activeBots[roomCode] = new BotInstance
                 {
                     PlaywrightInstance = localPlaywright,
                     BrowserInstance = localBrowser,
                     ContextInstance = localContext,
-                    PageInstance = page,
-                    RecordDir = recordDir
+                    PageInstance = page
                 };
 
                 Console.WriteLine($"[JitsiBot Success] 房間 {roomCode} 的 AI 面試官已成功常駐會議，並開始錄影！");
@@ -161,7 +258,7 @@ namespace InterviewProject.Services
         }
 
         // 🎯 離開會議室，並回傳這場會議的本機錄影檔路徑（呼叫端負責讀取、上傳到 R2，再自行刪除暫存檔）
-        //    拿不到錄影（例如根本沒成功加入過）就回傳 null，呼叫端要自己處理「沒有錄影」的情況
+        //    拿不到錄影（例如根本沒成功加入過、或錄影機沒啟動成功）就回傳 null，呼叫端要自己處理「沒有錄影」的情況
         public async Task<string?> LeaveRoomAsync(string roomCode)
         {
             if (string.IsNullOrEmpty(roomCode)) return null;
@@ -172,13 +269,26 @@ namespace InterviewProject.Services
             string? videoPath = null;
             try
             {
-                // Playwright 的錄影要等「頁面關閉」之後才會真的把檔案寫完、才拿得到最終路徑
-                await instance.PageInstance.CloseAsync();
-                if (instance.PageInstance.Video != null)
+                // 🎯 一定要在頁面關閉「之前」呼叫，停止錄影機、把錄到的內容轉成 base64 拿出來，
+                //    不然頁面一關閉，錄到的內容（存在頁面自己的記憶體裡）就直接消失、什麼都拿不到
+                var dataUrl = await instance.PageInstance.EvaluateAsync<string?>(RecorderStopScript);
+
+                if (!string.IsNullOrEmpty(dataUrl) && dataUrl.Contains(","))
                 {
-                    videoPath = await instance.PageInstance.Video.PathAsync();
+                    var base64 = dataUrl.Substring(dataUrl.IndexOf(',') + 1);
+                    var bytes = Convert.FromBase64String(base64);
+
+                    var recordDir = Path.Combine(Path.GetTempPath(), "jitsibot_rec_" + roomCode);
+                    Directory.CreateDirectory(recordDir);
+                    videoPath = Path.Combine(recordDir, "recording.webm");
+                    await File.WriteAllBytesAsync(videoPath, bytes);
+
+                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 錄影已完成（{bytes.Length / 1024 / 1024}MB）：{videoPath}");
                 }
-                Console.WriteLine($"[JitsiBot] 房間 {roomCode} 錄影已完成：{videoPath ?? "（沒有錄到檔案）"}");
+                else
+                {
+                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 沒有取得錄影內容（錄影機可能沒有成功啟動）。");
+                }
             }
             catch (Exception ex)
             {
@@ -187,6 +297,7 @@ namespace InterviewProject.Services
 
             try
             {
+                await instance.PageInstance.CloseAsync();
                 await instance.ContextInstance.CloseAsync();
                 await instance.BrowserInstance.CloseAsync();
                 instance.PlaywrightInstance.Dispose();
