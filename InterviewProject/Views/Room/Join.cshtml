@@ -761,9 +761,13 @@
             b.className = 'banner done';
             b.textContent = '🔒 面試已結束';
 
-            if (IS_STAFF) {
-                // 主管：不用再等本機錄影停止（錄影已經改成 AI 面試官在伺服器端負責），直接顯示結束畫面
+            if (IS_HOST) {
+                // 🎯 只有主持人（最高主管）需要負責逐字稿/AI分析存檔——這件事整場面試只該做一次，
+                //    不能每個在場的主管都各自觸發一次（會變成大家搶著存、甚至重複呼叫 Gemini API）
                 showEndedScreen();
+            } else if (IS_STAFF) {
+                // 部門主管（不是主持人）：跟求職者一樣，直接導回列表，不用等待任何存檔動作
+                window.location.href = '/Interview/Index';
             } else {
                 // ✅ 求職者：回到應徵管理頁面（原本連到 /Interview/MyInterviews 是錯的路徑，那是給員工用的）
                 setTimeout(() => {
