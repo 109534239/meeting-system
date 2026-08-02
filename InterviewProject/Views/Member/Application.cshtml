@@ -525,7 +525,7 @@
                     const options = [1, 2, 3, 4, 5].map(function (s) {
                         return '<label class="apt-scale-option">' +
                                '<input type="radio" name="q_' + q.id + '" value="' + s + '" required />' +
-                               '<span>' + s + '</span></label>';
+                               '<span class="apt-num">' + s + '</span></label>';
                     }).join('');
                     return '<div class="apt-question">' +
                            '<p class="apt-question-text">' + q.id + '. ' + q.text + '</p>' +
