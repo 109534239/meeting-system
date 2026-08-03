@@ -377,7 +377,7 @@ namespace InterviewProject.Controllers
                  .FirstOrDefaultAsync(r => r.Id == id && r.MembersId == userId);
 
             if (resume == null) return NotFound();
-
+                        
             resume.LanguageSkills = await GetFormattedLanguageSkills(resume.Id);
             resume.ComputerSkills = await GetFormattedComputerSkills(resume.Id);
 
@@ -411,7 +411,9 @@ namespace InterviewProject.Controllers
                 ViewBag.UserPhotoBase64 = member?.ProfileImagePath;
             }
 
-            ViewBag.IsReadOnly = true;
+            // 🎯 關鍵修改：依據履歷狀態，決定是否開啓「唯讀」
+            // 如果是「暫存」，IsReadOnly 為 false，前端表單就可以編輯與儲存繳交！
+            ViewBag.IsReadOnly = (resume.Status != "暫存");
 
             return View("~/Views/Resume/Resume.cshtml", resume);
         }
@@ -639,10 +641,10 @@ namespace InterviewProject.Controllers
             int userId = GetCurrentUserId();
             if (userId == 0) return RedirectToAction("Index", "Login");
 
-            // 1. 建立基礎查詢：該會員所有的履歷紀錄
+            // 1. 建立基礎查詢：該會員所有的履歷紀錄（排除暫存）
             var query = _db.Resumes
                 .Include(r => r.Job)
-                .Where(r => r.MembersId == userId);
+                .Where(r => r.MembersId == userId && r.Status != "暫存");
 
             // 2. 抓取資料庫中出現過的不重複選單選項（供前端下拉選單使用）
             var statusList = await query

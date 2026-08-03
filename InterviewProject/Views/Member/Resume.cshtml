@@ -89,7 +89,7 @@
                 <div class="app-row">
                     <div class="row-time">
                         <span class="mobile-label">投遞時間：</span>
-                        <span class="time-text">@item.ResumeTime.ToString("yyyy/MM/dd HH:mm")</span>
+                        @item.ResumeTime.AddHours(-8).ToString("yyyy/MM/dd HH:mm")
                     </div>
                     <div class="row-position">
                         @{
@@ -127,12 +127,27 @@
                         </span>
                     </div>
                     <div class="row-actions">
-                        <a href="@Url.Action("ResumeDetail", "Member", new { id = item.Id })" class="btn-action btn-view" title="查看履歷">
-                            <i class="fa-regular fa-eye"></i> 查看
-                        </a>
-                        <a href="@Url.Action("ExportToPdf", "Member", new { id = item.Id })" class="btn-action btn-pdf" title="匯出PDF">
-                            <i class="fa-regular fa-file-pdf"></i> PDF
-                        </a>
+                        <div class="row-actions">
+                            @if (item.Status == "暫存")
+                            {
+                                @* 🎯 暫存狀態：點擊編輯直接前往 Member/ResumeDetail/id *@
+                                <a href="@Url.Action("ResumeDetail", "Member", new { id = item.Id })" class="btn-action btn-edit" title="繼續編輯">
+                                    <i class="fa-regular fa-pen-to-square"></i> 編輯
+                                </a>
+                            }
+                            else
+                            {
+                                @* 🎯 已送出狀態：顯示「查看」按鈕 *@
+                                <a href="@Url.Action("ResumeDetail", "Member", new { id = item.Id })" class="btn-action btn-view" title="查看履歷">
+                                    <i class="fa-regular fa-eye"></i> 查看
+                                </a>
+
+                                @* 🎯 非暫存狀態顯示 PDF 按鈕 *@
+                                <a href="@Url.Action("ExportToPdf", "Member", new { id = item.Id })" class="btn-action btn-pdf" title="匯出PDF">
+                                    <i class="fa-regular fa-file-pdf"></i> PDF
+                                </a>
+                            }
+                        </div>
                     </div>
                 </div>
             }

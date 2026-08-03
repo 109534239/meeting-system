@@ -163,30 +163,33 @@ namespace InterviewProject.Controllers
         }
 
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> SaveResume(
-            Resume model,
-            List<string>? EduLevelList,
-            List<string>? SchoolNameList,
-            List<string>? MajorList,
-            List<string>? EduStatusList,
-            List<string>? StartDateList,
-            List<string>? EndDateList,
-            List<string>? CompanyNameList,
-            List<string>? JobTitleList,
-            List<string>? JobDescriptionList,
-            List<string>? WorkStartDateList,
-            List<string>? WorkEndDateList,
-            List<string>? PortfolioTitleList,
-            List<string>? PortfolioDescList,
-            List<string>? PortfolioLinkList,
-            List<IFormFile>? PortfolioFileList,
-            List<string>? PortfolioExistingFileList,
-            string? ProfileImageBase64)
+    Resume model,
+    List<string>? EduLevelList,
+    List<string>? SchoolNameList,
+    List<string>? MajorList,
+    List<string>? EduStatusList,
+    List<string>? StartDateList,
+    List<string>? EndDateList,
+    List<string>? CompanyNameList,
+    List<string>? JobTitleList,
+    List<string>? JobDescriptionList,
+    List<string>? WorkStartDateList,
+    List<string>? WorkEndDateList,
+    List<string>? PortfolioTitleList,
+    List<string>? PortfolioDescList,
+    List<string>? PortfolioLinkList,
+    List<IFormFile>? PortfolioFileList,
+    List<string>? PortfolioExistingFileList,
+    string? ProfileImageBase64,
+    string? actionType,
+    string? submitType) // 🎯 設為可空，防止沒傳入時出錯
         {
-            // 🎯 作品集上傳改成「一列可多個檔案」，前端用 name="PortfolioFileList_{列序}" + multiple
-            //    送出（見 Resume.cshtml 的 preparePortfolioFilesForSubmit），沒辦法直接靠單一
-            //    List<IFormFile> 參數綁定，所以改成自己讀 Request.Form.Files、
-            //    依欄位名稱分組成「第幾列 → 這一列選了哪些檔案」。
+            // 🎯 1. 修正判斷：同時相容 actionType 與 submitType
+            bool isDraft = (actionType == "draft" || submitType == "draft");
+
+            // 🎯 作品集檔案解析 (保持原樣)
             var portfolioFilesByRow = new Dictionary<int, List<IFormFile>>();
             const string portfolioFilePrefix = "PortfolioFileList_";
             foreach (var f in Request.Form.Files)
@@ -208,9 +211,9 @@ namespace InterviewProject.Controllers
             ModelState.Remove("AiScore");
             ModelState.Remove("AiComment");
             ModelState.Remove("Members");
-            ModelState.Remove("Educations"); // 🎯 學歷改用平行陣列（EduLevelList 等）送出，不透過 model.Educations 綁定
-            ModelState.Remove("WorkExperiences"); // 🎯 工作經歷同樣改用平行陣列送出
-            ModelState.Remove("Portfolios"); // 🎯 作品集同樣改用平行陣列（含檔案上傳）送出
+            ModelState.Remove("Educations");
+            ModelState.Remove("WorkExperiences");
+            ModelState.Remove("Portfolios");
 
             int userId = GetCurrentUserId();
 
@@ -224,8 +227,7 @@ namespace InterviewProject.Controllers
 
             model.MembersId = userId;
 
-            // 🎯 大頭照：跟 Profile.cshtml 用同一套 base64 直存法，且獨立於履歷驗證/交易之外，
-            //    避免「照片換好了，但履歷表單其他欄位驗證沒過」導致照片也跟著白改
+            // 🎯 大頭照處理：如果有傳入 Base64 圖片，依舊儲存
             var photoMember = await _db.Members.FindAsync(userId);
             if (photoMember != null && !string.IsNullOrEmpty(ProfileImageBase64) && ProfileImageBase64.StartsWith("data:image"))
             {
@@ -233,18 +235,7 @@ namespace InterviewProject.Controllers
                 await _db.SaveChangesAsync();
             }
 
-            // 🚨 大頭照為必填：前端 JS 已經擋過一次，但 JS 驗證永遠可能因為瀏覽器停用 JavaScript、
-            //    第三方套件（SweetAlert2）載入延遲/失敗、或使用者直接用工具送出原始 POST 而被繞過，
-            //    所以伺服器端一定要重新檢查一次，這裡才是真正擋得住的最後一道防線。
-            //    不管是這次新上傳的照片，還是先前已經存在會員資料裡的照片，只要目前完全沒有照片就不放行。
-            if (photoMember == null || string.IsNullOrWhiteSpace(photoMember.ProfileImagePath))
-            {
-                TempData["ApiError"] = "❌ 請上傳大頭照後再送出履歷。";
-                model.Job = await _db.Jobs.FindAsync(model.JobsId);
-                await PopulateViewBagData(userId);
-                return View("Resume", model);
-            }
-
+            // 🚨 職缺編號檢查 (不管暫存或繳交都必須有 JobsId)
             if (model.JobsId <= 0)
             {
                 TempData["ApiError"] = "❌ 系統錯誤：未接收到職缺編號。";
@@ -253,121 +244,160 @@ namespace InterviewProject.Controllers
                 return View("Resume", model);
             }
 
-            if (!ModelState.IsValid)
+            // 🚨 僅在「正式繳交 (!isDraft)」時才執行嚴格驗證 (暫存可允許未完成)
+            if (!isDraft)
             {
-                var errorDetails = string.Join(" | ", ModelState
-                  .Where(x => x.Value.Errors.Count > 0)
-                  .Select(x => $"[{x.Key}]: {string.Join(", ", x.Value.Errors.Select(e => e.ErrorMessage))}"));
+                // 1. 檢查大頭照必填
+                if (photoMember == null || string.IsNullOrWhiteSpace(photoMember.ProfileImagePath))
+                {
+                    TempData["ApiError"] = "❌ 請上傳大頭照後再送出履歷。";
+                    model.Job = await _db.Jobs.FindAsync(model.JobsId);
+                    await PopulateViewBagData(userId);
+                    return View("Resume", model);
+                }
 
-                TempData["ApiError"] = $"❌ 表單驗證失敗：{errorDetails}";
-                model.Job = await _db.Jobs.FindAsync(model.JobsId);
-                await PopulateViewBagData(userId);
-                return View("Resume", model);
+                // 2. ModelState 驗證
+                if (!ModelState.IsValid)
+                {
+                    var errorDetails = string.Join(" | ", ModelState
+                        .Where(x => x.Value.Errors.Count > 0)
+                        .Select(x => $"[{x.Key}]: {string.Join(", ", x.Value.Errors.Select(e => e.ErrorMessage))}"));
+
+                    TempData["ApiError"] = $"❌ 表單驗證失敗：{errorDetails}";
+                    model.Job = await _db.Jobs.FindAsync(model.JobsId);
+                    await PopulateViewBagData(userId);
+                    return View("Resume", model);
+                }
+
+                // 3. 證照級別檢查
+                var certLevelError = await ValidateCertificateLevelsAsync(model.Certificates);
+                if (!string.IsNullOrEmpty(certLevelError))
+                {
+                    TempData["ApiError"] = $"❌ {certLevelError}";
+                    model.Job = await _db.Jobs.FindAsync(model.JobsId);
+                    await PopulateViewBagData(userId);
+                    return View("Resume", model);
+                }
             }
 
-            // 🚨 證照職類及級別為條件必填：若使用者填的證照名稱，在證照對照表（Certificatecategories）
-            //    裡查得到、且該證照確實有「可選級別」，卻沒有一併填寫級別，就視為漏填，擋下送出。
-            //    這一樣是伺服器端最後把關，理由同上（前端 JS 驗證可能被繞過或因為非同步資料還沒載入而失效）。
-            var certLevelError = await ValidateCertificateLevelsAsync(model.Certificates);
-            if (!string.IsNullOrEmpty(certLevelError))
-            {
-                TempData["ApiError"] = $"❌ {certLevelError}";
-                model.Job = await _db.Jobs.FindAsync(model.JobsId);
-                await PopulateViewBagData(userId);
-                return View("Resume", model);
-            }
-
-            // 🌟 開啟資料庫交易 (Transaction)，確保履歷與 AI 評分同進同退
-            using (var transaction = await _db.Database.BeginTransactionAsync())
+            // 🌟 開啟資料庫交易 (Transaction)
+            using (var transaction = await _db.Database.BeginTransactionAsync())
             {
                 try
                 {
-                    var existing = await _db.Resumes
-                      .FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == model.JobsId);
+                    // 🎯 2. 優先以 model.Id (履歷編號) 尋找，找不到才用 (MembersId + JobsId) 搜尋
+                    Resume existing = null;
+                    if (model.Id > 0)
+                    {
+                        existing = await _db.Resumes.FirstOrDefaultAsync(r => r.Id == model.Id && r.MembersId == userId);
+                    }
+                    if (existing == null)
+                    {
+                        existing = await _db.Resumes.FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == model.JobsId);
+                    }
 
                     DateTime now = DateTime.Now;
                     Resume trackedResume;
 
-                    // 1. 將基本履歷資料寫入資料庫 (尚未正式 Commit)
-                    if (existing == null)
+                    // 確定狀態名稱
+                    string newStatus = isDraft ? "暫存" : "待審核";
+
+                    // 1. 將基本履歷資料寫入資料庫
+                    if (existing == null)
                     {
                         model.ResumeTime = now;
-                        model.Status = "待審核";
+                        model.Status = newStatus;
                         _db.Resumes.Add(model);
                         await _db.SaveChangesAsync(); // 產生 ID
-                        trackedResume = model;
+                        trackedResume = model;
                     }
                     else
                     {
                         model.ResumeTime = now;
-                        model.Status = existing.Status ?? "待審核";
-                        model.AiScore = existing.AiScore; // 暫時保留舊分數
-                        model.AiComment = existing.AiComment;
+                        model.Status = newStatus;
+                        model.AiScore = existing.AiScore;   // 保留舊分數
+                        model.AiComment = existing.AiComment; // 保留舊評語
 
                         _db.Entry(existing).CurrentValues.SetValues(model);
                         await _db.SaveChangesAsync();
                         trackedResume = existing;
                     }
 
-                    // 2. 寫入關聯資料表
-                    await UpdateLanguageProficiency(trackedResume.Id, model.LanguageSkills);
+                    // 2. 寫入關聯資料表
+                    await UpdateLanguageProficiency(trackedResume.Id, model.LanguageSkills);
                     await UpdateDriverLicense(trackedResume.Id, model.DriverLicense);
                     await UpdateComputerSkills(trackedResume.Id, model.ComputerSkills);
                     await UpdateSpecialties(trackedResume.Id, model.Specialty);
                     await UpdateCertificates(trackedResume.Id, model.Certificates);
                     await UpdateEducations(trackedResume.Id, EduLevelList, SchoolNameList, MajorList, EduStatusList, StartDateList, EndDateList);
                     await UpdateWorkExperiences(trackedResume.Id, CompanyNameList, JobTitleList, JobDescriptionList, WorkStartDateList, WorkEndDateList);
-                    // 🎯 作品集檔案改成依「會員姓名／應徵職稱」分資料夾存放，所以要先查出這兩個名稱
+
                     var portfolioMember = await _db.Members.FindAsync(userId);
                     var portfolioJob = await _db.Jobs.FindAsync(model.JobsId);
                     await UpdatePortfolios(trackedResume.Id, portfolioMember?.Name ?? "", portfolioJob?.Title ?? "", PortfolioTitleList, PortfolioDescList, PortfolioLinkList, portfolioFilesByRow, PortfolioExistingFileList);
 
-                    // 補齊供 AI 審查的完整資訊
-                    trackedResume.Job = await _db.Jobs.FindAsync(trackedResume.JobsId);
-                    trackedResume.LanguageSkills = model.LanguageSkills;
-                    trackedResume.DriverLicense = model.DriverLicense; 
-                    trackedResume.ComputerSkills = model.ComputerSkills;
-                    trackedResume.Certificates = model.Certificates;
-                    trackedResume.Educations = await _db.Educations
-                       .Where(e => e.ResumeId == trackedResume.Id)
-                       .OrderBy(e => e.SortOrder)
-                       .ToListAsync();
-                    trackedResume.WorkExperiences = await _db.WorkExperiences
-                        .Where(w => w.ResumeId == trackedResume.Id)
-                        .OrderBy(w => w.SortOrder)
-                        .ToListAsync();
-                    trackedResume.Portfolios = await _db.Portfolios
-                       .Where(p => p.ResumeId == trackedResume.Id)
-                       .OrderBy(p => p.SortOrder)
-                       .ToListAsync();
-
-                    // 🌟 3. 呼叫 AI API 進行審核
-                    var apiResult = await GetGeminiReviewAsync(trackedResume);
-
-                    // 🚨 4. 如果 AI 連線失敗或格式錯誤 -> 取消寫入並 Alert
-                    if (!apiResult.IsSuccess)
+                    // 🌟 3. 判斷是否需要呼叫 AI 評分
+                    if (isDraft)
                     {
-                        await transaction.RollbackAsync(); // 🛑 取消所有資料庫寫入動作！
-                        TempData["ApiError"] = $"無法儲存履歷！\nAI 審查連線異常或失敗，原因：\n{apiResult.Message}";
+                        // 🎯 若為「暫存」，提交交易，不呼叫 AI 審查
+                        await transaction.CommitAsync();
 
-                        model.Job = trackedResume.Job;
-                        await PopulateViewBagData(userId);
-                        return View("Resume", model); // 返回畫面讓使用者重試
-                    }
+                        TempData["AlertTitle"] = "暫存成功！";
+                        TempData["ShowSuccessAlert"] = "履歷已成功暫存。";
 
-                    // 🌟 5. 如果 AI 成功，將分數寫入欄位
-                    trackedResume.AiScore = apiResult.Score;
-                    trackedResume.AiComment = apiResult.Comment;
+                        // 🎯 提示：若從 Member/ResumeDetail 進來暫存，導回 ResumeDetail，否則導回 Job_detail
+                        return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
+                    }
+                    else
+                    {
+                        // 🎯 若為「儲存並繳交」，補齊資料後呼叫 AI
+                        trackedResume.Job = portfolioJob;
+                        trackedResume.LanguageSkills = model.LanguageSkills;
+                        trackedResume.DriverLicense = model.DriverLicense;
+                        trackedResume.ComputerSkills = model.ComputerSkills;
+                        trackedResume.Certificates = model.Certificates;
+                        trackedResume.Educations = await _db.Educations
+                            .Where(e => e.ResumeId == trackedResume.Id)
+                            .OrderBy(e => e.SortOrder)
+                            .ToListAsync();
+                        trackedResume.WorkExperiences = await _db.WorkExperiences
+                            .Where(w => w.ResumeId == trackedResume.Id)
+                            .OrderBy(w => w.SortOrder)
+                            .ToListAsync();
+                        trackedResume.Portfolios = await _db.Portfolios
+                            .Where(p => p.ResumeId == trackedResume.Id)
+                            .OrderBy(p => p.SortOrder)
+                            .ToListAsync();
 
-                    _db.Entry(trackedResume).Property(r => r.AiScore).IsModified = true;
-                    _db.Entry(trackedResume).Property(r => r.AiComment).IsModified = true;
-                    await _db.SaveChangesAsync();
+                        // 呼叫 AI API 進行審核
+                        var apiResult = await GetGeminiReviewAsync(trackedResume);
 
-                    // 🌟 6. 一切順利，正式提交進資料庫
-                    await transaction.CommitAsync();
+                        // 如果 AI 連線失敗或格式錯誤 -> 取消寫入並 Alert
+                        if (!apiResult.IsSuccess)
+                        {
+                            await transaction.RollbackAsync();
+                            TempData["ApiError"] = $"無法儲存履歷！\nAI 審查連線異常或失敗，原因：\n{apiResult.Message}";
 
-                    TempData["ShowSuccessAlert"] = "履歷已成功送出，AI 審核完成！";
-                    return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
+                            model.Job = trackedResume.Job;
+                            await PopulateViewBagData(userId);
+                            return View("Resume", model);
+                        }
+
+                        // AI 成功，將分數寫入欄位
+                        trackedResume.AiScore = apiResult.Score;
+                        trackedResume.AiComment = apiResult.Comment;
+
+                        _db.Entry(trackedResume).Property(r => r.AiScore).IsModified = true;
+                        _db.Entry(trackedResume).Property(r => r.AiComment).IsModified = true;
+                        await _db.SaveChangesAsync();
+
+                        // 一切順利，正式提交進資料庫
+                        await transaction.CommitAsync();
+
+                        TempData["AlertTitle"] = "繳交成功！";
+                        TempData["ShowSuccessAlert"] = "履歷已成功送出！";
+                        return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
+                    }
                 }
                 catch (Exception ex)
                 {

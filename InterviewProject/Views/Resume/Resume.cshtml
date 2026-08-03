@@ -29,10 +29,13 @@
     </div>
 
     @* 🎯 修改重點：加入 id="resumeForm" 確保下方腳本綁定正確表單 *@
-    <form id="resumeForm" method="post" asp-action="SaveResume" enctype="multipart/form-data">
+    <form id="resumeForm" method="post" asp-controller="Resume" asp-action="SaveResume" enctype="multipart/form-data">
         <input type="hidden" asp-for="Id" />
         <input type="hidden" asp-for="JobsId" />
         <input type="hidden" asp-for="MembersId" />
+        <input type="hidden" name="Id" value="@Model.Id" />
+        <input type="hidden" name="JobsId" value="@Model.JobsId" />
+
          @* 🎯 工作年資改為依「工作經歷」列表自動換算，不再需要使用者手動選擇/輸入 *@
         <input type="hidden" asp-for="WorkExperienceYears" id="workYearsInput" />
 
@@ -423,25 +426,28 @@
             </tr>
         </table>
         <input type="hidden" asp-for="ResumeTime" id="finalResumeTime" />
-
         <div style="margin-top: 20px; text-align: center;" class="no-print">
-            <button type="button" class="btn btn-warning" onclick="history.back()">
-                回上一頁
-            </button>
+        <button type="button" class="btn btn-outline-secondary" onclick="history.back()">
+            <i class="fa-solid fa-arrow-left"></i> 回上一頁
+        </button>
 
-            @if (isReadOnly)
-            {
-                <button type="submit" asp-controller="Resume" asp-action="ExportToPdf" class="btn btn-secondary" formnovalidate>
-                    列印 PDF
-                </button>
-            }
-            else
-            {
-                <button type="submit" class="btn btn-primary">
-                    儲存並繳交
-                </button>
-            }
+        @if (isReadOnly)
+        {
+            <button type="submit" asp-controller="Resume" asp-action="ExportToPdf" class="btn btn-secondary" formnovalidate>
+                列印 PDF
+            </button>
+        }
+        else
+        {
+            <button type="submit" name="submitType" value="draft" class="btn btn-success" formnovalidate>
+                暫存
+            </button>
+            <button type="submit" name="submitType" value="submit" class="btn btn-primary">
+                儲存繳交
+            </button>
+        }
         </div>
+      
     </form>
 </div>
 
@@ -1058,9 +1064,17 @@ function showValidationAlert(title, text) {
 const resumeFormEl = document.getElementById('resumeForm');
 if (resumeFormEl) {
     resumeFormEl.addEventListener('submit', function (e) {
+
+        const submitter = e.submitter;
+        const isDraft = submitter && (
+            submitter.value === 'draft' || 
+            (submitter.getAttribute('name') === 'actionType' && submitter.value === 'draft')
+        );
+
         // 🎯 送出前先把作品集的檔案欄位改名成 PortfolioFileList_{列序}，後端才抓得到對應哪一列
         preparePortfolioFilesForSubmit();
-
+        
+        if (!isDraft) {
         // 🎯 大頭照必填：沒有照片（hidden input 沒有 base64 值）就擋下送出並提示
         const resumePhotoInputEl = document.getElementById('resumePhotoBase64Input');
         if (!resumePhotoInputEl || !resumePhotoInputEl.value.trim()) {
@@ -1136,7 +1150,7 @@ if (resumeFormEl) {
             showValidationAlert('提示', '已填寫的工作經歷請至少補上「開始日期」');
             return false;
         }
-
+        }
         const workYearsInput = document.getElementById('workYearsInput');
         if (workYearsInput) workYearsInput.value = calcWorkExperienceYears();
 
@@ -1963,21 +1977,30 @@ function addPortfolioRow() {
 
 @if (TempData["ShowSuccessAlert"] != null)
 {
-    var successText = TempData["ShowSuccessAlert"]?.ToString()?.Replace("\n", "\\n").Replace("\r", "") ?? "";
+    var title = TempData["AlertTitle"]?.ToString() ?? "成功";
+    var message = TempData["ShowSuccessAlert"]?.ToString() ?? "";
 
-    @Html.Raw($@"
+    // 轉義字串，防止引號或換行造成 JS 語法崩潰
+    var encodedTitle = System.Web.HttpUtility.JavaScriptStringEncode(title);
+    var encodedMessage = System.Web.HttpUtility.JavaScriptStringEncode(message);
+
+    <!-- 載入 SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
-    document.addEventListener('DOMContentLoaded', function() {{
-        if (typeof Swal !== 'undefined') {{
-            Swal.fire({{
-                icon: 'success',
-                title: '成功',
-                text: '{successText}'
-            }});
-        }} else {{
-            alert('{successText}');
-        }}
-    }});
+        document.addEventListener("DOMContentLoaded", function () {
+            var alertTitle = '@Html.Raw(encodedTitle)';
+            var alertMessage = '@Html.Raw(encodedMessage)';
+
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'success',
+                    title: alertTitle,
+                    text: alertMessage,
+                    confirmButtonText: '確定'
+                });
+            } else {
+                alert(alertTitle + "\n" + alertMessage);
+            }
+        });
     </script>
-    ")
 }

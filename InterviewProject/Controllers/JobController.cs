@@ -99,12 +99,14 @@ namespace InterviewProject.Controllers
         }
 
         // 2. 職缺詳細頁
-        public async Task<IActionResult> Job_detail(int id)
+        public async Task<IActionResult> Job_detail(int id, int? resumeId)
         {
             if (id <= 0) return NotFound();
 
-            ViewBag.IsLoggedIn = HttpContext.Session.GetInt32("MemberId").HasValue;
-            ViewBag.MemberId = HttpContext.Session.GetInt32("MemberId") ?? 0;
+            int? userId = HttpContext.Session.GetInt32("MemberId");
+
+            ViewBag.IsLoggedIn = userId.HasValue;
+            ViewBag.MemberId = userId ?? 0;
 
             var job = await _context.Jobs
                 .Include(x => x.Manager)
@@ -115,12 +117,30 @@ namespace InterviewProject.Controllers
 
             if (job == null) return NotFound();
 
-            int? userId = HttpContext.Session.GetInt32("MemberId");
             bool hasApplied = false;
 
             if (userId.HasValue)
             {
-                hasApplied = await _context.Resumes.AnyAsync(r => r.MembersId == userId.Value && r.JobsId == id);
+                // 🎯 1. 修正已投遞判定：排除「暫存」狀態，只有正式送出的履歷才算已投遞
+                hasApplied = await _context.Resumes.AnyAsync(r =>
+                    r.MembersId == userId.Value &&
+                    r.JobsId == id &&
+                    r.Status != "暫存");
+
+                // 🎯 2. 撈取該會員此職缺的「暫存」履歷（包含詳細子表）
+                var draftResumeQuery = _context.Resumes
+                    .Include(r => r.Educations)
+                    .Include(r => r.WorkExperiences)
+                    .Include(r => r.Portfolios)
+                    .Where(r => r.MembersId == userId.Value && r.JobsId == id && r.Status == "暫存");
+
+                // 如果前端有傳遞特定的 resumeId 就精確抓，否則預設抓該職缺最新的暫存
+                var draftResume = resumeId.HasValue
+                    ? await draftResumeQuery.FirstOrDefaultAsync(r => r.Id == resumeId.Value)
+                    : await draftResumeQuery.OrderByDescending(r => r.ResumeTime).FirstOrDefaultAsync();
+
+                // 🎯 3. 將暫存履歷存入 ViewBag 傳給 View 進行表單預填
+                ViewBag.DraftResume = draftResume;
             }
 
             ViewBag.HasApplied = hasApplied;

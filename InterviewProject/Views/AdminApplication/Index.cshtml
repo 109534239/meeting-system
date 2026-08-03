@@ -84,7 +84,7 @@
 
                     @* 1. 應徵時間 *@
                     <div class="apply-time-cell">
-                        @item.ResumeTime.ToLocalTime().ToString("yyyy/MM/dd HH:mm")
+                        @item.ResumeTime.AddHours(-8).ToString("yyyy/MM/dd HH:mm")
                     </div>
 
                     @* 2. 應徵者姓名 *@

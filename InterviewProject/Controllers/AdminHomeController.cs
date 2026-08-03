@@ -38,9 +38,10 @@ namespace InterviewProject.Controllers
 
             string? department = currentEmployee.Department;
 
-            // 🎯 建立履歷查詢基底
+            // 🎯 建立履歷查詢基底 (🚨 關鍵：預設直接排除「暫存」狀態的履歷)
             var resumeQuery = _db.Resumes
                 .Include(r => r.Job)
+                .Where(r => r.Status != "暫存") // 👈 全局過濾暫存資料
                 .AsQueryable();
 
             // 🎯 核心分流邏輯
@@ -126,10 +127,11 @@ namespace InterviewProject.Controllers
 
             ViewData["AverageAiScore"] = Math.Round(averageAiScore, 1);
 
-            // 🎯 平均面試分數
+            // 🎯 平均面試分數 (關聯的 Resume 也必須排除暫存)
             var interviewQuery = _db.InterviewSchedules
                 .Include(i => i.Resume)
                 .ThenInclude(r => r.Job)
+                .Where(i => i.Resume != null && i.Resume.Status != "暫存") // 👈 這裡也加入排除暫存
                 .AsQueryable();
 
             if (role == "manager" || role == "director")

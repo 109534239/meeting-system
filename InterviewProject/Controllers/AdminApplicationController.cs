@@ -111,10 +111,11 @@ namespace InterviewProject.Controllers
             }
 
             // 🎯 同步把 AiScore 與 AiComment 從資料庫 Resume 表內撈出來
+            // 🚨 關鍵修改：最上游 LINQ 直接排除 Status == "暫存" 的履歷
             var query = from r in _db.Resumes
                         join m in _db.Members on r.MembersId equals m.Id
                         join j in _db.Jobs on r.JobsId equals j.Id
-                        where !jobId.HasValue || r.JobsId == jobId.Value
+                        where (!jobId.HasValue || r.JobsId == jobId.Value) && r.Status != "暫存"
                         select new
                         {
                             Resume = r,
@@ -216,6 +217,9 @@ namespace InterviewProject.Controllers
 
             var resume = await _db.Resumes
                 .Include(r => r.Job)
+                 .Include(r => r.Educations) // 🎯 讀取詳細內容時要一併帶出學歷子表，不然唯讀畫面學歷區塊會是空的
+                 .Include(r => r.WorkExperiences) // 🎯 同樣要帶出工作經歷子表
+                 .Include(r => r.Portfolios) // 🎯 修正：補上作品集子表的 Include，不然唯讀畫面作品集區塊會是空的
                 .FirstOrDefaultAsync(r => r.Id == id);
 
             if (resume == null) return NotFound();

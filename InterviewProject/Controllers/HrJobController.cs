@@ -25,7 +25,7 @@ namespace InterviewProject.Controllers
         }
 
         // GET: 職缺列表
-        //    🎯 篩選條件：部門、上架狀態、日期（落在上架~截止之間）、職缺名稱關鍵字
+        // 🎯 篩選條件：部門、上架狀態、日期（落在上架~截止之間）、職缺名稱關鍵字
         public async Task<IActionResult> Index(string department, string status, string date, string keyword)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
@@ -62,22 +62,22 @@ namespace InterviewProject.Controllers
                 .OrderBy(j => j.Deadline)
                 .ToListAsync();
 
-            // 2. ✨ 高效能動態統計：精確分類「待審核」與「錄取」
+            // 2. ✨ 高效能動態統計：精確分類「待審核」與「錄取」（🎯 排除「暫存」）
             var statsDict = new Dictionary<int, JobStatsViewModel>();
 
             foreach (var job in jobs)
             {
-                // 撈出該職缺的所有履歷狀態列表
+                // 撈出該職缺的所有履歷狀態列表（🚨 排除「暫存」狀態）
                 var statuses = await _db.Resumes
-                    .Where(r => r.JobsId == job.Id)
+                    .Where(r => r.JobsId == job.Id && r.Status != "暫存") // 🎯 關鍵修改：過濾掉暫存履歷
                     .Select(r => r.Status)
                     .ToListAsync();
 
                 statsDict[job.Id] = new JobStatsViewModel
                 {
-                    UnhandledCount = statuses.Count(s => s == "待審核"), // 🎯 確保對應資料庫的「待審核」
-                    HiredCount = statuses.Count(s => s == "錄取"),       // 🎯 為未來的「錄取」狀態做準備
-                    TotalCount = statuses.Count
+                    UnhandledCount = statuses.Count(s => s == "待審核"), // 🎯 待審核數量
+                    HiredCount = statuses.Count(s => s == "錄取"),        // 🎯 錄取數量
+                    TotalCount = statuses.Count                         // 🎯 總應徵人數（此時已排除暫存）
                 };
             }
 
