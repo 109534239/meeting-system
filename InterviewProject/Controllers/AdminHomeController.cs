@@ -87,7 +87,7 @@ namespace InterviewProject.Controllers
             // InterviewStatus 欄位統計
             int interviewScheduledCount = await resumeQuery.CountAsync(r => r.InterviewStatus == "已安排面試");
             int waitingScheduleCount = await resumeQuery.CountAsync(r => r.InterviewStatus == "等待安排面試");
-            int waitingResultCount = await resumeQuery.CountAsync(r => r.InterviewStatus == "等待結果中");
+            int waitingResultCount = await resumeQuery.CountAsync(r => r.AdmissionResult == "等待結果中");
 
             // AdmissionResult 欄位統計
             int hiredCount = await resumeQuery.CountAsync(r => r.AdmissionResult == "已錄取" || r.AdmissionResult == "錄取");

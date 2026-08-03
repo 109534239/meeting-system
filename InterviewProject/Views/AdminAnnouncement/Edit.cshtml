@@ -2,6 +2,9 @@
 
 @{
     ViewData["Title"] = "編輯公告";
+    // 預先整理好格式化字串
+    var sDateStr = Model.SDate.ToString("yyyy-MM-dd");
+    var cDateStr = Model.CDate.ToString("yyyy-MM-dd");
 }
 
 @section Styles {
@@ -31,22 +34,30 @@
             <div class="field-item">
                 <label class="field-label">類別</label>
                 <select class="field-input" name="category">
-                    <option value="最新"  selected="@(Model.Category == "最新")">最新</option>
-                    <option value="公告"  selected="@(Model.Category == "公告")">公告</option>
-                    <option value="活動"  selected="@(Model.Category == "活動")">活動</option>
+                    <option value="最新" selected="@(Model.Category == "最新")">最新</option>
+                    <option value="公告" selected="@(Model.Category == "公告")">公告</option>
+                    <option value="活動" selected="@(Model.Category == "活動")">活動</option>
                 </select>
             </div>
 
+            @* 🎯 1. 修正 name="sDate" 並補上 id="sDate" *@
             <div class="field-item">
-                <label class="field-label">日期</label>
-                <input class="field-input" type="date" name="date"
-                       value="@Model.Date.ToString("yyyy-MM-dd")" required />
+                <label class="field-label">上架日期</label>
+                <input class="field-input" type="date" id="sDate" name="sDate"
+                       value="@sDateStr" required />
+            </div>
+
+            @* 🎯 2. 修正 name="cDate"、補上 id="cDate"，並給予預設 min 限制 *@
+            <div class="field-item">
+                <label class="field-label">下架日期</label>
+                <input class="field-input" type="date" id="cDate" name="cDate"
+                       value="@cDateStr" min="@sDateStr" required />
             </div>
 
             <div class="field-item">
                 <label class="field-label">是否顯示</label>
                 <select class="field-input" name="isActive">
-                    <option value="true"  selected="@(Model.IsActive)">顯示</option>
+                    <option value="true" selected="@(Model.IsActive)">顯示</option>
                     <option value="false" selected="@(!Model.IsActive)">停用</option>
                 </select>
             </div>
@@ -65,3 +76,28 @@
         </div>
     </form>
 </div>
+
+@* 🎯 3. 動態控制日期限制腳本 *@
+@section Scripts {
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const sDateInput = document.getElementById("sDate");
+            const cDateInput = document.getElementById("cDate");
+
+            if (sDateInput && cDateInput) {
+                // 當使用者修改上架日期時觸發
+                sDateInput.addEventListener("change", function () {
+                    const selectedSDate = this.value;
+
+                    // 1. 動態更新下架日期的 min 最小值限制
+                    cDateInput.min = selectedSDate;
+
+                    // 2. 若原本選取的下架日期早於新的上架日期，自動幫使用者調成跟上架日期一樣
+                    if (cDateInput.value && cDateInput.value < selectedSDate) {
+                        cDateInput.value = selectedSDate;
+                    }
+                });
+            }
+        });
+    </script>
+}

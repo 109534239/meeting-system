@@ -25,12 +25,13 @@
             <div class="section-label">最新公告</div>
             <div class="announce-card">
                 <ul class="announce-list">
-                    @if (ViewBag.Announcements != null)
+                    @* 🎯 修改判斷：檢查是否有資料 (Count > 0 或 Any()) *@
+                    @if (ViewBag.Announcements != null && Enumerable.Any(ViewBag.Announcements))
                     {
                         foreach (var a in ViewBag.Announcements)
                         {
-                            <li class="announce-item" onclick="openAnnounceModal('@a.Date.ToString("yyyy-MM-dd")', '@a.Category', '@a.BadgeClass', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Title)', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Content)')">
-                                <span class="announce-date">@a.Date.ToString("yyyy-MM-dd")</span>
+                            <li class="announce-item" onclick="openAnnounceModal('@a.Date', '@a.Category', '@a.BadgeClass', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Title)', '@System.Web.HttpUtility.JavaScriptStringEncode(a.Content)')">
+                                <span class="announce-date">@a.Date</span>
                                 <span class="badge-category @a.BadgeClass">@a.Category</span>
                                 <span class="announce-title">@a.Title</span>
                             </li>
@@ -38,7 +39,7 @@
                     }
                     else
                     {
-                        <li class="announce-item">
+                        <li class="announce-item" style="cursor: default; justify-content: center;">
                             <span class="announce-title" style="color:#aaa;">目前沒有公告</span>
                         </li>
                     }

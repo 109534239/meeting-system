@@ -72,9 +72,15 @@
         }
 
         // 🌟 核心修正：監聽頁面上所有的登入表單，改用 AJAX 發送並攔截錯誤跳出 alert
-        document.querySelectorAll('.login-form').forEach(form => {
+                document.querySelectorAll('.login-form').forEach(form => {
             form.addEventListener('submit', function (e) {
-                e.preventDefault(); // 阻擋表單預設的整頁重新整理
+                e.preventDefault();
+
+                // 🎯 前端自動把 input 的值清除前後空白
+                const accountInput = this.querySelector('input[name="account"]');
+                const passwordInput = this.querySelector('input[name="password"]');
+                if (accountInput) accountInput.value = accountInput.value.trim();
+                if (passwordInput) passwordInput.value = passwordInput.value.trim();
 
                 const formData = new FormData(this);
                 const actionUrl = this.getAttribute('action');
@@ -89,10 +95,8 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // 登入成功：跳轉至指定頁面
                         window.location.href = data.redirectUrl;
                     } else {
-                        // ✨ 登入失敗：不刷新頁面，直接跳出 alert
                         alert(data.message);
                     }
                 })

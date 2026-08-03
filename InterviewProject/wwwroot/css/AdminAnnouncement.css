@@ -141,27 +141,30 @@
 }
 
 /* ── 狀態切換按鈕 ── */
-.btn-toggle {
-    padding: 5px 14px;
-    border-radius: 20px;
-    border: none;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-family: inherit;
-    white-space: nowrap;
+.status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
 }
-.btn-toggle.active {
-    background: #e6f4ea;
-    color: #2e7d4f;
+
+/* 上架中：綠色 */
+.status-active {
+    background-color: #e6f4ea;
+    color: #137333;
 }
-.btn-toggle.inactive {
-    background: #f4f4f4;
-    color: #aaa;
+
+/* 已下架：灰色 */
+.status-expired {
+    background-color: #f1f3f4;
+    color: #5f6368;
 }
-.btn-toggle:hover {
-    opacity: 0.8;
+
+/* 未上架：黃/橘色 */
+.status-upcoming {
+    background-color: #fef7e0;
+    color: #b06000;
 }
 
 /* ── 操作按鈕 ── */

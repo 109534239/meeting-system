@@ -2,6 +2,7 @@
 
 @{
     ViewData["Title"] = "公告管理";
+    var today = DateTime.Today; // 取得今天日期（無視時間）
 }
 
 @section Styles {
@@ -14,6 +15,52 @@
     <div class="page-header-inner">
         <h1>公告管理</h1>
         <p>Announcement Management</p>
+    </div>
+</div>
+
+@* 🎯 篩選列 *@
+<div class="search-bar">
+    <div class="search-inner">
+        @* 1. 類別篩選 *@
+        <div class="search-field">
+            <label>類別</label>
+            <select id="sel-category">
+                <option value="">全部類別</option>
+                @if (ViewBag.DepartmentOptions != null)
+                {
+                    foreach (var dept in (List<string>)ViewBag.DepartmentOptions)
+                    {
+                        <option value="@dept" selected="@(ViewBag.SelectedCategory == dept ? "selected" : null)">@dept</option>
+                    }
+                }
+            </select>
+        </div>
+
+        @* 2. 上架狀態篩選（修正重複的 value） *@
+        <div class="search-field">
+            <label>上架狀態</label>
+            <select id="sel-status">
+                <option value="">全部狀態</option>
+                <option value="active" selected="@(ViewBag.SelectedStatus == "active")">上架中</option>
+                <option value="upcoming" selected="@(ViewBag.SelectedStatus == "upcoming")">未上架</option>
+                <option value="inactive" selected="@(ViewBag.SelectedStatus == "inactive")">已下架</option>
+            </select>
+        </div>
+
+        @* 3. 日期篩選 *@
+        <div class="search-field">
+            <label>日期（落在上架～截止之間）</label>
+            <input type="date" id="sel-date" value="@ViewBag.SelectedDate" />
+        </div>
+
+        @* 4. 關鍵字搜尋 *@
+        <div class="search-field keyword">
+            <label>公告名稱搜尋</label>
+            <input type="text" id="kw-input" value="@ViewBag.Keyword" placeholder="輸入公告名稱關鍵字" />
+        </div>
+
+        <button class="search-btn" type="button" onclick="doSearch()">搜尋</button>
+        <button class="reset-btn" type="button" onclick="resetSearch()">重置</button>
     </div>
 </div>
 
@@ -37,7 +84,7 @@
         <div class="announce-table-head">
             <div>類別</div>
             <div>標題</div>
-            <div>日期</div>
+            <div>上架 / 下架日期</div>
             <div>狀態</div>
             <div>操作</div>
         </div>
@@ -46,18 +93,46 @@
         {
             foreach (var item in Model)
             {
+                // 計算真實狀態
+                string statusText;
+                string statusClass;
+
+                if (!item.IsActive || today > item.CDate.Date)
+                {
+                    statusText = "已下架";
+                    statusClass = "status-expired";
+                }
+                else if (today < item.SDate.Date)
+                {
+                    statusText = "未上架";
+                    statusClass = "status-upcoming";
+                }
+                else
+                {
+                    statusText = "上架中";
+                    statusClass = "status-active";
+                }
+
                 <div class="announce-row">
                     <div>
                         <span class="badge-category badge-@item.Category">@item.Category</span>
                     </div>
                     <div class="announce-row-title">@item.Title</div>
-                    <div>@item.Date.ToString("yyyy-MM-dd")</div>
-                    <div>
-                        <button class="btn-toggle @(item.IsActive ? "active" : "inactive")"
-                                onclick="toggleActive(@item.Id, this)">
-                            @(item.IsActive ? "顯示中" : "已停用")
-                        </button>
+                    <div class="announce-date-range">
+                        @if (item.SDate.Date == item.CDate.Date)
+                        {
+                            <span>@item.SDate.ToString("yyyy-MM-dd")</span>
+                        }
+                        else
+                        {
+                            <span>@item.SDate.ToString("yyyy-MM-dd") ~ @item.CDate.ToString("yyyy-MM-dd")</span>
+                        }
                     </div>
+
+                    <div>
+                        <span class="status-badge @statusClass">@statusText</span>
+                    </div>
+
                     <div class="announce-actions">
                         <a asp-controller="AdminAnnouncement"
                            asp-action="Edit"
@@ -69,6 +144,7 @@
                               asp-route-id="@item.Id"
                               method="post"
                               onsubmit="return confirm('確定刪除此公告？')">
+                            @Html.AntiForgeryToken()
                             <button type="submit" class="btn-delete">刪除</button>
                         </form>
                     </div>
@@ -83,12 +159,31 @@
 </div>
 
 @section Scripts {
-<script>
-    async function toggleActive(id, btn) {
-        const res  = await fetch(`/AdminAnnouncement/ToggleActive/${id}`, { method: 'POST' });
-        const data = await res.json();
-        btn.textContent = data.isActive ? '顯示中' : '已停用';
-        btn.className   = 'btn-toggle ' + (data.isActive ? 'active' : 'inactive');
-    }
-</script>
+    <script>
+        function doSearch() {
+            const category = document.getElementById('sel-category').value;
+            const status   = document.getElementById('sel-status').value;
+            const date     = document.getElementById('sel-date').value;
+            const keyword  = document.getElementById('kw-input').value.trim();
+
+            const params = new URLSearchParams();
+            if (category) params.append('category', category);
+            if (status)   params.append('status', status);
+            if (date)     params.append('date', date);
+            if (keyword)  params.append('keyword', keyword);
+
+            window.location.href = '/AdminAnnouncement?' + params.toString();
+        }
+
+        function resetSearch() {
+            window.location.href = '/AdminAnnouncement';
+        }
+
+        // 支援按下 Enter 鍵直接執行搜尋
+        document.getElementById('kw-input').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                doSearch();
+            }
+        });
+    </script>
 }

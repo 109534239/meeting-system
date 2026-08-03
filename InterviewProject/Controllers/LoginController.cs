@@ -73,14 +73,11 @@ namespace InterviewProject.Controllers
                     return Json(new { success = false, message = "找不到此 Email" });
 
                 string code = new Random().Next(100000, 999999).ToString();
-                DateTime now = DateTime.Now;
-                DateTime expire = now.AddMinutes(10);
 
                 var existingCode = await _db.VerificationCodes.FirstOrDefaultAsync(v => v.MemberId == member.Id);
                 if (existingCode != null)
                 {
                     existingCode.Code = code;
-                    existingCode.ExpireTime = expire;
                     existingCode.IsUsed = false;
                     _db.Entry(existingCode).State = EntityState.Modified;
                 }
@@ -90,7 +87,6 @@ namespace InterviewProject.Controllers
                     {
                         MemberId = member.Id,
                         Code = code,
-                        ExpireTime = expire,
                         IsUsed = false
                     });
                 }
@@ -98,11 +94,7 @@ namespace InterviewProject.Controllers
                 await _db.SaveChangesAsync();
                 await SendEmailAsync(email, code);
 
-                return Json(new
-                {
-                    success = true,
-                    expiryTime = expire.ToString("HH:mm:ss")
-                });
+                return Json(new { success = true });
             }
             catch (Exception ex)
             {
@@ -159,12 +151,13 @@ namespace InterviewProject.Controllers
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Email == email);
             if (member == null) return Json(new { success = false, message = "用戶不存在" });
 
+            // 🎯 僅比對 MemberId、驗證碼正確度與 IsUsed 狀態
             var vEntry = await _db.VerificationCodes
-                .Where(v => v.MemberId == member.Id && v.Code == code && !v.IsUsed && v.ExpireTime > DateTime.Now)
+                .Where(v => v.MemberId == member.Id && v.Code == code && !v.IsUsed)
                 .OrderByDescending(v => v.Id)
                 .FirstOrDefaultAsync();
 
-            if (vEntry == null) return Json(new { success = false, message = "驗證碼錯誤或已過期" });
+            if (vEntry == null) return Json(new { success = false, message = "驗證碼錯誤或已被使用" });
             return Json(new { success = true });
         }
 
@@ -174,15 +167,16 @@ namespace InterviewProject.Controllers
             var member = await _db.Members.FirstOrDefaultAsync(m => m.Email == email);
             if (member == null) return Json(new { success = false, message = "用戶不存在" });
 
+            // 🎯 僅比對 MemberId、驗證碼正確度與 IsUsed 狀態
             var vEntry = await _db.VerificationCodes
-                .Where(v => v.MemberId == member.Id && v.Code == code && !v.IsUsed && v.ExpireTime > DateTime.Now)
+                .Where(v => v.MemberId == member.Id && v.Code == code && !v.IsUsed)
                 .OrderByDescending(v => v.Id)
                 .FirstOrDefaultAsync();
 
-            if (vEntry == null) return Json(new { success = false, message = "驗證碼錯誤或已過期" });
+            if (vEntry == null) return Json(new { success = false, message = "驗證碼錯誤或已被使用" });
 
-            member.PasswordHash = HashPassword(newPassword);
-            vEntry.IsUsed = true;
+            member.PasswordHash = HashPassword(newPassword?.Trim());
+            vEntry.IsUsed = true; // 修改成功後將驗證碼標示為已使用
             await _db.SaveChangesAsync();
 
             return Json(new { success = true, message = "密碼重設成功" });
@@ -236,11 +230,12 @@ namespace InterviewProject.Controllers
             {
                 Email = email.Trim(),
                 Phone = phone.Trim(),
-                PasswordHash = HashPassword(password),
+                // 🎯 註冊時密碼自動去除前後空白後雜湊
+                PasswordHash = HashPassword(password.Trim()),
                 Name = name.Trim(),
                 Gender = gender,
                 IdNumber = idNumber.Trim().ToUpper(),
-                ProfileImagePath = base64ImageString, // 🎯 這裡改存一長串圖片編碼
+                ProfileImagePath = base64ImageString,
                 Birthday = birthday,
                 Address = address.Trim(),
                 CreatedAt = DateTime.UtcNow
@@ -252,15 +247,19 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Index");
         }
 
-        // POST: 登入
+        // POST: 登入 (🎯 核心修改點：對 account 與 password 先進行 Trim() 處理)
         [HttpPost]
         public async Task<IActionResult> Login(string account, string password, string role)
         {
-            string hashedPassword = HashPassword(password);
+            // 🎯 清除輸入帳號與密碼的前後空白
+            string cleanAccount = account?.Trim() ?? "";
+            string cleanPassword = password?.Trim() ?? "";
+
+            string hashedPassword = HashPassword(cleanPassword);
 
             if (role == "jobseeker")
             {
-                var member = await _db.Members.FirstOrDefaultAsync(m => m.Email == account);
+                var member = await _db.Members.FirstOrDefaultAsync(m => m.Email == cleanAccount);
 
                 if (member != null && member.PasswordHash == hashedPassword)
                 {
@@ -273,7 +272,7 @@ namespace InterviewProject.Controllers
             }
             else if (role == "employee")
             {
-                var employee = await _db.Employees.FirstOrDefaultAsync(e => e.Account == account);
+                var employee = await _db.Employees.FirstOrDefaultAsync(e => e.Account == cleanAccount);
 
                 if (employee != null && employee.PasswordHash == hashedPassword)
                 {
@@ -285,17 +284,10 @@ namespace InterviewProject.Controllers
 
                     string targetUrl = Url.Action("Index", "Home") ?? "/";
 
-                    // 🎯 HR 有職缺管理權限，所以登入後導向職缺管理頁
-                    if (cleanRole == "hr")
+                    if (cleanRole == "hr" || cleanRole == "manager" || cleanRole == "director")
                     {
                         targetUrl = Url.Action("Dashboard", "AdminHome") ?? "/";
                     }
-                    // 🎯 Manager / Director 沒有職缺管理權限，但可以進入招募數據頁
-                    else if (cleanRole == "manager" || cleanRole == "director")
-                    {
-                        targetUrl = Url.Action("Dashboard", "AdminHome") ?? "/";
-                    }
-                    // 🎯 其他 employee 角色暫時維持原本首頁導向
                     else if (cleanRole == "employee")
                     {
                         targetUrl = Url.Action("Index", "Home") ?? "/";

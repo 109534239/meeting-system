@@ -20,16 +20,21 @@ namespace InterviewProject.Controllers
 
         public async Task<IActionResult> Index()
         {
-            // 🎯 修改重點：移除 .Take(4)，撈出「所有」開放中的職缺供前端 JS 進行全域排序
+            // 🎯 撈出「所有」開放中的職缺供前端 JS 進行全域排序
             var latestJobs = await _db.Jobs
                 .Where(j => j.IsActive)
                 .OrderByDescending(j => j.CreatedAt)
                 .ToListAsync();
 
-            // 💡 撈取啟用中的公告
+            // 💡 取得今天的日期（不含時間 component，格式為 yyyy-MM-dd 00:00:00）
+            var today = DateTime.Today;
+
+            // 🎯 撈取「啟用中」且「在上下架日期區間內」的公告
             var announcementsData = await _db.Announcements
-                .Where(a => a.IsActive)
-                .OrderByDescending(a => a.Date)
+                .Where(a => a.IsActive
+                         && a.SDate.Date <= today    // 已到達或過了上架日期
+                         && a.CDate.Date >= today)   // 尚未過期（8/3 時今天為 8/3 通過；8/4 時 today 為 8/4 不通過）
+                .OrderByDescending(a => a.SDate)     // 建議依上架日期排序
                 .Take(5)
                 .ToListAsync();
 
@@ -37,7 +42,7 @@ namespace InterviewProject.Controllers
             var announcements = announcementsData.Select(a => new
             {
                 a.Id,
-                a.Date,
+                Date = a.SDate.ToString("yyyy/MM/dd"), // 整理顯示用日期格式
                 a.Category,
                 a.Title,
                 a.Content,

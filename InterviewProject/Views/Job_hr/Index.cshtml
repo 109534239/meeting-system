@@ -4,6 +4,7 @@
 @{
     ViewData["Title"] = "職缺管理";
     var statsDict = ViewBag.JobStats as Dictionary<int, JobStatsViewModel>;
+    var today = DateTime.Today; // 🎯 取得今天日期（只留年月日，不帶時間）
 }
 
 @section Styles {
@@ -19,8 +20,7 @@
     </div>
 </div>
 
-@* 🎯 篩選列，樣式沿用 Job_search.css（跟公開求職頁的搜尋列一致）
-    篩選條件：部門（從資料庫實際存在的部門動態產生選項）、上架狀態、日期（落在上架~截止之間）、職缺名稱關鍵字 *@
+@* 🎯 篩選列 *@
 <div class="search-bar">
     <div class="search-inner">
         <div class="search-field">
@@ -87,9 +87,13 @@
             @foreach (var job in Model)
             {
                 // 取得當前職缺的統計數據，若無則預設為 0
-                var stat = statsDict != null && statsDict.ContainsKey(job.Id) 
-                           ? statsDict[job.Id] 
-                           : new JobStatsViewModel { UnhandledCount = 0, HiredCount = 0, TotalCount = 0 };
+                var stat = statsDict != null && statsDict.ContainsKey(job.Id)
+                ? statsDict[job.Id]
+                : new JobStatsViewModel { UnhandledCount = 0, HiredCount = 0, TotalCount = 0 };
+
+                // 🎯 動態判定刊登狀態：IsActive 為 false，或是今天日期已超過截止日期 -> 顯示「已下架」
+                bool isExpired = today > job.Deadline.Date;
+                bool isCurrentlyActive = job.IsActive && !isExpired;
 
                 <div class="hrjob-row hrjob-cols">
 
@@ -110,35 +114,35 @@
                         <span class="hrjob-title-text">@job.Title</span>
                     </div>
 
-                    @* 3. 主管 / 隸屬 (🎯 ManagerName 改為外鍵，改讀 job.Manager 導覽屬性) *@
+                    @* 3. 主管 / 隸屬 *@
                     <div>
                         <div class="hrjob-manager-name">@(job.Manager?.Name ?? "未指定")</div>
                     </div>
 
-                    @* 4. 應徵四大項指標四大區塊 (未處理 / 已錄取 / 需求人數 / 總履歷) *@
+                    @* 4. 應徵四大項指標 *@
                     <div class="hrjob-stats-cell">
-                        <a asp-controller="AdminApplication" 
-                            asp-action="Index"
-                            asp-route-jobId="@job.Id"
-                            class="hrjob-stats-link"
-                            title="點擊管理此職缺履歷">
-                        
+                        <a asp-controller="AdminApplication"
+                           asp-action="Index"
+                           asp-route-jobId="@job.Id"
+                           class="hrjob-stats-link"
+                           title="點擊管理此職缺履歷">
+
                             <div class="stat-badge-grid">
                                 <div class="stat-item unhandled">
                                     <span class="stat-label">未處理</span>
                                     <span class="stat-v">@stat.UnhandledCount</span>
                                 </div>
-                            
+
                                 <div class="stat-item hired">
                                     <span class="stat-label">已錄取</span>
                                     <span class="stat-v">@stat.HiredCount</span>
                                 </div>
-                            
+
                                 <div class="stat-item needed">
                                     <span class="stat-label">需求</span>
                                     <span class="stat-v">@(string.IsNullOrEmpty(job.HeadCount) ? "0" : job.HeadCount)</span>
                                 </div>
-                            
+
                                 <div class="stat-item total">
                                     <span class="stat-label">總履歷</span>
                                     <span class="stat-v">@stat.TotalCount</span>
@@ -147,12 +151,10 @@
                         </a>
                     </div>
 
-                    @* 5. 上下架狀態（僅顯示，不可點擊切換）
-                        🎯 狀態改成只能透過「修改」頁面調整，不再提供列表直接點擊切換，
-                           避免跳過截止日期的邏輯，讓「上架中/已下架」跟截止日期兜不起來 *@
+                    @* 5. 上下架狀態（🎯 根據今天日期與 Deadline 動態判斷） *@
                     <div class="hrjob-status-cell">
-                        <span class="btn-toggle @(job.IsActive ? "active" : "inactive")" style="cursor: default;">
-                            @(job.IsActive ? "上架中" : "已下架")
+                        <span class="btn-toggle @(isCurrentlyActive ? "active" : "inactive")" style="cursor: default;">
+                            @(isCurrentlyActive ? "上架中" : "已下架")
                         </span>
                     </div>
 
@@ -195,7 +197,7 @@
 @section Scripts {
     <script>
         // ============================
-        // 篩選（跟 Job_search.cshtml 同一套：組 query string 後整頁導航）
+        // 篩選
         // ============================
         function doSearch() {
             const department = document.getElementById('sel-department').value;
@@ -217,7 +219,7 @@
         }
 
         // ============================
-        // 分頁（跟 Job_search.cshtml 同一套：每頁 10 筆，前端隱藏/顯示列）
+        // 分頁
         // ============================
         const PAGE_SIZE = 10;
         let currentPage = 1;
@@ -226,7 +228,6 @@
             return document.querySelectorAll('#hrjob-list .hrjob-row').length;
         }
 
-        // 依目前頁碼，只顯示該頁應出現的職缺列，其餘隱藏
         function showPage(page) {
             const rows = document.querySelectorAll('#hrjob-list .hrjob-row');
             const start = (page - 1) * PAGE_SIZE;
@@ -240,7 +241,6 @@
             const total = getTotalRows();
             const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-            // 頁碼超出範圍時自動修正（例如篩選後總筆數變少）
             if (currentPage > totalPages) currentPage = totalPages;
             if (currentPage < 1) currentPage = 1;
 
@@ -271,7 +271,6 @@
             next.onclick = () => { if (currentPage < totalPages) goPage(currentPage + 1); };
             pg.appendChild(next);
 
-            // 總筆數文字，顯示在頁碼按鈕之後
             const countText = document.createElement('span');
             countText.className = 'page-total-count';
             countText.style.marginLeft = '12px';

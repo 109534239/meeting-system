@@ -1,5 +1,6 @@
 @{
     ViewData["Title"] = "新增公告";
+    var defaultToday = DateTime.Today.ToString("yyyy-MM-dd");
 }
 
 @section Styles {
@@ -33,10 +34,18 @@
                 </select>
             </div>
 
+            @* 🎯 1. 修正 name="sDate"，並加入 id="sDate" *@
             <div class="field-item">
-                <label class="field-label">日期</label>
-                <input class="field-input" type="date" name="date"
-                       value="@DateTime.Today.ToString("yyyy-MM-dd")" required />
+                <label class="field-label">上架日期</label>
+                <input class="field-input" type="date" id="sDate" name="sDate"
+                       value="@defaultToday" required />
+            </div>
+
+            @* 🎯 2. 修正 name="cDate"，加入 id="cDate" 與 min 預設限制 *@
+            <div class="field-item">
+                <label class="field-label">下架日期</label>
+                <input class="field-input" type="date" id="cDate" name="cDate"
+                       value="@defaultToday" min="@defaultToday" required />
             </div>
 
             <div class="field-item">
@@ -60,3 +69,28 @@
         </div>
     </form>
 </div>
+
+@* 🎯 3. 動態控制日期限制腳本 *@
+@section Scripts {
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const sDateInput = document.getElementById("sDate");
+            const cDateInput = document.getElementById("cDate");
+
+            if (sDateInput && cDateInput) {
+                // 當上架日期改變時觸發
+                sDateInput.addEventListener("change", function () {
+                    const selectedSDate = this.value;
+
+                    // 設定下架日期的最小值 (min) 必須大於或等於上架日期
+                    cDateInput.min = selectedSDate;
+
+                    // 若當前選取的下架日期早於新的上架日期，則自動調整下架日期為上架日期
+                    if (cDateInput.value && cDateInput.value < selectedSDate) {
+                        cDateInput.value = selectedSDate;
+                    }
+                });
+            }
+        });
+    </script>
+}
