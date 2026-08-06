@@ -501,20 +501,23 @@
                             </div>
                         }
                         @{
-                            var roomAiFiles = aiAnalysisByRoom.TryGetValue(room.Id, out var aif) ? aif : new List<string>();
+                            var roomAiFiles = (role == "director" && aiAnalysisByRoom.TryGetValue(room.Id, out var aif)) ? aif : new List<string>();
                         }
-                        @foreach (var aiFileName in roomAiFiles)
+                        @if (role == "director")
                         {
-                            // 檔名格式：面試會議_日期_職缺_求職者姓名.txt，取最後一段當標籤
-                            var labelName = aiFileName.Replace(".txt", "");
-                            var parts = labelName.Split('_');
-                            var candidateLabel = parts.Length > 0 ? parts[^1] : labelName;
-                            var panelId = "aianalysis-" + room.Id + "-" + aiFileName.GetHashCode().ToString().Replace("-", "n");
-                            <div class="file-item">
-                                <span class="file-label">🤖 AI分析（@candidateLabel）</span>
-                                <button type="button" class="btn-file-view" onclick="toggleTextPanel('@panelId', '@Url.Action("ViewFile", "Room", new { folder = "AI分析", fileName = aiFileName })')">查看</button>
-                                <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "AI分析", fileName = aiFileName })">下載</a>
-                            </div>
+                            foreach (var aiFileName in roomAiFiles)
+                            {
+                                // 檔名格式：面試會議_日期_職缺_求職者姓名.txt，取最後一段當標籤
+                                var labelName = aiFileName.Replace(".txt", "");
+                                var parts = labelName.Split('_');
+                                var candidateLabel = parts.Length > 0 ? parts[^1] : labelName;
+                                var panelId = "aianalysis-" + room.Id + "-" + aiFileName.GetHashCode().ToString().Replace("-", "n");
+                                <div class="file-item">
+                                    <span class="file-label">🤖 AI分析（@candidateLabel）</span>
+                                    <button type="button" class="btn-file-view" onclick="toggleTextPanel('@panelId', '@Url.Action("ViewFile", "Room", new { folder = "AI分析", fileName = aiFileName })')">查看</button>
+                                    <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "AI分析", fileName = aiFileName })">下載</a>
+                                </div>
+                            }
                         }
                         @if (!string.IsNullOrEmpty(room.RecordingFileName))
                         {
@@ -528,13 +531,13 @@
                             //    不是真的「尚無檔案」——用 EndAt 距離現在多久，來決定要顯示哪種提示文字
                             var secondsSinceEnd = room.EndAt.HasValue ? (DateTime.Now - room.EndAt.Value).TotalSeconds : 9999;
                             var stillGenerating = secondsSinceEnd < 120
-                                && (string.IsNullOrEmpty(room.RecordingFileName) || !roomAiFiles.Any());
+                                && (string.IsNullOrEmpty(room.RecordingFileName) || (role == "director" && !roomAiFiles.Any()));
                         }
                         @if (string.IsNullOrEmpty(room.TranscriptFileName) && string.IsNullOrEmpty(room.RecordingFileName) && !roomAiFiles.Any())
                         {
                             if (stillGenerating)
                             {
-                                <span class="text-muted" style="font-size:13px; color:#b7791f;">⏳ 錄影／AI分析檔案還在後台生成中，請稍後重新整理這個頁面</span>
+                                <span class="text-muted eval-generating-flag" style="font-size:13px; color:#b7791f;">⏳ 錄影／AI分析檔案還在後台生成中，請稍後重新整理這個頁面（15秒後自動重整）</span>
                             }
                             else
                             {
@@ -543,7 +546,7 @@
                         }
                         else if (stillGenerating)
                         {
-                            <span class="text-muted" style="font-size:12px; color:#b7791f;">⏳ 其他檔案可能還在後台生成中，稍後可重新整理再看一次</span>
+                            <span class="text-muted eval-generating-flag" style="font-size:12px; color:#b7791f;">⏳ 其他檔案可能還在後台生成中，15秒後自動重整</span>
                         }
                     </div>
 
@@ -803,6 +806,11 @@
             } catch (err) {
                 alert('操作失敗，請稍後再試');
             }
+        }
+        // 🎯 如果畫面上有房間顯示「還在後台生成中」，每 15 秒自動重整頁面一次，
+        //    不用使用者自己手動按重新整理才看得到新生成的檔案
+        if (document.querySelector('.eval-generating-flag')) {
+            setTimeout(() => { location.reload(); }, 15000);
         }
     </script>
 }

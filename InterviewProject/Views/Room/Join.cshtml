@@ -15,7 +15,7 @@
         "hr" => "人資",
         _ => "員工"
     };
-    var displayName = isStaff ? staffLabel + "：" + memberName : "求職者：" + memberName;
+    var displayName = isStaff ? staffLabel + "-" + memberName : "求職者-" + memberName;
     // 🎯 換成你自己申請的 JaaS AppID（原本那組是別人的示範帳號，難怪一直卡在驗證失敗）
     var jaasTenantId = "vpaas-magic-cookie-c12aeb6abc7a4349bc799bb8cb31436a";
     var jitsiDomain = "8x8.vc";
