@@ -1,114 +1,808 @@
 ﻿@model IEnumerable<InterviewProject.Models.Room>
 
 @{
-    ViewData["Title"] = "房間列表";
+    ViewData["Title"] = "面試管理";
+    string role = ViewBag.CurrentRole as string ?? "";
+    bool canJoin = role == "manager" || role == "director";
+    int myEmployeeId = ViewBag.CurrentEmployeeId is int i ? i : 0;
+    var myEvaluations = ViewBag.MyEvaluations as Dictionary<int, InterviewProject.Models.InterviewEvaluation>
+                         ?? new Dictionary<int, InterviewProject.Models.InterviewEvaluation>();
+    var managerEvaluationsByResume = ViewBag.ManagerEvaluationsByResume as Dictionary<int, List<InterviewProject.Models.InterviewEvaluation>>
+                         ?? new Dictionary<int, List<InterviewProject.Models.InterviewEvaluation>>();
+    var aiAnalysisByRoom = ViewBag.AiAnalysisByRoom as Dictionary<int, List<string>>
+                         ?? new Dictionary<int, List<string>>();
+    var endedRooms = (Model ?? new List<InterviewProject.Models.Room>()).Where(r => r.MeetingStatus == "Ended").ToList();
 }
 
-<style>
-    .room-list-container {
-        padding: 20px;
-        font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
-    }
-
-    .action-links {
-        margin-bottom: 25px;
-    }
-
-    .btn-custom {
-        display: inline-block !important;
-        padding: 10px 20px !important;
-        margin-right: 12px !important;
-        background-color: #2ecc71 !important;
-        color: white !important;
-        text-decoration: none !important;
-        border-radius: 6px !important;
-        font-weight: 500;
-        transition: background-color 0.2s;
-    }
-
-        .btn-custom.blue {
-            background-color: #3498db !important;
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+    <style>
+        .candidate-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
 
-        .btn-custom:hover {
-            opacity: 0.9;
-            color: white !important;
-            text-decoration: none !important;
+            .candidate-list span {
+                font-size: 13px;
+            }
+
+        .btn-join-disabled {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 6px;
+            background: #eee;
+            color: #999;
+            font-size: 13px;
+            cursor: not-allowed;
         }
 
-    .room-ul {
-        list-style: none;
-        padding-left: 0;
-    }
-
-    .room-li {
-        background: #f8f9fa;
-        padding: 15px;
-        margin-bottom: 12px;
-        border-radius: 6px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-left: 4px solid #3498db;
-        max-width: 600px;
-    }
-
-    .room-details {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .room-title {
-        font-size: 16px;
-        color: #2c3e50;
-    }
-
-    .room-code {
-        color: #7f8c8d;
-        font-size: 13px;
-        margin-top: 4px;
-    }
-
-    .join-link {
-        color: #3498db;
-        text-decoration: none;
-        font-weight: bold;
-    }
-
-        .join-link:hover {
-            text-decoration: underline;
+        .btn-reschedule {
+            margin-left: 6px;
+            font-size: 12px;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 4px;
+            padding: 2px 8px;
+            cursor: pointer;
         }
-</style>
 
-<div class="room-list-container">
-    <h2>房間列表</h2>
+        .reschedule-box {
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
 
-    <div class="action-links">
-        <a href="/Room/Create" class="btn-custom">建立房間</a>
-        <a href="/Room/EnterCode" class="btn-custom blue">使用房間碼進房</a>
+        .btn-reschedule-save {
+            font-size: 12px;
+            border: none;
+            background: #2c7a7b;
+            color: #fff;
+            border-radius: 4px;
+            padding: 3px 10px;
+            cursor: pointer;
+        }
+
+        .reschedule-msg {
+            font-size: 12px;
+            color: #c0392b;
+        }
+
+        /* ── 分頁 tab ── */
+        .tab-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            padding: 10px 22px;
+            border-radius: 999px;
+            border: 1px solid #ddd;
+            background: #fff;
+            color: #555;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+            .tab-btn.active {
+                background: #2c7a7b;
+                color: #fff;
+                border-color: #2c7a7b;
+            }
+
+        .tab-pane {
+            display: none;
+        }
+
+            .tab-pane.active {
+                display: block;
+            }
+
+        /* ── 面試評分 ── */
+        .eval-room-card {
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 10px;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+        }
+
+        .eval-room-title {
+            font-weight: 700;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .eval-room-sub {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .eval-files {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #f1f1f1;
+            border-radius: 6px;
+            padding: 4px 6px 4px 12px;
+            font-size: 12px;
+        }
+
+        .file-label {
+            color: #333;
+        }
+
+        .btn-file-view, .btn-file-download {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-file-view {
+            background: #2c7a7b;
+            color: #fff;
+        }
+
+        .btn-file-download {
+            background: #fff;
+            color: #333;
+            border: 1px solid #ccc;
+        }
+
+        .text-panel {
+            background: #fafafa;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 12px 14px;
+            max-height: 320px;
+            overflow-y: auto;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin-bottom: 14px;
+            font-family: inherit;
+        }
+
+        .video-wrap {
+            margin-bottom: 16px;
+        }
+
+            .video-wrap video {
+                width: 100%;
+                max-width: 640px;
+                border-radius: 8px;
+                background: #000;
+                display: block;
+            }
+
+        .video-controls-extra {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+            font-size: 12px;
+            color: #555;
+        }
+
+            .video-controls-extra select {
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 12px;
+            }
+
+            .video-controls-extra button {
+                border: 1px solid #ccc;
+                background: #fff;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 12px;
+                cursor: pointer;
+            }
+
+        .video-hint {
+            color: #999;
+        }
+
+        .eval-candidate {
+            border-top: 1px dashed #eee;
+            padding: 14px 0;
+        }
+
+        .eval-candidate-name {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .eval-form {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+            .eval-form select, .eval-form textarea {
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                padding: 6px 8px;
+                font-size: 13px;
+            }
+
+            .eval-form textarea {
+                width: 320px;
+                min-height: 50px;
+            }
+
+            .eval-form button {
+                border: none;
+                background: #2c7a7b;
+                color: #fff;
+                border-radius: 6px;
+                padding: 7px 16px;
+                font-size: 13px;
+                cursor: pointer;
+            }
+
+        .eval-done {
+            color: #2c7a7b;
+            font-size: 13px;
+        }
+
+        .input-error {
+            border-color: #c0392b !important;
+            box-shadow: 0 0 0 1px #c0392b;
+        }
+
+        .eval-pending-manager {
+            font-size: 13px;
+            color: #b7791f;
+            background: #fffaf0;
+            border: 1px solid #f6d998;
+            border-radius: 6px;
+            padding: 8px 12px;
+        }
+
+        .manager-eval-ref {
+            background: #f7fafa;
+            border: 1px solid #e2e8e8;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+        }
+
+        .manager-eval-ref-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #2c7a7b;
+            margin-bottom: 6px;
+        }
+
+        .manager-eval-item {
+            font-size: 12px;
+            color: #444;
+            padding: 4px 0;
+            border-top: 1px dashed #e2e8e8;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+            .manager-eval-item:first-of-type {
+                border-top: none;
+            }
+
+        .manager-eval-name {
+            font-weight: 600;
+        }
+
+        .manager-eval-score {
+            color: #2c7a7b;
+            font-weight: 600;
+        }
+
+        .manager-eval-comment {
+            color: #666;
+        }
+
+        .admission-actions button {
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 13px;
+            cursor: pointer;
+            margin-right: 6px;
+            color: #fff;
+        }
+
+        .btn-admit {
+            background: #2e7d32;
+        }
+
+        .btn-reject {
+            background: #c0392b;
+        }
+
+        .admission-result {
+            font-size: 13px;
+            font-weight: 600;
+        }
+    </style>
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>面試管理</h1>
+        <p>Interview Management</p>
+    </div>
+</div>
+
+<div class="interview-manage-wrap">
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert-success">@TempData["Success"]</div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert-error">@TempData["Error"]</div>
+    }
+
+    <div class="tab-bar">
+        <button type="button" class="tab-btn active" data-tab="schedule" onclick="switchTab('schedule')">面試排程</button>
+        <button type="button" class="tab-btn" data-tab="evaluate" onclick="switchTab('evaluate')">面試評分</button>
     </div>
 
-    <ul class="room-ul">
-        @if (Model != null && Model.Any())
-        {
-            @foreach (var item in Model)
+    @* ══════════════════ 分頁一：面試排程 ══════════════════ *@
+    <div class="tab-pane active" id="pane-schedule">
+        <div class="interview-table">
+            <div class="interview-table-head">
+                <div>應徵職缺</div>
+                <div>面試時間</div>
+                <div>房間代碼</div>
+                <div>應徵者</div>
+                <div>會議狀態</div>
+                <div>操作</div>
+            </div>
+
+            @if (Model != null && Model.Any())
             {
-                <li class="room-li">
-                    <div class="room-details">
-                        <span class="room-title"><strong>@item.RoomName</strong></span>
-                        <span class="room-code">(代碼: @item.JitsiRoomName)</span>
+                foreach (var room in Model)
+                {
+                    var candidates = room.Participants?
+                    .Where(p => p.Role == InterviewProject.Models.ParticipantRole.Jobseeker)
+                    .ToList() ?? new List<InterviewProject.Models.RoomParticipant>();
+
+                    string meetingStatusText = room.MeetingStatus switch
+                    {
+                        "InProgress" => "進行中",
+                        "Ended" => "已結束",
+                        _ => "尚未開始"
+                    };
+
+                    string meetingStatusClass = room.MeetingStatus switch
+                    {
+                        "InProgress" => "status-confirmed",
+                        "Ended" => "status-done",
+                        _ => "status-pending"
+                    };
+
+                    <div class="interview-row">
+                        <div class="interview-title">@(room.Job?.Title ?? "未指定職缺")</div>
+
+                        <div class="interview-time" id="time-@room.Id">
+                            @if (room.ScheduledAt != null)
+                            {
+                                <span class="date">@room.ScheduledAt.Value.ToString("yyyy-MM-dd")</span>
+                                <span class="time">@room.ScheduledAt.Value.ToString("HH:mm:ss")</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">未設定時間</span>
+                            }
+                            @if (role == "director" && room.MeetingStatus == "NotStarted")
+                            {
+                                <button type="button" class="btn-reschedule" onclick="openReschedule(@room.Id)">修改時間</button>
+                                <div class="reschedule-box" id="reschedule-@room.Id" style="display:none">
+                                    <input type="datetime-local" id="reschedule-input-@room.Id" step="1"
+                                           min="@DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")" />
+                                    <button type="button" class="btn-reschedule-save" onclick="saveReschedule(@room.Id)">更新</button>
+                                    <span class="reschedule-msg" id="reschedule-msg-@room.Id"></span>
+                                </div>
+                            }
+                        </div>
+
+                        <div>@room.JitsiRoomName</div>
+
+                        <div class="candidate-list">
+                            @if (candidates.Any())
+                            {
+                                foreach (var c in candidates)
+                                {
+                                    <span>@(c.Resume?.Member?.Name ?? "未知")</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">尚無應徵者</span>
+                            }
+                        </div>
+
+                        <div><span class="status-badge @meetingStatusClass">@meetingStatusText</span></div>
+
+                        <div class="interview-actions">
+                            @if (canJoin)
+                            {
+                                @if (room.CanEnter())
+                                {
+                                    <a class="btn-complete" href="@Url.Action("Join", "Room", new { code = room.JitsiRoomName })">進入面試</a>
+                                }
+                                else
+                                {
+                                    <span class="btn-join-disabled" title="@room.StatusText()">@room.StatusText()</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">僅供檢視</span>
+                            }
+                        </div>
                     </div>
-                    <div>
-                        <a href="/Room/Join?code=@item.JitsiRoomName" class="join-link">
-                            進入房間 &rarr;
-                        </a>
+                }
+            }
+            else
+            {
+                <div class="interview-empty">目前沒有任何面試房間</div>
+            }
+        </div>
+    </div>
+
+    @* ══════════════════ 分頁二：面試評分 ══════════════════ *@
+    <div class="tab-pane" id="pane-evaluate">
+        @if (endedRooms.Any())
+        {
+            foreach (var room in endedRooms)
+            {
+                var candidates = room.Participants?
+                .Where(p => p.Role == InterviewProject.Models.ParticipantRole.Jobseeker)
+                .ToList() ?? new List<InterviewProject.Models.RoomParticipant>();
+
+                <div class="eval-room-card">
+                    <div class="eval-room-title">@(room.Job?.Title ?? "未指定職缺")</div>
+                    <div class="eval-room-sub">
+                        @(room.StartAt?.ToString("yyyy-MM-dd HH:mm") ?? "") ｜ 房間代碼：@room.JitsiRoomName
                     </div>
-                </li>
+
+                    <div class="eval-files">
+                        @if (!string.IsNullOrEmpty(room.TranscriptFileName))
+                        {
+                            <div class="file-item">
+                                <span class="file-label">📝 逐字稿</span>
+                                <button type="button" class="btn-file-view" onclick="toggleTextPanel('transcript-@room.Id', '@Url.Action("ViewFile", "Room", new { folder = "逐字稿", fileName = room.TranscriptFileName })')">查看</button>
+                                <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "逐字稿", fileName = room.TranscriptFileName })">下載</a>
+                            </div>
+                        }
+                        @{
+                            var roomAiFiles = aiAnalysisByRoom.TryGetValue(room.Id, out var aif) ? aif : new List<string>();
+                        }
+                        @foreach (var aiFileName in roomAiFiles)
+                        {
+                            // 檔名格式：面試會議_日期_職缺_求職者姓名.txt，取最後一段當標籤
+                            var labelName = aiFileName.Replace(".txt", "");
+                            var parts = labelName.Split('_');
+                            var candidateLabel = parts.Length > 0 ? parts[^1] : labelName;
+                            var panelId = "aianalysis-" + room.Id + "-" + aiFileName.GetHashCode().ToString().Replace("-", "n");
+                            <div class="file-item">
+                                <span class="file-label">🤖 AI分析（@candidateLabel）</span>
+                                <button type="button" class="btn-file-view" onclick="toggleTextPanel('@panelId', '@Url.Action("ViewFile", "Room", new { folder = "AI分析", fileName = aiFileName })')">查看</button>
+                                <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "AI分析", fileName = aiFileName })">下載</a>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(room.RecordingFileName))
+                        {
+                            <div class="file-item">
+                                <span class="file-label">🎬 錄影錄音（下方可直接播放）</span>
+                                <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "錄影錄音", fileName = room.RecordingFileName })">下載</a>
+                            </div>
+                        }
+                        @{
+                            // 🎯 錄影上傳、AI 分析都是背景執行的，剛結束會議的當下，這些檔案可能還在處理中，
+                            //    不是真的「尚無檔案」——用 EndAt 距離現在多久，來決定要顯示哪種提示文字
+                            var secondsSinceEnd = room.EndAt.HasValue ? (DateTime.Now - room.EndAt.Value).TotalSeconds : 9999;
+                            var stillGenerating = secondsSinceEnd < 120
+                                && (string.IsNullOrEmpty(room.RecordingFileName) || !roomAiFiles.Any());
+                        }
+                        @if (string.IsNullOrEmpty(room.TranscriptFileName) && string.IsNullOrEmpty(room.RecordingFileName) && !roomAiFiles.Any())
+                        {
+                            if (stillGenerating)
+                            {
+                                <span class="text-muted" style="font-size:13px; color:#b7791f;">⏳ 錄影／AI分析檔案還在後台生成中，請稍後重新整理這個頁面</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted" style="font-size:13px;">尚無檔案</span>
+                            }
+                        }
+                        else if (stillGenerating)
+                        {
+                            <span class="text-muted" style="font-size:12px; color:#b7791f;">⏳ 其他檔案可能還在後台生成中，稍後可重新整理再看一次</span>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(room.TranscriptFileName))
+                    {
+                        <pre class="text-panel" id="panel-transcript-@room.Id" style="display:none;"></pre>
+                    }
+                    @foreach (var aiFileName in roomAiFiles)
+                    {
+                        var panelId = "aianalysis-" + room.Id + "-" + aiFileName.GetHashCode().ToString().Replace("-", "n");
+                        <pre class="text-panel" id="panel-@panelId" style="display:none;"></pre>
+                    }
+
+                    @if (!string.IsNullOrEmpty(room.RecordingFileName))
+                    {
+                        <div class="video-wrap">
+                            <video id="video-@room.Id" controls preload="metadata"
+                                   src="@Url.Action("ViewFile", "Room", new { folder = "錄影錄音", fileName = room.RecordingFileName })">
+                                @if (!string.IsNullOrEmpty(room.TranscriptFileName))
+                                {
+                                    <track kind="captions" srclang="zh-Hant" label="逐字稿字幕（估算時間，僅供參考）"
+                                           src="@Url.Action("TranscriptVtt", "Room", new { roomId = room.Id })" default />
+                                }
+                                您的瀏覽器不支援影片播放，請改用下載連結。
+                            </video>
+                            <div class="video-controls-extra">
+                                <label>
+                                    播放速度：
+                                    <select onchange="document.getElementById('video-@room.Id').playbackRate = this.value">
+                                        <option value="0.5">0.5x</option>
+                                        <option value="0.75">0.75x</option>
+                                        <option value="1" selected>1x（正常）</option>
+                                        <option value="1.25">1.25x</option>
+                                        <option value="1.5">1.5x</option>
+                                        <option value="2">2x</option>
+                                    </select>
+                                </label>
+                                <button type="button" onclick="document.getElementById('video-@room.Id').requestFullscreen()">⛶ 全螢幕</button>
+                                <span class="video-hint">內建可拖拉進度條／音量／字幕（CC）按鈕；字幕時間為估算值，僅供對照參考</span>
+                            </div>
+                        </div>
+                    }
+
+                    @if (candidates.Any())
+                    {
+                        foreach (var c in candidates)
+                        {
+                            var resume = c.Resume;
+                            var name = resume?.Member?.Name ?? "未知";
+                            var hasMyEval = resume != null && myEvaluations.TryGetValue(resume.Id, out var myEval);
+                            var managerEvalsForThisResume = (resume != null && managerEvaluationsByResume.TryGetValue(resume.Id, out var mevals))
+                            ? mevals : new List<InterviewProject.Models.InterviewEvaluation>();
+                            var roomManagerIds = room.Participants?
+                            .Where(p => p.Role == InterviewProject.Models.ParticipantRole.Manager && p.EmployeeId.HasValue)
+                            .Select(p => p.EmployeeId!.Value).Distinct().ToList() ?? new List<int>();
+                            var evaluatedManagerIdsForResume = managerEvalsForThisResume.Select(e => e.EvaluatorEmployeeId).Distinct().ToList();
+                            var allManagersEvaluated = !roomManagerIds.Any() || roomManagerIds.All(id => evaluatedManagerIdsForResume.Contains(id));
+                            var managerProgressText = $"{evaluatedManagerIdsForResume.Count(id => roomManagerIds.Contains(id))}/{roomManagerIds.Count}";
+
+                            <div class="eval-candidate">
+                                <div class="eval-candidate-name">@name</div>
+
+                                @* 🎯 最高主管：無論自己是否已評分，都能看到部門主管的評分紀錄作為參考 *@
+                                @if (role == "director")
+                                {
+                                    <div class="manager-eval-ref">
+                                        <div class="manager-eval-ref-title">部門主管評分紀錄（參考）</div>
+                                        @if (managerEvalsForThisResume.Any())
+                                        {
+                                            foreach (var me in managerEvalsForThisResume)
+                                            {
+                                                <div class="manager-eval-item">
+                                                    <span class="manager-eval-name">@(me.EvaluatorEmployee?.Name ?? "未知主管")</span>
+                                                    <span class="manager-eval-score">@me.Score 分</span>
+                                                    <span class="manager-eval-comment">@(string.IsNullOrWhiteSpace(me.Comment) ? "（無評語）" : me.Comment)</span>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="manager-eval-item" style="border-top:none;">尚無部門主管評分</div>
+                                        }
+                                    </div>
+                                }
+
+                                @if (hasMyEval)
+                                {
+                                    <div class="eval-done">✅ 你已評分：@myEvaluations[resume!.Id].Score 分 － @(myEvaluations[resume.Id].Comment ?? "（無評語）")</div>
+                                }
+                                else if (resume != null)
+                                {
+                                    <div class="eval-form">
+                                        <select id="score-@resume.Id">
+                                            <option value="" selected disabled>請選擇</option>
+                                            <option value="5">5 分（優秀）</option>
+                                            <option value="4">4 分（良好）</option>
+                                            <option value="3">3 分（普通）</option>
+                                            <option value="2">2 分（待加強）</option>
+                                            <option value="1">1 分（不合適）</option>
+                                        </select>
+                                        <textarea id="comment-@resume.Id" placeholder="評語（必填）" required></textarea>
+                                        <button type="button" onclick="submitEvaluation(@room.Id, @resume.Id)">送出評分</button>
+                                        <span class="reschedule-msg" id="eval-msg-@resume.Id"></span>
+                                    </div>
+                                }
+
+                                @if (role == "director" && resume != null)
+                                {
+                                    <div class="admission-actions" style="margin-top:10px;">
+                                        @if (resume.AdmissionResult == "錄取")
+                                        {
+                                            <span class="admission-result" style="color:#2e7d32;">✅ 已定案：錄取</span>
+                                        }
+                                        else if (resume.AdmissionResult == "未錄取")
+                                        {
+                                            <span class="admission-result" style="color:#c0392b;">❌ 已定案：未錄取</span>
+                                        }
+                                        else if (!allManagersEvaluated)
+                                        {
+                                            <div class="eval-pending-manager">⏳ 尚有部門主管未完成評分（@managerProgressText 位已評分），須所有主管評分完成後才能定案錄取結果。你可以先自行評分，不影響這項限制。</div>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn-admit" onclick="setAdmission(@room.Id, @resume.Id, '錄取')">錄取</button>
+                                            <button type="button" class="btn-reject" onclick="setAdmission(@room.Id, @resume.Id, '未錄取')">未錄取</button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="text-muted">這場面試沒有求職者資料</div>
+                    }
+                </div>
             }
         }
         else
         {
-            <li style="color: #7f8c8d; list-style: none;">目前沒有任何房間，請點擊上方按鈕建立。</li>
+            <div class="interview-empty">目前沒有已結束、待評分的面試</div>
         }
-    </ul>
+    </div>
+
 </div>
+
+@section Scripts {
+    <script>
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            document.getElementById('pane-schedule').classList.toggle('active', tab === 'schedule');
+            document.getElementById('pane-evaluate').classList.toggle('active', tab === 'evaluate');
+        }
+
+        function openReschedule(roomId) {
+            const box = document.getElementById('reschedule-' + roomId);
+            box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+        }
+
+        async function saveReschedule(roomId) {
+            const input = document.getElementById('reschedule-input-' + roomId);
+            const msg = document.getElementById('reschedule-msg-' + roomId);
+            if (!input.value) { msg.textContent = '請先選擇時間'; return; }
+            msg.textContent = '';
+            try {
+                const res = await fetch('/Interview/UpdateScheduledAt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'roomId=' + roomId + '&newTime=' + encodeURIComponent(input.value)
+                });
+                const data = await res.json();
+                if (data.success) { location.reload(); }
+                else { msg.textContent = data.message || '更新失敗'; }
+            } catch (err) {
+                msg.textContent = '更新失敗，請稍後再試';
+            }
+        }
+
+        async function submitEvaluation(roomId, resumeId) {
+            const scoreEl = document.getElementById('score-' + resumeId);
+            const commentEl = document.getElementById('comment-' + resumeId);
+            const msg = document.getElementById('eval-msg-' + resumeId);
+            const score = scoreEl.value;
+            const comment = commentEl.value.trim();
+
+            msg.textContent = '';
+            scoreEl.classList.remove('input-error');
+            commentEl.classList.remove('input-error');
+
+            // 🎯 前端驗證：分數必選、評語必填
+            if (!score) {
+                msg.textContent = '請選擇分數';
+                scoreEl.classList.add('input-error');
+                scoreEl.focus();
+                return;
+            }
+            if (!comment) {
+                msg.textContent = '評語為必填，請輸入評語';
+                commentEl.classList.add('input-error');
+                commentEl.focus();
+                return;
+            }
+
+            try {
+                const res = await fetch('/Interview/SubmitEvaluation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'roomId=' + roomId + '&resumeId=' + resumeId + '&score=' + score + '&comment=' + encodeURIComponent(comment)
+                });
+                const data = await res.json();
+                if (data.success) { location.reload(); }
+                else {
+                    msg.textContent = data.message || '送出失敗';
+                    if ((data.message || '').includes('分數')) scoreEl.classList.add('input-error');
+                    if ((data.message || '').includes('評語')) commentEl.classList.add('input-error');
+                }
+            } catch (err) {
+                msg.textContent = '送出失敗，請稍後再試';
+            }
+        }
+
+        // 🎯 逐字稿/AI分析「查看」：抓一次內容後快取起來，切換顯示/隱藏面板，不用每次都重新下載
+        const textPanelCache = {};
+        async function toggleTextPanel(id, url) {
+            const panel = document.getElementById('panel-' + id);
+            if (!panel) return;
+
+            if (panel.style.display === 'none') {
+                if (!(id in textPanelCache)) {
+                    panel.textContent = '讀取中…';
+                    panel.style.display = 'block';
+                    try {
+                        const res = await fetch(url);
+                        textPanelCache[id] = await res.text();
+                    } catch (err) {
+                        textPanelCache[id] = '讀取失敗，請改用「下載」查看';
+                    }
+                }
+                panel.textContent = textPanelCache[id];
+                panel.style.display = 'block';
+            } else {
+                panel.style.display = 'none';
+            }
+        }
+
+        async function setAdmission(roomId, resumeId, result) {
+            if (!confirm('確定要把這位求職者定案為「' + result + '」嗎？')) return;
+            try {
+                const res = await fetch('/Interview/SetAdmission', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'roomId=' + roomId + '&resumeId=' + resumeId + '&result=' + encodeURIComponent(result)
+                });
+                const data = await res.json();
+                if (data.success) { location.reload(); }
+                else { alert(data.message || '操作失敗'); }
+            } catch (err) {
+                alert('操作失敗，請稍後再試');
+            }
+        }
+    </script>
+}

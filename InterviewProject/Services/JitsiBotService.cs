@@ -20,6 +20,7 @@ namespace InterviewProject.Services
         private const string RecorderInitScript = @"
 (function () {
     window.__recChunks = [];
+    window.__recStartMs = Date.now();
 
     const canvas = document.createElement('canvas');
     canvas.width = 1280; canvas.height = 720;
@@ -94,10 +95,22 @@ namespace InterviewProject.Services
         }
         window.__mediaRecorder.onstop = () => {
             const blob = new Blob(window.__recChunks, { type: 'video/webm' });
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result); // data:video/webm;base64,....
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(blob);
+            const durationMs = Date.now() - (window.__recStartMs || Date.now());
+
+            function toBase64(finalBlob) {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result); // data:video/webm;base64,....
+                reader.onerror = () => resolve(null);
+                reader.readAsDataURL(finalBlob);
+            }
+
+            // 🐛 MediaRecorder 產出的 webm 預設沒有寫入正確時長，播放器沒辦法拖拉進度條，
+            //    用 fix-webm-duration 把正確時長補進檔案標頭再輸出
+            if (window.ysFixWebmDuration) {
+                ysFixWebmDuration(blob, durationMs, (fixedBlob) => toBase64(fixedBlob || blob));
+            } else {
+                toBase64(blob);
+            }
         };
         window.__mediaRecorder.stop();
     });
@@ -228,6 +241,12 @@ namespace InterviewProject.Services
                 //    用 MutationObserver 持續偵測新加入的參與者（他們的 <video>/<audio> 元素是動態加進 DOM 的）。
                 try
                 {
+                    // 🐛 MediaRecorder 產出的 webm 預設沒有寫入正確時長中繼資料，播放器沒辦法拖拉進度條，
+                    //    跟舊版真人螢幕分享錄影當初踩過的坑一樣，這裡也要注入同一個函式庫來修正
+                    await page.AddScriptTagAsync(new PageAddScriptTagOptions
+                    {
+                        Url = "https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.js"
+                    });
                     await page.EvaluateAsync(RecorderInitScript);
                     Console.WriteLine($"[JitsiBot] 房間 {roomCode} 自訂錄影機（畫面+聲音）已啟動。");
                 }

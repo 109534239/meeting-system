@@ -573,9 +573,34 @@ namespace InterviewProject.Controllers
 
             var results = new List<object>();
 
+            bool isFirst = true;
             foreach (var jobseeker in jobseekers)
             {
+                // 🎯 候選人之間加一點間隔，避免連續呼叫 Gemini API 太快撞到免費額度的速率限制
+                //    （這很可能就是「有些候選人分析成功、有些失敗」的真正原因，不是金鑰設定問題——
+                //    金鑰是伺服器端統一設定的同一組，不會因為誰登入而不同）
+                if (!isFirst) await Task.Delay(1500);
+                isFirst = false;
+
                 var candidateName = jobseeker.Resume?.Member?.Name ?? $"求職者{jobseeker.Id}";
+
+                // 🎯 這位求職者的名字完全沒出現在逐字稿裡，代表他很可能根本沒真的參加/開口說話，
+                //    與其硬丟給 Gemini 分析一個空內容、得到一個奇怪或失敗的結果，不如直接誠實說明
+                if (!transcript.Contains(candidateName))
+                {
+                    var noShowMsg = $"求職者{candidateName}並未參加此次面試會議（逐字稿中沒有出現他的發言紀錄），無法針對其面試表現進行 AI 分析與評分。";
+                    var noShowFileName = BuildFileName(room, "txt", candidateName);
+                    try
+                    {
+                        await _storage.UploadTextAsync($"AI分析/{noShowFileName}", noShowMsg);
+                        results.Add(new { candidateName, success = true, fileName = noShowFileName });
+                    }
+                    catch (Exception ex)
+                    {
+                        results.Add(new { candidateName, success = false, message = "上傳到雲端儲存失敗：" + ex.Message });
+                    }
+                    continue;
+                }
 
                 // 🎯 只針對這位求職者出的分析，maxTokens 也拉高，不用再跟其他候選人瓜分字數
                 var prompt =
@@ -583,6 +608,7 @@ namespace InterviewProject.Controllers
                     $"請只針對「{candidateName}」這位求職者的發言與表現進行分析（繁體中文，不用分析其他人）：\n\n{transcript}\n\n" +
                     $"請提供：1.語氣表達 2.答題品質 3.綜合評分(1-10) 4.錄取建議 5.整體評語（完整寫完，不要中途省略）";
 
+                // 🎯 失敗重試一次（間隔 2 秒），大部分速率限制導致的失敗，等一下重試就會成功
                 var analysis = await _gemini.AskAsync(
                     prompt,
                     "你是專業人資顧問，說繁體中文，格式清晰條列，內容要完整寫完，不能寫到一半就停。",
@@ -590,7 +616,16 @@ namespace InterviewProject.Controllers
 
                 if (analysis == null)
                 {
-                    results.Add(new { candidateName, success = false, message = "AI 分析失敗（Gemini:ApiKey 是否正確、或 API 額度用完）" });
+                    await Task.Delay(2000);
+                    analysis = await _gemini.AskAsync(
+                        prompt,
+                        "你是專業人資顧問，說繁體中文，格式清晰條列，內容要完整寫完，不能寫到一半就停。",
+                        maxTokens: 3000);
+                }
+
+                if (analysis == null)
+                {
+                    results.Add(new { candidateName, success = false, message = "AI 分析失敗（重試一次後仍失敗，可能是 API 額度用完或速率限制）" });
                     continue;
                 }
 

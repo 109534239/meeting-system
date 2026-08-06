@@ -57,6 +57,23 @@ namespace InterviewProject.Hubs
                 try
                 {
                     await _botService.JoinRoomAsync(roomCode, videoPath);
+
+                    // 🎯 AI 面試官加入成功後，順手把 RoomParticipants 表裡它自己那一列也更新成「已加入」，
+                    //    純粹讓資料庫看起來跟實際狀況一致、方便對照除錯，沒有任何判斷邏輯依賴這個欄位
+                    using var scope = _scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var roomForAi = await db.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
+                    if (roomForAi != null)
+                    {
+                        var aiParticipant = await db.RoomParticipants
+                            .FirstOrDefaultAsync(p => p.RoomId == roomForAi.Id && p.Role == ParticipantRole.AI);
+                        if (aiParticipant != null)
+                        {
+                            aiParticipant.Status = ParticipantStatus.Admitted;
+                            aiParticipant.JoinedAt = DateTime.Now;
+                            await db.SaveChangesAsync();
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -95,7 +112,27 @@ namespace InterviewProject.Hubs
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[MeetingHub] AI 面試官離開房間 {roomCode} 失敗：{ex.Message}");
-                    return;
+                }
+
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var storage = scope.ServiceProvider.GetRequiredService<R2StorageService>();
+
+                // 🎯 不管有沒有拿到錄影，AI 面試官都算是「離開了」，
+                //    順手把 RoomParticipants 表裡它自己那一列的 LeftAt 更新一下，純粹讓資料好對照
+                try
+                {
+                    var aiParticipant = await db.RoomParticipants
+                        .FirstOrDefaultAsync(p => p.RoomId == room.Id && p.Role == ParticipantRole.AI);
+                    if (aiParticipant != null)
+                    {
+                        aiParticipant.LeftAt = DateTime.Now;
+                        await db.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MeetingHub] 更新 AI 面試官離開時間失敗：{ex.Message}");
                 }
 
                 if (string.IsNullOrEmpty(localVideoPath) || !File.Exists(localVideoPath))
@@ -103,10 +140,6 @@ namespace InterviewProject.Hubs
                     Console.WriteLine($"[MeetingHub] 房間 {roomCode} 沒有取得 AI 面試官的錄影檔，這場面試不會有錄影。");
                     return;
                 }
-
-                using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var storage = scope.ServiceProvider.GetRequiredService<R2StorageService>();
 
                 try
                 {
