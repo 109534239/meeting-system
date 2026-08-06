@@ -374,31 +374,31 @@
                 </td>
             </tr>
            <tr>
+               <td>證照職類及級別<br />(可輸入自訂項目，未列在建議清單也能填)</td>
+               <td colspan="4">
+                    <input type="hidden" asp-for="Certificates" id="finalCertificates" />
 
-   <td>證照職類及級別<br />(可輸入自訂項目，未列在建議清單也能填)</td>
-   <td colspan="4">
-        <input type="hidden" asp-for="Certificates" id="finalCertificates" />
+                    @* 🎯 依應徵職位比對出的推薦證照，會用小按鈕呈現在最上面方便快速點選 *@
+                    <div id="certRecommendWrap" style="display:none; margin-bottom:8px;">
+                        <span class="text-muted">依此職缺推薦：</span>
+                        <span id="certRecommendChips"></span>
+                    </div>
 
-        @* 🎯 依應徵職位比對出的推薦證照，會用小按鈕呈現在最上面方便快速點選 *@
-        <div id="certRecommendWrap" style="display:none; margin-bottom:8px;">
-            <span class="text-muted">依此職缺推薦：</span>
-            <span id="certRecommendChips"></span>
-        </div>
-
-        <div id="cert-list">
-            <div class="cert-item dynamic-row-simple" style="margin-bottom: 8px;">
-                <input type="text" class="cert-select" list="certNameOptions" placeholder="輸入或選擇證照名稱" oninput="autoGrowInputWidth(this)" />
-                <span class="cert-level-wrap">
-                    級別：<input type="text" class="cert-level-select" list="certLevelOptions_0" placeholder="級別（無則留空）" />
-                    <datalist id="certLevelOptions_0"></datalist>
-                </span>
-                <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
-            </div>
-        </div>
-        <datalist id="certNameOptions"></datalist>
-        <button type="button" class="btn-add-row no-print-in-readonly" onclick="addCertRow()">＋ 新增證照</button>
-    </td>
-</tr>
+                    <div id="cert-list">
+                        <div class="cert-item dynamic-row-simple" style="margin-bottom: 8px;">
+                            <input type="text" class="cert-select" list="certNameOptions" placeholder="輸入或選擇證照名稱" oninput="autoGrowInputWidth(this)" />
+                            <span class="cert-level-wrap">
+                                <span class="cert-level-label">級別：</span>
+                                <input type="text" class="cert-level-select" list="certLevelOptions_0" placeholder="級別（無則留空）" />
+                                <datalist id="certLevelOptions_0"></datalist>
+                            </span>
+                            <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
+                        </div>
+                    </div>
+                    <datalist id="certNameOptions"></datalist>
+                    <button type="button" class="btn-add-row no-print-in-readonly" onclick="addCertRow()">＋ 新增證照</button>
+                </td>
+            </tr>
 
             <tr>
                 <td>使用電腦能力<br />(可新增多筆，未新增即視為無)</td>
@@ -489,7 +489,37 @@ function updateCertLevelOptions(certItemEl) {
     const typedName = nameInput.value.trim();
 
     // 🎯 欄位還沒填證照名稱：先讓級別欄位維持顯示（等使用者選了之後再判斷要不要隱藏）
-    if (!typedName || !globalCertList) {
+    if (!typedName) {
+        if (levelWrap) levelWrap.style.display = '';
+        resetLevelInputToDefault(levelInput, levelWrap);
+        return;
+    }
+
+    // -------------------------------------------------------------
+    // 🎯 1. 特例處理：選擇多益 (TOEIC) 時，將欄位改為「分數」輸入模式
+    // -------------------------------------------------------------
+    const isToeic = /多益|TOEIC/i.test(typedName);
+    if (isToeic) {
+        if (levelWrap) levelWrap.style.display = '';
+        
+        // 找到級別標籤 (文字: "級別：") 改為 "分數："
+        const labelNode = Array.from(levelWrap.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.includes('級別'));
+        if (labelNode) labelNode.textContent = labelNode.textContent.replace('級別', '分數');
+
+        levelInput.placeholder = '請輸入分數 (如: 850)';
+        levelInput.type = 'number';
+        levelInput.min = '10';
+        levelInput.max = '990';
+        return; // 直接中斷，不需要塞 datalist 下拉選單
+    } else {
+        // 還原成一般級別模式
+        resetLevelInputToDefault(levelInput, levelWrap);
+    }
+
+    // -------------------------------------------------------------
+    // 🎯 2. 原有邏輯：比對 globalCertList 並填充 datalist
+    // -------------------------------------------------------------
+    if (!globalCertList) {
         if (levelWrap) levelWrap.style.display = '';
         return;
     }
@@ -519,6 +549,18 @@ function updateCertLevelOptions(certItemEl) {
             levelDatalist.appendChild(opt);
         });
     }
+}
+
+// 💡 輔助函式：還原級別欄位為預設狀態（非多益模式）
+function resetLevelInputToDefault(levelInput, levelWrap) {
+    if (levelWrap) {
+        const labelNode = Array.from(levelWrap.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.includes('分數'));
+        if (labelNode) labelNode.textContent = labelNode.textContent.replace('分數', '級別');
+    }
+    levelInput.placeholder = '級別（無則留空）';
+    levelInput.type = 'text';
+    levelInput.removeAttribute('min');
+    levelInput.removeAttribute('max');
 }
 
 // 🎯 把依職缺比對出的推薦證照（IsRecommended === true）渲染成一排小按鈕，
@@ -1269,6 +1311,28 @@ if (resumeFormEl) {
             e.preventDefault();
             scrollToAndFlagField(certLevelMissingEl);
             showValidationAlert('提示', '此證照有級別可選，請選擇對應的級別後再送出。');
+            return false;
+        }
+
+        let invalidToeicScoreEl = null;
+        document.querySelectorAll('.cert-item').forEach(item => {
+            if (invalidToeicScoreEl) return;
+            const nameInput = item.querySelector('.cert-select');
+            const levelInput = item.querySelector('.cert-level-select');
+    
+            if (nameInput && levelInput && /多益|TOEIC/i.test(nameInput.value.trim())) {
+                const scoreVal = levelInput.value.trim();
+                const score = parseInt(scoreVal, 10);
+                if (!scoreVal || isNaN(score) || score < 10 || score > 990) {
+                    invalidToeicScoreEl = levelInput;
+                }
+            }
+        });
+
+        if (invalidToeicScoreEl) {
+            e.preventDefault();
+            scrollToAndFlagField(invalidToeicScoreEl);
+            showValidationAlert('提示', '請輸入有效的多益分數 (10 ~ 990)。');
             return false;
         }
 
