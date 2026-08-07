@@ -483,6 +483,38 @@ namespace InterviewProject.Controllers
             return Ok(new { success = true });
         }
 
+        // 🎯 逐字稿改用這個當主要來源：不再依賴瀏覽器原生 SpeechRecognition
+        //    （已證實會被 Jitsi 搶走麥克風獨佔權，大部分人只收到 no-speech，整場話完全沒被記錄下來）。
+        //    改成每個人自己把整場錄下來的麥克風音檔，直接送給 Gemini 做語音轉文字，結果併進同一個暫存區。
+        [HttpPost]
+        [RequestSizeLimit(25_000_000)]
+        public async Task<IActionResult> SubmitAudioTranscript([FromQuery] string roomCode, [FromQuery] string speakerName, IFormFile? audio)
+        {
+            if (string.IsNullOrEmpty(roomCode) || audio == null || audio.Length == 0)
+                return Ok(new { success = true });
+
+            byte[] bytes;
+            using (var ms = new MemoryStream())
+            {
+                await audio.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+
+            var mimeType = string.IsNullOrEmpty(audio.ContentType) ? "audio/webm" : audio.ContentType;
+            var text = await _gemini.TranscribeAudioAsync(bytes, mimeType);
+
+            if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容"))
+                return Ok(new { success = true }); // 轉錄失敗或整段都沒講話，不用存
+
+            var timeLabel = DateTime.Now.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW"));
+            var list = _transcriptBuffer.GetOrAdd(roomCode, _ => new List<TranscriptChunk>());
+            lock (list)
+            {
+                list.Add(new TranscriptChunk { Sp = speakerName, Tx = text, Time = timeLabel, ReceivedAt = DateTime.UtcNow });
+            }
+            return Ok(new { success = true });
+        }
+
         // 🎯 逐字稿改存到 Cloudflare R2，不再存本機 wwwroot
         //    這樣本機執行跟部署到 Render，讀到的都是同一份雲端檔案，不會再有兩邊結果不一致的問題
         //    🐛 內容不再信任客戶端傳來的單一字串（那是舊架構，只有主持人自己聽到的+SignalR廣播成功的部分）

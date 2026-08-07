@@ -530,7 +530,7 @@
                             // 🎯 錄影上傳、AI 分析都是背景執行的，剛結束會議的當下，這些檔案可能還在處理中，
                             //    不是真的「尚無檔案」——用 EndAt 距離現在多久，來決定要顯示哪種提示文字
                             var secondsSinceEnd = room.EndAt.HasValue ? (DateTime.Now - room.EndAt.Value).TotalSeconds : 9999;
-                            var stillGenerating = secondsSinceEnd < 120
+                            var stillGenerating = secondsSinceEnd < 240
                                 && (string.IsNullOrEmpty(room.RecordingFileName) || (role == "director" && !roomAiFiles.Any()));
                         }
                         @if (string.IsNullOrEmpty(room.TranscriptFileName) && string.IsNullOrEmpty(room.RecordingFileName) && !roomAiFiles.Any())
@@ -809,8 +809,11 @@
         }
         // 🎯 如果畫面上有房間顯示「還在後台生成中」，每 15 秒自動重整頁面一次，
         //    不用使用者自己手動按重新整理才看得到新生成的檔案
-        if (document.querySelector('.eval-generating-flag')) {
-            setTimeout(() => { location.reload(); }, 15000);
-        }
+        //    包進 DOMContentLoaded，確保一定是在畫面完整渲染完才檢查，不會抓不到元素
+        document.addEventListener('DOMContentLoaded', () => {
+            if (document.querySelector('.eval-generating-flag')) {
+                setTimeout(() => { location.reload(); }, 15000);
+            }
+        });
     </script>
 }

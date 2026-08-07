@@ -59,6 +59,26 @@ namespace InterviewProject.Services
             videos.forEach((v, i) => {
                 const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
                 try { ctx.drawImage(v, x, y, cellW, cellH); } catch (e) {}
+
+                // 🎯 盡力而為：嘗試從 Jitsi 的 DOM 找出這個 video 對應的參與者名稱標籤，畫在左下角，
+                //    這樣錄下來的檔案才看得出來哪一格是誰（不然每格都只是一個畫面，看不出角色）。
+                //    Jitsi 不同版本 DOM 結構可能不完全一樣，抓不到名字就跳過，不影響畫面本身。
+                try {
+                    let label = '';
+                    const container = v.closest('[id^=""participant_""]') || v.closest('.videocontainer') || v.parentElement;
+                    if (container) {
+                        const nameEl = container.querySelector('.displayname, [class*=""displayName""], [class*=""display-name""]');
+                        if (nameEl && nameEl.textContent) label = nameEl.textContent.trim();
+                    }
+                    if (label) {
+                        ctx.font = 'bold 16px sans-serif';
+                        const textWidth = ctx.measureText(label).width;
+                        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+                        ctx.fillRect(x + 6, y + cellH - 28, textWidth + 12, 22);
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(label, x + 12, y + cellH - 12);
+                    }
+                } catch (e) {}
             });
         }
         window.__rafId = requestAnimationFrame(drawFrame);

@@ -744,7 +744,7 @@
         // ══════════════════════════════════
         //  會議結束
         // ══════════════════════════════════
-        function onMeetingEnd() {
+        async function onMeetingEnd() {
             if (ended) return;
             ended = true;
 
@@ -765,15 +765,18 @@
                 //    不能每個在場的主管都各自觸發一次（會變成大家搶著存、甚至重複呼叫 Gemini API）
                 showEndedScreen();
             } else if (IS_STAFF) {
-                // 部門主管（不是主持人）：送出自己聽到的片段後，跟求職者一樣直接導回列表
+                // 部門主管（不是主持人）：送出自己聽到的片段+音檔後，跟求職者一樣直接導回列表
+                //    🎯 要等音檔真的送完（Gemini 轉錄需要幾秒到幾十秒），不能提早導頁把請求中斷掉
                 submitMyTranscript();
+                b.textContent = '🔒 面試已結束，正在送出逐字稿內容...';
+                await submitMyAudioTranscript();
                 window.location.href = '/Interview/Index';
             } else {
-                // ✅ 求職者：送出自己聽到的片段後，回到應徵管理頁面
+                // ✅ 求職者：送出自己聽到的片段+音檔後，回到應徵管理頁面
                 submitMyTranscript();
-                setTimeout(() => {
-                    window.location.href = '/Member/Application';
-                }, 1200);
+                b.textContent = '🔒 面試已結束，正在送出逐字稿內容...';
+                await submitMyAudioTranscript();
+                window.location.href = '/Member/Application';
             }
         }
 
@@ -784,13 +787,55 @@
         //     其他人縮圖排在旁邊」的排版），不再受任何一位真人視窗縮放/被蓋住/切分頁影響，
         //     主管也不用再被瀏覽器跳出來要求「選擇要分享的畫面」
         // ══════════════════════════════════
+        let myAudioRecorder = null;
+        let myAudioChunks = [];
+
         async function initAudio() {
             try {
                 audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 console.log('[initAudio] 成功取得麥克風（' + MY_NAME + '）');
+
+                // 🎯 逐字稿改用這個當主要來源：整場錄下自己的麥克風音檔，結束時送給 Gemini 轉文字，
+                //    不再依賴瀏覽器原生 SpeechRecognition（已證實會被 Jitsi 搶走麥克風獨佔權，
+                //    大部分人只會收到 no-speech，整場話完全沒被記錄下來）
+                try {
+                    const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+                    let mime = '';
+                    for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
+                    myAudioChunks = [];
+                    myAudioRecorder = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {});
+                    myAudioRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) myAudioChunks.push(e.data); };
+                    myAudioRecorder.start(1000);
+                    console.log('[initAudio] 已開始錄製自己的麥克風音檔（' + MY_NAME + '）');
+                } catch (e) {
+                    console.warn('[initAudio] 啟動錄音失敗：' + e.message + '（' + MY_NAME + '）');
+                }
             } catch (e) {
                 console.warn('[initAudio] 取得麥克風失敗：' + e.message + '（' + MY_NAME + '）');
                 audioStream = null;
+            }
+        }
+
+        // 🎯 停止錄音、把整段音檔送給伺服器做語音轉文字（取代不可靠的瀏覽器 SpeechRecognition）
+        //    要用 await 等它做完，不能像 submitMyTranscript() 那樣用 sendBeacon（音檔太大，sendBeacon 不適合傳大檔案）
+        async function submitMyAudioTranscript() {
+            if (!myAudioRecorder || myAudioRecorder.state === 'inactive') return;
+
+            const stopped = new Promise(resolve => { myAudioRecorder.onstop = resolve; });
+            try { myAudioRecorder.stop(); } catch (e) { return; }
+            await stopped;
+
+            if (myAudioChunks.length === 0) return;
+
+            try {
+                const blob = new Blob(myAudioChunks, { type: myAudioRecorder.mimeType || 'audio/webm' });
+                const fd = new FormData();
+                fd.append('audio', blob, 'audio.webm');
+                const url = '/Room/SubmitAudioTranscript?roomCode=' + encodeURIComponent(ROOM_CODE) + '&speakerName=' + encodeURIComponent(MY_NAME);
+                await fetch(url, { method: 'POST', body: fd });
+                console.log('[submitMyAudioTranscript] 音檔已送出（' + MY_NAME + '）');
+            } catch (e) {
+                console.warn('[submitMyAudioTranscript] 送出失敗：' + e.message + '（' + MY_NAME + '）');
             }
         }
 
@@ -991,11 +1036,12 @@
 
             // 🎯 先送出主持人自己這段時間聽到的內容
             await submitMyTranscript();
+            await submitMyAudioTranscript();
 
-            // 🎯 給其他參與者一點緩衝時間，讓他們各自的 submitMyTranscript() 也送到伺服器
-            //    （他們是收到「會議結束」廣播/輪詢後才觸發送出，網路來回需要一點時間，不能主持人這邊一結束就馬上合併）
-            document.getElementById('endSubtitle').textContent = '檔案正在儲存至專案伺服器...';
-            await new Promise(resolve => setTimeout(resolve, 2500));
+            // 🎯 給其他參與者足夠的緩衝時間，讓他們各自的音檔也送到伺服器、給 Gemini 轉錄完成——
+            //    音訊轉文字比純文字傳輸慢很多（要等 Gemini API 處理），2.5 秒完全不夠，拉長到 20 秒
+            document.getElementById('endSubtitle').textContent = '正在等待所有人的音檔轉錄完成，這步驟需要一點時間...';
+            await new Promise(resolve => setTimeout(resolve, 20000));
 
             // 1. 逐字稿 —— 伺服器端合併這個房間所有人各自送來的片段（不再是主持人自己拼的內容）
             let mergedTranscript = '';
@@ -1209,11 +1255,8 @@
             jitsiApi.addEventListener('readyToClose', () => {
                 if (ended) return; // 如果是走「結束會議」流程，交給 showEndedScreen() 最後自己導頁，這裡不用重複處理
                 submitMyTranscript(); // 🎯 中途自己離開也要送出目前為止聽到的內容，不然這段話會整個消失
-                if (!IS_STAFF) {
-                    window.location.href = '/Member/Application';
-                } else {
-                    window.location.href = '/Interview/Index';
-                }
+                const goTo = !IS_STAFF ? '/Member/Application' : '/Interview/Index';
+                submitMyAudioTranscript().finally(() => { window.location.href = goTo; });
             });
 
             // ✅ 使用者真的按下「加入會議」、實際進入 Jitsi 視訊房間時才觸發 —— 這時候才把 JoinedAt 寫進資料庫
