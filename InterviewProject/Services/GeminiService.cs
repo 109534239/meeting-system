@@ -82,6 +82,17 @@ namespace InterviewProject.Services
         //    🐛 這輪修正：發現安靜/雜音佔多數的音檔，Gemini 有時不會乖乖回「（無語音內容）」，
         //       而是產生「同一句話重複幾十次」的幻覺輸出（例如整段都是「沒有看到」）。
         //       這裡除了強化 prompt 明確禁止這種行為，回傳前也會呼叫 CleanUpHallucination() 做防呆過濾。
+        //
+        //    🐛 這輪又修正：發現「逐字稿還是只收到主持人」這個問題還沒真的解決——
+        //       根本原因不是轉錄邏輯本身，是「會議結束」廣播出去的當下，所有人（主持人+所有主管+所有求職者）
+        //       幾乎同時觸發 submitMyAudioTranscript()，等於同時間有好幾個 SubmitAudioTranscript 請求
+        //       一起打進來、一起呼叫 Gemini API，很容易一次撞到 Gemini 免費額度的每分鐘請求數限制（429），
+        //       而這裡原本完全沒有重試機制，撞到就直接吃案回傳 null，剛好主持人自己那個請求（呼叫時機通常
+        //       比其他人早一點點，因為是他觸發 EndMeeting 的）比較容易搶到額度，其他人就全部失敗。
+        //       修正：(1) 加一個伺服器端的並發限制（同時最多 2 個轉錄請求打去 Gemini，其餘排隊等待，
+        //       不要讓大家同時湧入直接把額度打爆）；(2) 收到 429 時做一次退避重試，不要直接放棄。
+        private static readonly SemaphoreSlim _transcribeConcurrencyLimiter = new(2, 2);
+
         public async Task<string?> TranscribeAudioAsync(byte[] audioBytes, string mimeType)
         {
             var apiKey = _config["Gemini:ApiKey"]
@@ -91,58 +102,87 @@ namespace InterviewProject.Services
             if (string.IsNullOrEmpty(apiKey)) return null;
             if (audioBytes.Length == 0) return "";
 
-            var client = _httpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromMinutes(3); // 音訊檔案較大、轉錄需要一點時間，拉長逾時
-
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
-            var base64Audio = Convert.ToBase64String(audioBytes);
-
-            var body = new
-            {
-                contents = new[]
-                {
-                    new
-                    {
-                        parts = new object[]
-                        {
-                            new { text =
-                                "請把這段音訊逐字轉成繁體中文文字稿，只要打字稿內容本身，不要加任何說明、不要加時間戳、不要加「逐字稿：」這種標題。\n" +
-                                "這段音訊大部分時間可能是安靜、環境雜音、呼吸聲、或視訊會議背景音等「非語言」聲音，這是正常情況，請只把「實際聽得出來的語音內容」打出來就好，" +
-                                "絕對不要為了填滿內容而重複輸出同一句話、同一個詞，也不要憑空腦補、猜測、或延伸沒有真的聽到的內容。如果只有零星幾句話，就只寫那幾句話，其餘什麼都不用寫。\n" +
-                                "如果整段音訊都沒有人講話（完全安靜無聲或只有雜音），就只回覆「（無語音內容）」這幾個字，不要輸出其他任何文字。" },
-                            new { inline_data = new { mime_type = mimeType, data = base64Audio } }
-                        }
-                    }
-                },
-                generationConfig = new
-                {
-                    maxOutputTokens = 4000,
-                    temperature = 0.2 // 🎯 降低溫度，減少「腦補/重複」這種幻覺行為的機率
-                }
-            };
-
+            // 🎯 排隊拿到「可以打 Gemini」的名額才繼續，避免會議結束當下所有人同時湧入
+            await _transcribeConcurrencyLimiter.WaitAsync();
             try
             {
+                var client = _httpClientFactory.CreateClient();
+                client.Timeout = TimeSpan.FromMinutes(3); // 音訊檔案較大、轉錄需要一點時間，拉長逾時
+
+                var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+                var base64Audio = Convert.ToBase64String(audioBytes);
+
+                var body = new
+                {
+                    contents = new[]
+                    {
+                        new
+                        {
+                            parts = new object[]
+                            {
+                                new { text =
+                                    "請把這段音訊逐字轉成繁體中文文字稿，只要打字稿內容本身，不要加任何說明、不要加時間戳、不要加「逐字稿：」這種標題。\n" +
+                                    "這段音訊大部分時間可能是安靜、環境雜音、呼吸聲、或視訊會議背景音等「非語言」聲音，這是正常情況，請只把「實際聽得出來的語音內容」打出來就好，" +
+                                    "絕對不要為了填滿內容而重複輸出同一句話、同一個詞，也不要憑空腦補、猜測、或延伸沒有真的聽到的內容。如果只有零星幾句話，就只寫那幾句話，其餘什麼都不用寫。\n" +
+                                    "如果整段音訊都沒有人講話（完全安靜無聲或只有雜音），就只回覆「（無語音內容）」這幾個字，不要輸出其他任何文字。" },
+                                new { inline_data = new { mime_type = mimeType, data = base64Audio } }
+                            }
+                        }
+                    },
+                    generationConfig = new
+                    {
+                        maxOutputTokens = 4000,
+                        temperature = 0.2 // 🎯 降低溫度，減少「腦補/重複」這種幻覺行為的機率
+                    }
+                };
+
                 var json = JsonSerializer.Serialize(body);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var response = await client.PostAsync(url, content);
-                var respBody = await response.Content.ReadAsStringAsync();
 
-                if (!response.IsSuccessStatusCode) return null;
+                for (int attempt = 0; attempt < 3; attempt++)
+                {
+                    try
+                    {
+                        var content = new StringContent(json, Encoding.UTF8, "application/json");
+                        var response = await client.PostAsync(url, content);
+                        var respBody = await response.Content.ReadAsStringAsync();
 
-                using var doc = JsonDocument.Parse(respBody);
-                var text = doc.RootElement
-                    .GetProperty("candidates")[0]
-                    .GetProperty("content")
-                    .GetProperty("parts")[0]
-                    .GetProperty("text")
-                    .GetString() ?? "";
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            // 🎯 429 = 撞到速率限制，很可能等一下就好了，值得重試；其他錯誤（金鑰錯誤、額度整個用完等）
+                            //    重試也沒用，直接放棄比較快
+                            if ((int)response.StatusCode == 429 && attempt < 2)
+                            {
+                                Console.WriteLine($"[GeminiService] TranscribeAudioAsync 撞到 429 速率限制，{(attempt + 1) * 3} 秒後重試（第 {attempt + 1} 次）");
+                                await Task.Delay((attempt + 1) * 3000);
+                                continue;
+                            }
+                            Console.WriteLine($"[GeminiService] TranscribeAudioAsync 失敗：HTTP {(int)response.StatusCode}，內容前 300 字：{respBody.Substring(0, Math.Min(300, respBody.Length))}");
+                            return null;
+                        }
 
-                return CleanUpHallucination(text.Trim());
-            }
-            catch
-            {
+                        using var doc = JsonDocument.Parse(respBody);
+                        var text = doc.RootElement
+                            .GetProperty("candidates")[0]
+                            .GetProperty("content")
+                            .GetProperty("parts")[0]
+                            .GetProperty("text")
+                            .GetString() ?? "";
+
+                        return CleanUpHallucination(text.Trim());
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[GeminiService] TranscribeAudioAsync 例外（第 {attempt + 1} 次嘗試）：{ex.Message}");
+                        if (attempt >= 2) return null;
+                        await Task.Delay(2000);
+                    }
+                }
+
                 return null;
+            }
+            finally
+            {
+                _transcribeConcurrencyLimiter.Release();
             }
         }
 

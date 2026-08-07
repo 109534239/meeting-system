@@ -29,64 +29,170 @@ namespace InterviewProject.Services
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const dest = audioCtx.createMediaStreamDestination();
     const connected = new WeakSet();
+    const connectedTrackIds = new Set(); // 🎯 記錄「已經透過任何管道接上的原始音軌 id」，避免同一個人的聲音被接兩次造成疊音
 
     function connectAudio(el) {
         if (connected.has(el)) return;
+        // 🎯 如果這個 <video>/<audio> 元素背後的音軌，已經透過下面 connectJitsiTracks() 直接接過了，
+        //    這裡就不要再重複接一次，不然同一個人的聲音會疊兩層、錄出來音量異常/有回音
+        try {
+            const stream = el.srcObject;
+            if (stream && typeof stream.getAudioTracks === 'function') {
+                const tracks = stream.getAudioTracks();
+                if (tracks.length > 0 && tracks.every(t => connectedTrackIds.has(t.id))) {
+                    connected.add(el);
+                    return;
+                }
+            }
+        } catch (e) {}
+
         connected.add(el);
         try {
             const src = audioCtx.createMediaElementSource(el);
             src.connect(dest);
+            try {
+                const stream = el.srcObject;
+                if (stream && typeof stream.getAudioTracks === 'function') {
+                    stream.getAudioTracks().forEach(t => connectedTrackIds.add(t.id));
+                }
+            } catch (e) {}
         } catch (e) { /* 某些元素可能不支援或已連過，忽略即可 */ }
     }
 
     function scanMedia() {
         document.querySelectorAll('video, audio').forEach(connectAudio);
     }
-    scanMedia();
 
-    const observer = new MutationObserver(scanMedia);
+    // 🎯 這輪新增：不要只靠掃描 DOM 上「看得到的」<video>/<audio> 元素接聲音——
+    //    使用者這輪回報「不確定有沒有錄到所有人的聲音」，根本原因可能是 Jitsi 某些版本/設定下，
+    //    遠端participant的聲音是透過內部的 Web Audio 混音處理、沒有對應到一個 DOM 上找得到的
+    //    <audio> 元素（或者對應的 <video> 元素被設成 muted，聲音改由我們抓不到的地方播放），
+    //    這種情況下單靠掃 DOM 會漏掉那個人的聲音。
+    //    改成「雙管齊下」：優先直接從 Jitsi 內部的會議物件（window.APP.conference）拿到每個人
+    //    最原始的音訊 MediaStreamTrack，直接接進我們的錄音圖裡，不管 DOM 上看不看得到、
+    //    有沒有被 muted，都能拿到真正的原始聲音。DOM 掃描機制still保留當作備援（萬一內部 API 抓不到)。
+    function connectJitsiTracks() {
+        try {
+            const room = window.APP && window.APP.conference && window.APP.conference._room;
+            if (!room || typeof room.getParticipants !== 'function') return;
+
+            const nativeTracks = [];
+            room.getParticipants().forEach(p => {
+                try {
+                    const tracks = typeof p.getTracks === 'function' ? p.getTracks() : [];
+                    tracks.forEach(t => {
+                        if (t && typeof t.isAudioTrack === 'function' && t.isAudioTrack() && typeof t.getTrack === 'function') {
+                            const nt = t.getTrack();
+                            if (nt) nativeTracks.push(nt);
+                        }
+                    });
+                } catch (e) {}
+            });
+            // 本地（AI 面試官自己）的音軌理論上是靜音狀態，但一起處理，不特別排除，反正靜音軌接了也不會有聲音
+            try {
+                const localAudio = window.APP.conference.localAudio;
+                if (localAudio && typeof localAudio.getTrack === 'function') {
+                    const nt = localAudio.getTrack();
+                    if (nt) nativeTracks.push(nt);
+                }
+            } catch (e) {}
+
+            nativeTracks.forEach(track => {
+                if (!track || connectedTrackIds.has(track.id)) return;
+                try {
+                    const stream = new MediaStream([track]);
+                    const src = audioCtx.createMediaStreamSource(stream);
+                    src.connect(dest);
+                    connectedTrackIds.add(track.id);
+                } catch (e) {}
+            });
+        } catch (e) {}
+    }
+
+    scanMedia();
+    connectJitsiTracks();
+
+    const observer = new MutationObserver(() => { scanMedia(); connectJitsiTracks(); });
     observer.observe(document.body, { childList: true, subtree: true });
     window.__mediaObserver = observer;
+    // 🎯 DOM 變動事件不一定會在「新的音軌加入會議」的當下觸發（音軌可能是動態加進已存在的元素，不算 DOM 變動），
+    //    保險起見每 2 秒也主動掃一次 Jitsi 內部的軌道清單，確保晚加入或晚開麥克風的人也不會被漏掉
+    window.__trackPollInterval = setInterval(connectJitsiTracks, 2000);
 
-    // 🎯 盡力而為：從 Jitsi 的畫面找出「目前所有看得到名字標籤的元素」，建一份文字清單，
-    //    之後畫每一格影格時，用好幾種方式去猜這格對應的名字，猜不到才留空。
-    //    這輪修正的重點：舊版只在「這個 video 自己最近的容器」裡面找名字標籤，
-    //    但 Jitsi 在 speaker/stage view（AI 面試官這裡用的就是這個模式，disableTileView=true）下，
-    //    大格的主畫面跟旁邊縮圖列（filmstrip）的 DOM 結構不一樣，主畫面能找到、縮圖列常常找不到，
-    //    造成「只有最高主管（剛好是當下主畫面）有標籤，其他人都沒有」。
-    //    現在改成：容器內找不到 → 用 video 元素自己的 id/data 屬性反查參與者 id、全文件範圍找對應名字標籤 →
-    //    還是找不到 → 用「畫面上第幾個 video」對應「畫面上第幾個名字標籤」的順序去猜，三層都失敗才留空。
+    // 🎯 盡力而為：從 Jitsi 的畫面找出每個 video 對應的參與者名字，畫在左下角當標籤。
+    //    這輪修正的重點：上一輪只有「DOM 容器內找」+「DOM 全域用 id 找」+「靠順序用猜的」三層，
+    //    使用者這輪回報「其中一位主管的畫面被錯認成 AI 面試官」——很可能就是「靠順序猜」那層猜錯了
+    //    （AI 面試官剛好也叫王大明，跟其中一位人類主管同名，順序稍微對不齊就會猜到別人身上，
+    //    而且猜錯成「AI 面試官」這種特定角色又特別容易造成混淆，比完全沒標籤更糟）。
+    //    這輪把「靠順序猜」整個拿掉，改成最優先直接查 Jitsi 內部的參與者資料（window.APP 的 redux store），
+    //    這是最權威的資料來源——不管這個 video 現在是不是主畫面、DOM 結構長怎樣，都查得到正確的名字，
+    //    查不到才退回原本的 DOM 容器/全域搜尋這兩層；三層都查不到，寧可留空、不要用猜的。
+    function getParticipantNameMap() {
+        const map = {};
+        try {
+            const state = window.APP && window.APP.store && typeof window.APP.store.getState === 'function'
+                ? window.APP.store.getState() : null;
+            const participantsState = state && state['features/base/participants'];
+            if (!participantsState) return map;
+
+            const collect = (obj) => {
+                if (!obj) return;
+                const arr = Array.isArray(obj) ? obj : Object.values(obj);
+                arr.forEach(p => { if (p && p.id && p.name) map[p.id] = p.name; });
+            };
+            collect(participantsState.remote);
+            if (participantsState.local && participantsState.local.id) {
+                map[participantsState.local.id] = participantsState.local.name || map[participantsState.local.id] || '';
+            }
+        } catch (e) {}
+        return map;
+    }
+
     function extractParticipantId(el) {
         if (!el) return null;
         const idAttr = el.id || '';
-        // 常見樣式：id=""participant_<id>""、id=""remoteVideo_<id>""、data-participant-id=""<id>""
+        // 常見樣式：id=""participant_<id>""、id=""remoteVideo_<id>""、id=""video_<id>""、data-participant-id=""<id>""
         let m = idAttr.match(/(?:participant|remoteVideo|video)_([A-Za-z0-9]+)/);
         if (m) return m[1];
         if (el.dataset && el.dataset.participantId) return el.dataset.participantId;
         return null;
     }
 
-    function findLabelForVideo(v, indexAmongVideos, allNameEls) {
-        // 第一層：這個 video 最近的容器裡面直接找名字標籤
+    function findLabelForVideo(v, nameMap) {
+        // 第一層（最可信）：video 元素自己（或它的祖先，最多往上找 5 層）身上的參與者 id，
+        //    直接去 Jitsi 內部的權威資料（redux store）查名字——不依賴畫面上有沒有渲染出可見的文字標籤
+        try {
+            let idHolder = v;
+            let pid = extractParticipantId(idHolder);
+            let hops = 0;
+            while (!pid && idHolder && idHolder.parentElement && hops < 5) {
+                idHolder = idHolder.parentElement;
+                pid = extractParticipantId(idHolder);
+                hops++;
+            }
+            if (pid && nameMap[pid]) return nameMap[pid];
+        } catch (e) {}
+
+        // 第二層：這個 video 最近的容器裡面直接找看得到的名字標籤文字
         try {
             const container = v.closest('[id^=""participant_""]') || v.closest('.videocontainer') || v.parentElement;
             if (container) {
                 const nameEl = container.querySelector('.displayname, [class*=""displayName""], [class*=""display-name""]');
                 if (nameEl && nameEl.textContent && nameEl.textContent.trim()) return nameEl.textContent.trim();
 
-                // 第二層：從容器（或它的祖先）身上找得到參與者 id，拿這個 id 去「整個文件」範圍找名字標籤
-                //    （不再侷限於同一個小容器內，因為 stage view 底下名字標籤有時是獨立掛在別的地方）
-                let idHolder = container;
-                let pid = extractParticipantId(idHolder);
-                let hops = 0;
-                while (!pid && idHolder && idHolder.parentElement && hops < 5) {
-                    idHolder = idHolder.parentElement;
-                    pid = extractParticipantId(idHolder);
-                    hops++;
+                // 第三層：從容器（或它的祖先）身上找得到參與者 id，拿這個 id 去「整個文件」範圍找名字標籤
+                let idHolder2 = container;
+                let pid2 = extractParticipantId(idHolder2);
+                let hops2 = 0;
+                while (!pid2 && idHolder2 && idHolder2.parentElement && hops2 < 5) {
+                    idHolder2 = idHolder2.parentElement;
+                    pid2 = extractParticipantId(idHolder2);
+                    hops2++;
                 }
-                if (pid) {
+                if (pid2) {
+                    if (nameMap[pid2]) return nameMap[pid2];
                     const globalMatch = document.querySelector(
-                        `[id*=""${pid}""] .displayname, [id*=""${pid}""][class*=""displayName""], [data-participant-id=""${pid}""] .displayname`
+                        `[id*=""${pid2}""] .displayname, [id*=""${pid2}""][class*=""displayName""], [data-participant-id=""${pid2}""] .displayname`
                     );
                     if (globalMatch && globalMatch.textContent && globalMatch.textContent.trim()) {
                         return globalMatch.textContent.trim();
@@ -95,13 +201,8 @@ namespace InterviewProject.Services
             }
         } catch (e) {}
 
-        // 第三層：容器/id 反查都失敗，退而求其次——用畫面上「第幾個 video」對應「第幾個名字標籤」的順序來猜。
-        //    Jitsi 通常會照同樣的參與者順序渲染 video 跟名字標籤（主畫面 + filmstrip 縮圖），
-        //    順序對不上的機率不高，猜錯了頂多是標錯人，不影響整體「至少有個名字」這件事。
-        if (allNameEls[indexAmongVideos] && allNameEls[indexAmongVideos].textContent) {
-            const t = allNameEls[indexAmongVideos].textContent.trim();
-            if (t) return t;
-        }
+        // 🎯 前面幾層都查不到就寧可留空——不再用「畫面上第幾個」這種順序去猜。
+        //    猜錯人（尤其猜成「AI 面試官」這種特定角色）比完全沒標籤還容易造成誤導，這輪拿掉這個做法。
         return '';
     }
 
@@ -109,9 +210,8 @@ namespace InterviewProject.Services
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         const videos = Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0);
-        // 🎯 全文件範圍先收集一次「目前畫面上所有名字標籤」，給第三層順序比對用
-        const allNameEls = Array.from(document.querySelectorAll('.displayname, [class*=""displayName""], [class*=""display-name""]'))
-            .filter(el => el.textContent && el.textContent.trim().length > 0);
+        // 🎯 每一輪畫格前先重新查一次 Jitsi 內部的參與者名字資料（人可能中途離開/改名，即時查最準）
+        const nameMap = getParticipantNameMap();
 
         if (videos.length > 0) {
             const cols = Math.ceil(Math.sqrt(videos.length));
@@ -122,9 +222,9 @@ namespace InterviewProject.Services
                 try { ctx.drawImage(v, x, y, cellW, cellH); } catch (e) {}
 
                 // 🎯 這樣錄下來的檔案才看得出來哪一格是誰（不然每格都只是一個畫面，看不出角色）。
-                //    Jitsi 不同版本/不同顯示模式 DOM 結構可能不完全一樣，三層都抓不到名字就跳過，不影響畫面本身。
+                //    Jitsi 不同版本/不同顯示模式 DOM 結構可能不完全一樣，抓不到名字就跳過，不影響畫面本身。
                 try {
-                    const label = findLabelForVideo(v, i, allNameEls);
+                    const label = findLabelForVideo(v, nameMap);
                     if (label) {
                         ctx.font = 'bold 16px sans-serif';
                         const textWidth = ctx.measureText(label).width;
@@ -163,6 +263,7 @@ namespace InterviewProject.Services
     return new Promise((resolve) => {
         if (window.__mediaObserver) { try { window.__mediaObserver.disconnect(); } catch (e) {} }
         if (window.__rafId) { try { cancelAnimationFrame(window.__rafId); } catch (e) {} }
+        if (window.__trackPollInterval) { try { clearInterval(window.__trackPollInterval); } catch (e) {} }
 
         if (!window.__mediaRecorder || window.__mediaRecorder.state === 'inactive') {
             resolve(null);
