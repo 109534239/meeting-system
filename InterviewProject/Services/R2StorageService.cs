@@ -93,6 +93,16 @@ namespace InterviewProject.Services
             return await reader.ReadToEndAsync();
         }
 
+        // 🎯 AI 分析要多模態分析錄影檔時，得先把整支影片的位元組抓下來，再轉送給 Gemini File API
+        public async Task<byte[]> DownloadBytesAsync(string key)
+        {
+            EnsureConfigured();
+            using var resp = await _client!.GetObjectAsync(_bucket, key);
+            using var ms = new MemoryStream();
+            await resp.ResponseStream.CopyToAsync(ms);
+            return ms.ToArray();
+        }
+
         public async Task<bool> ExistsAsync(string key)
         {
             if (!_isConfigured || _client == null) return false;

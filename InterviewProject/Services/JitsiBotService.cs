@@ -48,10 +48,71 @@ namespace InterviewProject.Services
     observer.observe(document.body, { childList: true, subtree: true });
     window.__mediaObserver = observer;
 
+    // 🎯 盡力而為：從 Jitsi 的畫面找出「目前所有看得到名字標籤的元素」，建一份文字清單，
+    //    之後畫每一格影格時，用好幾種方式去猜這格對應的名字，猜不到才留空。
+    //    這輪修正的重點：舊版只在「這個 video 自己最近的容器」裡面找名字標籤，
+    //    但 Jitsi 在 speaker/stage view（AI 面試官這裡用的就是這個模式，disableTileView=true）下，
+    //    大格的主畫面跟旁邊縮圖列（filmstrip）的 DOM 結構不一樣，主畫面能找到、縮圖列常常找不到，
+    //    造成「只有最高主管（剛好是當下主畫面）有標籤，其他人都沒有」。
+    //    現在改成：容器內找不到 → 用 video 元素自己的 id/data 屬性反查參與者 id、全文件範圍找對應名字標籤 →
+    //    還是找不到 → 用「畫面上第幾個 video」對應「畫面上第幾個名字標籤」的順序去猜，三層都失敗才留空。
+    function extractParticipantId(el) {
+        if (!el) return null;
+        const idAttr = el.id || '';
+        // 常見樣式：id=""participant_<id>""、id=""remoteVideo_<id>""、data-participant-id=""<id>""
+        let m = idAttr.match(/(?:participant|remoteVideo|video)_([A-Za-z0-9]+)/);
+        if (m) return m[1];
+        if (el.dataset && el.dataset.participantId) return el.dataset.participantId;
+        return null;
+    }
+
+    function findLabelForVideo(v, indexAmongVideos, allNameEls) {
+        // 第一層：這個 video 最近的容器裡面直接找名字標籤
+        try {
+            const container = v.closest('[id^=""participant_""]') || v.closest('.videocontainer') || v.parentElement;
+            if (container) {
+                const nameEl = container.querySelector('.displayname, [class*=""displayName""], [class*=""display-name""]');
+                if (nameEl && nameEl.textContent && nameEl.textContent.trim()) return nameEl.textContent.trim();
+
+                // 第二層：從容器（或它的祖先）身上找得到參與者 id，拿這個 id 去「整個文件」範圍找名字標籤
+                //    （不再侷限於同一個小容器內，因為 stage view 底下名字標籤有時是獨立掛在別的地方）
+                let idHolder = container;
+                let pid = extractParticipantId(idHolder);
+                let hops = 0;
+                while (!pid && idHolder && idHolder.parentElement && hops < 5) {
+                    idHolder = idHolder.parentElement;
+                    pid = extractParticipantId(idHolder);
+                    hops++;
+                }
+                if (pid) {
+                    const globalMatch = document.querySelector(
+                        `[id*=""${pid}""] .displayname, [id*=""${pid}""][class*=""displayName""], [data-participant-id=""${pid}""] .displayname`
+                    );
+                    if (globalMatch && globalMatch.textContent && globalMatch.textContent.trim()) {
+                        return globalMatch.textContent.trim();
+                    }
+                }
+            }
+        } catch (e) {}
+
+        // 第三層：容器/id 反查都失敗，退而求其次——用畫面上「第幾個 video」對應「第幾個名字標籤」的順序來猜。
+        //    Jitsi 通常會照同樣的參與者順序渲染 video 跟名字標籤（主畫面 + filmstrip 縮圖），
+        //    順序對不上的機率不高，猜錯了頂多是標錯人，不影響整體「至少有個名字」這件事。
+        if (allNameEls[indexAmongVideos] && allNameEls[indexAmongVideos].textContent) {
+            const t = allNameEls[indexAmongVideos].textContent.trim();
+            if (t) return t;
+        }
+        return '';
+    }
+
     function drawFrame() {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         const videos = Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0);
+        // 🎯 全文件範圍先收集一次「目前畫面上所有名字標籤」，給第三層順序比對用
+        const allNameEls = Array.from(document.querySelectorAll('.displayname, [class*=""displayName""], [class*=""display-name""]'))
+            .filter(el => el.textContent && el.textContent.trim().length > 0);
+
         if (videos.length > 0) {
             const cols = Math.ceil(Math.sqrt(videos.length));
             const rows = Math.ceil(videos.length / cols);
@@ -60,16 +121,10 @@ namespace InterviewProject.Services
                 const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
                 try { ctx.drawImage(v, x, y, cellW, cellH); } catch (e) {}
 
-                // 🎯 盡力而為：嘗試從 Jitsi 的 DOM 找出這個 video 對應的參與者名稱標籤，畫在左下角，
-                //    這樣錄下來的檔案才看得出來哪一格是誰（不然每格都只是一個畫面，看不出角色）。
-                //    Jitsi 不同版本 DOM 結構可能不完全一樣，抓不到名字就跳過，不影響畫面本身。
+                // 🎯 這樣錄下來的檔案才看得出來哪一格是誰（不然每格都只是一個畫面，看不出角色）。
+                //    Jitsi 不同版本/不同顯示模式 DOM 結構可能不完全一樣，三層都抓不到名字就跳過，不影響畫面本身。
                 try {
-                    let label = '';
-                    const container = v.closest('[id^=""participant_""]') || v.closest('.videocontainer') || v.parentElement;
-                    if (container) {
-                        const nameEl = container.querySelector('.displayname, [class*=""displayName""], [class*=""display-name""]');
-                        if (nameEl && nameEl.textContent) label = nameEl.textContent.trim();
-                    }
+                    const label = findLabelForVideo(v, i, allNameEls);
                     if (label) {
                         ctx.font = 'bold 16px sans-serif';
                         const textWidth = ctx.measureText(label).width;

@@ -532,7 +532,11 @@ namespace InterviewProject.Controllers
             {
                 List<TranscriptChunk> sorted;
                 lock (chunks) { sorted = chunks.OrderBy(c => c.ReceivedAt).ToList(); }
-                content = string.Join("\n", sorted.Select(c => $"[{c.Time}] {c.Sp}：{c.Tx}"));
+                // 🐛 防呆：Tx 內容理論上已經在 GeminiService.CleanUpHallucination() 清過，
+                //    但保險起見，這裡還是把任何殘留的換行壓成空白，確保輸出的每一行
+                //    一定都有「[時間] 講者：」開頭，不會再冒出前面一段有幾十行看不出是誰講的裸行
+                content = string.Join("\n", sorted.Select(c =>
+                    $"[{c.Time}] {c.Sp}：{c.Tx.Replace("\r\n", " ").Replace("\n", " ").Trim()}"));
                 isEmpty = false;
             }
             else
@@ -588,6 +592,15 @@ namespace InterviewProject.Controllers
 
         // 🎯 AI 面試分析結果改存到 Cloudflare R2，而且改成「每位求職者各自分析、各自存一份檔案」
         //    （不再是所有人塞進同一次 Gemini 呼叫裡分析，那樣字數會被瓜分，容易被截斷到講一半）
+        //
+        //    🐛 這輪修正兩個問題：
+        //    1. 「有沒有參加面試」原本是用 transcript.Contains(candidateName) 判斷，
+        //       但逐字稿本來就可能因為轉錄失敗/被過濾掉而缺漏某人的發言，導致明明有參加卻被誤判成沒參加。
+        //       改成看 RoomParticipants 這張表的 JoinedAt（他真的進過會議室的紀錄），這才是可信的事實來源。
+        //    2. AI 分析不能只靠逐字稿文字——逐字稿只有「說了什麼」，完全看不出語氣、表情。
+        //       改成優先用「錄影檔（多模態：畫面表情 + 聲音語氣）+ 逐字稿」一起送給 Gemini 分析；
+        //       如果錄影還沒上傳完成（AI 面試官錄影上傳是背景工作，可能還在跑）或上傳/分析失敗，
+        //       才退回原本純文字逐字稿的分析方式，確保這個功能不會因為多模態那條路失敗就整個掛掉。
         [HttpPost]
         public async Task<IActionResult> SaveAiAnalysis([FromForm] string roomCode, [FromForm] string transcript)
         {
@@ -603,6 +616,38 @@ namespace InterviewProject.Controllers
             if (jobseekers.Count == 0)
                 return Ok(new { success = true, files = new List<object>() });
 
+            // 🎯 錄影上傳是背景工作（EndMeeting 觸發後 AI 面試官才離開會議、轉檔、上傳），
+            //    很可能還沒做完就走到這裡了。短輪詢等它一下（最多 40 秒），
+            //    等不到才放棄多模態、退回純文字分析，不要讓 AI 分析整個卡住太久。
+            string? recordingFileName = room.RecordingFileName;
+            for (int i = 0; i < 20 && string.IsNullOrEmpty(recordingFileName); i++)
+            {
+                await Task.Delay(2000);
+                await _context.Entry(room).ReloadAsync();
+                recordingFileName = room.RecordingFileName;
+            }
+
+            // 🎯 把錄影檔上傳到 Gemini File API 一次就好（同一支影片，每位求職者都能重複參照同一個 file_uri），
+            //    避免每位求職者都重傳一次整支影片、浪費時間跟流量
+            string? geminiFileUri = null;
+            string? geminiFileName = null;
+            if (!string.IsNullOrEmpty(recordingFileName) && _storage.IsConfigured)
+            {
+                try
+                {
+                    var videoBytes = await _storage.DownloadBytesAsync($"錄影錄音/{recordingFileName}");
+                    // Gemini File API 單檔上限是 2GB，但免費額度/請求逾時考量下，太大的檔案還是直接放棄多模態、退回文字分析比較穩
+                    if (videoBytes.Length > 0 && videoBytes.Length < 200_000_000)
+                    {
+                        (geminiFileUri, geminiFileName) = await _gemini.UploadFileAsync(videoBytes, "video/webm", recordingFileName);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SaveAiAnalysis] 下載/上傳錄影檔給 Gemini 失敗，退回純文字分析：{ex.Message}");
+                }
+            }
+
             var results = new List<object>();
 
             bool isFirst = true;
@@ -616,11 +661,13 @@ namespace InterviewProject.Controllers
 
                 var candidateName = jobseeker.Resume?.Member?.Name ?? $"求職者{jobseeker.Id}";
 
-                // 🎯 這位求職者的名字完全沒出現在逐字稿裡，代表他很可能根本沒真的參加/開口說話，
-                //    與其硬丟給 Gemini 分析一個空內容、得到一個奇怪或失敗的結果，不如直接誠實說明
-                if (!transcript.Contains(candidateName))
+                // 🎯 用 RoomParticipants 的實際進場紀錄判斷有沒有參加，而不是硬找逐字稿裡有沒有出現名字
+                //    （逐字稿本來就可能缺漏，用字串比對會把「有參加但逐字稿沒收好」的人誤判成沒參加）
+                bool actuallyAttended = jobseeker.Status == ParticipantStatus.Admitted && jobseeker.JoinedAt != null;
+
+                if (!actuallyAttended)
                 {
-                    var noShowMsg = $"求職者{candidateName}並未參加此次面試會議（逐字稿中沒有出現他的發言紀錄），無法針對其面試表現進行 AI 分析與評分。";
+                    var noShowMsg = $"求職者{candidateName}並未參加此次面試會議（會議紀錄中沒有他的進場紀錄），無法針對其面試表現進行 AI 分析與評分。";
                     var noShowFileName = BuildFileName(room, "txt", candidateName);
                     try
                     {
@@ -634,25 +681,41 @@ namespace InterviewProject.Controllers
                     continue;
                 }
 
-                // 🎯 只針對這位求職者出的分析，maxTokens 也拉高，不用再跟其他候選人瓜分字數
-                var prompt =
-                    $"以下是一場面試的完整逐字稿（可能包含多位求職者，發言前有標示姓名），" +
-                    $"請只針對「{candidateName}」這位求職者的發言與表現進行分析（繁體中文，不用分析其他人）：\n\n{transcript}\n\n" +
-                    $"請提供：1.語氣表達 2.答題品質 3.綜合評分(1-10) 4.錄取建議 5.整體評語（完整寫完，不要中途省略）";
+                string? analysis = null;
 
-                // 🎯 失敗重試一次（間隔 2 秒），大部分速率限制導致的失敗，等一下重試就會成功
-                var analysis = await _gemini.AskAsync(
-                    prompt,
-                    "你是專業人資顧問，說繁體中文，格式清晰條列，內容要完整寫完，不能寫到一半就停。",
-                    maxTokens: 3000);
+                // 🎯 優先走多模態（看畫面表情、聽聲音語氣），只有在錄影不可用時才退回純文字
+                if (!string.IsNullOrEmpty(geminiFileUri))
+                {
+                    analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 3000);
+                    if (analysis == null)
+                    {
+                        await Task.Delay(2000);
+                        analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 3000);
+                    }
+                }
 
                 if (analysis == null)
                 {
-                    await Task.Delay(2000);
+                    // 🎯 沒有錄影可用，或多模態分析失敗兩次，退回原本純文字逐字稿分析（確保這功能不會整個掛掉）
+                    var prompt =
+                        $"以下是一場面試的完整逐字稿（可能包含多位求職者，發言前有標示姓名），" +
+                        $"請只針對「{candidateName}」這位求職者的發言與表現進行分析（繁體中文，不用分析其他人）：\n\n{transcript}\n\n" +
+                        $"請提供：1.語氣表達 2.答題品質 3.AI 綜合評分（0-100分，格式：AI 綜合評分：XX 分） 4.錄取建議 5.整體評語（完整寫完，不要中途省略）\n" +
+                        $"（提醒：這次沒有錄影畫面可看，只能依逐字稿文字判斷，語氣/表情部分請誠實註明「僅依文字內容推測，非實際觀察畫面與聲音」）";
+
                     analysis = await _gemini.AskAsync(
                         prompt,
                         "你是專業人資顧問，說繁體中文，格式清晰條列，內容要完整寫完，不能寫到一半就停。",
                         maxTokens: 3000);
+
+                    if (analysis == null)
+                    {
+                        await Task.Delay(2000);
+                        analysis = await _gemini.AskAsync(
+                            prompt,
+                            "你是專業人資顧問，說繁體中文，格式清晰條列，內容要完整寫完，不能寫到一半就停。",
+                            maxTokens: 3000);
+                    }
                 }
 
                 if (analysis == null)
@@ -671,6 +734,12 @@ namespace InterviewProject.Controllers
                 {
                     results.Add(new { candidateName, success = false, message = "上傳到雲端儲存失敗：" + ex.Message });
                 }
+            }
+
+            // 🎯 這場分析用的暫存影片檔在 Gemini 端可以清掉了，不用等 48 小時自動過期
+            if (!string.IsNullOrEmpty(geminiFileName))
+            {
+                _ = _gemini.DeleteFileAsync(geminiFileName);
             }
 
             return Ok(new { success = true, files = results });
