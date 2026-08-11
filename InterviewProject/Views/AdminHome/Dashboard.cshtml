@@ -35,6 +35,9 @@
     <div class="page-header-inner">
         <h1>招募數據</h1>
         <p>Recruitment Dashboard</p>
+        <small class="text-muted" style="font-size: 12px; font-weight: normal;">
+            @ViewData["ViewScope"]
+        </small>
     </div>
 </div>
 
@@ -94,7 +97,10 @@
 
         <!-- 2. 面試狀態分布 (抓取 Resume.InterviewStatus 與 Resume.AdmissionResult) -->
         <div class="dashboard-card">
-            <div class="card-title">面試狀態分布</div>
+            <div class="card-title d-flex justify-content-between align-items-center">
+                <span>面試狀態分布</span>
+               
+            </div>
 
             <div class="status-list">
                 <div class="status-item">

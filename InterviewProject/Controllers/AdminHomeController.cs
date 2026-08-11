@@ -83,7 +83,7 @@ namespace InterviewProject.Controllers
             ViewData["RejectedPercent"] = totalResumes == 0 ? 0 : Math.Round(rejectedResumes * 100.0 / totalResumes, 1);
 
             // -------------------------------------------------------------
-            // 2. 面試狀態分布 (抓取 InterviewStatus 欄位 & AdmissionResult 欄位)
+            // 2. 面試狀態分布 (依部門/角色過濾後的 passedResumes 作為基準)
             // -------------------------------------------------------------
             // InterviewStatus 欄位統計
             int interviewScheduledCount = await resumeQuery.CountAsync(r => r.InterviewStatus == "已安排面試");
@@ -101,12 +101,15 @@ namespace InterviewProject.Controllers
             ViewData["HiredCount"] = hiredCount;
             ViewData["NotHiredCount"] = notHiredCount;
 
+            // 🎯 計算面試狀態分布的基準分母 (使用通過初審進入面試流程的 passedResumes)
+            int totalInInterviewProcess = passedResumes > 0 ? passedResumes : totalResumes; // 防止除以 0
+
             // 存入 ViewData (百分比)
-            ViewData["InterviewScheduledPercent"] = totalResumes == 0 ? 0 : Math.Round(interviewScheduledCount * 100.0 / totalResumes, 1);
-            ViewData["WaitingSchedulePercent"] = totalResumes == 0 ? 0 : Math.Round(waitingScheduleCount * 100.0 / totalResumes, 1);
-            ViewData["WaitingResultPercent"] = totalResumes == 0 ? 0 : Math.Round(waitingResultCount * 100.0 / totalResumes, 1);
-            ViewData["HiredPercent"] = totalResumes == 0 ? 0 : Math.Round(hiredCount * 100.0 / totalResumes, 1);
-            ViewData["NotHiredPercent"] = totalResumes == 0 ? 0 : Math.Round(notHiredCount * 100.0 / totalResumes, 1);
+            ViewData["InterviewScheduledPercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(interviewScheduledCount * 100.0 / totalInInterviewProcess, 1);
+            ViewData["WaitingSchedulePercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(waitingScheduleCount * 100.0 / totalInInterviewProcess, 1);
+            ViewData["WaitingResultPercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(waitingResultCount * 100.0 / totalInInterviewProcess, 1);
+            ViewData["HiredPercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(hiredCount * 100.0 / totalInInterviewProcess, 1);
+            ViewData["NotHiredPercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(notHiredCount * 100.0 / totalInInterviewProcess, 1);
 
             // 頂部卡片使用的錄取率與面試流程數
             double hireRate = totalResumes == 0 ? 0 : Math.Round(hiredCount * 100.0 / totalResumes, 1);
