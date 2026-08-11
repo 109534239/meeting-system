@@ -2,6 +2,21 @@
 for details on configuring this project to bundle and minify static web assets. */
 
 /* ── 全域變數預設與防爆框設定 ── */
+/* 1. 確保全域不出現橫向滾動條 (解決右側白邊) */
+html, body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden; /* 強制裁切超過螢幕寬度的內容 */
+    margin: 0;
+    padding: 0;
+}
+
+/* 2. 避免圖片或大文字硬撐開螢幕 */
+img, svg, video {
+    max-width: 100%;
+    height: auto;
+}
+
 *, *::before, *::after {
     box-sizing: border-box;
 }
