@@ -1,24 +1,44 @@
 ﻿/* Please see documentation at https://learn.microsoft.com/aspnet/core/client-side/bundling-and-minification
 for details on configuring this project to bundle and minify static web assets. */
 
+/* ── 全域變數預設與防爆框設定 ── */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+:root {
+    --primary: #206c8b;
+    --primary-dark: #164d64;
+    --white: #ffffff;
+    --gray: #f5f7f9;
+    --text-main: #333333;
+    --text-muted: #777777;
+    --radius-pill: 50px;
+}
+
 /* ── NAVBAR ── */
 .navbar {
     background: var(--primary);
-    height: 72px;
+    min-height: 72px;
+    height: auto; /* 允許手機版動態伸縮 */
     border-bottom: 2px solid var(--primary-dark);
     position: sticky;
     top: 0;
     z-index: 100;
     display: flex;
     justify-content: center;
+    align-items: center;
 }
 
 .nav-container {
     width: 100%;
-    max-width: 1200px; /* 與 .main 的 max-width 一致 */
-    padding: 0 40px; /* 與 .main 的 padding (0 40px) 一致 */
+    max-width: 1200px;
+    padding: 10px 20px; /* 從 40px 調整為 20px，增加手機顯示區域 */
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap; /* 手機版寬度不足時自動換行 */
+    gap: 12px;
 }
 
 .nav-brand {
@@ -30,10 +50,10 @@ for details on configuring this project to bundle and minify static web assets. 
 }
 
 .logo-circle {
-    width: 46px;
-    height: 46px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    background: url('../img/面試力達母LOGO.png') center 20% / cover no-repeat;
+    background: url('../img/面試力達母LOGO.png') center / cover no-repeat;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -45,25 +65,26 @@ for details on configuring this project to bundle and minify static web assets. 
 }
 
 .brand-name {
-    font-size: 22px;
+    font-size: clamp(18px, 4vw, 22px); /* 隨螢幕大小縮放標題文字 */
     font-weight: 700;
     color: var(--white);
     letter-spacing: 1px;
+    white-space: nowrap;
 }
 
 .nav-links {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
-    margin-right: 20px; /* 給登入按鈕留一點間距 */
+    flex-wrap: wrap; /* 超過寬度時自動折行 */
 }
 
 .nav-btn {
-    padding: 9px 22px;
+    padding: 8px 16px;
     border-radius: var(--radius-pill);
     border: 2px solid transparent;
     background: transparent;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--white);
     cursor: pointer;
@@ -74,60 +95,69 @@ for details on configuring this project to bundle and minify static web assets. 
 }
 
     .nav-btn:hover {
-      background: rgba(255,255,255,0.15);
+        background: rgba(255,255,255,0.15);
     }
 
     .nav-btn.active {
-      background: var(--white);
-      color: var(--primary);
-      border-color: var(--white);
-      font-weight: 700;
+        background: var(--white);
+        color: var(--primary);
+        border-color: var(--white);
+        font-weight: 700;
     }
 
 .nav-user {
-    padding: 10px 28px;
+    padding: 8px 20px;
     border-radius: 8px;
     background: #c2dfe9;
     color: #174f67;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
     border: none;
     cursor: pointer;
     font-family: inherit;
     transition: background 0.2s;
-    height: 42px;
+    height: 38px;
     text-decoration: none;
-    display: flex;
+    display: inline-flex;
     align-items: center;
+    justify-content: center;
+    white-space: nowrap;
 }
 
     .nav-user:hover {
         background: var(--primary-dark);
         color: #fff;
     }
-    
+
+
 /* ── PAGE HEADER ── */
 .page-header {
     background: var(--white);
     padding: 0;
     border-bottom: 1px solid #ddd;
 }
-    .page-header-inner {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 40px 40px 20px;
-    }
-    .page-header h1 {
-      font-size: 40px; font-weight: 700;
-      color: var(--primary); letter-spacing: 1px;
-      margin-bottom: 4px;
-    }
-    .page-header p {
-      font-size: 14px; color: var(--text-muted);
-    }
+
+.page-header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 28px 20px 16px 20px; /* 手機端邊界留白修正 */
+}
+
+.page-header h1 {
+    font-size: clamp(24px, 5vw, 40px); /* 響應式標題大小 */
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
+.page-header p {
+    font-size: 14px;
+    color: var(--text-muted);
+}
 
 
-/* ── USER DROPDOWN（登入後）── */
+/* ── USER DROPDOWN（登入後選單）── */
 .nav-user-logged {
     position: relative;
     flex-shrink: 0;
@@ -136,7 +166,7 @@ for details on configuring this project to bundle and minify static web assets. 
 .dropdown-menu {
     display: none;
     position: absolute;
-    top: 52px;
+    top: 48px;
     right: 0;
     background: var(--white);
     border-radius: 12px;
@@ -153,7 +183,7 @@ for details on configuring this project to bundle and minify static web assets. 
 
 .dropdown-item {
     display: block;
-    padding: 13px 20px;
+    padding: 12px 20px;
     font-size: 14px;
     font-weight: 500;
     color: var(--text-main);
@@ -187,26 +217,75 @@ for details on configuring this project to bundle and minify static web assets. 
             background: #fff0f0;
         }
 
+
 /* ── FOOTER ── */
 .footer {
     background: var(--primary);
-    /*    position: absolute;
-    bottom: 0;*/
     width: 100%;
-    white-space: nowrap;
-    line-height: 30px;
+    padding: 12px 20px;
+    line-height: 1.5;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.8); /* 設定文字為半透明白色，接近圖片的灰色感 */
-    flex-shrink: 0; /* 確保在 Flex 佈局下不會被壓縮 */
+    color: rgba(255, 255, 255, 0.8);
+    flex-shrink: 0;
+    text-align: center;
 }
 
-    /* 新增以下這段來控制超連結顏色 */
     .footer a {
-        color: rgba(255, 255, 255, 0.8); /* 讓超連結文字顏色與一般文字一致 */
-        text-decoration: none; /* 移除底線 */
+        color: rgba(255, 255, 255, 0.8);
+        text-decoration: none;
     }
 
         .footer a:hover {
-            color: var(--white); /* 滑鼠移上去時變亮白色 */
+            color: var(--white);
         }
-    
+
+
+/* ── 🎯 Layout RWD 響應式媒體查詢 (Media Queries) ── */
+
+/* 平板與手機版 (768px 以下) */
+@media (max-width: 768px) {
+    .nav-container {
+        padding: 10px 16px;
+    }
+
+    .page-header-inner {
+        padding: 20px 16px 12px 16px;
+    }
+}
+
+/* 小型手機版 (576px 以下) */
+@media (max-width: 576px) {
+    .navbar {
+        padding: 8px 0;
+    }
+
+    .nav-container {
+        flex-direction: column; /* 品牌 LOGO 上、按鈕選單下 */
+        align-items: center;
+        gap: 10px;
+    }
+
+    .nav-brand {
+        margin-right: 0; /* 置中 LOGO */
+    }
+
+    .nav-links {
+        justify-content: center;
+        width: 100%;
+    }
+
+    .nav-btn {
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+
+    .nav-user {
+        padding: 6px 16px;
+        height: 34px;
+        font-size: 13px;
+    }
+
+    .footer {
+        white-space: normal; /* 手機版開啟換行，避免橫向滾動條 */
+    }
+}
