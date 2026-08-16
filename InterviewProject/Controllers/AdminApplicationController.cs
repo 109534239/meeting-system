@@ -3,6 +3,7 @@ using InterviewProject.Models;
 using InterviewProject.Services;
 using Microsoft.AspNetCore.Http; // 確保有引入 Session 所需的命名空間
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -88,7 +89,27 @@ namespace InterviewProject.Controllers
             ViewBag.JobId = jobId;
             ViewBag.CurrentFilter = statusFilter;
 
-            // 🎯 如果有帶 jobId，代表查看某一個職缺的履歷
+            // 🎯 1. 撈出選單用的職缺清單 (依照角色權限過濾)
+            var jobsQuery = _db.Jobs.AsQueryable();
+            if (role == "manager" || role == "director" || role == "employee")
+            {
+                if (string.IsNullOrEmpty(department)) return Forbid();
+                jobsQuery = jobsQuery.Where(j => j.Department == department);
+            }
+
+            var jobList = await jobsQuery
+                .OrderByDescending(j => j.CreatedAt)
+                .Select(j => new SelectListItem
+                {
+                    Value = j.Id.ToString(),
+                    Text = j.Title,
+                    Selected = jobId.HasValue && j.Id == jobId.Value
+                })
+                .ToListAsync();
+
+            ViewBag.JobList = jobList;
+
+            // 🎯 2. 設定頁面標題
             if (jobId.HasValue)
             {
                 var job = await _db.Jobs.FindAsync(jobId.Value);
@@ -110,8 +131,7 @@ namespace InterviewProject.Controllers
                     : $"{department} 部門應徵履歷";
             }
 
-            // 🎯 同步把 AiScore 與 AiComment 從資料庫 Resume 表內撈出來
-            // 🚨 關鍵修改：最上游 LINQ 直接排除 Status == "暫存" 的履歷
+            // 🎯 3. 最上游 LINQ：排除 Status == "暫存" 的履歷
             var query = from r in _db.Resumes
                         join m in _db.Members on r.MembersId equals m.Id
                         join j in _db.Jobs on r.JobsId equals j.Id
@@ -126,73 +146,72 @@ namespace InterviewProject.Controllers
             // 🎯 Manager / Director 只能看到自己所屬部門的履歷
             if (role == "manager" || role == "director" || role == "employee")
             {
-                if (string.IsNullOrEmpty(department))
-                {
-                    return Forbid();
-                }
-
                 query = query.Where(x => x.Job.Department == department);
             }
 
-            // 🎯 電話欄位整併：Resume 只剩 Phone1 一個真正的電話欄位，不能再借用 Phone2／Mobile
-            //    當作暫存欄位塞會員姓名跟電話。改用獨立的 Dictionary（跟下面 AiScores/AiComments
-            //    同一套模式）帶到 View，Index.cshtml 那邊要把 @item.Phone2 / @item.Mobile
-            //    改成 @ViewBag.MemberNames[item.Id] / @ViewBag.MemberPhones[item.Id]
-            var memberNames = await query.ToDictionaryAsync(x => x.Resume.Id, x => x.Member.Name);
-            var memberPhones = await query.ToDictionaryAsync(x => x.Resume.Id, x => x.Member.Phone);
-            var jobTitles = await query.ToDictionaryAsync(x => x.Resume.Id, x => x.Job.Title); // 👈 新增這行
+            // 🎯 4. 狀態篩選 (未處理 / 已處理)
+            if (statusFilter == "未處理")
+            {
+                query = query.Where(x => x.Resume.Status == "待審核");
+            }
+            else if (statusFilter == "已處理")
+            {
+                query = query.Where(x => x.Resume.Status != "待審核");
+            }
 
-            var resultQuery = query.Select(x => new InterviewProject.Models.Resume
+            // 🎯 5. 一次性查出所需完整資料列（避免多餘的資料庫來回查詢）
+            var rawList = await query
+                .OrderByDescending(x => x.Resume.ResumeTime)
+                .ToListAsync();
+
+            // 🎯 6. 記憶體中整理字典 (效能最佳，只需 1 次 SQL 查詢)
+            ViewBag.MemberNames = rawList.ToDictionary(x => x.Resume.Id, x => x.Member.Name);
+            ViewBag.MemberPhones = rawList.ToDictionary(x => x.Resume.Id, x => x.Member.Phone);
+            ViewBag.JobTitles = rawList.ToDictionary(x => x.Resume.Id, x => x.Job.Title);
+
+            // 🎯 7. 組成主模型 ResumesList
+            var resumesList = rawList.Select(x => new InterviewProject.Models.Resume
             {
                 Id = x.Resume.Id,
                 ResumeTime = x.Resume.ResumeTime,
-                // 🎯 學歷已改成 Educations 子表，這個投影沒辦法直接讀 SchoolName/Major/EduLevel 了，
-                //    改成撈完 resumesList 後再另外查一次 Educations 補上去（見下方）
                 WorkExperienceYears = x.Resume.WorkExperienceYears,
                 Status = x.Resume.Status,
                 JobsId = x.Resume.JobsId,
                 AiScore = x.Resume.AiScore,
                 AiComment = x.Resume.AiComment
-            });
+            }).ToList();
 
-            if (statusFilter == "未處理")
-            {
-                resultQuery = resultQuery.Where(x => x.Status == "待審核");
-            }
-            else if (statusFilter == "已處理")
-            {
-                resultQuery = resultQuery.Where(x => x.Status != "待審核");
-            }
-
-            var resumesList = await resultQuery.OrderByDescending(x => x.ResumeTime).ToListAsync();
-
-            // 🎯 學歷、工作經歷子表另外查一次再組回去：上面那個 Select 是投影成新的 Resume 物件，
-            //    不是被追蹤的 entity，沒辦法用 .Include() 帶出子表，只能分開查、在記憶體裡組
+            // 🎯 8. 學歷、工作經歷子表查出並掛回 Resume 物件
             var resumeIds = resumesList.Select(r => r.Id).ToList();
-            var allEducations = await _db.Educations
-                .Where(e => resumeIds.Contains(e.ResumeId))
-                .OrderBy(e => e.SortOrder)
-                .ToListAsync();
-            var eduLookup = allEducations.GroupBy(e => e.ResumeId).ToDictionary(g => g.Key, g => g.ToList());
 
-            var allWorkExperiences = await _db.WorkExperiences
-                .Where(w => resumeIds.Contains(w.ResumeId))
-                .OrderBy(w => w.SortOrder)
-                .ToListAsync();
-            var workLookup = allWorkExperiences.GroupBy(w => w.ResumeId).ToDictionary(g => g.Key, g => g.ToList());
-
-            foreach (var r in resumesList)
+            if (resumeIds.Any())
             {
-                if (eduLookup.TryGetValue(r.Id, out var edus))
+                var allEducations = await _db.Educations
+                    .Where(e => resumeIds.Contains(e.ResumeId))
+                    .OrderBy(e => e.SortOrder)
+                    .ToListAsync();
+                var eduLookup = allEducations.GroupBy(e => e.ResumeId).ToDictionary(g => g.Key, g => g.ToList());
+
+                var allWorkExperiences = await _db.WorkExperiences
+                    .Where(w => resumeIds.Contains(w.ResumeId))
+                    .OrderBy(w => w.SortOrder)
+                    .ToListAsync();
+                var workLookup = allWorkExperiences.GroupBy(w => w.ResumeId).ToDictionary(g => g.Key, g => g.ToList());
+
+                foreach (var r in resumesList)
                 {
-                    r.Educations = edus;
-                }
-                if (workLookup.TryGetValue(r.Id, out var works))
-                {
-                    r.WorkExperiences = works;
+                    if (eduLookup.TryGetValue(r.Id, out var edus))
+                    {
+                        r.Educations = edus;
+                    }
+                    if (workLookup.TryGetValue(r.Id, out var works))
+                    {
+                        r.WorkExperiences = works;
+                    }
                 }
             }
 
+            // 🎯 9. AI 評分與評語字典組裝
             var aiScores = new Dictionary<int, int>();
             var aiComments = new Dictionary<int, string>();
 
@@ -204,9 +223,6 @@ namespace InterviewProject.Controllers
 
             ViewBag.AiScores = aiScores;
             ViewBag.AiComments = aiComments;
-            ViewBag.MemberNames = memberNames;   // 🎯 取代原本借用 Phone2 塞姓名的寫法
-            ViewBag.MemberPhones = memberPhones; // 🎯 取代原本借用 Mobile 塞電話的寫法
-            ViewBag.JobTitles = jobTitles;
 
             return View("~/Views/AdminApplication/Index.cshtml", resumesList);
         }

@@ -9,24 +9,28 @@
 
     <style>
         /* 擴充進度條顏色支援 */
-        .bar i.bar-warning {
-            background: #f39c12; /* 待審核 / 等待安排面試 */
+        .bar i.status-review {
+            background: #64748b; /* 待審核  */
         }
 
-        .bar i.bar-blue {
-            background: #15803d; /* 已通過 / 已安排面試 (若已通過要改綠色) */
-        }
-
-        .bar i.bar-success {
+        .bar i.status-pass {
             background: #15803d; /* 已通過 / 已錄取 */
         }
 
-        .bar i.bar-danger {
-            background: #b91c1c; /* 未錄取 */
+        .bar i.status-fail {
+            background: #b91c1c; /* 未通過 / 未錄取 */
         }
 
-        .bar i.bar-muted {
-            background: #b91c1c; /* 未通過 */
+        .bar i.status-waiting {
+            background: #2563eb; /* 等待安排面試 */
+        }
+
+        .bar i.status-scheduled {
+            background: #7c3aed; /* 已安排面試 */
+        }
+
+        .bar i.status-pending-result {
+            background: #ea580c; /* 等待結果中 */
         }
     </style>
 }
@@ -51,7 +55,7 @@
         </div>
 
         <div class="summary-card warning">
-            <span class="summary-label">待審核</span>
+            <span class="summary-label">履歷待審核</span>
             <strong>@ViewData["PendingResumes"]</strong>
             <p>尚未處理的履歷</p>
         </div>
@@ -77,19 +81,19 @@
             <div class="status-list">
                 <div class="status-item">
                     <span>待審核</span>
-                    <div class="bar"><i class="bar-warning" style="width:@(ViewData["PendingPercent"] ?? "0")%"></i></div>
+                    <div class="bar"><i class="status-review" style="width:@(ViewData["PendingPercent"] ?? "0")%"></i></div>
                     <strong>@(ViewData["PendingResumes"] ?? "0")</strong>
                 </div>
 
                 <div class="status-item">
                     <span>已通過</span>
-                    <div class="bar"><i class="bar-success" style="width:@(ViewData["InterviewPercent"] ?? "0")%"></i></div>
+                    <div class="bar"><i class="status-pass" style="width:@(ViewData["InterviewPercent"] ?? "0")%"></i></div>
                     <strong>@(ViewData["PassedResumes"] ?? "0")</strong>
                 </div>
 
                 <div class="status-item">
                     <span>未通過</span>
-                    <div class="bar"><i class="bar-danger" style="width:@(ViewData["RejectedPercent"] ?? "0")%"></i></div>
+                    <div class="bar"><i class="status-fail" style="width:@(ViewData["RejectedPercent"] ?? "0")%"></i></div>
                     <strong>@(ViewData["RejectedCount"] ?? "0")</strong>
                 </div>
             </div>
@@ -105,31 +109,31 @@
             <div class="status-list">
                 <div class="status-item">
                     <span>已安排面試</span>
-                    <div class="bar"><i class="bar-blue" style="width:@(ViewData["InterviewScheduledPercent"] ?? "0")%"></i></div>
+                    <div class="bar"><i class="status-scheduled" style="width:@(ViewData["InterviewScheduledPercent"] ?? "0")%"></i></div>
                     <strong>@(ViewData["InterviewScheduledCount"] ?? "0")</strong>
                 </div>
 
                 <div class="status-item">
                     <span>等待安排面試</span>
-                    <div class="bar"><i class="bar-warning" style="width:@(ViewData["WaitingSchedulePercent"] ?? "0")%"></i></div>
+                    <div class="bar"><i class="status-waiting" style="width:@(ViewData["WaitingSchedulePercent"] ?? "0")%"></i></div>
                     <strong>@(ViewData["WaitingScheduleCount"] ?? "0")</strong>
                 </div>
 
                 <div class="status-item">
                     <span>等待結果中</span>
-                    <div class="bar"><i class="bar-warning" style="width:@(ViewData["WaitingResultPercent"] ?? "0")%"></i></div>
+                    <div class="bar"><i class="status-pending-result" style="width:@(ViewData["WaitingResultPercent"] ?? "0")%"></i></div>
                     <strong>@(ViewData["WaitingResultCount"] ?? "0")</strong>
                 </div>
 
                 <div class="status-item">
                     <span>已錄取</span>
-                    <div class="bar"><i class="bar-success" style="width:@(ViewData["HiredPercent"] ?? "0")%"></i></div>
+                    <div class="bar"><i class="status-pass" style="width:@(ViewData["HiredPercent"] ?? "0")%"></i></div>
                     <strong>@(ViewData["HiredCount"] ?? "0")</strong>
                 </div>
 
                 <div class="status-item">
                     <span>未錄取</span>
-                    <div class="bar"><i class="bar-danger" style="width:@(ViewData["NotHiredPercent"] ?? "0")%"></i></div>
+                    <div class="bar"><i class="status-fail" style="width:@(ViewData["NotHiredPercent"] ?? "0")%"></i></div>
                     <strong>@(ViewData["NotHiredCount"] ?? "0")</strong>
                 </div>
             </div>

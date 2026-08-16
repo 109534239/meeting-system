@@ -541,16 +541,38 @@ namespace InterviewProject.Controllers
                     docxBytes = ms.ToArray();
                 }
 
-                // 🎯 改用 LibreOffice headless 轉檔（取代 Spire.Doc 免費版），原因和作法跟
-                //    ResumeController.ConvertDocxToPdfAsync() 完全一樣：Spire.Doc 免費版只能輸出前 3 頁，
-                //    而且處理儲存格橫向合併（w:gridSpan）時版面會跑掉。
+                // 🎯 使用 LibreOffice 轉檔
                 byte[] pdfBytes = await ConvertDocxToPdfAsync(docxBytes);
 
                 string fileName = $"{SanitizeForFileName(realName)}_{SanitizeForFileName(model.Job?.Title ?? "未指定職缺")}_履歷表.pdf";
                 return File(pdfBytes, "application/pdf", fileName);
             }
+            catch (FileNotFoundException ex) // 🎯 捕捉找不到 soffice.exe 的專屬例外
+            {
+                string downloadUrl = "https://www.libreoffice.org/download/";
+                string jsScript = $@"
+                <script>
+                    alert('系統未偵測到 LibreOffice 轉檔工具，請先下載 LibreOffice 軟體，安裝後即可匯出 PDF！');
+                    window.location.href = '{downloadUrl}';
+                </script>";
+
+                return Content(jsScript, "text/html; charset=utf-8");
+            }
             catch (Exception ex)
             {
+                // 如果 catch 裡面抓到的是 Process 啟動失敗 (Win32Exception) 或訊息包含 soffice
+                if (ex.Message.Contains("soffice") || ex.Message.Contains("系統找不到指定的檔案"))
+                {
+                    string downloadUrl = "https://www.libreoffice.org/download/";
+                    string jsScript = $@"
+            <script>
+                alert('系統未偵測到 LibreOffice 轉檔工具，請先下載並安裝 LibreOffice 軟體。');
+                window.location.href = '{downloadUrl}';
+            </script>";
+
+                    return Content(jsScript, "text/html; charset=utf-8");
+                }
+
                 return Content($"導出 PDF 過程發生錯誤：{ex.Message}");
             }
         }
@@ -620,15 +642,19 @@ namespace InterviewProject.Controllers
             {
                 string[] candidates =
                 {
-                    @"C:\Program Files\LibreOffice\program\soffice.exe",
-                    @"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-                };
+            @"C:\Program Files\LibreOffice\program\soffice.exe",
+            @"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        };
+
                 foreach (var c in candidates)
                 {
                     if (System.IO.File.Exists(c)) return c;
                 }
-                return candidates[0];
+
+                // 🎯 找不到檔案時，主動拋出 FileNotFoundException，避免 Process.Start 丟出混淆的 Win32Exception
+                throw new System.IO.FileNotFoundException("伺服器未安裝 LibreOffice，找不到 soffice.exe 執行檔。");
             }
+
             return "soffice";
         }
 
@@ -730,6 +756,21 @@ namespace InterviewProject.Controllers
             ViewBag.AdmissionResultList = admissionResultList;
 
             return View(applications);
+        }
+
+        public string GetInterviewStatusClass(string status)
+        {
+            return status?.Trim() switch
+            {
+                "等待安排面試" => "status-waiting",
+                "已安排面試" => "status-scheduled",
+                "面試中" => "status-processing",
+                "面試結束" => "status-finished",
+                "已通過" => "status-pass",
+                "未通過" => "status-fail",
+                "待審核" => "status-review",
+                _ => "status-review"
+            };
         }
 
         // 1. 收藏頁面 View

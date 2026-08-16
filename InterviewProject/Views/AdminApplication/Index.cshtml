@@ -27,20 +27,37 @@
 </div>
 
 <div class="hrapp-container">
-    @* ── 篩選切換區 (Tabs) ── *@
-    <div class="hrapp-filter-tabs">
-        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="全部"
-           class="tab-item @(currentFilter == "全部" ? "active" : "")">
-            全部履歷
-        </a>
-        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="未處理"
-           class="tab-item @(currentFilter == "未處理" ? "active" : "")">
-            未處理 (待審核)
-        </a>
-        <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="已處理"
-           class="tab-item @(currentFilter == "已處理" ? "active" : "")">
-            已處理 (已安排面試/錄取等)
-        </a>
+    @* ── 篩選切換區 (Tabs + 下拉選單) ── *@
+    <div class="hrapp-filter-tabs" style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="tab-group">
+            <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="全部"
+               class="tab-item @(currentFilter == "全部" ? "active" : "")">
+                全部履歷
+            </a>
+            <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="未處理"
+               class="tab-item @(currentFilter == "未處理" ? "active" : "")">
+                未處理 (待審核)
+            </a>
+            <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="已處理"
+               class="tab-item @(currentFilter == "已處理" ? "active" : "")">
+                已處理 (已安排面試/錄取等)
+            </a>
+        </div>
+
+        @* 🎯 新增：應徵職缺下拉式選單 *@
+        <div class="job-filter-group" style="display: flex; align-items: center; gap: 8px;">
+            <label for="jobFilterSelect" style="font-weight: bold; white-space: nowrap;">篩選職缺：</label>
+            <select id="jobFilterSelect" class="form-select" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #ccc;">
+                <option value="">全部職缺</option>
+                @if (ViewBag.JobList != null)
+                {
+                    foreach (var job in (List<SelectListItem>)ViewBag.JobList)
+                    {
+                        <option value="@job.Value" selected="@(job.Selected)">@job.Text</option>
+                    }
+                }
+            </select>
+        </div>
     </div>
 
     @* ── 履歷列表 Grid 標頭 ── *@
@@ -242,7 +259,7 @@
                 }
             });
 
-                    // === 2. 下拉選單非同步更新資料庫狀態 (AJAX) ===
+        // === 2. 下拉選單非同步更新資料庫狀態 (AJAX) ===
         document.querySelectorAll(".status-select").forEach(select => {
             select.addEventListener("change", function () {
                 const resumeId = this.getAttribute("data-resume-id");
@@ -304,6 +321,22 @@
                 });
             });
         });
+        // === 3. 職缺下拉式選單切換事件 ===
+        const jobFilterSelect = document.getElementById("jobFilterSelect");
+        if (jobFilterSelect) {
+            jobFilterSelect.addEventListener("change", function () {
+                const selectedJobId = this.value;
+                const currentStatusFilter = '@currentFilter';
+
+                // 自動組合 URL 並跳轉頁面
+                let targetUrl = '@Url.Action("Index", "AdminApplication")' + '?statusFilter=' + encodeURIComponent(currentStatusFilter);
+                if (selectedJobId) {
+                    targetUrl += '&jobId=' + encodeURIComponent(selectedJobId);
+                }
+
+                window.location.href = targetUrl;
+            });
+        }
         });
     </script>
 }

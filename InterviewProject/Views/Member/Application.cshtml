@@ -309,7 +309,9 @@
                                 <span class="title-text">
                                     <i class="fa-regular fa-calendar-check me-2"></i> 面試資訊
                                 </span>
-                                <span class="status-pill @(room != null ? "status-scheduled" : "status-waiting")">
+                                <!-- 🎯 修正點：使用 GetInterviewStatusClass 動態決定 class -->
+                                <span class="status-pill @GetInterviewStatusClass(interviewStatus)">
+                                    <span class="dot"></span>
                                     @interviewStatus
                                 </span>
                             </div>
@@ -343,8 +345,9 @@
                                 }
                                 else
                                 {
-                                    <div class="detail-notice-box warning">
-                                        <p><i class="fa-solid fa-triangle-exclamation me-1"></i> 資料異常：目前查不到對應的面試房間，請聯繫人資確認。</p>
+                                    <!-- 🎯 提示訊息調整：當等待安排面試時，顯示正常提示而非資料異常 -->
+                                    <div class="detail-notice-box">
+                                        <p><i class="fa-solid fa-clock me-1"></i> 目前為等待安排面試狀態，請耐心等候人資通知面試時間與房間資訊。</p>
                                     </div>
                                 }
                             </div>
@@ -379,7 +382,7 @@
     {
         return status switch
         {
-            "待審核" => "status-waiting",
+            "待審核" => "status-review",
             "未通過" => "status-fail",
             "已通過" => "status-pass",
             _ => ""
@@ -452,12 +455,14 @@
             const content = document.getElementById('detailModalContent');
             content.innerHTML =
                 '<div class="detail-section-title">' +
-                '  <span class="title-text">面試資訊</span>' +
-                '  <span class="detail-badge badge-waiting">等待安排面試</span>' +
+                ' <span class="title-text"><i class="fa-regular fa-calendar-check me-2"></i>面試資訊</span>' +
+                '  <span class="status-pill status-waiting">' +
+                '    <span class="dot"></span>等待安排面試' +
+                '  </span>' +
                 '</div>' +
                 '<div class="detail-card">' +
                 '  <div class="detail-notice-box">' +
-                '    <p>目前正在安排面試中，排定後會顯示面試時間與會議碼，請耐心等候通知。</p>' +
+                '    <p><i class="fa-solid fa-circle-info me-1"></i>目前正在安排面試中，排定後會顯示面試時間與會議碼，請耐心等候通知。</p>' +
                 '  </div>' +
                 '</div>';
             openDetailModal();
@@ -518,14 +523,18 @@
                     return;
                 }
 
-                const questionsHtml = data.questions.map(function (q) {
+                const questionsHtml = data.questions.map(function (q, index) {
                     const options = [1, 2, 3, 4, 5].map(function (s) {
+                        // 💡 關鍵修正：將 required 移除，交由下方 JS 自訂驗證
                         return '<label class="apt-scale-option">' +
-                               '<input type="radio" name="q_' + q.id + '" value="' + s + '" required />' +
+                               '<input type="radio" name="q_' + q.id + '" value="' + s + '" />' +
                                '<span class="apt-num">' + s + '</span></label>';
                     }).join('');
-                    return '<div class="apt-question">' +
-                           '<p class="apt-question-text">' + q.id + '. ' + q.text + '</p>' +
+
+                    // 題號改用 (index + 1) 可確保畫面顯示與 JS 提示號碼一致
+                    const questionNumber = index + 1;
+                    return '<div class="apt-question" id="apt_q_' + q.id + '">' +
+                           '<p class="apt-question-text">' + questionNumber + '. ' + q.text + '</p>' +
                            '<div class="apt-scale">' + options + '</div>' +
                            '</div>';
                 }).join('');
@@ -550,14 +559,38 @@
                 document.getElementById('aptitudeForm').addEventListener('submit', async function (e) {
                     e.preventDefault();
 
-                    const answers = data.questions.map(function (q) {
+                    // 🎯 蒐集答案並檢查未作答的題號
+                    const unselectedQuestions = []; // 紀錄未填寫的題號序號 (1, 2, 3...)
+                    const answers = [];
+
+                    data.questions.forEach(function (q, index) {
                         const checked = document.querySelector('input[name="q_' + q.id + '"]:checked');
-                        return { questionId: q.id, score: checked ? parseInt(checked.value) : 0 };
+                        if (checked) {
+                            answers.push({
+                                questionId: q.id,
+                                score: parseInt(checked.value)
+                            });
+                        } else {
+                            // 紀錄未作答的題號序號
+                            unselectedQuestions.push(index + 1);
+                        }
                     });
 
-                    if (answers.some(function (a) { return a.score === 0; })) {
-                        alert('請完成所有題目再送出');
-                        return;
+                    // 防呆驗證：若有未填寫的題目
+                    if (unselectedQuestions.length > 0) {
+                        // 1. 彈出提示訊息
+                        alert('第 ' + unselectedQuestions.join(', ') + ' 題尚未作答，請完成後再送出！');
+
+                        // 2. 自動捲動到第一個未作答的題目
+                        const firstUnansweredIndex = unselectedQuestions[0] - 1;
+                        const firstUnansweredQ = data.questions[firstUnansweredIndex];
+                        const targetElement = document.getElementById('apt_q_' + firstUnansweredQ.id);
+
+                        if (targetElement) {
+                            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+
+                        return; // 攔截不送出
                     }
 
                     const submitBtn = e.target.querySelector('button[type="submit"]');
@@ -593,14 +626,12 @@
             }
         }
 
-        // 🎯 從面試房間被導回來、要求先完成適性測驗時，網址會帶 ?openTest=履歷Id，
-        //    頁面一載入就自動彈出測驗彈窗，不用使用者自己在列表裡再找一次「查看」按鈕
+        // 🎯 從面試房間被導回來自動開啟彈窗
         (function autoOpenTestFromRedirect() {
             const params = new URLSearchParams(window.location.search);
             const openTestResumeId = params.get('openTest');
             if (openTestResumeId) {
                 openAptitudeModal(openTestResumeId);
-                // 清掉網址上的參數，避免使用者重新整理又跳出一次
                 const cleanUrl = window.location.pathname;
                 window.history.replaceState({}, document.title, cleanUrl);
             }

@@ -105,11 +105,11 @@ namespace InterviewProject.Controllers
             int totalInInterviewProcess = passedResumes > 0 ? passedResumes : totalResumes; // 防止除以 0
 
             // 存入 ViewData (百分比)
-            ViewData["InterviewScheduledPercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(interviewScheduledCount * 100.0 / totalInInterviewProcess, 1);
-            ViewData["WaitingSchedulePercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(waitingScheduleCount * 100.0 / totalInInterviewProcess, 1);
-            ViewData["WaitingResultPercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(waitingResultCount * 100.0 / totalInInterviewProcess, 1);
-            ViewData["HiredPercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(hiredCount * 100.0 / totalInInterviewProcess, 1);
-            ViewData["NotHiredPercent"] = totalInInterviewProcess == 0 ? 0 : Math.Round(notHiredCount * 100.0 / totalInInterviewProcess, 1);
+            ViewData["InterviewScheduledPercent"] = totalResumes == 0 ? 0 : Math.Round(interviewScheduledCount * 100.0 / totalResumes, 1);
+            ViewData["WaitingSchedulePercent"] = totalResumes == 0 ? 0 : Math.Round(waitingScheduleCount * 100.0 / totalResumes, 1);
+            ViewData["WaitingResultPercent"] = totalResumes == 0 ? 0 : Math.Round(waitingResultCount * 100.0 / totalResumes, 1);
+            ViewData["HiredPercent"] = totalResumes == 0 ? 0 : Math.Round(hiredCount * 100.0 / totalResumes, 1);
+            ViewData["NotHiredPercent"] = totalResumes == 0 ? 0 : Math.Round(notHiredCount * 100.0 / totalResumes, 1);
 
             // 頂部卡片使用的錄取率與面試流程數
             double hireRate = totalResumes == 0 ? 0 : Math.Round(hiredCount * 100.0 / totalResumes, 1);

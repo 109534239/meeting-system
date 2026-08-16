@@ -18,22 +18,29 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
+/* ── 頂部數據卡片 (Summary Cards) ── */
 .summary-card {
     padding: 22px 24px;
-    border-left: 5px solid var(--primary);
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    border-left: 5px solid #2563eb; /* 預設/總履歷數：湛藍色 */
 }
 
-.summary-card.warning {
-    border-left-color: #e07b3a;
-}
+    /* 待審核：琥珀黃 (提醒需處理) */
+    .summary-card.warning {
+        border-left-color: #d97706;
+    }
 
-.summary-card.blue {
-    border-left-color: #1a6fb5;
-}
+    /* 面試流程中：紫藍色 / 寶藍色 (進行中狀態) */
+    .summary-card.blue {
+        border-left-color: #4f46e5;
+    }
 
-.summary-card.success {
-    border-left-color: #2e7d4f;
-}
+    /* 錄取率：翡翠綠 (成功結果) */
+    .summary-card.success {
+        border-left-color: #059669;
+    }
 
 .summary-label {
     font-size: 13px;

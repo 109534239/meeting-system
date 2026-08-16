@@ -212,44 +212,60 @@
         font-size: 5px;
     }
 
+/* 🟢 已通過 / 綠色 */
 .status-pass {
-    background: #ecfdf5;
+    background-color: #ecfdf5;
     color: #059669;
+    border-color: #a7f3d0;
 }
 
+/* 🔴 未通過 / 紅色 */
 .status-fail {
-    background: #fef2f2;
+    background-color: #fef2f2;
     color: #dc2626;
+    border-color: #fecaca;
 }
 
+/* 🔵 待審核、等待安排面試 / 藍色 */
 .status-waiting {
-    background: #eff6ff;
+    background-color: #eff6ff;
     color: #2563eb;
+    border-color: #bfdbfe;
 }
 
+/* 🟣 已安排面試 / 紫色 */
 .status-scheduled {
-    background: #f5f3ff;
+    background-color: #f5f3ff;
     color: #7c3aed;
+    border-color: #ddd6fe;
 }
 
+/* 🟡 面試中 / 琥珀黃 */
 .status-processing {
-    background: #fffbeb;
+    background-color: #fffbeb;
     color: #d97706;
+    border-color: #fde68a;
 }
 
+/* 🩵 面試結束 / 青藍色 */
 .status-finished {
-    background: #ecfeff;
+    background-color: #ecfeff;
     color: #0891b2;
+    border-color: #a5f3fc;
 }
 
+/* 🟠 結果待定 / 橙色 */
 .status-pending-result {
-    background: #fff7ed;
+    background-color: #fff7ed;
     color: #ea580c;
+    border-color: #ffedd5;
 }
 
+/* ⚪ 審核中、預設狀態 / 灰藍色 */
 .status-review {
-    background: #f8fafc;
+    background-color: #f8fafc;
     color: #64748b;
+    border-color: #e2e8f0;
 }
 
 /* ── 查看按鈕 ── */
@@ -420,6 +436,7 @@
 
     .btn-primary-action:hover {
         background: #1d4ed8;
+        color: #fff;
     }
 
 /* ── 適性測驗題目優化 ── */

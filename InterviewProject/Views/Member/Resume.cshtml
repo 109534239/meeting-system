@@ -80,10 +80,10 @@
             {
                 string statusClass = item.Status switch
                 {
-                    "待審核" => "status-waiting",
+                    "待審核" => "status-review",
                     "未通過" => "status-fail",
                     "已通過" => "status-pass",
-                    _ => "status-review"
+                    _ => "status-waiting"
                 };
 
                 <div class="app-row">

@@ -232,42 +232,78 @@
 }
 
 /* 操作按鈕 */
+/* 操作按鈕外層容器（排版與間距） */
 .row-actions {
+    display: inline-flex;
     display: flex;
     justify-content: center;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
+/* 基礎按鈕通用樣式 */
 .btn-action {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.4;
+    border-radius: 6px;
     text-decoration: none;
-    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    white-space: nowrap;
 }
 
+    /* Hover 時微幅上浮 */
+    .btn-action:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    }
+
+    .btn-action:active {
+        transform: translateY(0);
+    }
+
+/* 1. 查看按鈕 (.btn-view) - 清爽藍色系 */
 .btn-view {
-    background: #f0f9ff;
+    background-color: #f0f9ff;
     color: #0284c7;
+    border-color: #bae6fd;
 }
 
     .btn-view:hover {
-        background: #0284c7;
+        background-color: #0284c7;
         color: #ffffff;
+        border-color: #0284c7;
     }
 
+/* 2. 編輯按鈕 (.btn-edit) - 暖橘/琥珀色系（強烈醒目提示） */
+.btn-edit {
+    background-color: #fffbebe;
+    color: #d97706;
+    border-color: #fde68a;
+}
+
+    .btn-edit:hover {
+        background-color: #d97706;
+        color: #ffffff;
+        border-color: #d97706;
+    }
+
+/* 3. PDF 按鈕 (.btn-pdf) - 中性石灰色系 */
 .btn-pdf {
-    background: #f8fafc;
+    background-color: #f8fafc;
     color: #475569;
-    border: 1px solid #e2e8f0;
+    border-color: #e2e8f0;
 }
 
     .btn-pdf:hover {
-        background: #475569;
+        background-color: #475569;
         color: #ffffff;
         border-color: #475569;
     }
