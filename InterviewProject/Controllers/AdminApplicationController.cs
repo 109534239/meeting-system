@@ -140,6 +140,7 @@ namespace InterviewProject.Controllers
             //    改成 @ViewBag.MemberNames[item.Id] / @ViewBag.MemberPhones[item.Id]
             var memberNames = await query.ToDictionaryAsync(x => x.Resume.Id, x => x.Member.Name);
             var memberPhones = await query.ToDictionaryAsync(x => x.Resume.Id, x => x.Member.Phone);
+            var jobTitles = await query.ToDictionaryAsync(x => x.Resume.Id, x => x.Job.Title); // 👈 新增這行
 
             var resultQuery = query.Select(x => new InterviewProject.Models.Resume
             {
@@ -205,6 +206,7 @@ namespace InterviewProject.Controllers
             ViewBag.AiComments = aiComments;
             ViewBag.MemberNames = memberNames;   // 🎯 取代原本借用 Phone2 塞姓名的寫法
             ViewBag.MemberPhones = memberPhones; // 🎯 取代原本借用 Mobile 塞電話的寫法
+            ViewBag.JobTitles = jobTitles;
 
             return View("~/Views/AdminApplication/Index.cshtml", resumesList);
         }

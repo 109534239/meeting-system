@@ -21,6 +21,10 @@ builder.Services.AddSingleton<JaasJwtService>();
 // 🚀 Step B：職缺下架後自動判斷履歷結果、自動建立面試房間
 builder.Services.AddScoped<AutoInterviewSchedulingService>();
 
+// 🚀 這輪新增：職缺過期後「真的」自動下架 + 觸發自動排程的背景服務
+//    （原本只有 HR 手動下架才會觸發，職缺自然過期不會，導致履歷/測驗都審完了卻一直卡著沒有面試房間）
+builder.Services.AddHostedService<JobExpiryBackgroundService>();
+
 // 🚀 Cloudflare R2 雲端檔案儲存（逐字稿/錄影錄音/AI分析報告），本機與 Render 共用同一個 bucket
 builder.Services.AddSingleton<R2StorageService>();
 

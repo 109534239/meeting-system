@@ -412,13 +412,7 @@
             return ("-", "");
         }
 
-        // 情況 B：履歷通過了，但面試還沒到最後階段
-        if (interviewStatus == "等待安排面試" || interviewStatus == "已安排面試" || interviewStatus == "面試中")
-        {
-            return ("等待結果中", "status-pending-result");
-        }
-
-        // 情況 C：面試結束了，顯示真正的結果（例如資料庫存的 "錄取" / "未錄取"）
+        // 情況 B：面試結束了，顯示真正的結果（例如資料庫存的 "錄取" / "未錄取"）
         if (interviewStatus == "面試結束")
         {
             if (dbAdmissionResult == "錄取") return ("錄取", "status-pass");

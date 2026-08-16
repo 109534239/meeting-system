@@ -9,6 +9,7 @@
     //    改吃 Controller 帶過來的這兩個 Dictionary
     var memberNames = ViewBag.MemberNames as Dictionary<int, string>;
     var memberPhones = ViewBag.MemberPhones as Dictionary<int, string>;
+    var jobTitles = ViewBag.JobTitles as Dictionary<int, string>; // 👈 新增這行
 }
 
 @section Styles {
@@ -45,6 +46,7 @@
     @* ── 履歷列表 Grid 標頭 ── *@
     <div class="hrapp-cols hrapp-grid-head">
         <div>應徵時間</div>
+        <div>應徵職缺</div>
         <div>應徵者姓名</div>
         <div>聯絡電話</div>
         <div>最高學歷 / 科系</div>
@@ -87,15 +89,23 @@
                         @item.ResumeTime.AddHours(-8).ToString("yyyy/MM/dd HH:mm")
                     </div>
 
-                    @* 2. 應徵者姓名 *@
+                    @* 2. 應徵職缺 *@
+                    @{
+                        string jobTitle = jobTitles != null && jobTitles.ContainsKey(item.Id) ? jobTitles[item.Id] : "未指定職缺";
+                    }
+                    <div class="job-title-cell">
+                        @jobTitle
+                    </div>
+
+                    @* 3. 應徵者姓名 *@
                     <div class="user-main-info">
                         <span class="user-name">@memberName</span>
                     </div>
 
-                    @* 3. 聯絡電話 *@
+                    @* 4. 聯絡電話 *@
                     <div class="user-phone">@memberPhone</div>
 
-                    @* 4. 學歷與科系（改為多筆學歷後，列表只顯示第一筆＝最高學歷） *@
+                    @* 5. 學歷與科系（改為多筆學歷後，列表只顯示第一筆＝最高學歷） *@
                     @{
                         var topEdu = item.Educations != null && item.Educations.Any()
                         ? item.Educations.OrderBy(e => e.SortOrder).First()
@@ -106,7 +116,7 @@
                         <div class="edu-major">@(topEdu?.Major ?? "") (@(topEdu?.EduLevel ?? ""))</div>
                     </div>
 
-                    @* 5. 工作經驗 *@
+                    @* 6. 工作經驗 *@
                     @{
                         var topWork = item.WorkExperiences != null && item.WorkExperiences.Any()
                         ? item.WorkExperiences.OrderBy(w => w.SortOrder).First()
@@ -124,7 +134,7 @@
                         }
                     </div>
 
-                    @* 6. 目前狀態 ── 下拉選單區 *@
+                    @* 7. 目前狀態 ── 下拉選單區 *@
                     <div class="text-center">
                         <select class="status-select @(item.Status == "待審核" ? "select-wait" : item.Status == "已通過" ? "select-pass" : "select-fail")"
                                 data-resume-id="@item.Id"
@@ -135,7 +145,7 @@
                         </select>
                     </div>
 
-                    @* 7. AI 評分及彈跳視窗 ── *@
+                    @* 8. AI 評分及彈跳視窗 ── *@
                     <div class="text-center ai-score-cell">
                         <div class="ai-score-box">
                             <span class="ai-num @(score >= 80 ? "high" : score >= 60 ? "mid" : "low")">
@@ -151,7 +161,7 @@
                         </div>
                     </div>
 
-                    @* 8. 操作按鈕 *@
+                    @* 9. 操作按鈕 *@
                     <div class="action-btns">
                         <a asp-action="Details" asp-route-id="@item.Id" class="btn-detail" onclick="event.stopPropagation();">審查履歷</a>
                     </div>
