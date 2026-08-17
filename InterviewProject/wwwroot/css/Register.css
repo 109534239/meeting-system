@@ -1,149 +1,272 @@
 /* ── REGISTER PAGE ── */
 .register-page {
     flex: 1;
+    min-height: calc(100vh - 136px);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 48px 20px;
+    box-sizing: border-box;
 }
 
 .register-card {
-    background: var(--white);
+    background: var(--white, #ffffff);
     border-radius: 20px;
     padding: 48px 56px;
     width: 100%;
     max-width: 560px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
     border: 1px solid #e8e8e8;
+    box-sizing: border-box;
 }
 
 .register-title {
     text-align: center;
     margin-bottom: 32px;
 }
-.register-title h1 {
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--text-main);
-    margin-bottom: 4px;
-}
-.register-title p {
-    font-size: 14px;
-    color: var(--text-muted);
-}
+
+    .register-title h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--text-main, #333);
+        margin-bottom: 4px;
+        line-height: 1.3;
+    }
+
+    .register-title p {
+        font-size: 14px;
+        color: var(--text-muted, #666);
+    }
 
 .form-group {
     margin-bottom: 16px;
 }
-.form-group label {
-    display: block;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-    padding-left: 0;
-}
+
+    .form-group label {
+        display: block;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--text-muted, #666);
+        margin-bottom: 6px;
+        padding-left: 0;
+    }
+
 .form-control {
     width: 100%;
-    padding: 14px 20px;
+    box-sizing: border-box;
+    padding: 13px 18px;
     border: 1.5px solid #ddd;
     border-radius: 10px;
     font-size: 14px;
     font-family: inherit;
-    color: var(--text-main);
-    background: var(--gray);
+    color: var(--text-main, #333);
+    background: var(--gray, #f8f9fa);
     outline: none;
     transition: border-color 0.2s, background 0.2s;
     text-align: left;
+    height: 48px;
 }
 
-.form-control:focus {
-    border-color: var(--primary);
-    background: var(--white);
-    outline: none;
-    box-shadow: none;
-}
-.form-control::placeholder { color: #bbb; }
+    .form-control:focus {
+        border-color: var(--primary, #206c8b);
+        background: var(--white, #ffffff);
+        outline: none;
+        box-shadow: none;
+    }
 
-/* ── 🎯 換頁切換與按鈕控制 ── */
+    .form-control::placeholder {
+        color: #bbb;
+    }
+
+/* 檔案上傳與日期輸入框微調 */
+input[type="file"].form-control {
+    padding: 9px 14px;
+    cursor: pointer;
+}
+
+input[type="date"].form-control {
+    cursor: pointer;
+}
+
+/* ── 換頁切換與按鈕控制 ── */
 .form-step {
     display: none;
 }
 
-.form-step.active {
-    display: block;
-}
+    .form-step.active {
+        display: block;
+    }
 
 .btn-group {
     display: flex;
     gap: 16px;
     margin-top: 28px;
+    width: 100%;
 }
 
 .btn-prev {
     flex: 1;
-    padding: 14px;
-    background: var(--white);
-    color: var(--primary-dark);
-    font-size: 16px;
+    padding: 13px;
+    background: var(--white, #ffffff);
+    color: var(--primary-dark, #164b61);
+    font-size: 15px;
     font-weight: 700;
-    border: 1.5px solid var(--primary-dark);
+    border: 1.5px solid var(--primary-dark, #164b61);
     border-radius: 10px;
     cursor: pointer;
     font-family: inherit;
-    transition: background 0.2s;
+    transition: all 0.2s;
+    text-align: center;
 }
-.btn-prev:hover { 
-    background: var(--primary-light);
-    border: 1.5px solid var(--primary-light);
-}
+
+    .btn-prev:hover {
+        background: var(--primary-light, #e8f4ff);
+        border-color: var(--primary-dark, #164b61);
+    }
 
 .btn-next {
     flex: 1;
-    padding: 14px;
-    background: var(--primary);
-    color: var(--white);
-    font-size: 16px;
+    padding: 13px;
+    background: var(--primary, #206c8b);
+    color: var(--white, #ffffff);
+    font-size: 15px;
     font-weight: 700;
     border: none;
     border-radius: 10px;
     cursor: pointer;
     font-family: inherit;
     transition: background 0.2s;
+    text-align: center;
 }
-.btn-next:hover { background: var(--primary-dark); }
 
-/* ── 送出按鈕調整 ── */
+    .btn-next:hover {
+        background: var(--primary-dark, #164b61);
+    }
+
+/* ── 送出按鈕 ── */
 .btn-submit {
-    flex: 1; /* 讓它在第二頁與上一步按鈕等寬平分 */
-    padding: 14px;
-    background: var(--primary);
-    color: var(--white);
-    font-size: 16px;
+    flex: 1;
+    padding: 13px;
+    background: var(--primary, #206c8b);
+    color: var(--white, #ffffff);
+    font-size: 15px;
     font-weight: 700;
     border: none;
     border-radius: 10px;
     cursor: pointer;
     font-family: inherit;
     transition: background 0.2s;
+    text-align: center;
 }
-.btn-submit:hover { background: var(--primary-dark); }
+
+    .btn-submit:hover {
+        background: var(--primary-dark, #164b61);
+    }
 
 /* ── 其他原本樣式 ── */
+.alert-error {
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    color: #b91c1c;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
 .back-login {
     text-align: center;
     margin-top: 28px;
     font-size: 14px;
-    color: var(--text-muted);
+    color: var(--text-muted, #666);
 }
-.back-login a {
-    color: var(--primary);
-    font-weight: 700;
-    text-decoration: none;
-}
-.back-login a:hover { text-decoration: underline; }
+
+    .back-login a {
+        color: var(--primary, #206c8b);
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+        .back-login a:hover {
+            text-decoration: underline;
+        }
 
 .required {
     color: #c94040;
     margin-left: 2px;
+}
+
+/* ══════════════════════════════════════════════════
+   RWD 響應式斷點設定
+   ══════════════════════════════════════════════════ */
+
+/* 平板 / 小型螢幕 (768px 以下) */
+@media (max-width: 768px) {
+    .register-page {
+        padding: 36px 16px;
+        min-height: calc(100vh - 120px);
+    }
+
+    .register-card {
+        padding: 36px 28px;
+        border-radius: 16px;
+    }
+
+    .register-title {
+        margin-bottom: 24px;
+    }
+
+        .register-title h1 {
+            font-size: 24px;
+        }
+
+    .btn-group {
+        gap: 12px;
+        margin-top: 24px;
+    }
+}
+
+/* 手機 / 極窄螢幕 (480px 以下) */
+@media (max-width: 480px) {
+    .register-page {
+        padding: 20px 12px;
+    }
+
+    .register-card {
+        padding: 24px 16px;
+        border-radius: 14px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    }
+
+    .register-title h1 {
+        font-size: 22px;
+    }
+
+    .register-title p {
+        font-size: 13px;
+    }
+
+    .form-group {
+        margin-bottom: 14px;
+    }
+
+    .form-control {
+        padding: 10px 14px;
+        font-size: 14px;
+        height: 44px;
+    }
+
+    .btn-group {
+        flex-direction: column-reverse; /* 手機端「送出/下一步」在上，「上一步」在下更順手 */
+        gap: 10px;
+    }
+
+    .btn-prev,
+    .btn-next,
+    .btn-submit {
+        width: 100%;
+        padding: 12px;
+    }
 }
