@@ -2,39 +2,44 @@
 .intro-hero {
     background: url('../img/introduction-1.jpg') center 30% / cover no-repeat;
     position: relative;
-    color: var(--white);
+    color: var(--white, #ffffff);
     padding: 72px 40px;
     text-align: center;
 }
-.intro-hero::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-}
+
+    .intro-hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+    }
+
 .hero-inner {
     max-width: 800px;
     margin: 0 auto;
     position: relative;
     z-index: 1;
 }
+
 .hero-label {
     font-size: 13px;
     letter-spacing: 3px;
     text-transform: uppercase;
-    opacity: 0.75;
+    opacity: 0.8;
     margin-bottom: 16px;
 }
+
 .intro-hero h1 {
     font-size: 42px;
     font-weight: 700;
     letter-spacing: 2px;
     margin-bottom: 16px;
-    line-height: 1.2;
+    line-height: 1.25;
 }
+
 .intro-hero p {
     font-size: 16px;
-    opacity: 0.85;
+    opacity: 0.9;
     line-height: 1.8;
 }
 
@@ -45,7 +50,7 @@
     padding: 48px 40px;
     display: flex;
     flex-direction: column;
-    gap: 48px;
+    gap: 56px;
 }
 
 /* ── SECTION HEADER ── */
@@ -53,20 +58,23 @@
     text-align: center;
     margin-bottom: 32px;
 }
-.section-header h2 {
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--primary);
-    margin-bottom: 8px;
-}
-.section-header p {
-    font-size: 14px;
-    color: var(--text-muted);
-}
+
+    .section-header h2 {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--primary, #206c8b);
+        margin-bottom: 8px;
+    }
+
+    .section-header p {
+        font-size: 14px;
+        color: var(--text-muted, #666);
+    }
+
 .section-divider {
     width: 48px;
     height: 3px;
-    background: var(--primary);
+    background: var(--primary, #206c8b);
     border-radius: 2px;
     margin: 12px auto 0;
 }
@@ -75,90 +83,109 @@
 .about-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 32px;
+    gap: 40px;
     align-items: center;
 }
+
 .about-text h3 {
     font-size: 22px;
     font-weight: 700;
-    color: var(--primary);
+    color: var(--primary, #206c8b);
     margin-bottom: 16px;
+    line-height: 1.4;
 }
+
 .about-text p {
     font-size: 15px;
-    line-height: 1.9;
-    color: var(--text-main);
+    line-height: 1.85;
+    color: var(--text-main, #333);
     margin-bottom: 14px;
 }
+
 .about-stats {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 16px;
 }
+
 .stat-card {
-    background: var(--white);
-    border-radius: var(--radius-card);
-    padding: 24px;
+    background: var(--white, #ffffff);
+    border-radius: var(--radius-card, 12px);
+    padding: 24px 16px;
     text-align: center;
     border: 1px solid #e8e8e8;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: transform 0.2s ease;
 }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+    }
+
 .stat-number {
     font-size: 36px;
     font-weight: 700;
-    color: var(--primary);
+    color: var(--primary, #206c8b);
     line-height: 1;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
+
 .stat-label {
     font-size: 13px;
-    color: var(--text-muted);
+    color: var(--text-muted, #666);
+    font-weight: 500;
 }
 
 /* ── 核心價值 ── */
 .values-section {
-    background: var(--white);
+    background: var(--white, #ffffff);
     border-radius: 20px;
     padding: 48px 40px;
     border: 1px solid #e8e8e8;
     box-shadow: 0 2px 12px rgba(0,0,0,0.06);
 }
+
 .values-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 24px;
+    gap: 20px;
 }
+
 .value-card {
     text-align: center;
     padding: 28px 16px;
-    border-radius: var(--radius-card);
-    background: var(--gray);
+    border-radius: var(--radius-card, 12px);
+    background: var(--gray, #f8f9fa);
     transition: transform 0.2s, box-shadow 0.2s;
 }
-.value-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 24px rgba(32,108,139,0.12);
-}
+
+    .value-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(32,108,139,0.12);
+    }
+
 .value-icon {
     width: 56px;
     height: 56px;
     border-radius: 50%;
-    background: var(--primary);
+    background: var(--primary, #206c8b);
     display: flex;
     align-items: center;
     justify-content: center;
     margin: 0 auto 16px;
     font-size: 24px;
 }
+
 .value-title {
     font-size: 16px;
     font-weight: 700;
-    color: var(--primary);
+    color: var(--primary, #206c8b);
     margin-bottom: 10px;
 }
+
 .value-desc {
     font-size: 13px;
-    color: var(--text-muted);
+    color: var(--text-muted, #666);
     line-height: 1.7;
 }
 
@@ -168,58 +195,67 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 20px;
 }
+
 .benefit-card {
-    background: var(--white);
-    border-radius: var(--radius-card);
+    background: var(--white, #ffffff);
+    border-radius: var(--radius-card, 12px);
     padding: 28px 24px;
     border: 1px solid #e8e8e8;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
 }
+
 .benefit-icon-row {
     display: flex;
     align-items: center;
     gap: 12px;
 }
+
 .benefit-icon {
     width: 44px;
     height: 44px;
     border-radius: 10px;
-    background: var(--primary-light);
+    background: var(--primary-light, #e8f4ff);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 20px;
     flex-shrink: 0;
 }
+
 .benefit-title {
     font-size: 16px;
     font-weight: 700;
-    color: var(--text-main);
+    color: var(--text-main, #333);
 }
+
 .benefit-list {
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+    padding-left: 0;
+    margin: 0;
 }
-.benefit-list li {
-    font-size: 13px;
-    color: var(--text-muted);
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    line-height: 1.5;
-}
-.benefit-list li::before {
-    content: '·';
-    color: var(--primary);
-    font-size: 18px;
-    line-height: 1.1;
-    flex-shrink: 0;
-}
+
+    .benefit-list li {
+        font-size: 13.5px;
+        color: var(--text-muted, #666);
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        line-height: 1.5;
+    }
+
+        .benefit-list li::before {
+            content: '•';
+            color: var(--primary, #206c8b);
+            font-size: 16px;
+            line-height: 1.2;
+            flex-shrink: 0;
+        }
 
 /* ── CTA ── */
 .cta-section {
@@ -227,53 +263,177 @@
     position: relative;
     border-radius: 20px;
     overflow: hidden;
-    padding: 48px 40px;
+    padding: 56px 40px;
     text-align: center;
-    color: var(--white);
+    color: var(--white, #ffffff);
 }
-.cta-section::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    border-radius: 20px;
-}
+
+    .cta-section::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.65);
+    }
+
 .cta-inner {
     position: relative;
     z-index: 1;
+    max-width: 680px;
+    margin: 0 auto;
 }
+
 .cta-section h2 {
     font-size: 28px;
     font-weight: 700;
     margin-bottom: 12px;
+    line-height: 1.3;
 }
+
 .cta-section p {
     font-size: 15px;
-    opacity: 0.85;
+    opacity: 0.9;
     margin-bottom: 28px;
+    line-height: 1.7;
 }
+
 .cta-btn {
     display: inline-block;
     padding: 13px 40px;
-    background: var(--primary-light);
+    background: var(--primary-light, #e8f4ff);
     color: #174f67;
     font-size: 16px;
     font-weight: 700;
     border: none;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-pill, 50px);
     cursor: pointer;
     font-family: inherit;
-    transition: background 0.2s, color 0.2s;
+    transition: background 0.2s, color 0.2s, transform 0.2s;
     text-decoration: none;
-}
-.cta-btn:hover {
-    background: var(--primary-dark);
-    color: var(--white);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
-/* ── RWD ── */
-@media (max-width: 900px) {
-    .about-grid { grid-template-columns: 1fr; }
-    .values-grid { grid-template-columns: repeat(2, 1fr); }
-    .benefits-grid { grid-template-columns: 1fr; }
+    .cta-btn:hover {
+        background: var(--primary-dark, #164b61);
+        color: var(--white, #ffffff);
+        transform: translateY(-2px);
+    }
+
+/* ══════════════════════════════════════════════════
+   RWD 響應式斷點設定
+   ══════════════════════════════════════════════════ */
+
+/* 平板尺寸 (992px 以下) */
+@media (max-width: 992px) {
+    .intro-main {
+        padding: 40px 24px;
+        gap: 40px;
+    }
+
+    .about-grid {
+        grid-template-columns: 1fr;
+        gap: 32px;
+    }
+
+    .values-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .benefits-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .values-section {
+        padding: 36px 24px;
+    }
+}
+
+/* 手機尺寸 (768px 以下) */
+@media (max-width: 768px) {
+    .intro-hero {
+        padding: 48px 20px;
+    }
+
+        .intro-hero h1 {
+            font-size: 28px;
+            letter-spacing: 1px;
+        }
+
+        .intro-hero p {
+            font-size: 14.5px;
+            line-height: 1.65;
+        }
+
+    .hero-br {
+        display: none; /* 小螢幕取消手動換行，由容器自然換行 */
+    }
+
+    .section-header {
+        margin-bottom: 24px;
+    }
+
+        .section-header h2 {
+            font-size: 24px;
+        }
+
+    .about-text h3 {
+        font-size: 19px;
+    }
+
+    .benefits-grid {
+        grid-template-columns: 1fr; /* 福利制度手機版轉為單欄卡片 */
+    }
+
+    .cta-section {
+        padding: 40px 20px;
+        border-radius: 14px;
+    }
+
+        .cta-section h2 {
+            font-size: 22px;
+        }
+
+        .cta-section p {
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+
+    .cta-btn {
+        width: 100%;
+        max-width: 280px;
+        box-sizing: border-box;
+    }
+}
+
+/* 超窄螢幕手機 (480px 以下) */
+@media (max-width: 480px) {
+    .intro-main {
+        padding: 32px 14px;
+        gap: 36px;
+    }
+
+    .values-section {
+        padding: 24px 14px;
+        border-radius: 14px;
+    }
+
+    .values-grid {
+        grid-template-columns: 1fr; /* 核心價值超小手機轉為單欄 */
+    }
+
+    .about-stats {
+        grid-template-columns: 1fr; /* 數據統計超小手機轉為單欄 */
+        gap: 12px;
+    }
+
+    .stat-card {
+        padding: 16px;
+    }
+
+    .stat-number {
+        font-size: 30px;
+    }
+
+    .benefit-card {
+        padding: 20px 16px;
+    }
 }
