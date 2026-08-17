@@ -217,15 +217,28 @@ namespace InterviewProject.Controllers
             return View(member);
         }
 
-        // POST: 儲存基本資料
         [HttpPost]
-        public async Task<IActionResult> ProfileSave(string name, string gender, string idNumber, DateOnly birthday, string address, string phone, string email, string? profileImageBase64)
+        public async Task<IActionResult> ProfileSave(
+    string name,
+    string gender,
+    string idNumber,
+    string birthday,
+    string address,
+    string phone,
+    string email,
+    string? profileImageBase64)
         {
             var id = HttpContext.Session.GetInt32("MemberId");
             if (id == null) return RedirectToAction("Index", "Login");
 
-            // 後端強烈驗證：只針對純文字輸入框欄位檢查，防範前端漏洞留空
-            // 🎯 手機號碼、電子郵件現在開放使用者變更，一併納入必填檢查
+            // 🎯 1. 檢查日期格式解析
+            if (!DateOnly.TryParse(birthday, out DateOnly parsedBirthday))
+            {
+                TempData["SaveError"] = "生日格式不正確！";
+                return RedirectToAction("Profile");
+            }
+
+            // 🎯 2. 空值與必填檢查（若使用者選擇了「請選擇性別」的空選項，會在這裡被擋下）
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(gender) ||
                 string.IsNullOrWhiteSpace(idNumber) || string.IsNullOrWhiteSpace(address) ||
                 string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(email))
@@ -237,7 +250,7 @@ namespace InterviewProject.Controllers
             var member = await _db.Members.FindAsync(id);
             if (member == null) return NotFound();
 
-            // 檢查其他人是不是已經用了這組身分證字號（排除自己）
+            // 🎯 3. 身分證與 Email 唯一性檢查
             var idExists = await _db.Members.AnyAsync(m => m.IdNumber == idNumber.Trim().ToUpper() && m.Id != id);
             if (idExists)
             {
@@ -245,7 +258,6 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Profile");
             }
 
-            // 🎯 電子郵件通常是登入帳號/唯一鍵，變更前先檢查其他人是不是已經用了這組信箱（排除自己）
             var emailExists = await _db.Members.AnyAsync(m => m.Email == email.Trim() && m.Id != id);
             if (emailExists)
             {
@@ -253,25 +265,24 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Profile");
             }
 
-            // 更新資料欄位
+            // 🎯 4. 更新資料欄位
             member.Name = name.Trim();
-            member.Gender = gender;
+            member.Gender = gender.Trim(); // 寫入下拉選單選取的文字 (例如 "男" 或 "女")
             member.IdNumber = idNumber.Trim().ToUpper();
-            member.Birthday = birthday;
+            member.Birthday = parsedBirthday;
             member.Address = address.Trim();
-            // 🎯 手機號碼、電子郵件改為可變更，覆蓋寫回資料庫原本的值
             member.Phone = phone.Trim();
             member.Email = email.Trim();
 
-            // 🎯 核心防呆處理：只有當前端傳送過來的 Base64 為有效圖片資料時，才覆蓋寫入資料庫
             if (!string.IsNullOrEmpty(profileImageBase64) && profileImageBase64.StartsWith("data:image"))
             {
                 member.ProfileImagePath = profileImageBase64;
             }
 
+            // 🎯 5. 明確將 Entity 標記為 Modified 並寫回資料庫
+            _db.Entry(member).State = EntityState.Modified;
             await _db.SaveChangesAsync();
 
-            // 更新 Session 裡的姓名
             HttpContext.Session.SetString("MemberName", member.Name);
 
             TempData["SaveSuccess"] = "true";

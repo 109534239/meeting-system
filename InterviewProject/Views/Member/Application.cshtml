@@ -259,15 +259,16 @@
                         @* 4. 面試狀態 *@
                         <div class="row-col text-center">
                             <span class="mobile-label">面試狀態</span>
-                            @if (!string.IsNullOrEmpty(interviewStatus))
+                            @* 當履歷狀態為未通過，或是面試狀態為空時，統一顯示 - *@
+                            @if (item.Status == "未通過" || string.IsNullOrEmpty(interviewStatus))
+                            {
+                                <span class="text-muted">-</span>
+                            }
+                            else
                             {
                                 <span class="status-pill @GetInterviewStatusClass(interviewStatus)">
                                     <i class="fa-solid fa-circle dot"></i>@interviewStatus
                                 </span>
-                            }
-                            else
-                            {
-                                <span class="text-muted">-</span>
                             }
                         </div>
 
@@ -473,7 +474,7 @@
             content.innerHTML =
                 '<div class="detail-section-title">' +
                 '  <span class="title-text">錄取通知</span>' +
-                '  <span class="detail-badge badge-scheduled">錄取</span>' +
+                '  <span class="status-pill status-pass">錄取</span>' +
                 '</div>' +
                 '<div class="detail-card">' +
                 '  <div class="detail-notice-box">' +

@@ -259,7 +259,7 @@
                 }
             });
 
-        // === 2. 下拉選單非同步更新資料庫狀態 (AJAX) ===
+                // === 2. 下拉選單非同步更新資料庫狀態 (AJAX) ===
         document.querySelectorAll(".status-select").forEach(select => {
             select.addEventListener("change", function () {
                 const resumeId = this.getAttribute("data-resume-id");
@@ -291,6 +291,12 @@
                     currentSelect.classList.add("select-fail");
                     if (parentRow) {
                         parentRow.classList.add("row-handled", "status-failed");
+
+                        // 🎯 新增：當選擇未通過時，同步將畫面上的面試狀態更新為 "-"
+                        const interviewStatusPill = parentRow.querySelector(".status-pill");
+                        if (interviewStatusPill) {
+                            interviewStatusPill.outerHTML = '<span class="text-muted">-</span>';
+                        }
                     }
                 }
 

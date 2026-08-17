@@ -58,34 +58,31 @@
                     @Html.AntiForgeryToken()
                     
                     <input type="hidden" id="profileImageBase64" name="profileImageBase64" value="@Model.ProfileImagePath" />
-                    <input type="hidden" name="idNumber" value="@Model.IdNumber" />
-                    @* 🎯 姓名／性別／生年月日不開放使用者變更：畫面上顯示唯讀欄位，
-                       實際要送給後端的值改用 hidden input 帶原始資料，
-                       確保表單送出時這三個欄位一律維持資料庫原值，不會被竄改。 *@
-                    <input type="hidden" name="name" value="@Model.Name" />
-                    <input type="hidden" name="gender" value="@Model.Gender" />
-                    <input type="hidden" name="birthday" value="@Model.Birthday.ToString("yyyy-MM-dd")" />
 
                     <div class="fields-grid">
 
                         <div class="field-item">
                             <label class="field-label">姓名</label>
-                            <input class="field-input field-readonly" type="text" value="@Model.Name" readonly />
+                            <input class="field-input" type="text" name="name" value="@Model.Name" />
                         </div>
 
                         <div class="field-item">
                             <label class="field-label">性別</label>
-                            <input class="field-input field-readonly" type="text" value="@Model.Gender" readonly />
+                            <select class="field-input" name="gender">
+                                <option value="">請選擇性別</option>
+                                <option value="男" selected="@(Model.Gender == "男")">男</option>
+                                <option value="女" selected="@(Model.Gender == "女")">女</option>
+                            </select>
                         </div>
 
                         <div class="field-item">
                             <label class="field-label">身分證字號</label>
-                            <input class="field-input field-readonly" type="text" value="@Model.IdNumber" readonly />
+                            <input class="field-input" type="text" name="idNumber" value="@Model.IdNumber" />
                         </div>
 
                         <div class="field-item">
                             <label class="field-label">生年月日</label>
-                            <input class="field-input field-readonly" type="text" value="@Model.Birthday.ToString("yyyy-MM-dd")" readonly />
+                            <input class="field-input" type="date" name="birthday" value="@Model.Birthday.ToString("yyyy-MM-dd")" />
                         </div>
 
                         @* 🎯 手機號碼／電子郵件開放使用者變更，送出後要覆蓋資料庫原本的值 *@
