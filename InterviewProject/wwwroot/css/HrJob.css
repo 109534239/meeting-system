@@ -139,10 +139,12 @@
     color: #666;
 }
 
-.hrjob-time-deadline {
-    color: #666;
+.hrjob-time-time-text {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 500;
 }
-
 
 /* ══════════════════════════════════
    ✨ 新增：招募進度四大指標彩色膠囊面板

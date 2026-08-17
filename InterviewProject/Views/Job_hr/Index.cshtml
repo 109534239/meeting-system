@@ -162,11 +162,13 @@
                     <div>
                         <div class="hrjob-time-item">
                             <span class="hrjob-time-label">上架：</span>
+                            <span class="hrjob-time-time-text">
                             @job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")
+                            </span>
                         </div>
                         <div class="hrjob-time-item">
                             <span class="hrjob-time-label-deadline">截止：</span>
-                            <span class="hrjob-time-deadline">@job.Deadline.ToLocalTime().ToString("yyyy/MM/dd")</span>
+                            <span class="hrjob-time-time-text">@job.Deadline.ToLocalTime().ToString("yyyy/MM/dd")</span>
                         </div>
                     </div>
 

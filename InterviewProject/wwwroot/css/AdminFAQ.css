@@ -94,32 +94,29 @@
     text-overflow: ellipsis;
 }
 
-/* ── 上架 / 下架切換按鈕 ── */
-.btn-toggle {
-    padding: 5px 14px;
+/* ── 狀態標籤 ── */
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
     border-radius: 20px;
-    border: none;
     font-size: 12px;
     font-weight: 700;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-family: inherit;
+    line-height: 1.4;
     white-space: nowrap;
+    text-align: center;
 }
 
-.btn-toggle.active {
-    background: #e6f4ea;
-    color: #2e7d4f;
-}
+    /* 顯示中 (綠色系) */
+    .status-badge.active {
+        background: #e6f4ea;
+        color: #2e7d4f;
+    }
 
-.btn-toggle.inactive {
-    background: #f4f4f4;
-    color: #aaa;
-}
-
-.btn-toggle:hover {
-    opacity: 0.8;
-}
+    /* 已停用 (灰色系) */
+    .status-badge.inactive {
+        background: #f4f4f4;
+        color: #888888;
+    }
 
 /* ── 操作按鈕 ── */
 .faq-actions {

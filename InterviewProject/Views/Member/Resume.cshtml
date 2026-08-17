@@ -88,8 +88,10 @@
 
                 <div class="app-row">
                     <div class="row-time">
-                        <span class="mobile-label">投遞時間：</span>
-                        @item.ResumeTime.AddHours(-8).ToString("yyyy/MM/dd HH:mm")
+                        <span class="mobile-label">投遞時間</span>
+                        <span class="time-text">
+                            @item.ResumeTime.AddHours(-8).ToString("yyyy/MM/dd HH:mm")
+                        </span>
                     </div>
                     <div class="row-position">
                         @{

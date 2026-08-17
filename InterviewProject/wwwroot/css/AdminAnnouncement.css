@@ -167,6 +167,13 @@
     color: #b06000;
 }
 
+.time-text {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 500;
+}
+
 /* ── 操作按鈕 ── */
 .announce-actions {
     display: flex;

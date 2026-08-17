@@ -121,11 +121,11 @@
                     <div class="announce-date-range">
                         @if (item.SDate.Date == item.CDate.Date)
                         {
-                            <span>@item.SDate.ToString("yyyy-MM-dd")</span>
+                            <span class ="time-text">@item.SDate.ToString("yyyy-MM-dd")</span>
                         }
                         else
                         {
-                            <span>@item.SDate.ToString("yyyy-MM-dd") ~ @item.CDate.ToString("yyyy-MM-dd")</span>
+                            <span class="time-text">@item.SDate.ToString("yyyy-MM-dd") ~ @item.CDate.ToString("yyyy-MM-dd")</span>
                         }
                     </div>
 
