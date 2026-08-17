@@ -31,7 +31,7 @@
     <!-- SEARCH BAR -->
     <div class="search-bar">
         <div class="search-inner">
-            @* 1. 職缺類別 (Department) *@
+            @* 1. 職缺類別 *@
             <div class="search-field">
                 <label for="sel-category"><i class="fa-solid fa-layer-group"></i> 職缺類別</label>
                 <select id="sel-category">
@@ -43,7 +43,7 @@
                 </select>
             </div>
 
-            @* 2. 工作地址 (Location) *@
+            @* 2. 工作地址 *@
             <div class="search-field">
                 <label for="sel-location"><i class="fa-solid fa-location-dot"></i> 工作地址</label>
                 <select id="sel-location">
@@ -55,7 +55,7 @@
                 </select>
             </div>
 
-            @* 3. 工作性質 (JobType) *@
+            @* 3. 工作性質 *@
             <div class="search-field">
                 <label for="sel-type"><i class="fa-solid fa-briefcase"></i> 工作性質</label>
                 <select id="sel-type">
@@ -84,8 +84,6 @@
             <div class="filter-actions">
                 <button class="search-btn" onclick="doSearch()"><i class="fa-solid fa-magnifying-glass"></i> 搜尋</button>
                 <button class="reset-btn" onclick="resetSearch()"><i class="fa-solid fa-rotate-left"></i> 重置</button>
-
-                <!-- 【修正點】傳入 this 讓按鈕可以切換高亮 active 樣式 -->
                 <button class="fav-filter-btn" id="btn-toggle-fav-filter" onclick="toggleFavoriteFilter(this)" title="僅顯示收藏職缺">
                     <i class="fa-regular fa-heart"></i> 我的收藏
                 </button>
@@ -133,48 +131,43 @@
                         </div>
 
                         @* 3. 工作地點 *@
-                        <div class="job-cell">@job.Location</div>
+                        <div class="job-cell" data-label="工作地點">@job.Location</div>
 
                         @* 4. 經歷要求 *@
-                        <div class="job-cell">
+                        <div class="job-cell" data-label="經歷要求">
                             @(string.IsNullOrEmpty(job.ExperienceRequired) ? "不限" : job.ExperienceRequired)
                         </div>
 
                         @* 5. 學歷要求 *@
-                        <div class="job-cell">
+                        <div class="job-cell" data-label="學歷要求">
                             @switch (job.EducationRequired)
                             {
                                 case "highschool":
                                     @:高中職以上
                                     break;
                                 case "college":
-
                                     @:專科以上
                                     break;
                                 case "bachelor":
-
                                     @:大學以上
                                     break;
                                 case "master":
-
                                     @:碩士以上
                                     break;
                                 case "phd":
-
                                     @:博士以上
                                     break;
                                 default:
-
                                     @:不限
                                     break;
                             }
                         </div>
 
                         @* 6. 截止日期 *@
-                        <div class="job-cell">@job.Deadline.ToString("yyyy/MM/dd")</div>
+                        <div class="job-cell" data-label="截止日期">@job.Deadline.ToString("yyyy/MM/dd")</div>
 
                         @* 7. 立即應徵按鈕 *@
-                        <div class="job-actions">
+                        <div class="job-actions action-apply">
                             <a asp-controller="Job"
                                asp-action="Job_detail"
                                asp-route-id="@job.Id"
@@ -182,7 +175,7 @@
                         </div>
 
                         @* 8. 收藏按鈕 *@
-                        <div class="job-actions">
+                        <div class="job-actions action-fav">
                             <button class="btn-icon btn-favorite"
                                     title="收藏"
                                     data-job-id="@job.Id"
@@ -217,11 +210,8 @@
 
         const PAGE_SIZE = 10;
         let currentPage = 1;
-        let isOnlyShowFavorites = false; // 愛心篩選開關狀態
+        let isOnlyShowFavorites = false;
 
-        // ============================
-        // 收藏功能 (LocalStorage)
-        // ============================
         function getFavorites() {
             const list = JSON.parse(localStorage.getItem(`favorites_${MEMBER_ID}`) || '[]');
             return list.map(id => String(id));
@@ -231,9 +221,6 @@
             localStorage.setItem(`favorites_${MEMBER_ID}`, JSON.stringify(list));
         }
 
-        // ============================
-        // 愛心篩選開關 (點擊「我的收藏」按鈕)
-        // ============================
         function toggleFavoriteFilter(filterBtn) {
             if (!IS_LOGGED_IN) {
                 const go = confirm('需要登入才能看到你的收藏\n\n是否前往登入頁面？');
@@ -241,22 +228,16 @@
                 return;
             }
 
-            // 1. 切換開關狀態
             isOnlyShowFavorites = !isOnlyShowFavorites;
 
-            // 2. 切換按鈕的高亮視覺樣式
             if (filterBtn) {
                 filterBtn.classList.toggle('active', isOnlyShowFavorites);
             }
 
-            // 3. 重置頁碼回到第 1 頁並重新渲染
             currentPage = 1;
             renderPagination();
         }
 
-        // ============================
-        // 單一職缺卡片上的收藏/取消收藏
-        // ============================
         function toggleFavorite(btn) {
             if (!IS_LOGGED_IN) {
                 const go = confirm('需要登入才能收藏職缺\n\n是否前往登入頁面？');
@@ -277,7 +258,6 @@
             }
             saveFavorites(favorites);
 
-            // 若目前正好在「只看收藏」模式下，即時更新列表與動態分頁
             if (isOnlyShowFavorites) {
                 renderPagination();
             }
@@ -293,7 +273,6 @@
             });
         }
 
-        // 取得當前符合條件的職缺 DOM
         function getEligibleRows() {
             const allRows = Array.from(document.querySelectorAll('#job-list .job-row'));
             if (!isOnlyShowFavorites) {
@@ -303,9 +282,6 @@
             return allRows.filter(row => favorites.includes(String(row.dataset.jobId)));
         }
 
-        // ============================
-        // 動態分頁
-        // ============================
         function showPage(page) {
             const allRows = document.querySelectorAll('#job-list .job-row');
             const eligibleRows = getEligibleRows();
@@ -337,14 +313,12 @@
                 return;
             }
 
-            // 上一頁
             const prev = document.createElement('button');
             prev.className = 'page-arrow';
             prev.innerHTML = '&#8249;';
             prev.onclick = () => { if (currentPage > 1) goPage(currentPage - 1); };
             pg.appendChild(prev);
 
-            // 頁碼按鈕
             for (let i = 1; i <= totalPages; i++) {
                 const btn = document.createElement('button');
                 btn.className = 'page-num' + (i === currentPage ? ' active' : '');
@@ -353,19 +327,14 @@
                 pg.appendChild(btn);
             }
 
-            // 下一頁
             const next = document.createElement('button');
             next.className = 'page-arrow';
             next.innerHTML = '&#8250;';
             next.onclick = () => { if (currentPage < totalPages) goPage(currentPage + 1); };
             pg.appendChild(next);
 
-            // 總筆數提示
             const countText = document.createElement('span');
             countText.className = 'page-total-count';
-            countText.style.marginLeft = '12px';
-            countText.style.color = '#666';
-            countText.style.fontSize = '14px';
             countText.textContent = `共 ${total} 筆職缺`;
             pg.appendChild(countText);
 
@@ -377,9 +346,6 @@
             renderPagination();
         }
 
-        // ============================
-        // 搜尋與重置
-        // ============================
         function doSearch() {
             const category = document.getElementById('sel-category').value;
             const location = document.getElementById('sel-location').value;
@@ -399,7 +365,6 @@
             window.location.href = '/Job/Job_search';
         }
 
-        // 初始化
         window.addEventListener('load', function () {
             restoreFavorites();
             renderPagination();
