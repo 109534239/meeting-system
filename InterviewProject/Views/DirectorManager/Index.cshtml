@@ -24,7 +24,7 @@
     }
     @if (TempData["Error"] != null)
     {
-        <div class="pw-error" style="margin-bottom:16px;">@TempData["Error"]</div>
+        <div class="alert-error">@TempData["Error"]</div>
     }
 
     <div class="announce-toolbar">
@@ -34,12 +34,11 @@
     </div>
 
     <div class="announce-table">
-        <div class="announce-table-head"
-             style="grid-template-columns: 1fr 1fr 140px 120px;">
+        <div class="announce-table-head manager-grid">
             <div>姓名</div>
             <div>帳號</div>
             <div>部門</div>
-            <div>操作</div>
+            <div style="text-align: right;">操作</div>
         </div>
 
         @if (Model != null && Model.Any())
@@ -47,19 +46,16 @@
             @* 依部門分組顯示 *@
             foreach (var dept in Model.GroupBy(m => m.Department).OrderBy(g => g.Key))
             {
-                <div style="padding: 8px 24px; background:#f4f7f9;
-                            font-size:12px; font-weight:700;
-                            color:var(--primary); letter-spacing:0.5px;">
+                <div class="dept-group-header">
                     @dept.Key（@dept.Count() 人）
                 </div>
 
                 foreach (var manager in dept.OrderBy(m => m.Id))
                 {
-                    <div class="announce-row"
-                         style="grid-template-columns: 1fr 1fr 140px 120px;">
-                        <div style="font-weight:600;">@manager.Name</div>
-                        <div style="color:#888;">@manager.Account</div>
-                        <div>
+                    <div class="announce-row manager-grid">
+                        <div class="manager-name">@manager.Name</div>
+                        <div class="manager-account">@manager.Account</div>
+                        <div class="manager-dept">
                             <span class="badge-category badge-公告">@manager.Department</span>
                         </div>
                         <div class="announce-actions">
