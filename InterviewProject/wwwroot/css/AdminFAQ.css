@@ -1,20 +1,33 @@
-/* ===========================
+/* =========================================
    FAQ 後台列表 Index
-=========================== */
+========================================= */
 
 .faq-manage-wrap {
     max-width: 1200px;
-    margin: 32px auto;
+    margin: 32px auto 48px;
     padding: 0 40px;
+    box-sizing: border-box;
+    width: 100%;
 }
 
-/* ── 成功訊息 ── */
+/* ── 成功／錯誤訊息 ── */
 .alert-success {
     padding: 12px 20px;
     background: #f0fff4;
     border: 1.5px solid #b2dfc0;
     border-radius: 8px;
     color: #2e7d4f;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.alert-error {
+    padding: 12px 20px;
+    background: #fff0f0;
+    border: 1.5px solid #f1b0b0;
+    border-radius: 8px;
+    color: #c94040;
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 20px;
@@ -31,23 +44,121 @@
 .btn-add {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
     padding: 10px 24px;
-    background: var(--primary);
+    background: var(--primary, #206c8b);
     color: #fff;
     border-radius: 8px;
     font-size: 14px;
     font-weight: 700;
     text-decoration: none;
     transition: background 0.2s;
+    white-space: nowrap;
 }
 
-.btn-add:hover {
-    background: var(--primary-dark);
-    color: #fff;
+    .btn-add:hover {
+        background: var(--primary-dark, #164b61);
+        color: #fff;
+    }
+
+/* ── 頂部篩選工具列 ── */
+.report-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    background: #fff;
+    padding: 12px 18px;
+    border-radius: 10px;
+    border: 1px solid #e2eaf0;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
 }
 
-/* ── FAQ 表格 ── */
+.report-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-main, #333);
+}
+
+    .report-filter-item select {
+        padding: 6px 12px;
+        border: 1.5px solid #d0dde6;
+        border-radius: 6px;
+        background: #f8fbfc;
+        font-size: 13.5px;
+        font-family: inherit;
+        outline: none;
+        cursor: pointer;
+    }
+
+/* ── FAQ / Q&A 回報 Tab ── */
+.faq-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 1px;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+}
+
+.faq-tab {
+    padding: 10px 20px;
+    border: 1px solid transparent;
+    border-radius: 8px 8px 0 0;
+    background: transparent;
+    color: #666;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+    margin-bottom: -2px;
+    flex-shrink: 0;
+}
+
+    .faq-tab:hover {
+        color: var(--primary, #206c8b);
+        background: #f5f5f5;
+    }
+
+    .faq-tab.active {
+        color: var(--primary, #206c8b);
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-bottom: 2px solid var(--primary, #206c8b);
+    }
+
+.tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    margin-left: 6px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--primary-light, #e8f4ff);
+    color: var(--primary, #206c8b);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.faq-tab-content {
+    display: none;
+}
+
+    .faq-tab-content.active {
+        display: block;
+    }
+
+/* ── FAQ 表格 (Desktop: > 992px) ── */
 .faq-table {
     background: #fff;
     border-radius: 12px;
@@ -57,38 +168,41 @@
 
 .faq-table-head {
     display: grid;
-    grid-template-columns: 80px 1fr 110px 160px;
+    grid-template-columns: 80px minmax(200px, 1fr) 100px 140px;
     padding: 14px 24px;
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 700;
-    color: var(--text-muted);
+    color: var(--text-muted, #666);
     background: #f4f7f9;
     border-bottom: 1.5px solid #e8e8e8;
     gap: 12px;
+    align-items: center;
 }
 
 .faq-row {
     display: grid;
-    grid-template-columns: 80px 1fr 110px 160px;
+    grid-template-columns: 80px minmax(200px, 1fr) 100px 140px;
     padding: 16px 24px;
     font-size: 14px;
-    color: var(--text-main);
+    color: var(--text-main, #333);
     border-bottom: 1px solid #f0f0f0;
     align-items: center;
     gap: 12px;
     transition: background 0.15s;
+    box-sizing: border-box;
 }
 
-.faq-row:last-child {
-    border-bottom: none;
-}
+    .faq-row:last-child {
+        border-bottom: none;
+    }
 
-.faq-row:hover {
-    background: #f8fbfc;
-}
+    .faq-row:hover {
+        background: #f8fbfc;
+    }
 
 .faq-title {
-    font-weight: 500;
+    font-weight: 600;
+    color: var(--text-main, #333);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -96,7 +210,9 @@
 
 /* ── 狀態標籤 ── */
 .status-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 4px 12px;
     border-radius: 20px;
     font-size: 12px;
@@ -106,13 +222,11 @@
     text-align: center;
 }
 
-    /* 顯示中 (綠色系) */
     .status-badge.active {
         background: #e6f4ea;
         color: #2e7d4f;
     }
 
-    /* 已停用 (灰色系) */
     .status-badge.inactive {
         background: #f4f4f4;
         color: #888888;
@@ -123,31 +237,35 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    justify-content: flex-end;
 }
 
-.faq-actions form {
-    margin: 0;
-}
+    .faq-actions form {
+        margin: 0;
+    }
 
 .btn-edit {
-    padding: 6px 16px;
+    padding: 6px 14px;
     border-radius: 6px;
-    background: var(--primary-light);
-    color: var(--primary);
+    background: var(--primary-light, #e8f4ff);
+    color: var(--primary, #206c8b);
     font-size: 13px;
     font-weight: 600;
     text-decoration: none;
     transition: background 0.2s;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.btn-edit:hover {
-    background: var(--primary);
-    color: #fff;
-}
+    .btn-edit:hover {
+        background: var(--primary, #206c8b);
+        color: #fff;
+    }
 
 .btn-delete {
-    padding: 6px 16px;
+    padding: 6px 14px;
     border-radius: 6px;
     background: #fff0f0;
     color: #c94040;
@@ -158,21 +276,59 @@
     font-family: inherit;
     transition: background 0.2s;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.btn-delete:hover {
-    background: #c94040;
-    color: #fff;
-}
+    .btn-delete:hover {
+        background: #c94040;
+        color: #fff;
+    }
 
 /* ── 空資料 ── */
 .faq-empty {
-    padding: 40px;
+    padding: 48px 20px;
     text-align: center;
     color: #aaa;
     font-size: 14px;
 }
 
+/* ===========================
+   Q&A 回報列表 (Desktop: > 992px)
+=========================== */
+
+.report-head,
+.report-row {
+    grid-template-columns: 140px 100px 110px minmax(180px, 1fr) 95px minmax(200px, auto);
+}
+
+    .report-row .faq-title {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+.dept-select {
+    width: 100%;
+    max-width: 160px;
+    padding: 8px 12px;
+    border: 1.5px solid #d0dde6;
+    border-radius: 6px;
+    background: #f8fbfc;
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+    outline: none;
+    cursor: pointer;
+    height: 38px;
+}
+
+    .dept-select:focus {
+        border-color: var(--primary, #206c8b);
+        background: #fff;
+    }
 
 /* ===========================
    FAQ 新增 / 編輯
@@ -180,8 +336,10 @@
 
 .faq-form-wrap {
     max-width: 850px;
-    margin: 32px auto;
+    margin: 32px auto 48px;
     padding: 0 40px;
+    box-sizing: border-box;
+    width: 100%;
 }
 
 .form-card {
@@ -192,6 +350,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 22px 28px;
+    box-sizing: border-box;
 }
 
 .field-item {
@@ -207,7 +366,7 @@
 .field-label {
     font-size: 11px;
     font-weight: 700;
-    color: var(--text-muted);
+    color: var(--text-muted, #666);
     letter-spacing: .8px;
     text-transform: uppercase;
 }
@@ -224,16 +383,17 @@
     box-sizing: border-box;
 }
 
-.field-input:focus {
-    outline: none;
-    border-color: var(--primary);
-    background: #fff;
-    box-shadow: 0 0 0 3px rgba(23,79,103,.08);
-}
+    .field-input:focus {
+        outline: none;
+        border-color: var(--primary, #206c8b);
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(23,79,103,.08);
+    }
 
 .field-textarea {
     resize: vertical;
     min-height: 220px;
+    height: auto;
     line-height: 1.7;
 }
 
@@ -243,11 +403,10 @@
     justify-content: flex-end;
     gap: 12px;
     margin-top: 8px;
-    padding-top: 24px;
+    padding-top: 20px;
     border-top: 1px solid #edf2f6;
 }
 
-/* ── 返回按鈕 ── */
 .btn-cancel {
     padding: 10px 28px;
     border-radius: 8px;
@@ -256,20 +415,22 @@
     font-size: 14px;
     font-weight: 600;
     text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     transition: background 0.2s;
 }
 
-.btn-cancel:hover {
-    background: #e0e0e0;
-    color: #333;
-}
+    .btn-cancel:hover {
+        background: #e0e0e0;
+        color: #333;
+    }
 
-/* ── 儲存按鈕 ── */
 .btn-save {
     padding: 10px 32px;
     border-radius: 8px;
     border: none;
-    background: var(--primary);
+    background: var(--primary, #206c8b);
     color: #fff;
     font-size: 14px;
     font-weight: 700;
@@ -278,134 +439,9 @@
     font-family: inherit;
 }
 
-.btn-save:hover {
-    background: var(--primary-dark);
-}
-
-/* ===========================
-   Q&A 回報列表
-=========================== */
-
-.report-head,
-.report-row {
-    grid-template-columns: 150px 100px 120px 1fr 100px 100px;
-}
-
-.report-row .faq-title {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* ── RWD ── */
-@media(max-width:768px) {
-    .faq-manage-wrap,
-    .faq-form-wrap {
-        padding: 0 20px;
+    .btn-save:hover {
+        background: var(--primary-dark, #164b61);
     }
-
-    .faq-table-head,
-    .faq-row {
-        grid-template-columns: 60px 1fr 90px 120px;
-        padding: 12px 16px;
-    }
-
-    .form-card {
-        grid-template-columns: 1fr;
-    }
-
-    .field-item--full {
-        grid-column: auto;
-    }
-}
-
-/* ===========================
-   FAQ / Q&A 回報 Tab
-=========================== */
-
-.faq-tabs {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #e0e0e0;
-    padding-bottom: 1px;
-}
-
-.faq-tab {
-    padding: 10px 20px;
-    border: 1px solid transparent;
-    border-radius: 8px 8px 0 0;
-    background: transparent;
-    color: #666;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    font-family: inherit;
-    transition: all 0.2s;
-    margin-bottom: -2px;
-}
-
-.faq-tab:hover {
-    color: var(--primary);
-    background: #f5f5f5;
-}
-
-.faq-tab.active {
-    color: var(--primary);
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-bottom: 2px solid var(--primary);
-}
-
-.tab-count {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 22px;
-    height: 22px;
-    margin-left: 6px;
-    padding: 0 7px;
-    border-radius: 999px;
-    background: var(--primary-light);
-    color: var(--primary);
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.faq-tab-content {
-    display: none;
-}
-
-.faq-tab-content.active {
-    display: block;
-}
-
-/* ===========================
-   Q&A 回報列表
-=========================== */
-
-.report-head,
-.report-row {
-    grid-template-columns: 150px 100px 120px 1fr 100px minmax(240px, auto);
-}
-
-.report-row .faq-title {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.dept-select {
-    width: 100%;
-    padding: 6px 16px;
-    border: 1.5px solid #d0dde6;
-    border-radius: 6px;
-    background: #f8fbfc;
-    font-size: 13px;
-    font-family: inherit;
-    transition: .2s;
-    box-sizing: border-box;
-}
 
 /* =========================================
    公司端－Q&A 回報詳細頁
@@ -419,72 +455,14 @@
     box-sizing: border-box;
 }
 
-/* =========================================
-   成功／錯誤訊息
-========================================= */
-
-.admin-qa-alert {
-    position: relative;
-    margin-bottom: 20px;
-    padding: 14px 18px 14px 46px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 1.6;
-}
-
-.admin-qa-alert::before {
-    position: absolute;
-    top: 50%;
-    left: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 700;
-    transform: translateY(-50%);
-}
-
-.admin-qa-alert-success {
-    background: #f1fbf4;
-    border: 1px solid #b9ddc5;
-    color: #287448;
-    box-shadow: 0 2px 8px rgba(46, 125, 79, 0.06);
-}
-
-.admin-qa-alert-success::before {
-    content: "✓";
-    background: #3b9460;
-}
-
-.admin-qa-alert-error {
-    background: #fff3f3;
-    border: 1px solid #efbcbc;
-    color: #b83e3e;
-    box-shadow: 0 2px 8px rgba(184, 62, 62, 0.05);
-}
-
-.admin-qa-alert-error::before {
-    content: "!";
-    background: #c94c4c;
-}
-
-/* =========================================
-   頁面頂部摘要
-========================================= */
-
 .admin-qa-page-summary {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 24px;
     width: 100%;
-    margin-bottom: 18px;
-    padding: 28px 30px;
+    margin-bottom: 20px;
+    padding: 26px 30px;
     background: linear-gradient(135deg, #f8fbfc 0%, #edf6f9 100%);
     border: 1px solid #dfe9ee;
     border-radius: 16px;
@@ -494,6 +472,7 @@
 
 .admin-qa-page-title {
     min-width: 0;
+    flex: 1;
 }
 
 .admin-qa-category {
@@ -503,8 +482,8 @@
     margin-bottom: 10px;
     padding: 4px 12px;
     border-radius: 999px;
-    background: var(--primary-light);
-    color: var(--primary);
+    background: var(--primary-light, #e8f4ff);
+    color: var(--primary, #206c8b);
     font-size: 12px;
     font-weight: 700;
 }
@@ -512,31 +491,20 @@
 .admin-qa-page-title h2 {
     margin: 0;
     color: #253d47;
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
     line-height: 1.45;
     word-break: break-word;
 }
-
-.admin-qa-page-title p {
-    margin: 7px 0 0;
-    color: var(--text-muted);
-    font-size: 14px;
-    line-height: 1.6;
-}
-
-/* =========================================
-   狀態標籤
-========================================= */
 
 .admin-qa-status {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 7px;
-    min-width: 92px;
-    min-height: 34px;
-    padding: 7px 14px;
+    min-width: 88px;
+    min-height: 32px;
+    padding: 6px 14px;
     border-radius: 999px;
     font-size: 13px;
     font-weight: 700;
@@ -556,9 +524,9 @@
     color: #287448;
 }
 
-.admin-qa-status.is-replied .admin-qa-status-dot {
-    background: #3d9460;
-}
+    .admin-qa-status.is-replied .admin-qa-status-dot {
+        background: #3d9460;
+    }
 
 .admin-qa-status.is-pending {
     background: #fff5e4;
@@ -566,20 +534,17 @@
     color: #9a651c;
 }
 
-.admin-qa-status.is-pending .admin-qa-status-dot {
-    background: #d99732;
-}
+    .admin-qa-status.is-pending .admin-qa-status-dot {
+        background: #d99732;
+    }
 
-/* =========================================
-   基本資料摘要
-========================================= */
-
+/* 基本資料摘要卡片 */
 .admin-qa-info-card {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
     margin-bottom: 22px;
-    padding: 22px 26px;
+    padding: 20px 24px;
     background: #fff;
     border: 1px solid #e1e9ee;
     border-radius: 14px;
@@ -590,24 +555,24 @@
 .admin-qa-info-item {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 6px;
     min-width: 0;
-    padding: 0 22px;
+    padding: 0 20px;
     border-right: 1px solid #e7edef;
 }
 
-.admin-qa-info-item:first-child {
-    padding-left: 0;
-}
+    .admin-qa-info-item:first-child {
+        padding-left: 0;
+    }
 
-.admin-qa-info-item:last-child {
-    padding-right: 0;
-    border-right: none;
-}
+    .admin-qa-info-item:last-child {
+        padding-right: 0;
+        border-right: none;
+    }
 
 .admin-qa-info-label {
     color: #7c8f98;
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 700;
     letter-spacing: 0.7px;
 }
@@ -620,10 +585,7 @@
     overflow-wrap: anywhere;
 }
 
-/* =========================================
-   左右雙卡片
-========================================= */
-
+/* 雙卡片區 */
 .admin-qa-content-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -644,30 +606,18 @@
 }
 
 .admin-question-card {
-    border-top: 4px solid var(--primary);
+    border-top: 4px solid var(--primary, #206c8b);
 }
 
 .admin-answer-card {
     border-top: 4px solid #4a9a69;
 }
 
-.admin-answer-card form {
-    margin: 0;
-}
-
-.admin-answer-card textarea {
-    display: block;
-}
-
-/* =========================================
-   卡片標題
-========================================= */
-
 .admin-qa-card-header {
     display: flex;
     align-items: center;
     gap: 13px;
-    padding: 20px 24px;
+    padding: 18px 22px;
     background: #fafcfd;
     border-bottom: 1px solid #e8eef1;
     flex-shrink: 0;
@@ -677,17 +627,17 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 11px;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
     font-size: 15px;
     font-weight: 800;
     flex-shrink: 0;
 }
 
 .admin-question-icon {
-    background: var(--primary-light);
-    color: var(--primary);
+    background: var(--primary-light, #e8f4ff);
+    color: var(--primary, #206c8b);
 }
 
 .admin-answer-icon {
@@ -698,7 +648,7 @@
 .admin-qa-card-header h3 {
     margin: 0;
     color: #2c414a;
-    font-size: 17px;
+    font-size: 16.5px;
     font-weight: 700;
 }
 
@@ -706,39 +656,28 @@
     margin: 3px 0 0;
     color: #86979e;
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 1.4;
 }
-
-/* =========================================
-   左側提問內容
-========================================= */
 
 .admin-qa-question-content {
     flex: 1;
-    min-height: 360px;
-    padding: 26px;
+    min-height: 320px;
+    padding: 22px 24px;
     background: #fbfdfe;
     color: #344a54;
-    font-size: 14px;
-    line-height: 1.9;
-
-    /* 保留段落換行，但移除多餘縮排空白 */
+    font-size: 14.5px;
+    line-height: 1.85;
     white-space: pre-line;
-
     overflow-wrap: anywhere;
     word-break: break-word;
     box-sizing: border-box;
 }
 
-/* =========================================
-   右側回覆表單
-========================================= */
-
 .admin-qa-reply-form {
     display: flex;
     flex: 1;
     flex-direction: column;
-    min-height: 360px;
+    min-height: 320px;
     padding: 0;
     background: #fff;
 }
@@ -746,39 +685,29 @@
 .admin-qa-reply-textarea {
     width: 100%;
     flex: 1;
-    min-height: 300px;
-    padding: 26px;
+    min-height: 260px;
+    padding: 22px 24px;
     border: none;
-    border-radius: 0;
     color: #314851;
     font-family: inherit;
     font-size: 14px;
-    line-height: 1;
+    line-height: 1.6;
     resize: vertical;
     box-sizing: border-box;
 }
 
-.admin-qa-reply-textarea::placeholder {
-    color: #a1afb5;
-}
-
-.admin-qa-reply-textarea:focus {
-    outline: none;
-    background: #fff;
-    box-shadow: inset 0 0 0 2px var(--primary);
-}
-
-/* =========================================
-   表單按鈕
-========================================= */
+    .admin-qa-reply-textarea:focus {
+        outline: none;
+        background: #fff;
+        box-shadow: inset 0 0 0 2px var(--primary, #206c8b);
+    }
 
 .admin-qa-form-actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 12px;
-    margin: 0;
-    padding: 18px 24px;
+    padding: 16px 22px;
     background: #fff;
     border-top: 1px solid #e3ece7;
 }
@@ -788,8 +717,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 42px;
-    padding: 10px 25px;
+    min-height: 40px;
+    padding: 9px 24px;
     border-radius: 8px;
     font-family: inherit;
     font-size: 14px;
@@ -798,12 +727,7 @@
     text-decoration: none;
     cursor: pointer;
     box-sizing: border-box;
-    transition:
-        background-color 0.18s ease,
-        border-color 0.18s ease,
-        color 0.18s ease,
-        transform 0.18s ease,
-        box-shadow 0.18s ease;
+    transition: all 0.18s ease;
 }
 
 .admin-qa-btn-back {
@@ -812,133 +736,266 @@
     color: #5d7079;
 }
 
-.admin-qa-btn-back:hover {
-    background: #f3f7f9;
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-.admin-qa-btn-submit {
-    background: var(--primary);
-    border: 1.5px solid var(--primary);
-    color: #fff;
-}
-
-.admin-qa-btn-submit:hover {
-    background: var(--primary-dark);
-    border-color: var(--primary-dark);
-    color: #fff;
-    transform: translateY(-1px);
-    box-shadow: 0 5px 14px rgba(23, 79, 103, 0.18);
-}
-
-/* =========================================
-   平板
-========================================= */
-
-@media (max-width: 900px) {
-    .admin-qa-detail-wrap {
-        margin-top: 24px;
-        padding: 0 24px;
+    .admin-qa-btn-back:hover {
+        background: #f3f7f9;
+        border-color: var(--primary, #206c8b);
+        color: var(--primary, #206c8b);
     }
 
+.admin-qa-btn-submit {
+    background: var(--primary, #206c8b);
+    border: 1.5px solid var(--primary, #206c8b);
+    color: #fff;
+}
+
+    .admin-qa-btn-submit:hover {
+        background: var(--primary-dark, #164b61);
+        color: #fff;
+    }
+
+/* ── 唯讀內容框 ── */
+.report-content-box {
+    min-height: 240px;
+    padding: 14px 16px;
+    border: 1.5px solid #d0dde6;
+    border-radius: 8px;
+    background: #f8fbfc;
+    color: var(--text-main, #333);
+    font-size: 14px;
+    line-height: 1.8;
+    font-family: inherit;
+    box-sizing: border-box;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ══════════════════════════════════════════════════
+   RWD 響應式斷點設定
+========================================= */
+
+/* 平板尺寸 (992px 以下) */
+@media (max-width: 992px) {
+    .faq-manage-wrap,
+    .faq-form-wrap,
+    .admin-qa-detail-wrap {
+        padding-left: 20px;
+        padding-right: 20px;
+        margin-top: 24px;
+    }
+
+    .report-filter-bar {
+        gap: 12px;
+        padding: 12px 14px;
+    }
+
+    .report-filter-item {
+        flex: 1 1 180px;
+        justify-content: space-between;
+    }
+
+        .report-filter-item select {
+            flex: 1;
+            max-width: 160px;
+        }
+
+    .faq-table {
+        background: transparent;
+        border-radius: 0;
+        box-shadow: none;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    /* 隱藏桌機專用表頭 */
+    .faq-table-head,
+    .report-head {
+        display: none !important;
+    }
+
+    /* ── FAQ 列表卡片 ── */
+    .faq-row {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        background: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        padding: 18px 20px;
+        gap: 12px;
+        border: 1px solid #e8eef2;
+    }
+
+    .faq-title {
+        font-size: 15.5px;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .faq-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding-top: 10px;
+        border-top: 1px dashed #edf2f5;
+        margin-top: 4px;
+    }
+
+    .btn-edit,
+    .btn-delete {
+        width: 100%;
+        height: 38px;
+        font-size: 13.5px;
+    }
+
+    /* ── Q&A 回報列表卡片（修正重疊，改用乾淨 Grid 佈局） ── */
+    .report-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 10px 14px;
+        background: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 3px 10px rgba(23, 79, 103, 0.06);
+        padding: 18px 20px;
+        border: 1px solid #e1e9ee;
+    }
+
+        /* 1. 時間（左上） */
+        .report-row > div:nth-child(1) {
+            grid-column: 1;
+            font-size: 13px;
+            color: #71838c;
+            font-weight: 500;
+        }
+
+        /* 2. 類別（右上） */
+        .report-row > div:nth-child(2) {
+            grid-column: 2;
+            justify-self: end;
+            font-size: 12.5px;
+            font-weight: 700;
+            color: var(--primary, #206c8b);
+            background: var(--primary-light, #e8f4ff);
+            padding: 4px 10px;
+            border-radius: 20px;
+            white-space: nowrap;
+        }
+
+        /* 3. 提問者姓名/帳號（第二行） */
+        .report-row > div:nth-child(3) {
+            grid-column: 1 / -1;
+            font-size: 14.5px;
+            font-weight: 700;
+            color: #253d47;
+            word-break: break-all;
+        }
+
+        /* 4. 主旨（第三行） */
+        .report-row .faq-title {
+            grid-column: 1 / -1;
+            font-size: 14px;
+            color: var(--text-muted, #555);
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.5;
+        }
+
+        /* 5. 狀態（第四行） */
+        .report-row > div:nth-child(5) {
+            grid-column: 1 / -1;
+            margin: 2px 0;
+        }
+
+        /* 6. 底部操作區（第五行，滿版雙欄） */
+        .report-row > div:nth-child(6) {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            align-items: center;
+            width: 100%;
+            padding-top: 12px;
+            border-top: 1px dashed #edf2f5;
+            margin-top: 4px;
+        }
+
+            .report-row > div:nth-child(6) .btn-edit {
+                width: 100%;
+                height: 38px;
+            }
+
+    .dept-select {
+        max-width: 100%;
+        width: 100%;
+    }
+
+    /* ── 詳細頁響應式 ── */
     .admin-qa-info-card {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0;
     }
 
     .admin-qa-info-item {
-        padding: 16px 20px;
+        padding: 14px 16px;
         border-bottom: 1px solid #e7edef;
     }
 
-    .admin-qa-info-item:nth-child(2) {
-        border-right: none;
-    }
+        .admin-qa-info-item:nth-child(2) {
+            border-right: none;
+        }
 
-    .admin-qa-info-item:nth-child(3),
-    .admin-qa-info-item:nth-child(4) {
-        border-bottom: none;
-    }
-
-    .admin-qa-info-item:nth-child(3) {
-        padding-left: 20px;
-    }
+        .admin-qa-info-item:nth-child(3),
+        .admin-qa-info-item:nth-child(4) {
+            border-bottom: none;
+        }
 
     .admin-qa-content-grid {
         grid-template-columns: 1fr;
+        gap: 20px;
     }
 
     .admin-qa-question-content,
     .admin-qa-reply-form {
-        min-height: 280px;
+        min-height: 240px;
     }
 }
 
-/* =========================================
-   手機
-========================================= */
+/* 手機尺寸 (768px 以下：表單適配) */
+@media (max-width: 768px) {
+    .form-card {
+        grid-template-columns: 1fr;
+        padding: 24px 18px;
+        gap: 16px;
+    }
 
-@media (max-width: 560px) {
-    .admin-qa-detail-wrap {
-        margin: 16px auto 48px;
-        padding: 0 16px;
+    .field-item--full {
+        grid-column: 1;
+    }
+
+    .form-actions {
+        flex-direction: column-reverse;
+        gap: 10px;
+    }
+
+    .btn-cancel,
+    .btn-save {
+        width: 100%;
+        text-align: center;
     }
 
     .admin-qa-page-summary {
         flex-direction: column;
-        gap: 16px;
-        padding: 21px 18px;
-    }
-
-    .admin-qa-status {
-        align-self: flex-start;
-    }
-
-    .admin-qa-page-title h2 {
-        font-size: 19px;
-    }
-
-    .admin-qa-info-card {
-        grid-template-columns: 1fr;
-        padding: 8px 18px;
-    }
-
-    .admin-qa-info-item,
-    .admin-qa-info-item:first-child,
-    .admin-qa-info-item:nth-child(3),
-    .admin-qa-info-item:last-child {
-        padding: 16px 0;
-        border-right: none;
-        border-bottom: 1px solid #edf2f5;
-    }
-
-    .admin-qa-info-item:last-child {
-        border-bottom: none;
-    }
-
-    .admin-qa-card-header {
-        padding: 18px;
-    }
-
-    .admin-qa-question-content {
-        min-height: 200px;
-        padding: 20px 18px;
-    }
-
-    .admin-qa-reply-form {
-        min-height: 280px;
-        padding: 20px 18px;
-    }
-
-    .admin-qa-reply-textarea {
-        min-height: 240px;
+        align-items: flex-start;
+        gap: 14px;
         padding: 20px 18px;
     }
 
     .admin-qa-form-actions {
         flex-direction: column-reverse;
-        padding: 16px 18px;
+        gap: 10px;
     }
 
     .admin-qa-btn-back,
@@ -947,70 +1004,52 @@
     }
 }
 
-.reply-textarea {
-    min-height: 180px;
-}
-
-.internal-note-textarea {
-    min-height: 110px;
-    resize: vertical;
-}
-
-.report-inline-form {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.report-detail-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    padding-top: 20px;
-    margin-top: 10px;
-    border-top: 1px solid #edf2f6;
-}
-
-.btn-full {
-    width: fit-content;
-    margin-top: 4px;
-}
-
-.alert-error {
-    padding: 12px 20px;
-    background: #fff0f0;
-    border: 1.5px solid #f1b0b0;
-    border-radius: 8px;
-    color: #c94040;
-    font-size: 14px;
-    font-weight: 600;
-    margin-bottom: 20px;
-}
-
-@media(max-width: 900px) {
-    .faq-report-detail-wrap {
-        padding: 0 20px;
+/* 超窄螢幕手機 (480px 以下) */
+@media (max-width: 480px) {
+    .faq-manage-wrap,
+    .faq-form-wrap,
+    .admin-qa-detail-wrap {
+        padding-left: 12px;
+        padding-right: 12px;
     }
 
-    .report-detail-grid {
+    .faq-row,
+    .report-row {
+        padding: 16px 14px;
+    }
+
+        .report-row > div:nth-child(6) {
+            grid-template-columns: 1fr;
+        }
+
+    .report-filter-item {
+        flex: 1 1 100%;
+    }
+
+        .report-filter-item select {
+            max-width: unset;
+            width: 100%;
+        }
+
+    .admin-qa-info-card {
         grid-template-columns: 1fr;
+        padding: 8px 14px;
     }
-}
 
-/* ── Q&A 回報內容唯讀框 ── */
-.report-content-box {
-    min-height: 260px;
-    padding: 14px 16px;
-    border: 1.5px solid #d0dde6;
-    border-radius: 8px;
-    background: #f8fbfc;
-    color: var(--text-main);
-    font-size: 14px;
-    line-height: 1.8;
-    font-family: inherit;
-    box-sizing: border-box;
+    .admin-qa-info-item,
+    .admin-qa-info-item:first-child,
+    .admin-qa-info-item:nth-child(3),
+    .admin-qa-info-item:last-child {
+        padding: 12px 0;
+        border-right: none;
+        border-bottom: 1px solid #edf2f5;
+    }
 
-    text-align: left;
-    white-space: pre-wrap;
-    word-break: break-word;
+        .admin-qa-info-item:last-child {
+            border-bottom: none;
+        }
+
+    .btn-add {
+        width: 100%;
+    }
 }
