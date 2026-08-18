@@ -16,8 +16,8 @@
 
 .btn-create {
     padding: 10px 24px;
-    background: var(--primary);
-    color: var(--white);
+    background: var(--primary, #206c8b);
+    color: var(--white, #ffffff);
     border-radius: 8px;
     font-size: 15px;
     font-weight: 600;
@@ -28,27 +28,28 @@
     align-items: center;
     gap: 6px;
     transition: background 0.2s;
+    white-space: nowrap;
 }
 
     .btn-create:hover {
-        background: var(--primary-dark);
-        color: var(--white);
+        background: var(--primary-dark, #164b61);
+        color: var(--white, #ffffff);
     }
 
-/* ── GRID 骨架 ── */
-/* 🎯 核心修改：將第四欄（進度欄）從 120px 放大至 190px，並稍微微調其他欄位，確保總寬度依然完美平衡 */
+/* ── GRID 骨架 (Desktop: > 992px) ── */
 .hrjob-cols {
     display: grid;
-    grid-template-columns: 90px 1fr 120px 190px 90px 120px 130px;
+    /* 部門｜職缺名稱｜部門主管｜招募進度｜狀態｜上架/下架日期｜操作 */
+    grid-template-columns: 85px minmax(150px, 1.8fr) 100px 185px 80px 120px 115px;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
 }
 
-/* ── 標頭 ── */
+/* ── 標頭 (Desktop) ── */
 .hrjob-grid-head {
-    padding: 12px 24px;
+    padding: 12px 20px;
     font-size: 13px;
-    color: var(--text-muted);
+    color: var(--text-muted, #666);
     font-weight: 600;
     letter-spacing: 0.5px;
 }
@@ -70,11 +71,12 @@
 }
 
 .hrjob-row {
-    background: var(--white);
-    border-radius: var(--radius-card);
-    padding: 20px 24px;
+    background: var(--white, #ffffff);
+    border-radius: var(--radius-card, 12px);
+    padding: 18px 20px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-    transition: box-shadow 0.2s;
+    transition: box-shadow 0.2s, transform 0.15s ease;
+    box-sizing: border-box;
 }
 
     .hrjob-row:hover {
@@ -83,35 +85,46 @@
 
 /* ── 欄位內容 ── */
 .hrjob-dept-text {
-    font-size: 14px;
+    font-size: 13.5px;
     font-weight: 500;
     color: #555;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* 職缺名稱欄 */
 .hrjob-title-cell {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    min-width: 0;
 }
 
 .hrjob-title-text {
-    font-size: 16px;
+    font-size: 15.5px;
     font-weight: 700;
-    color: var(--primary);
+    color: var(--primary, #206c8b);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* 主管 / 隸屬欄 */
 .hrjob-manager-name {
-    font-size: 14px;
+    font-size: 13.5px;
     font-weight: 600;
-    color: var(--text-main);
+    color: var(--text-main, #333);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .hrjob-manager-sub {
     font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 4px;
+    color: var(--text-muted, #777);
+    margin-top: 2px;
+    white-space: nowrap;
 }
 
 /* 狀態欄（置中） */
@@ -122,76 +135,73 @@
 
 /* 時間欄 */
 .hrjob-time-item {
-    font-size: 13px;
+    font-size: 12.5px;
     color: #666;
     margin-bottom: 2px;
+    white-space: nowrap;
 }
 
     .hrjob-time-item:last-child {
         margin-bottom: 0;
     }
 
-.hrjob-time-label {
-    color: #666;
-}
-
+.hrjob-time-label,
 .hrjob-time-label-deadline {
     color: #666;
+    font-size: 12px;
 }
 
 .hrjob-time-time-text {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #64748b;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
 }
 
 /* ══════════════════════════════════
-   ✨ 新增：招募進度四大指標彩色膠囊面板
+   招募進度四大指標彩色膠囊面板
    ══════════════════════════════════ */
-
-/* 移除外層超連結底線 */
 .hrjob-stats-link {
     text-decoration: none;
     display: block;
     width: 100%;
 }
 
-/* 2x2 精美微型網格 */
 .stat-badge-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
+    gap: 5px;
     padding: 2px;
     width: 100%;
+    box-sizing: border-box;
 }
 
-/* 膠囊基礎樣式 */
 .stat-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 8px;
+    padding: 4px 7px;
     border-radius: 6px;
     font-size: 12px;
     font-weight: 500;
     transition: all 0.2s ease;
     border: 1px solid transparent;
+    box-sizing: border-box;
 }
 
-/* 標籤文字 */
 .stat-label {
     color: #555555;
     font-size: 11px;
+    white-space: nowrap;
 }
 
-/* 數據加粗 */
 .stat-v {
     font-weight: 700;
-    font-size: 13px;
+    font-size: 12.5px;
+    margin-left: 4px;
 }
 
-/* 🔴 1. 未處理：淡黃底 + 紅色驚嘆字 */
+/* 🔴 1. 未處理 */
 .stat-item.unhandled {
     background-color: #fff8e1;
     color: #b78103;
@@ -202,39 +212,37 @@
         color: #d32f2f;
     }
 
-/* 🟢 2. 已錄取：淡綠底 */
+/* 🟢 2. 已錄取 */
 .stat-item.hired {
     background-color: #e8f5e9;
     color: #2e7d32;
     border-color: #a5d6a7;
 }
 
-/* ⚪ 3. 需求人數：中性灰 */
+/* ⚪ 3. 需求人數 */
 .stat-item.needed {
     background-color: #f5f5f5;
     color: #424242;
     border-color: #e0e0e0;
 }
 
-/* 🔵 4. 總履歷數：經典藍 */
+/* 🔵 4. 總履歷數 */
 .stat-item.total {
     background-color: #e3f2fd;
     color: #1565c0;
     border-color: #90caf9;
 }
 
-/* 滑鼠移上去的微投影效果 */
 .hrjob-stats-link:hover .stat-item {
     filter: brightness(0.95);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     transform: translateY(-0.5px);
 }
 
-
 /* ── 上下架切換按鈕 ── */
 .btn-toggle {
-    padding: 6px 14px;
-    border-radius: var(--radius-pill);
+    padding: 5px 12px;
+    border-radius: var(--radius-pill, 50px);
     font-size: 12px;
     font-weight: 700;
     border: none;
@@ -254,7 +262,7 @@
 
     .btn-toggle.inactive {
         background: #f5f5f5;
-        color: var(--text-muted);
+        color: var(--text-muted, #777);
     }
 
         .btn-toggle.inactive:hover {
@@ -265,29 +273,33 @@
 .action-btns {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     justify-content: flex-end;
 }
 
 .btn-edit, .btn-delete {
-    padding: 7px 14px;
+    padding: 6px 12px;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
     text-decoration: none;
     border: none;
     cursor: pointer;
     transition: background 0.2s;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-edit {
-    background: var(--primary-light);
-    color: var(--primary-dark);
+    background: var(--primary-light, #e8f4ff);
+    color: var(--primary-dark, #164b61);
 }
 
     .btn-edit:hover {
-        background: var(--primary);
-        color: var(--white);
+        background: var(--primary, #206c8b);
+        color: var(--white, #ffffff);
     }
 
 .btn-delete {
@@ -297,7 +309,7 @@
 
     .btn-delete:hover {
         background: #cd0000;
-        color: var(--white);
+        color: var(--white, #ffffff);
     }
 
 /* ── 成功訊息 ── */
@@ -316,33 +328,34 @@
    ══════════════════════════════════ */
 .hrjob-form-page {
     max-width: 1200px;
-    margin: 40px auto;
+    margin: 36px auto;
     padding: 0 40px;
+    box-sizing: border-box;
 }
 
     .hrjob-form-page form {
         display: flex;
         flex-direction: column;
-        gap: 28px;
+        gap: 24px;
     }
 
 .hrjob-form-header {
     display: flex;
     align-items: center;
     gap: 20px;
-    margin-bottom: 32px;
+    margin-bottom: 24px;
 }
 
     .hrjob-form-header h2 {
-        font-size: 26px;
+        font-size: 24px;
         font-weight: 700;
-        color: var(--primary);
+        color: var(--primary, #206c8b);
         margin: 0;
     }
 
 .btn-back {
     font-size: 14px;
-    color: var(--text-muted);
+    color: var(--text-muted, #666);
     text-decoration: none;
     font-weight: 500;
     transition: color 0.2s;
@@ -350,10 +363,9 @@
 }
 
     .btn-back:hover {
-        color: var(--primary);
+        color: var(--primary, #206c8b);
     }
 
-/* ── 網格系統 ── */
 .form-grid-1 {
     display: grid;
     grid-template-columns: 1fr;
@@ -378,64 +390,67 @@
 }
 
 .hrjob-form {
-    background: var(--white);
-    border-radius: var(--radius-card);
+    background: var(--white, #ffffff);
+    border-radius: var(--radius-card, 12px);
     box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
-    padding: 40px;
+    padding: 36px;
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 20px;
+    box-sizing: border-box;
 }
 
 .form-section-title {
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 700;
-    color: var(--primary);
+    color: var(--primary, #206c8b);
     padding-bottom: 8px;
-    border-bottom: 2px solid var(--primary-light);
+    border-bottom: 2px solid var(--primary-light, #e8f4ff);
     margin-bottom: 6px;
 }
 
 .form-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
     .form-group label {
-        font-size: 14px;
+        font-size: 13.5px;
         font-weight: 600;
-        color: var(--text-main);
+        color: var(--text-main, #333);
     }
 
     .form-group .form-control {
-        padding: 11px 14px;
+        padding: 10px 14px;
         border: 1.5px solid #ccc;
         border-radius: 8px;
         font-size: 14px;
         font-family: inherit;
-        color: var(--text-main);
-        background: var(--white);
+        color: var(--text-main, #333);
+        background: var(--white, #ffffff);
         transition: border-color 0.2s;
         outline: none;
         width: 100%;
         box-sizing: border-box;
+        height: 42px;
     }
 
         .form-group .form-control:focus {
-            border-color: var(--primary);
+            border-color: var(--primary, #206c8b);
         }
 
     .form-group textarea.form-control {
         resize: vertical;
         min-height: 100px;
+        height: auto;
         line-height: 1.6;
     }
 
 .form-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 20px;
+    gap: 16px;
 }
 
 .checkbox-group label {
@@ -444,14 +459,14 @@
     gap: 10px;
     font-size: 14px;
     font-weight: 500;
-    color: var(--text-main);
+    color: var(--text-main, #333);
     cursor: pointer;
 }
 
 .checkbox-group input[type="checkbox"] {
     width: 18px;
     height: 18px;
-    accent-color: var(--primary);
+    accent-color: var(--primary, #206c8b);
     cursor: pointer;
 }
 
@@ -459,7 +474,7 @@
     display: flex;
     justify-content: flex-end;
     gap: 12px;
-    padding-top: 8px;
+    padding-top: 12px;
     border-top: 1px solid #f0f0f0;
 }
 
@@ -467,28 +482,29 @@
     padding: 10px 24px;
     border-radius: 8px;
     background: transparent;
-    color: var(--text-muted);
-    font-size: 15px;
+    color: var(--text-muted, #666);
+    font-size: 14.5px;
     font-weight: 600;
     border: 1.5px solid #ccc;
     text-decoration: none;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     transition: all 0.2s;
     font-family: inherit;
 }
 
     .btn-cancel:hover {
-        border-color: var(--primary);
-        color: var(--primary);
+        border-color: var(--primary, #206c8b);
+        color: var(--primary, #206c8b);
     }
 
 .btn-submit {
     padding: 10px 32px;
     border-radius: 8px;
-    background: var(--primary);
-    color: var(--white);
-    font-size: 15px;
+    background: var(--primary, #206c8b);
+    color: var(--white, #ffffff);
+    font-size: 14.5px;
     font-weight: 700;
     border: none;
     cursor: pointer;
@@ -497,22 +513,152 @@
 }
 
     .btn-submit:hover {
-        background: var(--primary-dark);
+        background: var(--primary-dark, #164b61);
     }
 
-/* ── RWD 響應式切換 ── */
+/* ══════════════════════════════════════════════════
+   RWD 響應式斷點設定
+   ══════════════════════════════════════════════════ */
+
+/* 平板與小型螢幕 (992px 以下) - 全面切換為卡片化檢視 */
+@media (max-width: 992px) {
+    .hrjob-page {
+        padding: 0 20px;
+        margin: 24px auto;
+    }
+
+    /* 隱藏桌機專用表格標頭 */
+    .hrjob-grid-head {
+        display: none !important;
+    }
+
+    /* 列表列轉為彈性直向卡片 */
+    .hrjob-row.hrjob-cols {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 14px;
+        padding: 18px 20px;
+        position: relative;
+    }
+
+    /* 部門名稱放最上方 */
+    .hrjob-dept-text {
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: var(--primary, #206c8b);
+        margin-bottom: -4px;
+    }
+
+    /* 職缺名稱與右上角上下架狀態按鈕 */
+    .hrjob-title-cell {
+        flex-wrap: wrap;
+        padding-right: 80px; /* 避開右上角上下架切換鈕 */
+    }
+
+    .hrjob-title-text {
+        font-size: 17px;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .hrjob-status-cell {
+        position: absolute;
+        top: 18px;
+        right: 18px;
+    }
+
+    /* 主管資訊卡片內排版 */
+    .hrjob-manager-name {
+        font-size: 14px;
+    }
+
+    /* 膠囊招募進度面板整列填滿 */
+    .hrjob-stats-link {
+        margin: 4px 0;
+    }
+
+    .stat-badge-grid {
+        gap: 8px;
+    }
+
+    .stat-item {
+        padding: 6px 10px;
+    }
+
+    /* 時間欄改為橫向排列或清楚的分隔 */
+    .hrjob-time-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+    }
+
+    /* 操作按鈕置底、彈性排列 */
+    .action-btns {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding-top: 12px;
+        border-top: 1px dashed #edf2f5;
+        margin-top: 4px;
+    }
+
+    .btn-edit,
+    .btn-delete {
+        width: 100%;
+        padding: 10px;
+        font-size: 13.5px;
+    }
+}
+
+/* 手機與小型裝置 (768px 以下：表單專用適配) */
 @media (max-width: 768px) {
     .form-grid-2,
     .form-grid-3,
-    .form-grid-2-sections {
+    .form-grid-2-sections,
+    .form-row {
         grid-template-columns: 1fr !important;
+        gap: 14px;
     }
 
     .hrjob-form-page {
         padding: 0 16px;
+        margin: 20px auto;
     }
 
-    .form-section {
-        padding: 20px;
+    .hrjob-form {
+        padding: 24px 18px;
+    }
+
+    .form-actions {
+        flex-direction: column-reverse;
+    }
+
+    .btn-cancel,
+    .btn-submit {
+        width: 100%;
+    }
+}
+
+/* 超窄螢幕手機 (480px 以下) */
+@media (max-width: 480px) {
+    .hrjob-page {
+        padding: 0 12px;
+    }
+
+    .hrjob-row.hrjob-cols {
+        padding: 16px 14px;
+    }
+
+    .stat-badge-grid {
+        grid-template-columns: 1fr; /* 超小手機進度面板轉為單欄更易閱讀 */
+    }
+
+    .btn-create {
+        width: 100%;
+        justify-content: center;
     }
 }
