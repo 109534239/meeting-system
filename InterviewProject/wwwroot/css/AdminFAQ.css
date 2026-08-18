@@ -300,7 +300,7 @@
 
 .report-head,
 .report-row {
-    grid-template-columns: 140px 100px 110px minmax(180px, 1fr) 95px minmax(200px, auto);
+    grid-template-columns: 140px 110px 110px minmax(180px, 1fr) 95px minmax(200px, auto);
 }
 
     .report-row .faq-title {
@@ -774,7 +774,7 @@
    RWD 響應式斷點設定
 ========================================= */
 
-/* 平板尺寸 (992px 以下) */
+/* 平板尺寸 (992px 以下) - 列表全面轉為乾淨卡片式 */
 @media (max-width: 992px) {
     .faq-manage-wrap,
     .faq-form-wrap,
@@ -823,7 +823,7 @@
         border-radius: 12px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
         padding: 18px 20px;
-        gap: 12px;
+        gap: 10px;
         border: 1px solid #e8eef2;
     }
 
@@ -850,82 +850,91 @@
         font-size: 13.5px;
     }
 
-    /* ── Q&A 回報列表卡片（修正重疊，改用乾淨 Grid 佈局） ── */
+    /* ── Q&A 回報列表卡片（姓名靠右、無文字重疊） ── */
     .report-row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        align-items: center;
-        gap: 10px 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
         background: #ffffff;
         border-radius: 12px;
         box-shadow: 0 3px 10px rgba(23, 79, 103, 0.06);
         padding: 18px 20px;
+        gap: 8px;
         border: 1px solid #e1e9ee;
+        position: relative;
     }
 
-        /* 1. 時間（左上） */
-        .report-row > div:nth-child(1) {
-            grid-column: 1;
-            font-size: 13px;
-            color: #71838c;
-            font-weight: 500;
-        }
-
-        /* 2. 類別（右上） */
-        .report-row > div:nth-child(2) {
-            grid-column: 2;
-            justify-self: end;
-            font-size: 12.5px;
-            font-weight: 700;
-            color: var(--primary, #206c8b);
-            background: var(--primary-light, #e8f4ff);
-            padding: 4px 10px;
-            border-radius: 20px;
-            white-space: nowrap;
-        }
-
-        /* 3. 提問者姓名/帳號（第二行） */
-        .report-row > div:nth-child(3) {
-            grid-column: 1 / -1;
-            font-size: 14.5px;
-            font-weight: 700;
-            color: #253d47;
-            word-break: break-all;
-        }
-
-        /* 4. 主旨（第三行） */
-        .report-row .faq-title {
-            grid-column: 1 / -1;
-            font-size: 14px;
-            color: var(--text-muted, #555);
-            white-space: normal;
-            word-break: break-word;
-            line-height: 1.5;
-        }
-
-        /* 5. 狀態（第四行） */
-        .report-row > div:nth-child(5) {
-            grid-column: 1 / -1;
-            margin: 2px 0;
-        }
-
-        /* 6. 底部操作區（第五行，滿版雙欄） */
-        .report-row > div:nth-child(6) {
-            grid-column: 1 / -1;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            align-items: center;
+        /* 清除所有子項預設絕對定位 */
+        .report-row > div {
             width: 100%;
-            padding-top: 12px;
-            border-top: 1px dashed #edf2f5;
-            margin-top: 4px;
+            position: static !important;
         }
 
-            .report-row > div:nth-child(6) .btn-edit {
-                width: 100%;
-                height: 38px;
+            /* 1. 時間（左側）留出右側姓名寬度 */
+            .report-row > div:nth-child(1) {
+                font-size: 13px;
+                color: #71838c;
+                font-weight: 500;
+                padding-right: 120px;
             }
+
+            /* 2. 姓名（置於右上角，與時間平行） */
+            .report-row > div:nth-child(2) {
+                position: absolute !important;
+                top: 16px;
+                right: 20px;
+                width: auto !important;
+                font-size: 14.5px;
+                font-weight: 700;
+                color: var(--primary, #206c8b);
+                text-align: right;
+                max-width: 130px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            /* 3. 類別（黑體字） */
+            .report-row > div:nth-child(3) {
+                font-size: 15px;
+                font-weight: 700;
+                color: #253d47;
+                margin-top: 2px;
+            }
+
+            /* 4. 帳號 / 主旨 */
+            .report-row .faq-title,
+            .report-row > div:nth-child(4) {
+                font-size: 14px;
+                color: #64748b;
+                word-break: break-all;
+                line-height: 1.5;
+            }
+
+            /* 5. 狀態 */
+            .report-row > div:nth-child(5) {
+                font-size: 13px;
+                color: #a56814;
+                font-weight: 600;
+                margin: 2px 0 4px;
+            }
+
+            /* 6. 底部操作區（回覆按鈕與部門指派下拉） */
+            .report-row > div:last-child {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                align-items: center;
+                width: 100%;
+                padding-top: 12px;
+                border-top: 1px dashed #edf2f5;
+                margin-top: 4px;
+            }
+
+                .report-row > div:last-child .btn-edit {
+                    width: 100%;
+                    height: 38px;
+                }
 
     .dept-select {
         max-width: 100%;
@@ -1018,7 +1027,7 @@
         padding: 16px 14px;
     }
 
-        .report-row > div:nth-child(6) {
+        .report-row > div:last-child {
             grid-template-columns: 1fr;
         }
 
