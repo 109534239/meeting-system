@@ -5,11 +5,9 @@
     string currentFilter = ViewBag.CurrentFilter ?? "全部";
     var aiScores = ViewBag.AiScores as Dictionary<int, int>;
     var aiComments = ViewBag.AiComments as Dictionary<int, string>;
-    // 🎯 電話欄位整併後，Resume 不再借用 Phone2／Mobile 塞會員姓名跟電話，
-    //    改吃 Controller 帶過來的這兩個 Dictionary
     var memberNames = ViewBag.MemberNames as Dictionary<int, string>;
     var memberPhones = ViewBag.MemberPhones as Dictionary<int, string>;
-    var jobTitles = ViewBag.JobTitles as Dictionary<int, string>; // 👈 新增這行
+    var jobTitles = ViewBag.JobTitles as Dictionary<int, string>;
 }
 
 @section Styles {
@@ -28,7 +26,7 @@
 
 <div class="hrapp-container">
     @* ── 篩選切換區 (Tabs + 下拉選單) ── *@
-    <div class="hrapp-filter-tabs" style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="hrapp-filter-tabs">
         <div class="tab-group">
             <a asp-action="Index" asp-route-jobId="@ViewBag.JobId" asp-route-statusFilter="全部"
                class="tab-item @(currentFilter == "全部" ? "active" : "")">
@@ -44,8 +42,7 @@
             </a>
         </div>
 
-        @* 🎯 新增：應徵職缺下拉式選單 *@
-        <div class="job-filter-group" style="display: flex; align-items: center; gap: 8px;">
+        <div class="job-filter-group">
             <label for="jobFilterSelect" style="font-weight: bold; white-space: nowrap;">篩選職缺：</label>
             <select id="jobFilterSelect" class="form-select" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #ccc;">
                 <option value="">全部職缺</option>
@@ -60,7 +57,7 @@
         </div>
     </div>
 
-    @* ── 履歷列表 Grid 標頭 ── *@
+    @* ── 履歷列表 Grid 標頭 (手機版會自動隱藏) ── *@
     <div class="hrapp-cols hrapp-grid-head">
         <div>應徵時間</div>
         <div>應徵職缺</div>
@@ -86,7 +83,6 @@
                 bool isUnhandled = (item.Status == "待審核");
                 string rowClass = isUnhandled ? "row-unhandled" : "row-handled";
 
-                // 🎯 新增 statusClass 判斷
                 string statusClass = item.Status == "待審核" ? "status-pending"
                 : item.Status == "已通過" ? "status-passed"
                 : "status-failed";
@@ -95,64 +91,65 @@
                 string comment = aiComments != null && aiComments.ContainsKey(item.Id) ? aiComments[item.Id] : "暫無評語";
                 string memberName = memberNames != null && memberNames.ContainsKey(item.Id) ? memberNames[item.Id] : "";
                 string memberPhone = memberPhones != null && memberPhones.ContainsKey(item.Id) ? memberPhones[item.Id] : "";
+                string jobTitle = jobTitles != null && jobTitles.ContainsKey(item.Id) ? jobTitles[item.Id] : "未指定職缺";
 
-                @* 🎯 在 class 注入 statusClass *@
+                var topEdu = item.Educations != null && item.Educations.Any()
+                ? item.Educations.OrderBy(e => e.SortOrder).First()
+                : null;
+
+                var topWork = item.WorkExperiences != null && item.WorkExperiences.Any()
+                ? item.WorkExperiences.OrderBy(w => w.SortOrder).First()
+                : null;
+
                 <div class="hrapp-row hrapp-cols @rowClass @statusClass"
                      data-row-id="@item.Id"
                      onclick="location.href='@Url.Action("Details", "AdminApplication", new { id = item.Id })'">
 
                     @* 1. 應徵時間 *@
-                    <div class="apply-time-cell">
-                        @item.ResumeTime.AddHours(-8).ToString("yyyy/MM/dd HH:mm")
+                    <div class="apply-time-cell" data-label="應徵時間">
+                        <span>@item.ResumeTime.AddHours(-8).ToString("yyyy/MM/dd HH:mm")</span>
                     </div>
 
                     @* 2. 應徵職缺 *@
-                    @{
-                        string jobTitle = jobTitles != null && jobTitles.ContainsKey(item.Id) ? jobTitles[item.Id] : "未指定職缺";
-                    }
-                    <div class="job-title-cell">
-                        @jobTitle
+                    <div class="job-title-cell" data-label="應徵職缺">
+                        <span>@jobTitle</span>
                     </div>
 
                     @* 3. 應徵者姓名 *@
-                    <div class="user-main-info">
+                    <div class="user-main-info" data-label="姓名">
                         <span class="user-name">@memberName</span>
                     </div>
 
                     @* 4. 聯絡電話 *@
-                    <div class="user-phone">@memberPhone</div>
-
-                    @* 5. 學歷與科系（改為多筆學歷後，列表只顯示第一筆＝最高學歷） *@
-                    @{
-                        var topEdu = item.Educations != null && item.Educations.Any()
-                        ? item.Educations.OrderBy(e => e.SortOrder).First()
-                        : null;
-                    }
-                    <div class="user-edu">
-                        <div class="edu-school">@(topEdu?.SchoolName ?? "")</div>
-                        <div class="edu-major">@(topEdu?.Major ?? "") (@(topEdu?.EduLevel ?? ""))</div>
+                    <div class="user-phone-cell" data-label="電話">
+                        <span class="user-phone">@memberPhone</span>
                     </div>
 
-                    @* 6. 工作經驗 *@
-                    @{
-                        var topWork = item.WorkExperiences != null && item.WorkExperiences.Any()
-                        ? item.WorkExperiences.OrderBy(w => w.SortOrder).First()
-                        : null;
-                    }
-                    <div class="user-exp">
-                        @if (!item.WorkExperienceYears.HasValue || item.WorkExperienceYears.Value <= 0)
-                        {
-                            <span class="exp-none">(無)</span>
-                        }
-                        else
-                        {
-                            <div class="exp-company">@(topWork?.CompanyName ?? "")</div>
-                            <div class="exp-title">@(topWork?.JobTitle ?? "") (@(item.WorkExperienceYears.Value)年)</div>
-                        }
+                    @* 5. 最高學歷 (注意：外層必須有 data-label，內部不要寫死「最高學歷」標題) *@
+                    <div class="user-edu-cell" data-label="最高學歷">
+                        <div class="user-edu">
+                            <div class="edu-school">@(topEdu?.SchoolName ?? "-")</div>
+                            <div class="edu-major">@(topEdu?.Major ?? "") @(string.IsNullOrEmpty(topEdu?.EduLevel) ? "" : $"({topEdu.EduLevel})")</div>
+                        </div>
                     </div>
 
-                    @* 7. 目前狀態 ── 下拉選單區 *@
-                    <div class="text-center">
+                    @* 6. 工作經驗 (注意：外層必須有 data-label，內部不要寫死「工作經驗」標題) *@
+                    <div class="user-exp-cell" data-label="工作經驗">
+                        <div class="user-exp">
+                            @if (!item.WorkExperienceYears.HasValue || item.WorkExperienceYears.Value <= 0)
+                            {
+                                <span class="exp-none">(無)</span>
+                            }
+                            else
+                            {
+                                <div class="exp-company">@(topWork?.CompanyName ?? "-")</div>
+                                <div class="exp-title">@(topWork?.JobTitle ?? "") (@(item.WorkExperienceYears.Value)年)</div>
+                            }
+                        </div>
+                    </div>
+
+                    @* 7. 目前狀態 (移除 text-center 避免干擾左側標籤) *@
+                    <div class="status-cell" data-label="審核狀態">
                         <select class="status-select @(item.Status == "待審核" ? "select-wait" : item.Status == "已通過" ? "select-pass" : "select-fail")"
                                 data-resume-id="@item.Id"
                                 onclick="event.stopPropagation();">
@@ -162,8 +159,8 @@
                         </select>
                     </div>
 
-                    @* 8. AI 評分及彈跳視窗 ── *@
-                    <div class="text-center ai-score-cell">
+                    @* 8. AI 評分 (移除 text-center) *@
+                    <div class="ai-score-cell" data-label="AI 評估">
                         <div class="ai-score-box">
                             <span class="ai-num @(score >= 80 ? "high" : score >= 60 ? "mid" : "low")">
                                 @score<span class="ai-pt">分</span>
@@ -178,8 +175,8 @@
                         </div>
                     </div>
 
-                    @* 9. 操作按鈕 *@
-                    <div class="action-btns">
+                    @* 9. 操作按鈕 (移除 text-center) *@
+                    <div class="action-btns" data-label="操作">
                         <a asp-action="Details" asp-route-id="@item.Id" class="btn-detail" onclick="event.stopPropagation();">審查履歷</a>
                     </div>
 
@@ -189,7 +186,7 @@
     </div>
 </div>
 
-@* ── AI 評語獨立彈跳視窗 (Modal) HTML 結構 ── *@
+@* ── AI 評語彈跳視窗 (Modal) ── *@
 <div id="aiCommentModal" class="ai-modal-overlay">
     <div class="ai-modal-window">
         <div class="ai-modal-header">
@@ -222,11 +219,10 @@
 @section Scripts {
     <script>
         document.addEventListener("DOMContentLoaded", function () {
-            // === 1. AI 評語彈跳視窗邏輯 ===
+            // 1. AI 評語彈跳視窗
             const modal = document.getElementById("aiCommentModal");
             const closeBtn = document.getElementById("closeAiModal");
             const confirmBtn = document.getElementById("confirmAiModal");
-
             const modalName = document.getElementById("modalCandidateName");
             const modalScore = document.getElementById("modalAiScore");
             const modalComment = document.getElementById("modalAiComment");
@@ -239,7 +235,6 @@
 
                     modalName.textContent = name + " 的評估報告";
                     modalScore.textContent = score;
-
                     modalScore.className = "score-v " + (score >= 80 ? "high" : score >= 60 ? "mid" : "low");
                     modalComment.innerHTML = comment.replace(/\n/g, "<br />");
                     modal.classList.add("show");
@@ -252,97 +247,69 @@
 
             closeBtn.addEventListener("click", hideModal);
             confirmBtn.addEventListener("click", hideModal);
-
             modal.addEventListener("click", function (e) {
-                if (e.target === modal) {
-                    hideModal();
-                }
+                if (e.target === modal) hideModal();
             });
 
-                // === 2. 下拉選單非同步更新資料庫狀態 (AJAX) ===
-        document.querySelectorAll(".status-select").forEach(select => {
-            select.addEventListener("change", function () {
-                const resumeId = this.getAttribute("data-resume-id");
-                const newStatus = this.value;
-                const currentSelect = this;
+            // 2. 狀態更新 AJAX
+            document.querySelectorAll(".status-select").forEach(select => {
+                select.addEventListener("change", function () {
+                    const resumeId = this.getAttribute("data-resume-id");
+                    const newStatus = this.value;
+                    const currentSelect = this;
+                    const parentRow = document.querySelector(`.hrapp-row[data-row-id="${resumeId}"]`);
 
-                // 🎯 找尋外層的整橫列容器元素
-                const parentRow = document.querySelector(`.hrapp-row[data-row-id="${resumeId}"]`);
-
-                // 清除下拉選單的外觀 Class
-                currentSelect.classList.remove("select-wait", "select-pass", "select-fail");
-
-                if (parentRow) {
-                    // 🎯 移除原本的狀態與邊框 Class
-                    parentRow.classList.remove("row-unhandled", "row-handled", "status-pending", "status-passed", "status-failed");
-                }
-
-                if (newStatus === "待審核") {
-                    currentSelect.classList.add("select-wait");
+                    currentSelect.classList.remove("select-wait", "select-pass", "select-fail");
                     if (parentRow) {
-                        parentRow.classList.add("row-unhandled", "status-pending");
+                        parentRow.classList.remove("row-unhandled", "row-handled", "status-pending", "status-passed", "status-failed");
                     }
-                } else if (newStatus === "已通過") {
-                    currentSelect.classList.add("select-pass");
-                    if (parentRow) {
-                        parentRow.classList.add("row-handled", "status-passed");
-                    }
-                } else if (newStatus === "未通過") {
-                    currentSelect.classList.add("select-fail");
-                    if (parentRow) {
-                        parentRow.classList.add("row-handled", "status-failed");
 
-                        // 🎯 新增：當選擇未通過時，同步將畫面上的面試狀態更新為 "-"
-                        const interviewStatusPill = parentRow.querySelector(".status-pill");
-                        if (interviewStatusPill) {
-                            interviewStatusPill.outerHTML = '<span class="text-muted">-</span>';
+                    if (newStatus === "待審核") {
+                        currentSelect.classList.add("select-wait");
+                        if (parentRow) parentRow.classList.add("row-unhandled", "status-pending");
+                    } else if (newStatus === "已通過") {
+                        currentSelect.classList.add("select-pass");
+                        if (parentRow) parentRow.classList.add("row-handled", "status-passed");
+                    } else if (newStatus === "未通過") {
+                        currentSelect.classList.add("select-fail");
+                        if (parentRow) {
+                            parentRow.classList.add("row-handled", "status-failed");
+                            const interviewStatusPill = parentRow.querySelector(".status-pill");
+                            if (interviewStatusPill) interviewStatusPill.outerHTML = '<span class="text-muted">-</span>';
                         }
                     }
-                }
 
-                // 發送非同步 POST 請求至後端儲存
-                fetch('@Url.Action("UpdateStatus", "AdminApplication")', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        id: parseInt(resumeId),
-                        status: newStatus
+                    fetch('@Url.Action("UpdateStatus", "AdminApplication")', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: parseInt(resumeId), status: newStatus })
                     })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        console.log(`[成功] 履歷編號 ${resumeId} 狀態已儲存：${newStatus}`);
-                    } else {
-                        alert("狀態更新失敗：" + data.message);
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.success) {
+                            alert("狀態更新失敗：" + data.message);
+                            location.reload();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert("連線發生錯誤，無法成功儲存狀態。");
                         location.reload();
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert("連線發生錯誤，無法成功儲存狀態。");
-                    location.reload();
+                    });
                 });
             });
-        });
-        // === 3. 職缺下拉式選單切換事件 ===
-        const jobFilterSelect = document.getElementById("jobFilterSelect");
-        if (jobFilterSelect) {
-            jobFilterSelect.addEventListener("change", function () {
-                const selectedJobId = this.value;
-                const currentStatusFilter = '@currentFilter';
 
-                // 自動組合 URL 並跳轉頁面
-                let targetUrl = '@Url.Action("Index", "AdminApplication")' + '?statusFilter=' + encodeURIComponent(currentStatusFilter);
-                if (selectedJobId) {
-                    targetUrl += '&jobId=' + encodeURIComponent(selectedJobId);
-                }
-
-                window.location.href = targetUrl;
-            });
-        }
+            // 3. 職缺下拉式選單篩選
+            const jobFilterSelect = document.getElementById("jobFilterSelect");
+            if (jobFilterSelect) {
+                jobFilterSelect.addEventListener("change", function () {
+                    const selectedJobId = this.value;
+                    const currentStatusFilter = '@currentFilter';
+                    let targetUrl = '@Url.Action("Index", "AdminApplication")' + '?statusFilter=' + encodeURIComponent(currentStatusFilter);
+                    if (selectedJobId) targetUrl += '&jobId=' + encodeURIComponent(selectedJobId);
+                    window.location.href = targetUrl;
+                });
+            }
         });
     </script>
 }
