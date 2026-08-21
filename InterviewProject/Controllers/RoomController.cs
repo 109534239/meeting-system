@@ -515,6 +515,33 @@ namespace InterviewProject.Controllers
             return Ok(new { success = true });
         }
 
+        // 🐛 這輪新增：給「結束會議」畫面用的真實狀態查詢，不要再無條件顯示「錄影已完成上傳」。
+        //    AI 面試官加入會議、錄影上傳，都是背景執行的（見 MeetingHub.StartMeeting / LeaveRoomAsync 的
+        //    fire-and-forget 工作），主持人按下「結束會議」的當下，錄影很可能都還沒上傳完——
+        //    所以這裡會等一下（最多 40 秒，跟 SaveAiAnalysis 那邊等錄影的邏輯一致），
+        //    真的查到最後結果（成功有檔案 / AI 面試官加入失敗 / 逾時還沒完成）才回傳，讓前端能誠實顯示。
+        [HttpGet]
+        public async Task<IActionResult> GetRecordingStatus(string roomCode)
+        {
+            var room = await _context.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
+            if (room == null) return NotFound();
+
+            for (int i = 0; i < 20; i++)
+            {
+                if (!string.IsNullOrEmpty(room.RecordingFileName) || !string.IsNullOrEmpty(room.AiBotErrorMessage))
+                    break;
+                await Task.Delay(2000);
+                await _context.Entry(room).ReloadAsync();
+            }
+
+            return Ok(new
+            {
+                success = true,
+                recordingFileName = room.RecordingFileName,
+                aiBotErrorMessage = room.AiBotErrorMessage
+            });
+        }
+
         // 🎯 逐字稿改存到 Cloudflare R2，不再存本機 wwwroot
         //    這樣本機執行跟部署到 Render，讀到的都是同一份雲端檔案，不會再有兩邊結果不一致的問題
         //    🐛 內容不再信任客戶端傳來的單一字串（那是舊架構，只有主持人自己聽到的+SignalR廣播成功的部分）

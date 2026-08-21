@@ -40,6 +40,10 @@ namespace InterviewProject.Hubs
                 // 🎯 求職者的面試狀態同步推進到「面試中」
                 await UpdateJobseekerInterviewStatusAsync(room.Id, InterviewStatusValues.InProgress, null);
 
+                // 🎯 這次重新開始會議，先把上一次可能殘留的 AI 加入失敗訊息清掉，
+                //    避免這次其實還在嘗試中，畫面卻先顯示了上一輪的舊錯誤
+                room.AiBotErrorMessage = null;
+
                 await _db.SaveChangesAsync();
             }
 
@@ -54,14 +58,15 @@ namespace InterviewProject.Hubs
             var videoPath = Path.Combine(_env.WebRootPath, "video", "男性面試官.y4m");
             _ = Task.Run(async () =>
             {
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
                 try
                 {
                     await _botService.JoinRoomAsync(roomCode, videoPath);
 
                     // 🎯 AI 面試官加入成功後，順手把 RoomParticipants 表裡它自己那一列也更新成「已加入」，
                     //    純粹讓資料庫看起來跟實際狀況一致、方便對照除錯，沒有任何判斷邏輯依賴這個欄位
-                    using var scope = _scopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                     var roomForAi = await db.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
                     if (roomForAi != null)
                     {
@@ -71,13 +76,33 @@ namespace InterviewProject.Hubs
                         {
                             aiParticipant.Status = ParticipantStatus.Admitted;
                             aiParticipant.JoinedAt = DateTime.Now;
-                            await db.SaveChangesAsync();
                         }
+                        // 🎯 這輪新增：成功了就把上一次可能殘留的失敗訊息清掉，
+                        //    避免「這次其實成功了，畫面卻還顯示上一次的舊錯誤」這種誤導
+                        roomForAi.AiBotErrorMessage = null;
+                        await db.SaveChangesAsync();
                     }
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[MeetingHub] AI 面試官加入房間 {roomCode} 失敗：{ex.Message}");
+
+                    // 🐛 這輪修正：原本這裡只印 console，資料庫/前端完全不知道 AI 面試官其實沒加入成功，
+                    //    「結束會議」畫面還是會無條件顯示「錄影已完成上傳」，誤導使用者。
+                    //    把失敗原因存進 Room.AiBotErrorMessage，讓結束畫面可以誠實反映實際狀況。
+                    try
+                    {
+                        var roomForAi = await db.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
+                        if (roomForAi != null)
+                        {
+                            roomForAi.AiBotErrorMessage = ex.Message;
+                            await db.SaveChangesAsync();
+                        }
+                    }
+                    catch (Exception saveEx)
+                    {
+                        Console.WriteLine($"[MeetingHub] 連「記錄 AI 面試官失敗原因」這件事本身都失敗了：{saveEx.Message}");
+                    }
                 }
             });
         }

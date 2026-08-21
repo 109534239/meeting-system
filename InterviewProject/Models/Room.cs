@@ -36,6 +36,13 @@ namespace InterviewProject.Models
         public string? RecordingFileName { get; set; }
         public string? AiAnalysisFileName { get; set; }
 
+        // 🐛 這輪新增：AI 面試官加入會議室（Playwright）如果失敗，之前是整個吃案——
+        //    只印在伺服器 console，資料庫、前端使用者都完全看不到，導致「AI 沒進會議室」
+        //    跟「錄影其實沒有錄到」這兩件事，使用者只能憑空猜測，畫面上還會誤導人地顯示「已完成上傳」。
+        //    這裡把失敗原因存下來，「結束會議」畫面才有辦法誠實反映實際狀況，而不是無條件宣告成功。
+        //    AI 面試官成功加入時會清成 null；每次開始會議都會被覆寫成最新一次的結果。
+        public string? AiBotErrorMessage { get; set; }
+
         public virtual ICollection<RoomParticipant> Participants { get; set; } = new List<RoomParticipant>();
 
         // 判斷房間目前是否可進入

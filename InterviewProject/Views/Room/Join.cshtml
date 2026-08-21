@@ -1066,9 +1066,31 @@
                 }
             }
 
-            // 2. 錄影 —— 現在改由 AI 面試官在伺服器端（主持人結束會議的當下）錄好並上傳到 R2，
-            //    不再需要瀏覽器端錄影/上傳，這裡只是告知使用者去哪裡看
-            dl.innerHTML += `<div class="dl-item ok">✅ 錄影由 AI 面試官在後台完成並上傳，稍後可在「面試評分」頁查看／下載（.webm 可用 VLC 播放）</div>`;
+            // 2. 錄影 —— 現在改由 AI 面試官在伺服器端（主持人結束會議的當下）錄好並上傳到 R2。
+            //    🐛 這輪修正：這裡以前是完全不檢查就無條件顯示「已完成上傳」，
+            //    導致 AI 面試官其實沒加入會議室、根本沒錄到東西的時候，畫面還是騙人地顯示成功。
+            //    改成真的去問伺服器目前的狀態（AI 有沒有加入成功、錄影檔案存在與否），照實際結果顯示。
+            {
+                dl.innerHTML += `<div class="dl-item wait" id="recStatus">⏳ 正在確認錄影上傳狀態...</div>`;
+                const recEl = document.getElementById('recStatus');
+                try {
+                    const r = await fetch('/Room/GetRecordingStatus?roomCode=' + encodeURIComponent(ROOM_CODE));
+                    const d = await r.json();
+                    if (r.ok && d.success && d.recordingFileName) {
+                        recEl.className = 'dl-item ok';
+                        recEl.textContent = `✅ 錄影已完成上傳，可在「面試評分」頁查看／下載：${d.recordingFileName}（.webm 可用 VLC 播放）`;
+                    } else if (d.aiBotErrorMessage) {
+                        recEl.className = 'dl-item ng';
+                        recEl.textContent = `⚠️ AI 面試官沒有成功加入會議室，這次沒有錄影：${d.aiBotErrorMessage}`;
+                    } else {
+                        recEl.className = 'dl-item ng';
+                        recEl.textContent = '⚠️ 目前查不到錄影檔案（可能還在後台處理中，稍後可到「面試評分」頁再確認一次）';
+                    }
+                } catch (e) {
+                    recEl.className = 'dl-item ng';
+                    recEl.textContent = '⚠️ 查詢錄影狀態失敗：' + e.message;
+                }
+            }
 
             // 3. AI 分析 —— 用伺服器合併後的完整逐字稿（不是只有主持人自己聽到的），伺服器端逐位求職者各自分析、各自存檔
             if (!transcriptIsEmpty && mergedTranscript.split('\n').length >= 2) {

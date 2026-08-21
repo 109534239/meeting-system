@@ -53,7 +53,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Announcements");
+                    b.ToTable("Announcements", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.AptitudeTestResult", b =>
@@ -93,7 +93,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ResumeId");
 
-                    b.ToTable("AptitudeTestResults");
+                    b.ToTable("AptitudeTestResults", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Certificatecategories", b =>
@@ -118,7 +118,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Certificatecategories");
+                    b.ToTable("Certificatecategories", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Certificates", b =>
@@ -144,7 +144,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ResumeId");
 
-                    b.ToTable("Certificates");
+                    b.ToTable("Certificates", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.ComputerSkills", b =>
@@ -166,7 +166,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ResumeId");
 
-                    b.ToTable("ComputerSkills");
+                    b.ToTable("ComputerSkills", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.DriverLicense", b =>
@@ -192,7 +192,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ResumeId");
 
-                    b.ToTable("DriverLicense");
+                    b.ToTable("DriverLicense", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Education", b =>
@@ -235,7 +235,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ResumeId");
 
-                    b.ToTable("Education");
+                    b.ToTable("Education", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Employee", b =>
@@ -276,7 +276,7 @@ namespace InterviewProject.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Employees");
+                    b.ToTable("Employees", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.FAQ", b =>
@@ -306,7 +306,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Faqs");
+                    b.ToTable("Faqs", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.FAQReport", b =>
@@ -362,7 +362,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("FAQReports");
+                    b.ToTable("FAQReports", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.InterviewEvaluation", b =>
@@ -399,7 +399,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("RoomId");
 
-                    b.ToTable("InterviewEvaluations");
+                    b.ToTable("InterviewEvaluations", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.InterviewSchedule", b =>
@@ -436,7 +436,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ScheduledByEmployeeId");
 
-                    b.ToTable("InterviewSchedules");
+                    b.ToTable("InterviewSchedules", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Job", b =>
@@ -525,7 +525,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("EmployeesName");
 
-                    b.ToTable("Jobs");
+                    b.ToTable("Jobs", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.LanguageProficiency", b =>
@@ -551,7 +551,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ResumeId");
 
-                    b.ToTable("LanguageProficiency");
+                    b.ToTable("LanguageProficiency", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.LanguageRequired", b =>
@@ -577,7 +577,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("JobsId");
 
-                    b.ToTable("LanguageRequired");
+                    b.ToTable("LanguageRequired", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.MajorRequired", b =>
@@ -600,7 +600,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("JobsId");
 
-                    b.ToTable("MajorRequired");
+                    b.ToTable("MajorRequired", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Member", b =>
@@ -651,7 +651,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Members");
+                    b.ToTable("Members", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Portfolio", b =>
@@ -684,7 +684,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ResumeId");
 
-                    b.ToTable("Portfolio");
+                    b.ToTable("Portfolio", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Resume", b =>
@@ -744,7 +744,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("MembersId");
 
-                    b.ToTable("Resume");
+                    b.ToTable("Resume", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Room", b =>
@@ -801,7 +801,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("JobsId");
 
-                    b.ToTable("Rooms");
+                    b.ToTable("Rooms", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.RoomParticipant", b =>
@@ -843,7 +843,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("RoomId");
 
-                    b.ToTable("RoomParticipants");
+                    b.ToTable("RoomParticipants", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.SkillTag", b =>
@@ -866,7 +866,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("JobsId");
 
-                    b.ToTable("SkillTags");
+                    b.ToTable("SkillTags", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.Specialties", b =>
@@ -891,7 +891,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ResumeId");
 
-                    b.ToTable("Specialties");
+                    b.ToTable("Specialties", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.VerificationCode", b =>
@@ -916,7 +916,7 @@ namespace InterviewProject.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("VerificationCodes");
+                    b.ToTable("VerificationCodes", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.WorkExperience", b =>
@@ -955,7 +955,7 @@ namespace InterviewProject.Migrations
 
                     b.HasIndex("ResumeId");
 
-                    b.ToTable("WorkExperience");
+                    b.ToTable("WorkExperience", (string)null);
                 });
 
             modelBuilder.Entity("InterviewProject.Models.AptitudeTestResult", b =>
