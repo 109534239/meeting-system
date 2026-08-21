@@ -740,10 +740,18 @@ namespace InterviewProject.Services
                 // 組合完整的 URL 並注入跳過確認畫面參數 + JWT
                 //   🎯 disableTileView：讓畫面固定用「目前誰在說話就放大顯示、其他人縮圖排在旁邊」的排版，
                 //      不要讓 Jitsi 切成棋盤格 tile view（新版 Jitsi 在人數少時有時會預設用 tile view）
-                //   🎯 prejoinPageEnabled=false + prejoinConfig.enabled=false：兩個都帶，
-                //      因為新版 Jitsi 把這個設定從舊的扁平 key 改成巢狀的 prejoinConfig.enabled，
-                //      只帶舊的 key 在新版 JaaS 上可能完全沒作用，畫面還是會卡在「預備加入」那頁
-                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.prejoinPageEnabled=false&config.prejoinConfig.enabled=false&config.lobby.enableLobby=false&config.disableTileView=true";
+                //   🎯 prejoinPageEnabled=false：讓 JaaS 盡量跳過「預備加入」畫面。
+                //   🐛 這輪拿掉了 config.prejoinConfig.enabled=false 這個新版巢狀設定——
+                //      log 裡明確出現這行警告：「Using prejoinConfig.enabled config URL overwrite
+                //      implies starting without media」，意思是這個設定會讓 Jitsi 完全不去呼叫
+                //      getUserMedia（不管是原生假攝影機還是 Simli 的虛擬人串流都一樣，
+                //      整個 getUserMedia 攔截函式從頭到尾沒被呼叫到就是因為這個）。
+                //      這是這幾輪 AI 面試官畫面一直出不來的真正根本原因，不只影響 Simli，
+                //      連更早期用靜態 .y4m 檔案的版本應該也一樣受影響，只是沒特別去查證過。
+                //      拿掉這個設定後，如果又跳出「預備加入」畫面，下面本來就有的自動偵測+點擊
+                //      機制會接手（正常使用者走這個畫面時，本來就會觸發真正的 getUserMedia 呼叫，
+                //      Simli 的攔截才有機會生效）。
+                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.prejoinPageEnabled=false&config.lobby.enableLobby=false&config.disableTileView=true";
 
                 Console.WriteLine($"[JitsiBot 導航] AI 面試官正在前往官方雲端會議室：{targetUrl}");
 
