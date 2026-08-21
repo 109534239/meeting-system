@@ -209,22 +209,86 @@ namespace InterviewProject.Services
     function drawFrame() {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        const videos = Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0);
-        // 🎯 每一輪畫格前先重新查一次 Jitsi 內部的參與者名字資料（人可能中途離開/改名，即時查最準）
+
         const nameMap = getParticipantNameMap();
 
-        if (videos.length > 0) {
-            const cols = Math.ceil(Math.sqrt(videos.length));
-            const rows = Math.ceil(videos.length / cols);
-            const cellW = canvas.width / cols, cellH = canvas.height / rows;
-            videos.forEach((v, i) => {
-                const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
-                try { ctx.drawImage(v, x, y, cellW, cellH); } catch (e) {}
+        // 🐛 這輪修正兩個問題：
+        // 1. 「同一張臉出現兩次」：Jitsi 在 speaker/stage view 底下，同一位參與者的畫面常常會同時存在
+        //    兩份 DOM（主畫面的大 video + filmstrip 縮圖列的小 video），兩個 <video> 元素背後接的是
+        //    同一條 MediaStreamTrack。原本沒有去重，兩個都被畫進格子，看起來就像同一個人重複出現。
+        //    改成用 <video> 元素背後 srcObject 的視訊軌道 id 當唯一鍵去重，同一條軌道只畫一次。
+        // 2. 「沒開鏡頭的人完全看不到、也沒有名字標籤」：原本只掃「畫面上找得到的 <video> 元素」，
+        //    沒開鏡頭的人根本沒有 <video> 元素可抓，整個人就這樣從錄影裡消失，連名字都不會出現。
+        //    改成額外比對 Jitsi 內部權威的參與者名單（getParticipantNameMap()），
+        //    把「有名字、但沒有對應到任何一格畫面」的人，補一格灰底＋姓名的佔位格，
+        //    至少看得出這場面試「誰在場但沒開鏡頭」，不是憑空消失。
+        const rawVideos = Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0);
+        const seenKeys = new Set();
+        const cells = []; // { type: 'video', el, label, participantId? } | { type: 'placeholder', label }
 
-                // 🎯 這樣錄下來的檔案才看得出來哪一格是誰（不然每格都只是一個畫面，看不出角色）。
-                //    Jitsi 不同版本/不同顯示模式 DOM 結構可能不完全一樣，抓不到名字就跳過，不影響畫面本身。
+        rawVideos.forEach(v => {
+            let dedupeKey = null;
+            try {
+                const stream = v.srcObject;
+                if (stream && typeof stream.getVideoTracks === 'function') {
+                    const t = stream.getVideoTracks()[0];
+                    if (t) dedupeKey = 'track:' + t.id;
+                }
+            } catch (e) {}
+            if (!dedupeKey) {
+                // 拿不到底層軌道 id 的極少數情況，退回用這個 video 元素自己的身份當 key，
+                // 至少同一輪畫格不會被同一個元素重複疊加
+                if (!v.__aiRecorderCellKey) v.__aiRecorderCellKey = 'el:' + Math.random().toString(36).slice(2);
+                dedupeKey = v.__aiRecorderCellKey;
+            }
+            if (seenKeys.has(dedupeKey)) return;
+            seenKeys.add(dedupeKey);
+
+            const label = findLabelForVideo(v, nameMap);
+            let participantId = null;
+            try {
+                let idHolder = v, pid = extractParticipantId(idHolder), hops = 0;
+                while (!pid && idHolder && idHolder.parentElement && hops < 5) {
+                    idHolder = idHolder.parentElement; pid = extractParticipantId(idHolder); hops++;
+                }
+                participantId = pid;
+            } catch (e) {}
+
+            cells.push({ type: 'video', el: v, label, participantId });
+        });
+
+        const coveredIds = new Set(cells.map(c => c.participantId).filter(Boolean));
+        Object.keys(nameMap).forEach(pid => {
+            if (coveredIds.has(pid)) return;
+            const name = nameMap[pid];
+            if (!name) return;
+            cells.push({ type: 'placeholder', label: name });
+        });
+
+        if (cells.length > 0) {
+            const cols = Math.ceil(Math.sqrt(cells.length));
+            const rows = Math.ceil(cells.length / cols);
+            const cellW = canvas.width / cols, cellH = canvas.height / rows;
+            cells.forEach((cell, i) => {
+                const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
+
+                if (cell.type === 'video') {
+                    try { ctx.drawImage(cell.el, x, y, cellW, cellH); } catch (e) {}
+                } else {
+                    // 佔位格：沒開鏡頭的人，畫灰底 + 提示文字，不留白、也不讓這個人整個消失
+                    ctx.fillStyle = '#2a2a2a';
+                    ctx.fillRect(x, y, cellW, cellH);
+                    ctx.fillStyle = '#888';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('（未開啟鏡頭）', x + cellW / 2, y + cellH / 2);
+                    ctx.textAlign = 'left';
+                }
+
+                // 這樣錄下來的檔案才看得出來哪一格是誰（不然每格都只是一個畫面，看不出角色）。
+                // 兩種格子（有畫面/佔位格）都要畫名字標籤，佔位格才不會只有「未開啟鏡頭」幾個字看不出是誰。
                 try {
-                    const label = findLabelForVideo(v, nameMap);
+                    const label = cell.label;
                     if (label) {
                         ctx.font = 'bold 16px sans-serif';
                         const textWidth = ctx.measureText(label).width;
