@@ -51,7 +51,7 @@ namespace InterviewProject.Services
             //    simli-client 現在的正式版本是 3.0.2，內部改用 livekit-client 重寫，
             //    連建立連線的方式都完全不一樣（要先跟 Simli 換一個 session token，
             //    再用不同的建構子參數），這是照官方最新文件重新對過的版本。
-            const mod = await import('https://esm.sh/simli-client@3.0.2');
+            const mod = await import(window.__SIMLI_BUNDLE_URL__);
             const SimliClient = mod.SimliClient;
             const LogLevel = mod.LogLevel;
             const generateSimliSessionToken = mod.generateSimliSessionToken;
@@ -680,18 +680,28 @@ namespace InterviewProject.Services
                 //    才能保證搶在 Jitsi 自己呼叫 getUserMedia 之前，把攔截裝好。
                 //    如果沒設定 Simli:ApiKey / Simli:FaceId（例如還在測試、還沒申請），就跳過這段，
                 //    AI 面試官會照舊用原本的靜態 .y4m 假攝影機檔案，不影響其他功能。
+                //
+                //    🐛 這輪修正：simli-client 這個套件不再從任何第三方 CDN 動態載入（jsDelivr、esm.sh
+                //    都會因為套件本身的大小寫 bug 在 Linux 環境打包失敗），改成用本地 esbuild 預先打包好、
+                //    修過那個 bug 的版本，放在自己的 wwwroot/js/simli-client.bundle.js，
+                //    AI 面試官的頁面直接跟自己的伺服器要這個檔案。
+                //    App:BaseUrl 沒設定的話預設用 http://localhost:5216（本機開發最常見的預設值），
+                //    如果部署到 Render 等正式環境，記得在 appsettings.json 補上正確的公開網址。
                 var simliApiKey = _config["Simli:ApiKey"];
                 var simliFaceId = _config["Simli:FaceId"];
                 if (!string.IsNullOrEmpty(simliApiKey) && !string.IsNullOrEmpty(simliFaceId))
                 {
                     try
                     {
+                        var appBaseUrl = (_config["App:BaseUrl"] ?? "http://localhost:5216").TrimEnd('/');
+                        var simliBundleUrl = $"{appBaseUrl}/js/simli-client.bundle.js";
                         var simliConfigScript =
                             $"window.__SIMLI_API_KEY__ = {JsonSerializer.Serialize(simliApiKey)};\n" +
-                            $"window.__SIMLI_FACE_ID__ = {JsonSerializer.Serialize(simliFaceId)};";
+                            $"window.__SIMLI_FACE_ID__ = {JsonSerializer.Serialize(simliFaceId)};\n" +
+                            $"window.__SIMLI_BUNDLE_URL__ = {JsonSerializer.Serialize(simliBundleUrl)};";
                         await page.AddInitScriptAsync(simliConfigScript);
                         await page.AddInitScriptAsync(SimliInitScript);
-                        Console.WriteLine($"[JitsiBot] 房間 {roomCode} 已佈署 Simli 虛擬人初始化腳本。");
+                        Console.WriteLine($"[JitsiBot] 房間 {roomCode} 已佈署 Simli 虛擬人初始化腳本（套件檔案來源：{simliBundleUrl}）。");
                     }
                     catch (Exception ex)
                     {
