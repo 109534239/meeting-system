@@ -446,9 +446,12 @@ namespace InterviewProject.Controllers
 
         // 🎯 逐字稿改成「每個人各自把自己聽到的內容直接送到伺服器」，不再依賴 SignalR 廣播給其他人再由主持人彙整
         //    （SignalR 對這種長時間會議連線不夠可靠，之前發現只有主持人自己的話會被記錄下來，就是廣播失敗造成的）
-        //    用房間代碼分組暫存在記憶體，主持人結束會議時觸發合併、上傳，合併完就清掉
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<TranscriptChunk>> _transcriptBuffer = new();
-
+        //
+        //    🐛 這輪修正：暫存區改成存進共用資料庫的 TranscriptChunks 表，不再用記憶體裡的 static 變數。
+        //    原因：這個專案的實際測試方式是每個人在自己電腦上各自跑一份程式，只有 Jitsi 視訊跟資料庫是共用的，
+        //    ASP.NET 程序本身不是共用的——存在記憶體裡的暫存區，主持人的「結束會議」只看得到
+        //    主持人自己那台電腦記憶體裡的內容，這才是「逐字稿一直只有主持人」的真正原因。
+        //    改存資料庫後，不管是誰在哪一台電腦送出的內容，主持人結束會議時都查得到。
         public class TranscriptChunkDto
         {
             public string Sp { get; set; } = "";
@@ -456,36 +459,37 @@ namespace InterviewProject.Controllers
             public string Time { get; set; } = "";
         }
 
-        private class TranscriptChunk
-        {
-            public string Sp = "";
-            public string Tx = "";
-            public string Time = "";
-            public DateTime ReceivedAt;
-        }
-
         // 🎯 每個人（不管求職者/主管/主持人）自己講的話，直接送這裡，不透過任何人轉傳
         [HttpPost]
-        public IActionResult SubmitTranscriptChunk([FromQuery] string roomCode, [FromBody] List<TranscriptChunkDto>? lines)
+        public async Task<IActionResult> SubmitTranscriptChunk([FromQuery] string roomCode, [FromBody] List<TranscriptChunkDto>? lines)
         {
             if (string.IsNullOrEmpty(roomCode) || lines == null || lines.Count == 0)
                 return Ok(new { success = true });
 
-            var list = _transcriptBuffer.GetOrAdd(roomCode, _ => new List<TranscriptChunk>());
-            lock (list)
-            {
-                foreach (var l in lines)
+            var now = DateTime.UtcNow;
+            var records = lines
+                .Where(l => !string.IsNullOrWhiteSpace(l.Tx))
+                .Select(l => new TranscriptChunkRecord
                 {
-                    if (string.IsNullOrWhiteSpace(l.Tx)) continue;
-                    list.Add(new TranscriptChunk { Sp = l.Sp, Tx = l.Tx, Time = l.Time, ReceivedAt = DateTime.UtcNow });
-                }
+                    RoomCode = roomCode,
+                    Speaker = l.Sp,
+                    Text = l.Tx,
+                    TimeLabel = l.Time,
+                    ReceivedAt = now
+                })
+                .ToList();
+
+            if (records.Count > 0)
+            {
+                _context.TranscriptChunks.AddRange(records);
+                await _context.SaveChangesAsync();
             }
             return Ok(new { success = true });
         }
 
         // 🎯 逐字稿改用這個當主要來源：不再依賴瀏覽器原生 SpeechRecognition
         //    （已證實會被 Jitsi 搶走麥克風獨佔權，大部分人只收到 no-speech，整場話完全沒被記錄下來）。
-        //    改成每個人自己把整場錄下來的麥克風音檔，直接送給 Gemini 做語音轉文字，結果併進同一個暫存區。
+        //    改成每個人自己把整場錄下來的麥克風音檔，直接送給 Gemini 做語音轉文字，結果併進同一個資料庫暫存表。
         [HttpPost]
         [RequestSizeLimit(25_000_000)]
         public async Task<IActionResult> SubmitAudioTranscript([FromQuery] string roomCode, [FromQuery] string speakerName, IFormFile? audio)
@@ -507,18 +511,23 @@ namespace InterviewProject.Controllers
                 return Ok(new { success = true }); // 轉錄失敗或整段都沒講話，不用存
 
             var timeLabel = DateTime.Now.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW"));
-            var list = _transcriptBuffer.GetOrAdd(roomCode, _ => new List<TranscriptChunk>());
-            lock (list)
+            _context.TranscriptChunks.Add(new TranscriptChunkRecord
             {
-                list.Add(new TranscriptChunk { Sp = speakerName, Tx = text, Time = timeLabel, ReceivedAt = DateTime.UtcNow });
-            }
+                RoomCode = roomCode,
+                Speaker = speakerName,
+                Text = text,
+                TimeLabel = timeLabel,
+                ReceivedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
             return Ok(new { success = true });
         }
 
         // 🐛 這輪新增：給「結束會議」畫面用的真實狀態查詢，不要再無條件顯示「錄影已完成上傳」。
         //    AI 面試官加入會議、錄影上傳，都是背景執行的（見 MeetingHub.StartMeeting / LeaveRoomAsync 的
         //    fire-and-forget 工作），主持人按下「結束會議」的當下，錄影很可能都還沒上傳完——
-        //    所以這裡會等一下（最多 40 秒，跟 SaveAiAnalysis 那邊等錄影的邏輯一致），
+        //    所以這裡會等一下（最多 2 分鐘，跟 SaveAiAnalysis 那邊等錄影的邏輯一致，
+        //    本機測試時上傳頻寬常常比機房環境慢很多，40 秒不夠用），
         //    真的查到最後結果（成功有檔案 / AI 面試官加入失敗 / 逾時還沒完成）才回傳，讓前端能誠實顯示。
         [HttpGet]
         public async Task<IActionResult> GetRecordingStatus(string roomCode)
@@ -526,7 +535,7 @@ namespace InterviewProject.Controllers
             var room = await _context.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            for (int i = 0; i < 20; i++)
+            for (int i = 0; i < 60; i++)
             {
                 if (!string.IsNullOrEmpty(room.RecordingFileName) || !string.IsNullOrEmpty(room.AiBotErrorMessage))
                     break;
@@ -545,25 +554,29 @@ namespace InterviewProject.Controllers
         // 🎯 逐字稿改存到 Cloudflare R2，不再存本機 wwwroot
         //    這樣本機執行跟部署到 Render，讀到的都是同一份雲端檔案，不會再有兩邊結果不一致的問題
         //    🐛 內容不再信任客戶端傳來的單一字串（那是舊架構，只有主持人自己聽到的+SignalR廣播成功的部分）
-        //    改成合併 _transcriptBuffer 裡「這個房間所有人各自送來」的片段，依伺服器收到的時間排序
+        //    改成合併 TranscriptChunks 表裡「這個房間所有人各自送來」的片段，依伺服器收到的時間排序
         [HttpPost]
         public async Task<IActionResult> SaveTranscript([FromForm] string roomCode)
         {
             var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            // 🎯 合併這個房間所有人各自送來的逐字稿片段，依伺服器收到的時間排序（不是靠客戶端自己拼的順序）
+            // 🎯 合併這個房間所有人各自送來的逐字稿片段（存資料庫的，不管是誰在哪一台電腦送出的都查得到），
+            //    依伺服器收到的時間排序（不是靠客戶端自己拼的順序）
+            var chunks = await _context.TranscriptChunks
+                .Where(c => c.RoomCode == roomCode)
+                .OrderBy(c => c.ReceivedAt)
+                .ToListAsync();
+
             bool isEmpty;
             string content;
-            if (_transcriptBuffer.TryGetValue(roomCode, out var chunks) && chunks.Count > 0)
+            if (chunks.Count > 0)
             {
-                List<TranscriptChunk> sorted;
-                lock (chunks) { sorted = chunks.OrderBy(c => c.ReceivedAt).ToList(); }
                 // 🐛 防呆：Tx 內容理論上已經在 GeminiService.CleanUpHallucination() 清過，
                 //    但保險起見，這裡還是把任何殘留的換行壓成空白，確保輸出的每一行
                 //    一定都有「[時間] 講者：」開頭，不會再冒出前面一段有幾十行看不出是誰講的裸行
-                content = string.Join("\n", sorted.Select(c =>
-                    $"[{c.Time}] {c.Sp}：{c.Tx.Replace("\r\n", " ").Replace("\n", " ").Trim()}"));
+                content = string.Join("\n", chunks.Select(c =>
+                    $"[{c.TimeLabel}] {c.Speaker}：{c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim()}"));
                 isEmpty = false;
             }
             else
@@ -582,7 +595,10 @@ namespace InterviewProject.Controllers
                 return StatusCode(500, new { success = false, message = "逐字稿上傳到雲端儲存失敗：" + ex.Message });
             }
 
-            _transcriptBuffer.TryRemove(roomCode, out _); // 合併完成，暫存的可以清掉了
+            if (chunks.Count > 0)
+            {
+                _context.TranscriptChunks.RemoveRange(chunks); // 合併完成，暫存的可以清掉了
+            }
 
             room.TranscriptFileName = fileName;
             await _context.SaveChangesAsync();
@@ -644,14 +660,20 @@ namespace InterviewProject.Controllers
                 return Ok(new { success = true, files = new List<object>() });
 
             // 🎯 錄影上傳是背景工作（EndMeeting 觸發後 AI 面試官才離開會議、轉檔、上傳），
-            //    很可能還沒做完就走到這裡了。短輪詢等它一下（最多 40 秒），
-            //    等不到才放棄多模態、退回純文字分析，不要讓 AI 分析整個卡住太久。
+            //    很可能還沒做完就走到這裡了。短輪詢等它一下，等不到才放棄多模態、退回純文字分析。
+            //    🐛 這輪拉長：原本只等 40 秒，實測發現本機環境（不是部署在機房，上傳頻寬較差）
+            //    常常錄影上傳花超過 40 秒還沒好，導致明明錄影後來有成功，AI 分析卻已經先放棄、退回純文字，
+            //    白白浪費了多模態分析的機會。拉長到最多等 2 分鐘，比較符合實際本機測試的網路狀況。
             string? recordingFileName = room.RecordingFileName;
-            for (int i = 0; i < 20 && string.IsNullOrEmpty(recordingFileName); i++)
+            for (int i = 0; i < 60 && string.IsNullOrEmpty(recordingFileName); i++)
             {
                 await Task.Delay(2000);
                 await _context.Entry(room).ReloadAsync();
                 recordingFileName = room.RecordingFileName;
+            }
+            if (string.IsNullOrEmpty(recordingFileName))
+            {
+                Console.WriteLine($"[SaveAiAnalysis] 房間 {roomCode} 等了 2 分鐘還是沒等到錄影檔案，退回純文字分析（AiBotErrorMessage：{room.AiBotErrorMessage ?? "(無)"}）");
             }
 
             // 🎯 把錄影檔上傳到 Gemini File API 一次就好（同一支影片，每位求職者都能重複參照同一個 file_uri），

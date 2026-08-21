@@ -252,10 +252,23 @@ namespace InterviewProject.Services
                     Encoding.UTF8, "application/json");
 
                 var startResp = await client.SendAsync(startReq);
-                if (!startResp.IsSuccessStatusCode) return (null, null);
-                if (!startResp.Headers.TryGetValues("X-Goog-Upload-URL", out var uploadUrls)) return (null, null);
+                if (!startResp.IsSuccessStatusCode)
+                {
+                    var startErrBody = await startResp.Content.ReadAsStringAsync();
+                    Console.WriteLine($"[GeminiService] UploadFileAsync 建立上傳工作階段失敗：HTTP {(int)startResp.StatusCode}，內容前 300 字：{startErrBody.Substring(0, Math.Min(300, startErrBody.Length))}");
+                    return (null, null);
+                }
+                if (!startResp.Headers.TryGetValues("X-Goog-Upload-URL", out var uploadUrls))
+                {
+                    Console.WriteLine("[GeminiService] UploadFileAsync 失敗：回應裡沒有 X-Goog-Upload-URL 標頭");
+                    return (null, null);
+                }
                 var uploadUrl = uploadUrls.FirstOrDefault();
-                if (string.IsNullOrEmpty(uploadUrl)) return (null, null);
+                if (string.IsNullOrEmpty(uploadUrl))
+                {
+                    Console.WriteLine("[GeminiService] UploadFileAsync 失敗：X-Goog-Upload-URL 標頭是空的");
+                    return (null, null);
+                }
 
                 // Step 2：把實際的影片位元組傳上去，一次傳完並 finalize
                 var uploadReq = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
@@ -267,7 +280,11 @@ namespace InterviewProject.Services
 
                 var uploadResp = await client.SendAsync(uploadReq);
                 var uploadBody = await uploadResp.Content.ReadAsStringAsync();
-                if (!uploadResp.IsSuccessStatusCode) return (null, null);
+                if (!uploadResp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[GeminiService] UploadFileAsync 上傳影片位元組失敗：HTTP {(int)uploadResp.StatusCode}，內容前 300 字：{uploadBody.Substring(0, Math.Min(300, uploadBody.Length))}");
+                    return (null, null);
+                }
 
                 using var doc = JsonDocument.Parse(uploadBody);
                 var fileEl = doc.RootElement.GetProperty("file");
@@ -275,7 +292,11 @@ namespace InterviewProject.Services
                 var fileUri = fileEl.GetProperty("uri").GetString();   // generateContent 的 file_data 要用這個
                 var state = fileEl.TryGetProperty("state", out var stateEl) ? stateEl.GetString() : "ACTIVE";
 
-                if (string.IsNullOrEmpty(fileName) || string.IsNullOrEmpty(fileUri)) return (null, null);
+                if (string.IsNullOrEmpty(fileName) || string.IsNullOrEmpty(fileUri))
+                {
+                    Console.WriteLine($"[GeminiService] UploadFileAsync 失敗：回應裡缺少 file.name 或 file.uri，原始內容前 300 字：{uploadBody.Substring(0, Math.Min(300, uploadBody.Length))}");
+                    return (null, null);
+                }
 
                 // Step 3：影片檔要等 Google 端處理完（狀態變成 ACTIVE）才能拿去分析，短輪詢等它
                 //    （音檔通常很快，影片檔可能要等數十秒，這裡最多等 1 分鐘）
@@ -292,12 +313,17 @@ namespace InterviewProject.Services
                     state = pollDoc.RootElement.TryGetProperty("state", out var s2) ? s2.GetString() : "ACTIVE";
                 }
 
-                if (state != "ACTIVE") return (null, null); // 處理失敗或逾時，呼叫端要能 fallback 回純文字分析
+                if (state != "ACTIVE")
+                {
+                    Console.WriteLine($"[GeminiService] UploadFileAsync 失敗：影片檔最終狀態是「{state}」，不是 ACTIVE（可能是處理失敗，或等了 1 分鐘還沒處理完）");
+                    return (null, null); // 處理失敗或逾時，呼叫端要能 fallback 回純文字分析
+                }
 
                 return (fileUri, fileName);
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[GeminiService] UploadFileAsync 發生例外：{ex.Message}");
                 return (null, null);
             }
         }

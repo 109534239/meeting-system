@@ -12,6 +12,7 @@
 
         public DbSet<Room> Rooms { get; set; }
         public DbSet<RoomParticipant> RoomParticipants { get; set; }
+        public DbSet<TranscriptChunkRecord> TranscriptChunks { get; set; } // 🎯 逐字稿暫存改存資料庫（見該類別註解）
         public DbSet<AptitudeTestResult> AptitudeTestResults { get; set; }
         public DbSet<InterviewEvaluation> InterviewEvaluations { get; set; }
         public DbSet<Member> Members { get; set; }
