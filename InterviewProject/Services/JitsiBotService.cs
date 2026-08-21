@@ -615,6 +615,25 @@ namespace InterviewProject.Services
                 });
                 var page = await localContext.NewPageAsync();
 
+                // 🐛 這輪新增：這個瀏覽器是無頭（headless）在伺服器上跑的，沒有人能打開開發者工具看 console，
+                //    之前完全沒有轉發任何瀏覽器端的 log/錯誤到我們看得到的地方，等於在「盲測」——
+                //    尤其這輪剛接的 Simli 虛擬人牽涉一大段全新的 JS（動態載入 SDK、WebRTC 連線、
+                //    攔截 getUserMedia），任何一步出錯我們原本完全看不到。
+                //    把頁面的 console 訊息（含 [Simli] 開頭的、還有一般 JS 錯誤）全部轉發到伺服器自己的
+                //    Console.WriteLine，這樣下次測試只要看伺服器的 log 就能看到瀏覽器端實際發生了什麼。
+                page.Console += (_, msg) =>
+                {
+                    try
+                    {
+                        Console.WriteLine($"[JitsiBot Console:{roomCode}][{msg.Type}] {msg.Text}");
+                    }
+                    catch { /* log 轉發本身失敗就算了，不能讓這個影響到主流程 */ }
+                };
+                page.PageError += (_, err) =>
+                {
+                    Console.WriteLine($"[JitsiBot PageError:{roomCode}] {err}");
+                };
+
                 // 🎯 AI 面試官虛擬人（Simli）：這段一定要在 GotoAsync 導航「之前」用 AddInitScriptAsync 佈署，
                 //    才能保證搶在 Jitsi 自己呼叫 getUserMedia 之前，把攔截裝好。
                 //    如果沒設定 Simli:ApiKey / Simli:FaceId（例如還在測試、還沒申請），就跳過這段，
