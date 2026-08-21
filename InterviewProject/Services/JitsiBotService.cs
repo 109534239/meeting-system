@@ -693,18 +693,21 @@ namespace InterviewProject.Services
                 //
                 //    🐛 這輪修正：simli-client 這個套件不再從任何第三方 CDN 動態載入（jsDelivr、esm.sh
                 //    都會因為套件本身的大小寫 bug 在 Linux 環境打包失敗），改成用本地 esbuild 預先打包好、
-                //    修過那個 bug 的版本，放在自己的 wwwroot/js/simli-client.bundle.js，
-                //    AI 面試官的頁面直接跟自己的伺服器要這個檔案。
-                //    App:BaseUrl 沒設定的話預設用 http://localhost:5216（本機開發最常見的預設值），
-                //    如果部署到 Render 等正式環境，記得在 appsettings.json 補上正確的公開網址。
+                //    修過那個 bug 的版本。
+                //    🐛 這輪再修正：原本放在自己的 wwwroot/js/ 用 App:BaseUrl 組網址，但本機測試時
+                //    App:BaseUrl 是 localhost（私有位址），會被 Chrome 的 Private Network Access
+                //    安全機制擋下來（公開網站 https://8x8.vc 不能跟私有位址要東西）。改成放到 Cloudflare R2
+                //    一個獨立的公開 bucket（裡面只放這種不含機密資料的靜態檔案，不是存放面試資料那個 bucket），
+                //    用固定的公開網址（Simli:BundleUrl），不管本機測試或部署到 Render 都是同一個網址，
+                //    也不會再踩到 Private Network Access 這個限制。
                 var simliApiKey = _config["Simli:ApiKey"];
                 var simliFaceId = _config["Simli:FaceId"];
                 if (!string.IsNullOrEmpty(simliApiKey) && !string.IsNullOrEmpty(simliFaceId))
                 {
                     try
                     {
-                        var appBaseUrl = (_config["App:BaseUrl"] ?? "http://localhost:5216").TrimEnd('/');
-                        var simliBundleUrl = $"{appBaseUrl}/js/simli-client.bundle.js";
+                        var simliBundleUrl = _config["Simli:BundleUrl"]
+                            ?? throw new InvalidOperationException("appsettings.json 缺少 Simli:BundleUrl 設定");
                         var simliConfigScript =
                             $"window.__SIMLI_API_KEY__ = {JsonSerializer.Serialize(simliApiKey)};\n" +
                             $"window.__SIMLI_FACE_ID__ = {JsonSerializer.Serialize(simliFaceId)};\n" +
