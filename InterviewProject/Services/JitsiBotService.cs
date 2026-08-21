@@ -43,7 +43,11 @@ namespace InterviewProject.Services
 
     async function initSimli() {
         try {
-            const mod = await import('https://cdn.jsdelivr.net/npm/simli-client@latest/+esm');
+            // 🐛 這輪修正：jsDelivr 的 +esm 自動打包服務打包 simli-client 這個套件會失敗
+            //    （Rollup/esbuild 打包時解析套件內部某個 import 失敗，是這輪實測抓到的確定問題）。
+            //    改用 esm.sh——這個服務對 Node.js 相關相容性的處理通常比較完整，較常被推薦用來解決
+            //    「套件在瀏覽器端自動打包失敗」這類問題。
+            const mod = await import('https://esm.sh/simli-client@latest');
             const SimliClient = mod.SimliClient || mod.default;
             if (!SimliClient) throw new Error('simli-client 模組載入了，但找不到 SimliClient 匯出');
 
@@ -68,6 +72,7 @@ namespace InterviewProject.Services
 
             window.__simliReady = new Promise((resolve, reject) => {
                 client.on('connected', () => {
+                    console.log('[Simli] WebRTC 已連線，等待畫面/聲音串流就緒...');
                     // 連上之後，Simli 會把畫面/聲音接到我們給的 videoRef/audioRef 的 srcObject 上，
                     // 稍等一下讓 srcObject 真的被賦值，再從這兩個元素身上把 MediaStream 撈出來組成一個假串流
                     setTimeout(() => {
@@ -79,12 +84,19 @@ namespace InterviewProject.Services
                             if (aStream) tracks.push(...aStream.getAudioTracks());
                             else if (vStream) tracks.push(...vStream.getAudioTracks());
                             if (tracks.length === 0) { reject(new Error('Simli 已連線但抓不到 MediaStream track')); return; }
+                            console.log('[Simli] 成功組出虛擬人 MediaStream，共 ' + tracks.length + ' 條軌道');
                             resolve(new MediaStream(tracks));
                         } catch (e) { reject(e); }
                     }, 800);
                 });
                 client.on('failed', () => reject(new Error('SimliClient WebRTC 連線失敗')));
             });
+            // 🐛 這輪修正：window.__simliReady 如果最後是 rejected 狀態、卻沒有任何人「立刻」去 .catch() 它，
+            //    瀏覽器會在下一個 microtask 就判定成「未處理的 Promise rejection」，噴出一堆不必要的雜訊
+            //    log（連 Jitsi 自己的 app:index.web 都會跳出來記錄一次）。這裡加一個空的 .catch() 把這個
+            //    「已經處理過了」的訊號送出去，不影響下面 getUserMedia 覆寫那邊之後照樣能 await/catch 到
+            //    同一個 Promise 的真正結果（同一個 Promise 可以被多個地方分別 await/catch，互不影響）。
+            window.__simliReady.catch(() => {});
 
             client.start();
 
@@ -120,6 +132,7 @@ namespace InterviewProject.Services
         } catch (e) {
             console.error('[Simli] 初始化失敗：', e);
             window.__simliReady = Promise.reject(e);
+            window.__simliReady.catch(() => {}); // 同上，避免噴出不必要的「未處理 rejection」雜訊
         }
     }
     initSimli();
@@ -130,15 +143,21 @@ namespace InterviewProject.Services
     try {
         const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
         navigator.mediaDevices.getUserMedia = async function (constraints) {
+            console.log('[Simli] getUserMedia 被呼叫，constraints=' + JSON.stringify(constraints));
             try {
                 if (window.__simliReady) {
                     const simliStream = await window.__simliReady;
-                    if (simliStream) return simliStream;
+                    if (simliStream) {
+                        console.log('[Simli] 回傳虛擬人串流給 getUserMedia，視訊軌道數=' + simliStream.getVideoTracks().length + '，音訊軌道數=' + simliStream.getAudioTracks().length);
+                        return simliStream;
+                    }
                 }
             } catch (e) {
                 console.error('[Simli] 拿不到虛擬人串流，退回原本的假攝影機檔案：', e);
             }
-            return originalGetUserMedia(constraints);
+            const fallbackStream = await originalGetUserMedia(constraints);
+            console.log('[Simli] 退回原生假攝影機，視訊軌道數=' + fallbackStream.getVideoTracks().length + '，音訊軌道數=' + fallbackStream.getAudioTracks().length);
+            return fallbackStream;
         };
     } catch (e) { console.error('[Simli] 攔截 getUserMedia 失敗：', e); }
 })();
