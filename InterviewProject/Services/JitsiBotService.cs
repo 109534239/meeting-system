@@ -642,7 +642,17 @@ namespace InterviewProject.Services
                         "--disable-gpu",
                         "--disable-software-rasterizer",
                         "--disable-extensions",
-                        "--no-zygote"
+                        "--no-zygote",
+                        // 🐛 這輪新增：修正 Simli 資源載入被擋的問題。
+                        //    Chrome 的 Private Network Access（私有網路存取）機制會擋掉「公開網站
+                        //    （https://8x8.vc）要跟私有位址（本機測試時是 http://localhost:5216）要東西」
+                        //    這種請求，導致 AI 面試官的頁面連不到自己伺服器上的 simli-client.bundle.js。
+                        //    這個瀏覽器是我們自己完全控制的專用瀏覽器（不是給真人瀏覽的一般瀏覽器），
+                        //    關掉這個檢查沒有資安疑慮。
+                        //    ⚠️ 這個問題本質上只會在「本機測試」時發生（App:BaseUrl 是 localhost 這種私有位址）；
+                        //    部署到 Render 之後 App:BaseUrl 會是公開網址，理論上不會再踩到這個限制，
+                        //    但保留這個參數不影響正式環境運作，所以兩邊都留著。
+                        "--disable-features=BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults"
                     }
                 };
 
