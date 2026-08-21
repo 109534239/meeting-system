@@ -109,15 +109,73 @@ namespace InterviewProject.Services
         } catch (e) {}
     }
 
+    // 🐛 這輪新增：AI 面試官自己的畫面（男性面試官.y4m 那個假攝影機）在錄影裡永遠只顯示「未開啟鏡頭」佔位格，
+    //    從沒真的錄到內容——實測發現 Jitsi 對「自己本人」的鏡頭畫面，不一定會渲染出一個畫面上抓得到的
+    //    <video> 元素（不像遠端參與者一定看得到），單純掃 DOM 完全抓不到自己的畫面。
+    //    修正方式：比照上面 connectJitsiTracks() 抓聲音軌道的做法，直接從 Jitsi 內部的會議物件拿到
+    //    每個人（含 AI 面試官自己）最原始的視訊 MediaStreamTrack，自己動手建一個「藏起來、畫面外」的
+    //    <video> 元素把這條原始軌道接上去，不管 Jitsi 自己的畫面有沒有渲染出東西，我們都能拿到真正的畫面。
+    //    這些自己建的 video 元素會記錄對應的參與者 id 跟名字，畫格時直接用，不用再靠 DOM 去猜是誰。
+    const syntheticVideoTrackIds = new Set();
+    const syntheticVideoCells = []; // { el, participantId, label }
+
+    function connectJitsiVideoTracks() {
+        try {
+            const room = window.APP && window.APP.conference && window.APP.conference._room;
+            if (!room || typeof room.getParticipants !== 'function') return;
+
+            const nameMap = getParticipantNameMap();
+            const candidates = []; // { track, participantId }
+
+            room.getParticipants().forEach(p => {
+                try {
+                    const tracks = typeof p.getTracks === 'function' ? p.getTracks() : [];
+                    tracks.forEach(t => {
+                        if (t && typeof t.isVideoTrack === 'function' && t.isVideoTrack() && typeof t.getTrack === 'function') {
+                            const nt = t.getTrack();
+                            if (nt) candidates.push({ track: nt, participantId: p.id || null });
+                        }
+                    });
+                } catch (e) {}
+            });
+            // 本地（AI 面試官自己）的視訊軌道——這個就是「男性面試官.y4m」那個假攝影機畫面，
+            // 這輪修正的重點就是它，一定要抓到
+            try {
+                const localVideo = window.APP.conference.localVideo;
+                if (localVideo && typeof localVideo.getTrack === 'function') {
+                    const nt = localVideo.getTrack();
+                    const localId = (window.APP.conference.getMyUserId && window.APP.conference.getMyUserId()) || 'local';
+                    if (nt) candidates.push({ track: nt, participantId: localId });
+                }
+            } catch (e) {}
+
+            candidates.forEach(({ track, participantId }) => {
+                if (!track || syntheticVideoTrackIds.has(track.id)) return;
+                try {
+                    const v = document.createElement('video');
+                    v.autoplay = true; v.muted = true; v.playsInline = true;
+                    v.style.position = 'fixed'; v.style.left = '-9999px'; v.style.top = '-9999px'; // 藏起來，不用真的顯示在畫面上
+                    v.srcObject = new MediaStream([track]);
+                    document.body.appendChild(v);
+
+                    syntheticVideoTrackIds.add(track.id);
+                    const label = (participantId && nameMap[participantId]) ? nameMap[participantId] : '';
+                    syntheticVideoCells.push({ el: v, participantId, label, trackId: track.id });
+                } catch (e) {}
+            });
+        } catch (e) {}
+    }
+
     scanMedia();
     connectJitsiTracks();
+    connectJitsiVideoTracks();
 
-    const observer = new MutationObserver(() => { scanMedia(); connectJitsiTracks(); });
+    const observer = new MutationObserver(() => { scanMedia(); connectJitsiTracks(); connectJitsiVideoTracks(); });
     observer.observe(document.body, { childList: true, subtree: true });
     window.__mediaObserver = observer;
-    // 🎯 DOM 變動事件不一定會在「新的音軌加入會議」的當下觸發（音軌可能是動態加進已存在的元素，不算 DOM 變動），
-    //    保險起見每 2 秒也主動掃一次 Jitsi 內部的軌道清單，確保晚加入或晚開麥克風的人也不會被漏掉
-    window.__trackPollInterval = setInterval(connectJitsiTracks, 2000);
+    // 🎯 DOM 變動事件不一定會在「新的音軌/視訊軌道加入會議」的當下觸發（軌道可能是動態加進已存在的元素，不算 DOM 變動），
+    //    保險起見每 2 秒也主動掃一次 Jitsi 內部的軌道清單，確保晚加入或晚開鏡頭/麥克風的人也不會被漏掉
+    window.__trackPollInterval = setInterval(() => { connectJitsiTracks(); connectJitsiVideoTracks(); }, 2000);
 
     // 🎯 盡力而為：從 Jitsi 的畫面找出每個 video 對應的參與者名字，畫在左下角當標籤。
     //    這輪修正的重點：上一輪只有「DOM 容器內找」+「DOM 全域用 id 找」+「靠順序用猜的」三層，
@@ -173,36 +231,21 @@ namespace InterviewProject.Services
             if (pid && nameMap[pid]) return nameMap[pid];
         } catch (e) {}
 
-        // 第二層：這個 video 最近的容器裡面直接找看得到的名字標籤文字
+        // 第二層：這個 video 最近的容器裡面直接找看得到的名字標籤文字（範圍限定在同一個容器內，
+        //    不會誤配到別人身上）
         try {
             const container = v.closest('[id^=""participant_""]') || v.closest('.videocontainer') || v.parentElement;
             if (container) {
                 const nameEl = container.querySelector('.displayname, [class*=""displayName""], [class*=""display-name""]');
                 if (nameEl && nameEl.textContent && nameEl.textContent.trim()) return nameEl.textContent.trim();
-
-                // 第三層：從容器（或它的祖先）身上找得到參與者 id，拿這個 id 去「整個文件」範圍找名字標籤
-                let idHolder2 = container;
-                let pid2 = extractParticipantId(idHolder2);
-                let hops2 = 0;
-                while (!pid2 && idHolder2 && idHolder2.parentElement && hops2 < 5) {
-                    idHolder2 = idHolder2.parentElement;
-                    pid2 = extractParticipantId(idHolder2);
-                    hops2++;
-                }
-                if (pid2) {
-                    if (nameMap[pid2]) return nameMap[pid2];
-                    const globalMatch = document.querySelector(
-                        `[id*=""${pid2}""] .displayname, [id*=""${pid2}""][class*=""displayName""], [data-participant-id=""${pid2}""] .displayname`
-                    );
-                    if (globalMatch && globalMatch.textContent && globalMatch.textContent.trim()) {
-                        return globalMatch.textContent.trim();
-                    }
-                }
             }
         } catch (e) {}
 
-        // 🎯 前面幾層都查不到就寧可留空——不再用「畫面上第幾個」這種順序去猜。
-        //    猜錯人（尤其猜成「AI 面試官」這種特定角色）比完全沒標籤還容易造成誤導，這輪拿掉這個做法。
+        // 🐛 這輪拿掉了原本的「第三層：用擷取到的 id 片段去整個文件範圍做子字串比對」——
+        //    這個做法用的是 `[id*=""...""]`（包含比對，不是完全比對），如果擷取到的 id 片段剛好很短、
+        //    或者跟別人的 id 有重疊部分，就會誤配到別的參與者身上，這正是「有位主管的畫面被誤標成
+        //    AI 面試官」的根本原因（兩人剛好都叫王大明，一旦誤配到彼此的 id，名字就直接連過去了）。
+        //    寧可查不到就留空，也不要用這種容易誤配的方式硬猜。
         return '';
     }
 
@@ -212,7 +255,7 @@ namespace InterviewProject.Services
 
         const nameMap = getParticipantNameMap();
 
-        // 🐛 這輪修正兩個問題：
+        // 🐛 這輪修正的問題：
         // 1. 「同一張臉出現兩次」：Jitsi 在 speaker/stage view 底下，同一位參與者的畫面常常會同時存在
         //    兩份 DOM（主畫面的大 video + filmstrip 縮圖列的小 video），兩個 <video> 元素背後接的是
         //    同一條 MediaStreamTrack。原本沒有去重，兩個都被畫進格子，看起來就像同一個人重複出現。
@@ -222,10 +265,22 @@ namespace InterviewProject.Services
         //    改成額外比對 Jitsi 內部權威的參與者名單（getParticipantNameMap()），
         //    把「有名字、但沒有對應到任何一格畫面」的人，補一格灰底＋姓名的佔位格，
         //    至少看得出這場面試「誰在場但沒開鏡頭」，不是憑空消失。
-        const rawVideos = Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0);
+        // 3. 「AI 面試官自己的畫面錄不到」：改用 connectJitsiVideoTracks() 直接接上的隱藏 video 元素
+        //    （syntheticVideoCells），這些元素我們自己建立時就已經知道正確的參與者 id/名字，
+        //    優先信任這批、再補上畫面上原生找得到的 <video> 元素，兩邊一樣用軌道 id 去重避免重複。
         const seenKeys = new Set();
         const cells = []; // { type: 'video', el, label, participantId? } | { type: 'placeholder', label }
 
+        syntheticVideoCells.forEach(sc => {
+            if (!sc.el || sc.el.videoWidth <= 0) return; // 軌道還沒真的有畫面（例如剛連上），這輪先跳過
+            const dedupeKey = 'track:' + sc.trackId;
+            if (seenKeys.has(dedupeKey)) return;
+            seenKeys.add(dedupeKey);
+            const label = sc.label || nameMap[sc.participantId] || '';
+            cells.push({ type: 'video', el: sc.el, label, participantId: sc.participantId });
+        });
+
+        const rawVideos = Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0);
         rawVideos.forEach(v => {
             let dedupeKey = null;
             try {
@@ -241,7 +296,7 @@ namespace InterviewProject.Services
                 if (!v.__aiRecorderCellKey) v.__aiRecorderCellKey = 'el:' + Math.random().toString(36).slice(2);
                 dedupeKey = v.__aiRecorderCellKey;
             }
-            if (seenKeys.has(dedupeKey)) return;
+            if (seenKeys.has(dedupeKey)) return; // 已經被上面的 syntheticVideoCells 畫過同一條軌道了
             seenKeys.add(dedupeKey);
 
             const label = findLabelForVideo(v, nameMap);

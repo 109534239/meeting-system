@@ -733,13 +733,19 @@ namespace InterviewProject.Controllers
                 string? analysis = null;
 
                 // 🎯 優先走多模態（看畫面表情、聽聲音語氣），只有在錄影不可用時才退回純文字
+                //
+                // 🐛 這輪修正：maxTokens 原本只有 3000，使用者回報「AI分析並沒有完全分析完就沒了」——
+                //    這份分析要求 6 個段落（語氣、表情、答題邏輯、評分、錄取建議、整體評語），
+                //    尤其多模態分析還要描述實際觀察到的畫面細節，中文字數換算下來 3000 tokens
+                //    很容易在寫到第 5、6 段的時候就被硬生生截斷，不是內容本身有問題，是額度給太少。
+                //    拉高到 8000，讓 Gemini 有足夠空間把 6 個段落真的寫完。
                 if (!string.IsNullOrEmpty(geminiFileUri))
                 {
-                    analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 3000);
+                    analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000);
                     if (analysis == null)
                     {
                         await Task.Delay(2000);
-                        analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 3000);
+                        analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000);
                     }
                 }
 
@@ -755,7 +761,7 @@ namespace InterviewProject.Controllers
                     analysis = await _gemini.AskAsync(
                         prompt,
                         "你是專業人資顧問，說繁體中文，格式清晰條列，內容要完整寫完，不能寫到一半就停。",
-                        maxTokens: 3000);
+                        maxTokens: 8000);
 
                     if (analysis == null)
                     {
@@ -763,7 +769,7 @@ namespace InterviewProject.Controllers
                         analysis = await _gemini.AskAsync(
                             prompt,
                             "你是專業人資顧問，說繁體中文，格式清晰條列，內容要完整寫完，不能寫到一半就停。",
-                            maxTokens: 3000);
+                            maxTokens: 8000);
                     }
                 }
 
@@ -898,14 +904,22 @@ namespace InterviewProject.Controllers
             return Content(vtt, "text/vtt", Encoding.UTF8);
         }
 
-        // 逐字稿固定格式是「[HH:MM:SS] 姓名：內容」，用第一句話的時間當基準點（t0 = 00:00.000）往後推算每句話的時間
+        // 🐛 這輪修正：逐字稿實際的時間格式是「[上午/下午HH:MM:SS]」或「[上午/下午 H:MM:SS]」
+        //    （中文上午/下午前綴，時跟前綴之間有沒有空白、時是不是補零，兩種來源產生的格式不完全一樣：
+        //    伺服器端音檔轉錄用 DateTime.ToString("tt h:mm:ss", zh-TW) 會帶空白、時不補零；
+        //    瀏覽器端 SpeechRecognition 備援機制自己組字串則是不帶空白、時有補零），
+        //    不是原本規則式假設的純西式「[HH:MM:SS]」24小時制格式——原本的規則式從頭到尾都比對不到任何一行，
+        //    所以字幕永遠是空的，不是逐字稿內容或時間計算本身有問題，是這個規則式打從一開始就跟真正的格式對不上。
+        private static readonly Regex TranscriptTimeRegex =
+            new(@"^\[(上午|下午)\s*(\d{1,2}):(\d{2}):(\d{2})\]\s*(.+)$");
+
+        // 逐字稿固定格式是「[上午/下午 H:MM:SS] 姓名：內容」，用第一句話的時間當基準點（t0 = 00:00.000）往後推算每句話的時間
         private string BuildVttFromTranscript(string[] lines)
         {
             var sb = new StringBuilder();
             sb.AppendLine("WEBVTT");
             sb.AppendLine();
 
-            var regex = new Regex(@"^\[(\d{2}):(\d{2}):(\d{2})\]\s*(.+)$");
             var cues = new List<(TimeSpan time, string text)>();
 
             foreach (var raw in lines)
@@ -913,11 +927,22 @@ namespace InterviewProject.Controllers
                 var line = raw?.Trim();
                 if (string.IsNullOrEmpty(line)) continue;
 
-                var m = regex.Match(line);
+                var m = TranscriptTimeRegex.Match(line);
                 if (!m.Success) continue;
 
-                var t = new TimeSpan(0, int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value));
-                cues.Add((t, m.Groups[4].Value));
+                var ampm = m.Groups[1].Value; // 上午 / 下午
+                var hour = int.Parse(m.Groups[2].Value);
+                var minute = int.Parse(m.Groups[3].Value);
+                var second = int.Parse(m.Groups[4].Value);
+                var text = m.Groups[5].Value;
+
+                // 中文上午/下午轉成 24 小時制：上午12點是半夜0點，下午12點才是中午12點，其餘下午 +12
+                int hour24 = ampm == "上午"
+                    ? (hour == 12 ? 0 : hour)
+                    : (hour == 12 ? 12 : hour + 12);
+
+                var t = new TimeSpan(0, hour24, minute, second);
+                cues.Add((t, text));
             }
 
             if (!cues.Any()) return sb.ToString();

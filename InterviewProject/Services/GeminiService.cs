@@ -383,7 +383,7 @@ namespace InterviewProject.Services
                 },
                 generationConfig = new
                 {
-                    maxOutputTokens = maxTokens > 0 ? maxTokens : 3000,
+                    maxOutputTokens = maxTokens > 0 ? maxTokens : 8000, // 🎯 這輪把預設值也一起拉高，跟呼叫端保持一致
                     temperature = 0.4
                 }
             };
