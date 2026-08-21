@@ -783,38 +783,47 @@ namespace InterviewProject.Services
                 // 組合完整的 URL 並注入跳過確認畫面參數 + JWT
                 //   🎯 disableTileView：讓畫面固定用「目前誰在說話就放大顯示、其他人縮圖排在旁邊」的排版，
                 //      不要讓 Jitsi 切成棋盤格 tile view（新版 Jitsi 在人數少時有時會預設用 tile view）
-                //   🎯 prejoinPageEnabled=false：讓 JaaS 盡量跳過「預備加入」畫面。
-                //   🐛 這輪拿掉了 config.prejoinConfig.enabled=false 這個新版巢狀設定——
-                //      log 裡明確出現這行警告：「Using prejoinConfig.enabled config URL overwrite
-                //      implies starting without media」，意思是這個設定會讓 Jitsi 完全不去呼叫
-                //      getUserMedia（不管是原生假攝影機還是 Simli 的虛擬人串流都一樣，
-                //      整個 getUserMedia 攔截函式從頭到尾沒被呼叫到就是因為這個）。
-                //      這是這幾輪 AI 面試官畫面一直出不來的真正根本原因，不只影響 Simli，
-                //      連更早期用靜態 .y4m 檔案的版本應該也一樣受影響，只是沒特別去查證過。
-                //      拿掉這個設定後，如果又跳出「預備加入」畫面，下面本來就有的自動偵測+點擊
-                //      機制會接手（正常使用者走這個畫面時，本來就會觸發真正的 getUserMedia 呼叫，
-                //      Simli 的攔截才有機會生效）。
-                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.prejoinPageEnabled=false&config.lobby.enableLobby=false&config.disableTileView=true";
+                //   🐛 之前試過兩種「跳過預備加入畫面」的設定，都有各自的問題，這輪確認兩個都不能留：
+                //      1. config.prejoinConfig.enabled=false（新版巢狀設定）：會讓 Jitsi 完全不去呼叫
+                //         getUserMedia（log 明確警告「implies starting without media」），連 Simli 的
+                //         getUserMedia 攔截都沒機會生效。
+                //      2. config.prejoinPageEnabled=false（舊版 flat 設定，上一輪改用這個）：這輪查出來
+                //         它也沒有真的讓 Jitsi 跳過預備加入畫面（log 顯示 prejoinVisible 一直是 true），
+                //         還會誘發 Jitsi 內部一個「想自動跳轉去正式會議室、但組網址失敗」的錯誤
+                //         （「didn't redirect to [undefined], reason: Failed to construct 'URL': Invalid URL」），
+                //         導致 AI 面試官卡在預備加入的本地預覽畫面，永遠沒有真的加入會議室——
+                //         這才是「Simli 連線正常、getUserMedia 也正常，但人類端完全看不到這個參與者」的真正原因。
+                //      兩個都拿掉之後，改成老實依賴下面「等預備加入畫面按鈕真的渲染出來再點」這條路，
+                //      不要再嘗試用 URL 參數走捷徑跳過這個畫面。
+                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.lobby.enableLobby=false&config.disableTileView=true";
 
                 Console.WriteLine($"[JitsiBot 導航] AI 面試官正在前往官方雲端會議室：{targetUrl}");
 
+
                 await page.GotoAsync(targetUrl, new PageGotoOptions { Timeout = 60000 });
 
-                // 🎯 保險：就算上面兩個設定都帶了，還是可能因為 JaaS 那邊的版本/設定鎖死而繼續顯示「預備加入」畫面，
-                //    這裡再主動找一次常見的「加入會議」按鈕，找得到就點掉；找不到就當作正常直接進了會議，不影響流程
+                // 🐛 這輪修正：原本這裡導航完立刻就去找「加入會議」按鈕，8 秒找不到就放棄、
+                //    當作「沒有預備加入畫面，已直接進入會議」。但實測 createInitialLocalTracks
+                //    （Jitsi 準備本地攝影機預覽，也就是預備加入畫面的按鈕真正可以點的前提）
+                //    要花超過 12 秒才會跑完，我們原本 8 秒就放棄，等於按鈕根本還沒渲染出來就已經
+                //    判定「沒看到」，導致 AI 面試官之後永遠卡在預備加入畫面沒人去點它。
+                //    改成把逾時拉長到 45 秒（足以涵蓋 local track 準備的時間，留一些餘裕），
+                //    而且不再需要那個「保險」的説法——這個按鈕現在是唯一真正會被觸發的路徑，
+                //    找不到才代表真的有問題，要看清楚 log。
                 try
                 {
                     var joinButton = page.Locator(
                         "[data-testid='prejoin.joinMeeting'], " +
                         "button:has-text('加入會議'), button:has-text('Join Meeting'), button:has-text('Join meeting')"
                     );
-                    await joinButton.First.ClickAsync(new LocatorClickOptions { Timeout = 8000 });
+                    await joinButton.First.ClickAsync(new LocatorClickOptions { Timeout = 45000 });
                     Console.WriteLine($"[JitsiBot] 房間 {roomCode} 偵測到「預備加入」畫面，已自動點擊加入。");
                     await page.WaitForTimeoutAsync(1500); // 給一點時間讓畫面真的切換進會議室
                 }
-                catch
+                catch (Exception ex)
                 {
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 沒有偵測到「預備加入」畫面（正常情況，代表已直接進入會議）。");
+                    Console.WriteLine($"[JitsiBot] ⚠️ 房間 {roomCode} 在 45 秒內沒有找到「加入會議」按鈕，這次不能再當作「正常直接進入會議」——" +
+                        $"根據這輪查到的狀況，AI 面試官很可能還是卡在預備加入畫面沒有真的進入會議室，請務必檢查除錯截圖跟後面的參與者驗證輪詢結果。錯誤：{ex.Message}");
                 }
 
                 // 🎯 除錯用：不管有沒有點到按鈕，都存一張目前畫面的截圖，
@@ -867,24 +876,44 @@ namespace InterviewProject.Services
                 //   在驗證人類端看不看得到，只是在驗證我們自己的自動化腳本有沒有跑完。
                 //   改成直接問 Jitsi 內部的會議物件（window.APP.conference._room）自己認為
                 //   現在會議室裡有幾個人，這個數字才是跟人類端畫面實際同步的、可信的訊號。
+                // 🐛 這輪修正（上次的驗證下得太早）：實測發現這個時間點 Jitsi 內部甚至都還沒真正
+                //   呼叫 conference.init / createInitialLocalTracks（那個時間點通常在頁面導航完成後
+                //   還要再等 10 秒左右），所以在這裡查 room.getParticipants() 幾乎一定會拿到
+                //   'no-room-object'——不是加入失敗，是問得太早，room 物件根本還沒被建立。
+                //   改成輪詢：每 2 秒查一次，最多等 20 秒，等到 room 物件出現、參與者數字穩定下來
+                //   （或逾時）才停止，過程中每次都印出來，這樣才能看出真正的加入時間點跟結果，
+                //   而不是只憑「問一次剛好問到什麼」來下結論。
                 try
                 {
-                    var participantCheck = await page.EvaluateAsync<string>(@"() => {
-                        try {
-                            const room = window.APP && window.APP.conference && window.APP.conference._room;
-                            if (!room || typeof room.getParticipants !== 'function') return 'no-room-object';
-                            const others = room.getParticipants().map(p => p.getDisplayName ? p.getDisplayName() : p.getId());
-                            return JSON.stringify({ othersCount: others.length, others: others });
-                        } catch (e) { return 'error:' + e.message; }
-                    }");
-                    Console.WriteLine($"[JitsiBot 驗證] 房間 {roomCode} 從 AI 面試官自己視角查到的會議室其他參與者：{participantCheck}");
+                    const int maxAttempts = 10;
+                    for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                    {
+                        await page.WaitForTimeoutAsync(2000);
+                        var participantCheck = await page.EvaluateAsync<string>(@"() => {
+                            try {
+                                const room = window.APP && window.APP.conference && window.APP.conference._room;
+                                if (!room || typeof room.getParticipants !== 'function') return 'no-room-object';
+                                const others = room.getParticipants().map(p => p.getDisplayName ? p.getDisplayName() : p.getId());
+                                const joined = typeof room.isJoined === 'function' ? room.isJoined() : 'unknown';
+                                return JSON.stringify({ isJoined: joined, othersCount: others.length, others: others });
+                            } catch (e) { return 'error:' + e.message; }
+                        }");
+                        Console.WriteLine($"[JitsiBot 驗證 第{attempt}次/共{maxAttempts}次，約{attempt * 2}秒後] 房間 {roomCode} 從 AI 面試官自己視角查到的會議室狀態：{participantCheck}");
+
+                        // room 物件出現、而且看得到至少一個其他參與者，就代表確認加入成功，不用再繼續等
+                        if (participantCheck.Contains("othersCount") && !participantCheck.Contains("\"othersCount\":0"))
+                        {
+                            Console.WriteLine($"[JitsiBot 驗證] 房間 {roomCode} 已確認 AI 面試官視角看得到其他參與者，停止輪詢。");
+                            break;
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[JitsiBot 驗證] 房間 {roomCode} 查詢會議室參與者名單失敗（不影響主流程，但代表這次沒辦法交叉驗證）：{ex.Message}");
                 }
 
-                Console.WriteLine($"[JitsiBot Success] 房間 {roomCode} 的 AI 面試官瀏覽器自動化流程已跑完，並啟動錄影（⚠️ 這句話只代表我們自己的腳本沒出錯，不代表 Jitsi 端真的把這個參與者算進會議室——請看上面那行「[JitsiBot 驗證]」的實際參與者數字才是可信的訊號）！");
+                Console.WriteLine($"[JitsiBot Success] 房間 {roomCode} 的 AI 面試官瀏覽器自動化流程已跑完，並啟動錄影（⚠️ 這句話只代表我們自己的腳本沒出錯，不代表 Jitsi 端真的把這個參與者算進會議室——請看上面幾行「[JitsiBot 驗證]」的實際參與者數字才是可信的訊號）！");
             }
             catch (Exception ex)
             {
