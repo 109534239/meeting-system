@@ -23,10 +23,14 @@ namespace InterviewProject.Services
         //    只能依照 Simli 官方文件跟現有程式的架構風格盡力寫，實際部署後很可能需要對照瀏覽器 console
         //    的錯誤訊息再調整。
         //
+        //    🐛 這輪重大修正：simli-client 的正式版本是 3.0.2，內部已經改用 livekit-client 重寫，
+        //    連線方式（要先換 session token）、建構子參數、事件名稱都跟舊版文件不一樣，
+        //    上一輪照舊版文件寫的完全對不上，這裡已經整個對照官方最新文件重寫。
+        //
         //    做法：
-        //    1. 用動態 import() 從 CDN 載入 simli-client（用 jsdelivr 的 +esm 轉譯端點，
-        //       不管原始套件是不是 ESM 格式，都能在瀏覽器直接 import）
-        //    2. 建立 SimliClient，把連線後拿到的視訊/音訊串流，包成一個假的 MediaStream
+        //    1. 用動態 import() 從 esm.sh 載入 simli-client（不管原始套件是不是 ESM 格式，都能在瀏覽器直接 import）
+        //    2. 跟 Simli 換一個 session token，建立 SimliClient（livekit 傳輸模式），
+        //       把連線後拿到的視訊/音訊串流，包成一個假的 MediaStream
         //    3. 攔截 navigator.mediaDevices.getUserMedia，Jitsi 跟它要攝影機/麥克風時，
         //       就把 Simli 的即時串流冒充成「攝影機」還給它，取代原本 Chromium 的假攝影機檔案
         //    4. 提供 window.__simliSpeak(base64Pcm24k)，之後由 C# 呼叫，把 Gemini TTS 產生的
@@ -43,13 +47,15 @@ namespace InterviewProject.Services
 
     async function initSimli() {
         try {
-            // 🐛 這輪修正：jsDelivr 的 +esm 自動打包服務打包 simli-client 這個套件會失敗
-            //    （Rollup/esbuild 打包時解析套件內部某個 import 失敗，是這輪實測抓到的確定問題）。
-            //    改用 esm.sh——這個服務對 Node.js 相關相容性的處理通常比較完整，較常被推薦用來解決
-            //    「套件在瀏覽器端自動打包失敗」這類問題。
-            const mod = await import('https://esm.sh/simli-client@latest');
-            const SimliClient = mod.SimliClient || mod.default;
-            if (!SimliClient) throw new Error('simli-client 模組載入了，但找不到 SimliClient 匯出');
+            // 🐛 這輪修正：問題不是 CDN 載入方式，是 API 版本整個換了。
+            //    simli-client 現在的正式版本是 3.0.2，內部改用 livekit-client 重寫，
+            //    連建立連線的方式都完全不一樣（要先跟 Simli 換一個 session token，
+            //    再用不同的建構子參數），這是照官方最新文件重新對過的版本。
+            const mod = await import('https://esm.sh/simli-client@3.0.2');
+            const SimliClient = mod.SimliClient;
+            const LogLevel = mod.LogLevel;
+            const generateSimliSessionToken = mod.generateSimliSessionToken;
+            if (!SimliClient || !generateSimliSessionToken) throw new Error('simli-client 模組載入了，但找不到需要的匯出（SimliClient / generateSimliSessionToken）');
 
             const videoEl = document.createElement('video');
             videoEl.autoplay = true; videoEl.playsInline = true; videoEl.muted = true;
@@ -60,20 +66,36 @@ namespace InterviewProject.Services
             document.body.appendChild(videoEl);
             document.body.appendChild(audioEl);
 
-            const client = new SimliClient();
-            client.Initialize({
+            console.log('[Simli] 正在跟 Simli 換取 session token...');
+            const tokenResp = await generateSimliSessionToken({
                 apiKey: window.__SIMLI_API_KEY__,
-                faceID: window.__SIMLI_FACE_ID__,
-                handleSilence: true,
-                videoRef: { current: videoEl },
-                audioRef: { current: audioEl }
+                config: {
+                    faceId: window.__SIMLI_FACE_ID__,
+                    handleSilence: true,
+                    maxSessionLength: 3600,
+                    maxIdleTime: 300
+                }
             });
+            const sessionToken = tokenResp && tokenResp.session_token;
+            if (!sessionToken) throw new Error('拿不到 session_token，回應內容：' + JSON.stringify(tokenResp));
+            console.log('[Simli] 已取得 session token');
+
+            // 用 livekit 傳輸模式（Simli 官方建議，對防火牆較嚴格的網路環境相容性比 p2p 模式好，
+            // 而且不需要另外準備 ICE servers）
+            const client = new SimliClient(
+                sessionToken,
+                videoEl,
+                audioEl,
+                null,
+                (LogLevel && LogLevel.DEBUG) || 'debug',
+                'livekit'
+            );
             window.__simliClient = client;
 
             window.__simliReady = new Promise((resolve, reject) => {
-                client.on('connected', () => {
-                    console.log('[Simli] WebRTC 已連線，等待畫面/聲音串流就緒...');
-                    // 連上之後，Simli 會把畫面/聲音接到我們給的 videoRef/audioRef 的 srcObject 上，
+                client.on('start', () => {
+                    console.log('[Simli] WebRTC 已連線（start 事件），等待畫面/聲音串流就緒...');
+                    // 連上之後，Simli 會把畫面/聲音接到我們給的 video/audio 元素的 srcObject 上，
                     // 稍等一下讓 srcObject 真的被賦值，再從這兩個元素身上把 MediaStream 撈出來組成一個假串流
                     setTimeout(() => {
                         try {
@@ -89,16 +111,17 @@ namespace InterviewProject.Services
                         } catch (e) { reject(e); }
                     }, 800);
                 });
-                client.on('failed', () => reject(new Error('SimliClient WebRTC 連線失敗')));
+                client.on('error', (e) => reject(new Error('SimliClient 發生錯誤：' + e)));
+                client.on('startup_error', (msg) => reject(new Error('SimliClient 啟動失敗（常見原因：Face ID 無效、或 Simli 額度用完）：' + msg)));
             });
-            // 🐛 這輪修正：window.__simliReady 如果最後是 rejected 狀態、卻沒有任何人「立刻」去 .catch() 它，
-            //    瀏覽器會在下一個 microtask 就判定成「未處理的 Promise rejection」，噴出一堆不必要的雜訊
-            //    log（連 Jitsi 自己的 app:index.web 都會跳出來記錄一次）。這裡加一個空的 .catch() 把這個
-            //    「已經處理過了」的訊號送出去，不影響下面 getUserMedia 覆寫那邊之後照樣能 await/catch 到
-            //    同一個 Promise 的真正結果（同一個 Promise 可以被多個地方分別 await/catch，互不影響）。
+            // 🐛 window.__simliReady 如果最後是 rejected 狀態、卻沒有任何人「立刻」去 .catch() 它，
+            //    瀏覽器會在下一個 microtask 就判定成「未處理的 Promise rejection」，噴出不必要的雜訊 log。
+            //    這裡加一個空的 .catch() 把這個「已經處理過了」的訊號送出去，不影響下面 getUserMedia 覆寫那邊
+            //    之後照樣能 await/catch 到同一個 Promise 的真正結果（同一個 Promise 可以被多個地方分別
+            //    await/catch，互不影響）。
             window.__simliReady.catch(() => {});
 
-            client.start();
+            await client.start();
 
             window.__simliSpeak = async function (base64Pcm24k) {
                 try {
