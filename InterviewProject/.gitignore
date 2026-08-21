@@ -1,2 +1,18 @@
+# 🎯 真正的金鑰只放在這個檔案（資料庫密碼、Gemini API Key、R2 金鑰、JaaS 私鑰路徑），絕對不要進 git
+appsettings.json
+
+# 🎯 JaaS 私鑰檔案本身
+*.pem
+
+# .NET 建置產生的資料夾，不用進版控（而且裡面常常會夾帶編譯後的 appsettings.json 副本）
+bin/
+obj/
+
+# Visual Studio 使用者本機設定
+.vs/
+*.user
+*.suo
+
+# macOS
 .DS_Store
 **/.DS_Store
