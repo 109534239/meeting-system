@@ -165,14 +165,57 @@ namespace InterviewProject.Services
     //    如果 Simli 連線還沒好、或整個失敗，就退回原本的假攝影機檔案（不要讓 AI 面試官完全連不進會議）。
     try {
         const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+
+        // 🐛 這輪修正（下一個症狀：AI 連線成功但人類端完全看不到這個參與者）：
+        //    原本這裡不管 Jitsi 這次要的是 audio、video 還是兩個都要，一律回傳「同一個」
+        //    window.__simliReady resolve 出來的 MediaStream/MediaStreamTrack 物件。
+        //    真正的瀏覽器規格是：每呼叫一次 getUserMedia，就算是同一支實體攝影機，也一定拿到
+        //    全新的 track 實例；很多程式（包括 lib-jitsi-meet 內部的裝置探測/權限檢查流程）
+        //    會呼叫 getUserMedia 不只一次，而且很常見的寫法是「探測完就把拿到的臨時 stream
+        //    的 track .stop() 掉」，因為正常情況下這不會影響之後真正要用的那個 track。
+        //    但這裡因為每次回傳的是同一個 track 物件，只要任何一次呼叫的消費端把它 stop 掉，
+        //    後面真正要送進會議室的那次呼叫拿到的也是同一個已經 ended 的 track——
+        //    這種情況下 Jitsi 很多路徑是「安靜地不建立/不送出這個 track」，不會跳出
+        //    使用者看得到的錯誤（尤其無頭瀏覽器根本沒有 UI），這很可能就是「AI 自己端一切正常、
+        //    人類端整個參與者格子消失、人數少一個」這個矛盾組合的真正原因。
+        //    修正：每次呼叫都用 .clone() 出全新的 track 實例再回傳，並且依照 constraints 只回傳
+        //    有要求的種類（audio-only 的呼叫就不要順便夾帶 video track，反之亦然），
+        //    盡量貼近瀏覽器原生 getUserMedia 的行為，減少任何下游程式碼因為「以為是單一用途的
+        //    stream」而做出非預期操作（例如提早 stop）時的連帶傷害範圍。
         navigator.mediaDevices.getUserMedia = async function (constraints) {
             console.log('[Simli] getUserMedia 被呼叫，constraints=' + JSON.stringify(constraints));
             try {
                 if (window.__simliReady) {
                     const simliStream = await window.__simliReady;
                     if (simliStream) {
-                        console.log('[Simli] 回傳虛擬人串流給 getUserMedia，視訊軌道數=' + simliStream.getVideoTracks().length + '，音訊軌道數=' + simliStream.getAudioTracks().length);
-                        return simliStream;
+                        const wantAudio = !!(constraints && constraints.audio);
+                        const wantVideo = !!(constraints && constraints.video);
+                        // 沒指定 audio/video 任何一項時（極少見），視同兩個都要，維持舊行為的相容性
+                        const includeAudio = wantAudio || (!wantAudio && !wantVideo);
+                        const includeVideo = wantVideo || (!wantAudio && !wantVideo);
+
+                        const clonedTracks = [];
+                        if (includeVideo) {
+                            simliStream.getVideoTracks().forEach(t => {
+                                const c = t.clone();
+                                c.addEventListener('ended', () => console.warn('[Simli] 警告：一份 clone 出來的視訊 track 進入 ended 狀態（來源 track id=' + t.id + '）'));
+                                c.addEventListener('mute', () => console.warn('[Simli] 警告：一份 clone 出來的視訊 track 被 mute（來源 track id=' + t.id + '）'));
+                                clonedTracks.push(c);
+                            });
+                        }
+                        if (includeAudio) {
+                            simliStream.getAudioTracks().forEach(t => {
+                                const c = t.clone();
+                                c.addEventListener('ended', () => console.warn('[Simli] 警告：一份 clone 出來的音訊 track 進入 ended 狀態（來源 track id=' + t.id + '）'));
+                                clonedTracks.push(c);
+                            });
+                        }
+
+                        if (clonedTracks.length > 0) {
+                            const outStream = new MediaStream(clonedTracks);
+                            console.log('[Simli] 回傳虛擬人串流給 getUserMedia（clone），視訊軌道數=' + outStream.getVideoTracks().length + '，音訊軌道數=' + outStream.getAudioTracks().length);
+                            return outStream;
+                        }
                     }
                 }
             } catch (e) {
@@ -817,7 +860,31 @@ namespace InterviewProject.Services
                     PageInstance = page
                 };
 
-                Console.WriteLine($"[JitsiBot Success] 房間 {roomCode} 的 AI 面試官已成功常駐會議，並開始錄影！");
+                // 🐛 這輪修正：這行原本是「無條件」印成功，只代表上面這一大段 try 區塊沒有噴例外
+                //   （頁面有載入、截圖有存到、錄影腳本有啟動），完全沒有真的去確認 Jitsi 內部
+                //   是不是真的有把這個參與者算進會議室、其他人看不看得到。這是「AI 自己端顯示成功、
+                //   人類端卻整個看不到這個參與者」這個矛盾組合的另一半原因——這句話本來就不是
+                //   在驗證人類端看不看得到，只是在驗證我們自己的自動化腳本有沒有跑完。
+                //   改成直接問 Jitsi 內部的會議物件（window.APP.conference._room）自己認為
+                //   現在會議室裡有幾個人，這個數字才是跟人類端畫面實際同步的、可信的訊號。
+                try
+                {
+                    var participantCheck = await page.EvaluateAsync<string>(@"() => {
+                        try {
+                            const room = window.APP && window.APP.conference && window.APP.conference._room;
+                            if (!room || typeof room.getParticipants !== 'function') return 'no-room-object';
+                            const others = room.getParticipants().map(p => p.getDisplayName ? p.getDisplayName() : p.getId());
+                            return JSON.stringify({ othersCount: others.length, others: others });
+                        } catch (e) { return 'error:' + e.message; }
+                    }");
+                    Console.WriteLine($"[JitsiBot 驗證] 房間 {roomCode} 從 AI 面試官自己視角查到的會議室其他參與者：{participantCheck}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[JitsiBot 驗證] 房間 {roomCode} 查詢會議室參與者名單失敗（不影響主流程，但代表這次沒辦法交叉驗證）：{ex.Message}");
+                }
+
+                Console.WriteLine($"[JitsiBot Success] 房間 {roomCode} 的 AI 面試官瀏覽器自動化流程已跑完，並啟動錄影（⚠️ 這句話只代表我們自己的腳本沒出錯，不代表 Jitsi 端真的把這個參與者算進會議室——請看上面那行「[JitsiBot 驗證]」的實際參與者數字才是可信的訊號）！");
             }
             catch (Exception ex)
             {
