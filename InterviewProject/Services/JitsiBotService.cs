@@ -713,9 +713,13 @@ namespace InterviewProject.Services
                     Console.WriteLine($"[JitsiBot] 房間 {roomCode} 沒有設定 Simli:ApiKey / Simli:FaceId，AI 面試官使用原本的靜態假攝影機檔案。");
                 }
 
-                // 🚀 換成你自己申請的 JaaS AppID（原本那組是別人的示範帳號）
+                // 🐛 這輪修正：這裡原本也是寫死一組 JaaS AppID，跟 Join.cshtml 犯了同一個問題——
+                //    不管 appsettings.json 換成什麼新帳號，AI 面試官實際連過去的還是這組寫死的舊帳號，
+                //    導致「換新 JaaS 帳號，額度還是顯示用完」，因為根本沒真的連到新帳號。
+                //    改成統一從設定檔讀（跟 _jaasJwt 簽發 JWT 時讀的是同一個設定值），兩邊才會一致。
                 string jitsiDomain = "https://8x8.vc";
-                string tenantId = "vpaas-magic-cookie-c12aeb6abc7a4349bc799bb8cb31436a";
+                string tenantId = _config["JaaS:AppId"]
+                    ?? throw new InvalidOperationException("appsettings.json 缺少 JaaS:AppId 設定");
 
                 // 🎯 JaaS 需要 JWT 才能真的加入會議，AI 面試官不是主持人，moderator=false
                 string botJwt = _jaasJwt.GenerateToken(roomCode, "ai-interviewer", "AI 面試官", isModerator: false);

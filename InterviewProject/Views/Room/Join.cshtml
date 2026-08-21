@@ -1,5 +1,6 @@
 ﻿@using InterviewProject.Services
 @inject JaasJwtService JaasJwt
+@inject IConfiguration Configuration
 @{
     Layout = null;
     var room = ViewBag.Room as InterviewProject.Models.Room;
@@ -16,8 +17,13 @@
         _ => "員工"
     };
     var displayName = isStaff ? staffLabel + "-" + memberName : "求職者-" + memberName;
-    // 🎯 換成你自己申請的 JaaS AppID（原本那組是別人的示範帳號，難怪一直卡在驗證失敗）
-    var jaasTenantId = "vpaas-magic-cookie-c12aeb6abc7a4349bc799bb8cb31436a";
+    // 🐛 這輪修正：這裡原本寫死一組 JaaS AppID（是很早期為了修正另一個問題暫時寫死的，
+    //    後來忘記改回讀設定檔）。導致不管 appsettings.json 的 JaaS:AppId 換成什麼新帳號，
+    //    這裡實際連過去的房間網址還是舊帳號，跟設定完全脫勾——這就是「換了新的 JaaS 帳號、
+    //    額度還是顯示用完」的真正原因：使用者實際上根本沒有連到新帳號，一直連的都是舊的。
+    //    改成跟 JaasJwtService 簽發 JWT 時一樣，統一從設定檔讀，兩邊才會是同一個帳號。
+    var jaasTenantId = Configuration["JaaS:AppId"]
+        ?? throw new InvalidOperationException("appsettings.json 缺少 JaaS:AppId 設定");
     var jitsiDomain = "8x8.vc";
     var jitsiRoom = jaasTenantId + "/" + room.JitsiRoomName;
     var encodedName = Uri.EscapeDataString(displayName);
@@ -548,7 +554,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
-    <script src="https://8x8.vc/vpaas-magic-cookie-c12aeb6abc7a4349bc799bb8cb31436a/external_api.js"></script>
+    <script src="https://8x8.vc/@jaasTenantId/external_api.js"></script>
     <script>
         // ══════════════════════════════════
         //  設定
