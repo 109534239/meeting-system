@@ -440,11 +440,15 @@
             document.getElementById('detailModalOverlay').classList.remove('active');
         }
 
-        // 🎯 依「查看」按鈕上的 data-view-action 分流到對應的彈窗內容
+        // 🎯 依「查看」按鈕上的 data-view-action 分流
         function openDetailByAction(btn) {
             const resumeId = btn.dataset.resumeId;
             const action = btn.dataset.viewAction;
-            if (action === 'aptitude') openAptitudeModal(resumeId);
+
+            if (action === 'aptitude') {
+                // 開啟新分頁（若要在同頁面開啟，請改用 window.location.href）
+                window.open('@Url.Action("AptitudeTest", "Member")/' + resumeId, '_blank');
+            }
             else if (action === 'waiting') openWaitingModal();
             else if (action === 'interview') openInterviewModal(resumeId);
             else if (action === 'onboarding') openOnboardingModal();

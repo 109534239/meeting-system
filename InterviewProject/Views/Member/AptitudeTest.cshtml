@@ -1,0 +1,246 @@
+@model InterviewProject.Models.Resume
+
+@{
+    ViewData["Title"] = "適性測驗";
+    var resumeId = ViewContext.RouteData.Values["id"]?.ToString();
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/AptitudeTest.css" asp-append-version="true" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+}
+
+<div class="container my-4">
+    <!-- 頁面載入內容容器 -->
+    <div id="detailModalContent">
+        <p class="modal-loading">
+            <i class="fa-solid fa-circle-notch fa-spin"></i> 載入測驗題目中...
+        </p>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        const resumeId = '@resumeId';
+        const pageSize = 10; // 每頁 10 題
+        let currentPage = 1;
+        let totalPages = 1;
+
+        function closeThisTab() {
+            if (window.opener && !window.opener.closed) {
+                window.close();
+                return;
+            }
+            window.location.href = '@Url.Action("Application", "Member")';
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            loadAptitudeTest();
+        });
+
+        // 切換頁面
+        function goToPage(page) {
+            if (page < 1 || page > totalPages) return;
+
+            document.querySelectorAll('.page-block').forEach(el => el.classList.remove('active'));
+            const targetPageEl = document.getElementById('page_' + page);
+            if (targetPageEl) {
+                targetPageEl.classList.add('active');
+            }
+
+            currentPage = page;
+
+            // 更新按鈕、頁數與進度條
+            document.getElementById('pageIndicator').innerText = `第 ${currentPage} / ${totalPages} 頁`;
+            document.getElementById('prevPageBtn').disabled = (currentPage === 1);
+            document.getElementById('nextPageBtn').disabled = (currentPage === totalPages);
+
+            const progressPercent = Math.round((currentPage / totalPages) * 100);
+            const progressBar = document.getElementById('testProgressBar');
+            if (progressBar) {
+                progressBar.style.width = progressPercent + '%';
+            }
+
+            // 切換頁面後自動平滑滾動回測驗頂端
+            const testCard = document.querySelector('.detail-card');
+            if (testCard) {
+                testCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        // 🎯 載入與渲染適性測驗
+        async function loadAptitudeTest() {
+            const content = document.getElementById('detailModalContent');
+
+            if (!resumeId) {
+                content.innerHTML = '<p class="modal-error"><i class="fa-solid fa-triangle-exclamation"></i> 無法取得履歷編號，請返回重新操作</p>';
+                return;
+            }
+
+            try {
+                const res = await fetch('/AptitudeTest/GetStatus?resumeId=' + resumeId);
+                const data = await res.json();
+
+                if (!data.success) {
+                    content.innerHTML = '<p class="modal-error"><i class="fa-solid fa-circle-xmark"></i> ' + (data.message || '載入失敗，請稍後再試') + '</p>';
+                    return;
+                }
+
+                // 1. 已完成畫面
+                if (data.completed) {
+                    content.innerHTML =
+                        '<div class="detail-section-title">' +
+                        '  <span class="title-text"><i class="fa-solid fa-clipboard-check text-primary me-2"></i>適性測驗</span>' +
+                        '  <span class="detail-badge badge-completed"><i class="fa-solid fa-check"></i> 已完成</span>' +
+                        '</div>' +
+                        '<div class="detail-card text-center py-5">' +
+                        '  <div class="completed-icon-box"><i class="fa-solid fa-circle-check"></i></div>' +
+                        '  <h4 class="fw-bold mb-3">您已完成適性測驗</h4>' +
+                        '  <p class="text-muted mb-1">完成時間：' + data.submittedAt + '</p>' +
+                        '  <p class="text-muted">系統會依照職缺招募進度安排後續面試，請耐心等候通知。</p>' +
+                        '  <div class="mt-4">' +
+                        '    <button type="button" class="btn-action btn-action--secondary" onclick="closeThisTab()">關閉頁面</button>' +
+                        '  </div>' +
+                        '</div>';
+                    return;
+                }
+
+                // 2. 計算總頁數與分頁渲染
+                const totalQuestions = data.questions.length;
+                totalPages = Math.ceil(totalQuestions / pageSize) || 1;
+                currentPage = 1;
+
+                let pagesHtml = '';
+
+                for (let p = 1; p <= totalPages; p++) {
+                    const startIndex = (p - 1) * pageSize;
+                    const pageQuestions = data.questions.slice(startIndex, startIndex + pageSize);
+
+                    const questionsHtml = pageQuestions.map(function (q, idx) {
+                        const globalIndex = startIndex + idx + 1;
+                        const options = [1, 2, 3, 4, 5].map(function (s) {
+                            return '<label class="apt-scale-option">' +
+                                   '<input type="radio" name="q_' + q.id + '" value="' + s + '" />' +
+                                   '<span class="apt-num">' + s + '</span></label>';
+                        }).join('');
+
+                        return '<div class="apt-question" id="apt_q_' + q.id + '">' +
+                               '<p class="apt-question-text"><span class="q-num">' + globalIndex + '.</span> ' + q.text + '</p>' +
+                               '<div class="apt-scale">' +
+                               '  <span class="apt-scale-label">非常不同意</span>' +
+                                  options +
+                               '  <span class="apt-scale-label">非常同意</span>' +
+                               '</div>' +
+                               '</div>';
+                    }).join('');
+
+                    const activeClass = p === 1 ? ' active' : '';
+                    pagesHtml += `<div class="page-block${activeClass}" id="page_${p}">${questionsHtml}</div>`;
+                }
+
+                // 主結構渲染
+                content.innerHTML =
+                    '<div class="detail-section-title">' +
+                    '  <span class="title-text"><i class="fa-solid fa-file-pen text-primary me-2"></i>適性測驗</span>' +
+                    '  <span class="detail-badge badge-pending"><i class="fa-regular fa-clock"></i> 未完成</span>' +
+                    '</div>' +
+                    '<div class="detail-card">' +
+                    '  <div class="progress-container">' +
+                    '    <div class="progress-bar-bg"><div id="testProgressBar" class="progress-bar-fill" style="width: ' + Math.round((1 / totalPages) * 100) + '%;"></div></div>' +
+                    '  </div>' +
+                    '  <div class="detail-notice-box">' +
+                    '    <p><i class="fa-solid fa-circle-info me-1"></i> 共 <strong>' + totalQuestions + '</strong> 題，採 1～5 分量表作答（1：非常不同意 ～ 5：非常同意）。</p>' +
+                    '    <p><i class="fa-solid fa-circle-info me-1"></i> 請依第一直覺真實作答，送出後即完成測驗，無法重測。</p>' +
+                    '  </div>' +
+                    '  <form id="aptitudeForm">' +
+                         pagesHtml +
+                    '    <!-- 分頁控制按鈕 -->' +
+                    '    <div class="pagination-container">' +
+                    '      <button type="button" id="prevPageBtn" class="btn-action btn-action--secondary" onclick="goToPage(currentPage - 1)" disabled><i class="fa-solid fa-chevron-left"></i> 上一頁</button>' +
+                    '      <span id="pageIndicator" class="pagination-info">第 1 / ' + totalPages + ' 頁</span>' +
+                    '      <button type="button" id="nextPageBtn" class="btn-action btn-action--secondary" onclick="goToPage(currentPage + 1)" ' + (totalPages <= 1 ? 'disabled' : '') + '>下一頁 <i class="fa-solid fa-chevron-right"></i></button>' +
+                    '    </div>' +
+                    '    <div class="detail-action my-4 text-center">' +
+                    '      <button type="submit" class="btn-primary-action"><i class="fa-solid fa-paper-plane me-2"></i> 送出測驗</button>' +
+                    '    </div>' +
+                    '  </form>' +
+                    '</div>';
+
+                // 表單驗證與送出邏輯
+                document.getElementById('aptitudeForm').addEventListener('submit', async function (e) {
+                    e.preventDefault();
+
+                    const unselectedQuestions = [];
+                    const answers = [];
+
+                    data.questions.forEach(function (q, index) {
+                        const checked = document.querySelector('input[name="q_' + q.id + '"]:checked');
+                        if (checked) {
+                            answers.push({
+                                questionId: q.id,
+                                score: parseInt(checked.value)
+                            });
+                        } else {
+                            unselectedQuestions.push({
+                                number: index + 1,
+                                id: q.id,
+                                index: index
+                            });
+                        }
+                    });
+
+                    if (unselectedQuestions.length > 0) {
+                        const unselectedNumbers = unselectedQuestions.map(q => q.number);
+                        alert('第 ' + unselectedNumbers.join(', ') + ' 題尚未作答，請完成後再送出！');
+
+                        const firstUnanswered = unselectedQuestions[0];
+                        const targetPage = Math.floor(firstUnanswered.index / pageSize) + 1;
+
+                        goToPage(targetPage);
+
+                        setTimeout(function () {
+                            const targetElement = document.getElementById('apt_q_' + firstUnanswered.id);
+                            if (targetElement) {
+                                targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                targetElement.classList.add('highlight-unanswered');
+                                setTimeout(() => targetElement.classList.remove('highlight-unanswered'), 2500);
+                            }
+                        }, 100);
+
+                        return;
+                    }
+
+                    const submitBtn = e.target.querySelector('button[type="submit"]');
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 送出中...';
+
+                    try {
+                        const submitRes = await fetch('/AptitudeTest/Submit', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ resumeId: resumeId, answers: answers })
+                        });
+                        const submitData = await submitRes.json();
+
+                        if (submitData.success) {
+                            alert('測驗已成功送出，感謝您的作答！');
+                            closeThisTab();
+                        } else {
+                            alert(submitData.message || '送出失敗，請稍後再試');
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-2"></i> 送出測驗';
+                        }
+                    } catch (err) {
+                        alert('網路異常，送出失敗請稍後再試');
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-2"></i> 送出測驗';
+                    }
+                });
+
+            } catch (err) {
+                content.innerHTML = '<p class="modal-error"><i class="fa-solid fa-triangle-exclamation"></i> 載入失敗，請稍後再試</p>';
+            }
+        }
+    </script>
+}

@@ -835,5 +835,26 @@ namespace InterviewProject.Controllers
             var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(password));
             return Convert.ToHexString(bytes).ToLower();
         }
+
+        [HttpGet]
+        public async Task<IActionResult> AptitudeTest(int id)
+        {
+            // 1. 取得當前登入會員 ID
+            int userId = GetCurrentUserId();
+            if (userId == 0)
+                return RedirectToAction("Index", "Login");
+
+            // 2. 查詢該履歷/應徵紀錄是否存在，且屬於該會員（注意欄位名稱為 MembersId）
+            var resume = await _db.Resumes
+                .Include(r => r.Job) // 視需要載入職缺資訊，畫面若需顯示職缺名稱可用
+                .FirstOrDefaultAsync(r => r.Id == id && r.MembersId == userId && r.Status != "暫存");
+
+            // 3. 查無資料或非本人履歷則回傳 NotFound
+            if (resume == null)
+                return NotFound();
+
+            // 4. 將履歷資料傳給 View (回傳單一 Resume 物件)
+            return View(resume);
+        }
     }
 }
