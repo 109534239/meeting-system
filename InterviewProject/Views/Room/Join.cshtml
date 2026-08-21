@@ -957,7 +957,7 @@
 
             setSt('th','💭 思考中...');
             const ctx = recentSpeech.slice(-3).map(s=>`${s.name}：${s.text}`).join('；') || "面試進行中";
-            const prompt = `你是AI面試官王大明，協助主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場（${SIL_SEC}秒無人說話）。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
+            const prompt = `你是AI面試官，協助主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場（${SIL_SEC}秒無人說話）。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
 
             let q = null;
             try {
@@ -974,6 +974,17 @@
 
         function aiSpeak(text) {
             if (isSp || ended || !started) return;
+
+            // 🐛 這輪新增：以前這裡只有 window.speechSynthesis，只有「觸發的這個人自己的瀏覽器」聽得到，
+            //    不會真的傳到會議室裡讓其他人聽到。改成同時呼叫伺服器，讓 AI 面試官這個真正的 Jitsi
+            //    參與者（透過 Simli 虛擬人）把話說出來，其他人才聽得到。不擋住畫面上的文字顯示邏輯，
+            //    語音合成需要幾秒鐘，用背景送出就好，不用等它回應。
+            fetch('/Room/AiSpeak', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&text=' + encodeURIComponent(text)
+            }).catch(() => {});
+
             if (!window.speechSynthesis) { showMsg(text); return; }
 
             window.speechSynthesis.cancel();
@@ -992,7 +1003,7 @@
                 showMsg(text);
                 if (IS_STAFF) {
                     const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-                    trxLines.push({ sp:'AI 面試官（王大明）', tx:text, time:now });
+                    trxLines.push({ sp:'AI 面試官', tx:text, time:now });
                 }
             };
             u.onend = u.onerror = () => {

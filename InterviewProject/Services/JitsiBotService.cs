@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace InterviewProject.Services
@@ -15,6 +16,133 @@ namespace InterviewProject.Services
             public IBrowserContext ContextInstance { get; set; } = null!;
             public IPage PageInstance { get; set; } = null!;
         }
+
+        // 🐛 這輪新增（AI 面試官虛擬人畫面/嘴型，接 Simli）：
+        //    ⚠️ 這整段是這個專案目前風險最高、最需要實機除錯的一段程式碼——涉及 Simli 的 JS SDK 載入方式、
+        //    事件名稱、串流綁定方式，以及攔截 getUserMedia 的時機，全部都無法在這個環境離線驗證，
+        //    只能依照 Simli 官方文件跟現有程式的架構風格盡力寫，實際部署後很可能需要對照瀏覽器 console
+        //    的錯誤訊息再調整。
+        //
+        //    做法：
+        //    1. 用動態 import() 從 CDN 載入 simli-client（用 jsdelivr 的 +esm 轉譯端點，
+        //       不管原始套件是不是 ESM 格式，都能在瀏覽器直接 import）
+        //    2. 建立 SimliClient，把連線後拿到的視訊/音訊串流，包成一個假的 MediaStream
+        //    3. 攔截 navigator.mediaDevices.getUserMedia，Jitsi 跟它要攝影機/麥克風時，
+        //       就把 Simli 的即時串流冒充成「攝影機」還給它，取代原本 Chromium 的假攝影機檔案
+        //    4. 提供 window.__simliSpeak(base64Pcm24k)，之後由 C# 呼叫，把 Gemini TTS 產生的
+        //       24000Hz PCM16 音訊，在瀏覽器端降取樣成 Simli 要的 16000Hz 再送進去
+        //
+        //    這段一定要在 Jitsi 自己的程式碼開始跑「之前」就佈署好，所以用 Playwright 的
+        //    AddInitScriptAsync（在 GotoAsync 導航之前呼叫），保證每次載入新文件時最先執行，
+        //    搶在 Jitsi 呼叫 getUserMedia 之前把攔截裝好。
+        private const string SimliInitScript = @"
+(function () {
+    window.__simliReady = null;   // 會變成一個 resolve 出 MediaStream 的 Promise
+    window.__simliClient = null;
+    window.__simliSpeak = null;   // function(base64Pcm24k) -> 把音訊送進 Simli 講出來
+
+    async function initSimli() {
+        try {
+            const mod = await import('https://cdn.jsdelivr.net/npm/simli-client@latest/+esm');
+            const SimliClient = mod.SimliClient || mod.default;
+            if (!SimliClient) throw new Error('simli-client 模組載入了，但找不到 SimliClient 匯出');
+
+            const videoEl = document.createElement('video');
+            videoEl.autoplay = true; videoEl.playsInline = true; videoEl.muted = true;
+            videoEl.style.position = 'fixed'; videoEl.style.left = '-9999px'; videoEl.style.top = '-9999px';
+            const audioEl = document.createElement('audio');
+            audioEl.autoplay = true;
+            audioEl.style.position = 'fixed'; audioEl.style.left = '-9999px'; audioEl.style.top = '-9999px';
+            document.body.appendChild(videoEl);
+            document.body.appendChild(audioEl);
+
+            const client = new SimliClient();
+            client.Initialize({
+                apiKey: window.__SIMLI_API_KEY__,
+                faceID: window.__SIMLI_FACE_ID__,
+                handleSilence: true,
+                videoRef: { current: videoEl },
+                audioRef: { current: audioEl }
+            });
+            window.__simliClient = client;
+
+            window.__simliReady = new Promise((resolve, reject) => {
+                client.on('connected', () => {
+                    // 連上之後，Simli 會把畫面/聲音接到我們給的 videoRef/audioRef 的 srcObject 上，
+                    // 稍等一下讓 srcObject 真的被賦值，再從這兩個元素身上把 MediaStream 撈出來組成一個假串流
+                    setTimeout(() => {
+                        try {
+                            const vStream = videoEl.srcObject;
+                            const aStream = audioEl.srcObject;
+                            const tracks = [];
+                            if (vStream) tracks.push(...vStream.getVideoTracks());
+                            if (aStream) tracks.push(...aStream.getAudioTracks());
+                            else if (vStream) tracks.push(...vStream.getAudioTracks());
+                            if (tracks.length === 0) { reject(new Error('Simli 已連線但抓不到 MediaStream track')); return; }
+                            resolve(new MediaStream(tracks));
+                        } catch (e) { reject(e); }
+                    }, 800);
+                });
+                client.on('failed', () => reject(new Error('SimliClient WebRTC 連線失敗')));
+            });
+
+            client.start();
+
+            window.__simliSpeak = async function (base64Pcm24k) {
+                try {
+                    const raw = atob(base64Pcm24k);
+                    const bytes = new Uint8Array(raw.length);
+                    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+                    const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+                    const float32 = new Float32Array(int16.length);
+                    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+
+                    // Gemini TTS 出來的音訊是 24000Hz，Simli 要 16000Hz，這裡用離線 AudioContext 做降取樣
+                    const offlineCtx = new OfflineAudioContext(1, Math.ceil(float32.length * 16000 / 24000), 16000);
+                    const srcBuffer = offlineCtx.createBuffer(1, float32.length, 24000);
+                    srcBuffer.copyToChannel(float32, 0);
+                    const src = offlineCtx.createBufferSource();
+                    src.buffer = srcBuffer;
+                    src.connect(offlineCtx.destination);
+                    src.start();
+                    const rendered = await offlineCtx.startRendering();
+                    const resampled = rendered.getChannelData(0);
+
+                    const outInt16 = new Int16Array(resampled.length);
+                    for (let i = 0; i < resampled.length; i++) {
+                        const s = Math.max(-1, Math.min(1, resampled[i]));
+                        outInt16[i] = s < 0 ? s * 32768 : s * 32767;
+                    }
+                    const outBytes = new Uint8Array(outInt16.buffer);
+                    if (window.__simliClient) window.__simliClient.sendAudioData(outBytes);
+                } catch (e) { console.error('[Simli] speak 失敗：', e); }
+            };
+        } catch (e) {
+            console.error('[Simli] 初始化失敗：', e);
+            window.__simliReady = Promise.reject(e);
+        }
+    }
+    initSimli();
+
+    // 🎯 攔截 getUserMedia：Jitsi 進會議時會呼叫這個要攝影機/麥克風，
+    //    把 Simli 產生的即時串流冒充成「攝影機畫面」還給它，取代原本 Chromium 的假攝影機檔案。
+    //    如果 Simli 連線還沒好、或整個失敗，就退回原本的假攝影機檔案（不要讓 AI 面試官完全連不進會議）。
+    try {
+        const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async function (constraints) {
+            try {
+                if (window.__simliReady) {
+                    const simliStream = await window.__simliReady;
+                    if (simliStream) return simliStream;
+                }
+            } catch (e) {
+                console.error('[Simli] 拿不到虛擬人串流，退回原本的假攝影機檔案：', e);
+            }
+            return originalGetUserMedia(constraints);
+        };
+    } catch (e) { console.error('[Simli] 攔截 getUserMedia 失敗：', e); }
+})();
+";
 
         // 🎯 注入到頁面裡的錄影機腳本：Canvas 畫格 + Web Audio API 混音，錄成一份有畫面又有聲音的 webm
         private const string RecorderInitScript = @"
@@ -414,10 +542,18 @@ namespace InterviewProject.Services
 
         private static readonly Dictionary<string, BotInstance> _activeBots = new();
         private readonly JaasJwtService _jaasJwt;
+        private readonly IConfiguration _config;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public JitsiBotService(JaasJwtService jaasJwt)
+        // 🎯 這個服務是 Singleton（一個程序裡只有一份，見 Program.cs），但 GeminiService 是 Scoped，
+        //    不能直接建構子注入（會是所謂的 captive dependency，DI 容器啟動時會直接噴錯）——
+        //    改成注入 IServiceScopeFactory，要用的時候自己開一個新的 scope 去要 GeminiService，
+        //    跟 MeetingHub 背景工作那邊處理 AppDbContext 的做法是同一套模式
+        public JitsiBotService(JaasJwtService jaasJwt, IConfiguration config, IServiceScopeFactory scopeFactory)
         {
             _jaasJwt = jaasJwt;
+            _config = config;
+            _scopeFactory = scopeFactory;
         }
 
         public async Task JoinRoomAsync(string roomCode, string videoPath)
@@ -479,12 +615,39 @@ namespace InterviewProject.Services
                 });
                 var page = await localContext.NewPageAsync();
 
+                // 🎯 AI 面試官虛擬人（Simli）：這段一定要在 GotoAsync 導航「之前」用 AddInitScriptAsync 佈署，
+                //    才能保證搶在 Jitsi 自己呼叫 getUserMedia 之前，把攔截裝好。
+                //    如果沒設定 Simli:ApiKey / Simli:FaceId（例如還在測試、還沒申請），就跳過這段，
+                //    AI 面試官會照舊用原本的靜態 .y4m 假攝影機檔案，不影響其他功能。
+                var simliApiKey = _config["Simli:ApiKey"];
+                var simliFaceId = _config["Simli:FaceId"];
+                if (!string.IsNullOrEmpty(simliApiKey) && !string.IsNullOrEmpty(simliFaceId))
+                {
+                    try
+                    {
+                        var simliConfigScript =
+                            $"window.__SIMLI_API_KEY__ = {JsonSerializer.Serialize(simliApiKey)};\n" +
+                            $"window.__SIMLI_FACE_ID__ = {JsonSerializer.Serialize(simliFaceId)};";
+                        await page.AddInitScriptAsync(simliConfigScript);
+                        await page.AddInitScriptAsync(SimliInitScript);
+                        Console.WriteLine($"[JitsiBot] 房間 {roomCode} 已佈署 Simli 虛擬人初始化腳本。");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[JitsiBot] 房間 {roomCode} 佈署 Simli 腳本失敗，AI 面試官將退回使用靜態假攝影機檔案：{ex.Message}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 沒有設定 Simli:ApiKey / Simli:FaceId，AI 面試官使用原本的靜態假攝影機檔案。");
+                }
+
                 // 🚀 換成你自己申請的 JaaS AppID（原本那組是別人的示範帳號）
                 string jitsiDomain = "https://8x8.vc";
                 string tenantId = "vpaas-magic-cookie-c12aeb6abc7a4349bc799bb8cb31436a";
 
                 // 🎯 JaaS 需要 JWT 才能真的加入會議，AI 面試官不是主持人，moderator=false
-                string botJwt = _jaasJwt.GenerateToken(roomCode, "ai-interviewer", "AI 面試官（王大明）", isModerator: false);
+                string botJwt = _jaasJwt.GenerateToken(roomCode, "ai-interviewer", "AI 面試官", isModerator: false);
 
                 // 組合完整的 URL 並注入跳過確認畫面參數 + JWT
                 //   🎯 disableTileView：讓畫面固定用「目前誰在說話就放大顯示、其他人縮圖排在旁邊」的排版，
@@ -627,6 +790,48 @@ namespace InterviewProject.Services
             }
 
             return videoPath;
+        }
+
+        // 🐛 這輪新增：讓 AI 面試官「真的開口說話」——把文字轉成語音（Gemini TTS），
+        //    再送進這個房間裡已經連好的 Simli 虛擬人，讓畫面嘴型跟著動。
+        //    這是給「冷場提問」那條邏輯呼叫的（偵測到冷場、Gemini 生成一句問句之後，改叫這個方法，
+        //    而不是像以前那樣只在某個工作人員自己的瀏覽器裡用 SpeechSynthesis 講給自己聽）。
+        //    ⚠️ 沒接 Simli（沒設定 ApiKey/FaceId）或 Simli 連線失敗時，這裡就只是安靜地不做事，
+        //    不會讓面試流程掛掉——冷場提問的文字內容還是會透過原本的邏輯顯示在畫面上給大家看。
+        public async Task SpeakAsync(string roomCode, string text)
+        {
+            if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text)) return;
+            roomCode = roomCode.Trim();
+
+            if (!_activeBots.TryGetValue(roomCode, out var instance))
+            {
+                Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 沒有正在運作的 AI 面試官，略過。");
+                return;
+            }
+
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var gemini = scope.ServiceProvider.GetRequiredService<GeminiService>();
+                var audioBytes = await gemini.SynthesizeSpeechAsync(text);
+                if (audioBytes == null || audioBytes.Length == 0)
+                {
+                    Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 的語音合成失敗或沒有內容，略過。");
+                    return;
+                }
+
+                var base64Audio = Convert.ToBase64String(audioBytes);
+                var speakScript = "(async () => { if (window.__simliSpeak) { await window.__simliSpeak(" +
+                                   JsonSerializer.Serialize(base64Audio) +
+                                   "); } else { console.error('[Simli] __simliSpeak 尚未就緒'); } })();";
+
+                await instance.PageInstance.EvaluateAsync(speakScript);
+                Console.WriteLine($"[JitsiBot] 房間 {roomCode} 的 AI 面試官已送出語音：「{text}」");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[JitsiBot] SpeakAsync 失敗（房間 {roomCode}）：{ex.Message}");
+            }
         }
     }
 }

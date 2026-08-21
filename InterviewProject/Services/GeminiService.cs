@@ -19,6 +19,61 @@ namespace InterviewProject.Services
             _config = config;
         }
 
+        // 🎯 這是要接 Simli 虛擬人講話用的：把 AI 面試官要說的一句話轉成語音。
+        //    ⚠️ 這裡走的是 Gemini 比較新的「Interactions API」（v1beta/interactions），
+        //    跟這個檔案裡其他方法用的舊版 generateContent 端點是不同的 API、不同的驗證方式
+        //    （這個要用 x-goog-api-key 標頭，不是網址上的 ?key= 參數）——因為 TTS 目前官方文件只
+        //    展示這種呼叫方式。這塊完全沒有實機測試過，是這輪最容易需要除錯的地方之一。
+        //    回傳的是原始 PCM16 單聲道 24000Hz 音訊（沒有 WAV 檔頭），呼叫端如果要餵給 Simli
+        //    （Simli 要 16000Hz），還需要自己做取樣率轉換——這裡故意不轉，因為 Simli 那邊是在瀏覽器
+        //    的 JS 端接收，用 Web Audio API 轉比較方便，不在這裡用 C# 轉。
+        public async Task<byte[]?> SynthesizeSpeechAsync(string text, string voice = "Kore")
+        {
+            var apiKey = _config["Gemini:ApiKey"] ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
+            if (string.IsNullOrEmpty(apiKey) || string.IsNullOrWhiteSpace(text)) return null;
+
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            var url = "https://generativelanguage.googleapis.com/v1beta/interactions";
+            var body = new
+            {
+                model = "gemini-2.5-flash-preview-tts",
+                input = text,
+                response_format = new { type = "audio" },
+                generation_config = new
+                {
+                    speech_config = new object[] { new { voice } }
+                }
+            };
+
+            try
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, url);
+                req.Headers.Add("x-goog-api-key", apiKey);
+                req.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+                var resp = await client.SendAsync(req);
+                var respBody = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[GeminiService] SynthesizeSpeechAsync 失敗：HTTP {(int)resp.StatusCode}，內容前 300 字：{respBody.Substring(0, Math.Min(300, respBody.Length))}");
+                    return null;
+                }
+
+                using var doc = JsonDocument.Parse(respBody);
+                var base64Audio = doc.RootElement.GetProperty("output_audio").GetProperty("data").GetString();
+                if (string.IsNullOrEmpty(base64Audio)) return null;
+
+                return Convert.FromBase64String(base64Audio);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GeminiService] SynthesizeSpeechAsync 例外：{ex.Message}");
+                return null;
+            }
+        }
+
         // 回傳 null 代表失敗（金鑰沒設定、API 出錯等），呼叫端自己判斷要怎麼處理
         public async Task<string?> AskAsync(string prompt, string? system, int maxTokens)
         {
@@ -33,7 +88,7 @@ namespace InterviewProject.Services
             // 🎯 gemini-1.5-flash 已停用，改用還在服務的模型；之後如果 Google 又停用要再換
             var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
 
-            var systemPart = system ?? "你是台灣企業面試主管王大明。說繁體中文，語氣專業親切，像真人一樣思考。";
+            var systemPart = system ?? "你是台灣企業的專業面試主管。說繁體中文，語氣專業親切，像真人一樣思考。";
             var fullPrompt = $"{systemPart}\n\n{prompt}";
 
             var body = new

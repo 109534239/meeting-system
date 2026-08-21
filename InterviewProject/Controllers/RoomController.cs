@@ -523,6 +523,22 @@ namespace InterviewProject.Controllers
             return Ok(new { success = true });
         }
 
+        // 🐛 這輪新增：讓 AI 面試官虛擬人（Simli）真的開口說話用的觸發端點。
+        //    原本「冷場提問」偵測到要說話時，是在觸發的那個人自己的瀏覽器裡用 SpeechSynthesis 講給自己聽，
+        //    不會真的傳到會議裡讓其他人聽到。現在改成呼叫這裡，轉發給 JitsiBotService 去驅動 AI 面試官
+        //    這個「真正的 Jitsi 參與者」把話說出來（Gemini TTS 生語音 + Simli 對嘴型）。
+        //    這裡不驗證是誰呼叫的（求職者/主管都可能觸發冷場提問），只要帶對房間代碼就會嘗試觸發；
+        //    如果那個房間根本沒有 AI 面試官在線上（例如還沒設定 Simli），就安靜地不做事。
+        [HttpPost]
+        public async Task<IActionResult> AiSpeak([FromForm] string roomCode, [FromForm] string text)
+        {
+            if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text))
+                return Ok(new { success = true });
+
+            _ = _botService.SpeakAsync(roomCode, text); // 🎯 不擋住呼叫端：語音合成+送進 Simli 需要幾秒鐘，讓它背景執行就好
+            return Ok(new { success = true });
+        }
+
         // 🐛 這輪新增：給「結束會議」畫面用的真實狀態查詢，不要再無條件顯示「錄影已完成上傳」。
         //    AI 面試官加入會議、錄影上傳，都是背景執行的（見 MeetingHub.StartMeeting / LeaveRoomAsync 的
         //    fire-and-forget 工作），主持人按下「結束會議」的當下，錄影很可能都還沒上傳完——
