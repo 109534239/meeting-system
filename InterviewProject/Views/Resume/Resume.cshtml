@@ -1109,91 +1109,102 @@ if (resumeFormEl) {
     resumeFormEl.addEventListener('submit', function (e) {
 
         const submitter = e.submitter;
+
         const isDraft = submitter && (
             submitter.value === 'draft' || 
             (submitter.getAttribute('name') === 'actionType' && submitter.value === 'draft')
         );
 
+        // 🎯 防呆 Helper 函數：當前端驗證失敗時，恢復按鈕狀態與關閉 Loading 視窗
+        const resetLoadingState = () => {
+            // 如果是用 Swal (SweetAlert2) 提示，這裡可以確保 Loading 被關閉
+            if (typeof Swal !== 'undefined' && Swal.isVisible()) {
+                Swal.close();
+            }
+            // 恢復所有 Submit 按鈕啟用
+            resumeFormEl.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(btn => {
+                btn.disabled = false;
+            });
+        };
+
         // 🎯 送出前先把作品集的檔案欄位改名成 PortfolioFileList_{列序}，後端才抓得到對應哪一列
         preparePortfolioFilesForSubmit();
         
         if (!isDraft) {
-        // 🎯 大頭照必填：沒有照片（hidden input 沒有 base64 值）就擋下送出並提示
-        const resumePhotoInputEl = document.getElementById('resumePhotoBase64Input');
-        if (!resumePhotoInputEl || !resumePhotoInputEl.value.trim()) {
-            e.preventDefault();
-            const photoPreviewEl = document.getElementById('resume-photo-preview');
-            scrollToAndFlagField(photoPreviewEl);
-            showValidationAlert('提示', '請上傳大頭照後再送出。');
-            return false;
+            // 🎯 大頭照必填：沒有照片（hidden input 沒有 base64 值）就擋下送出並提示
+            const resumePhotoInputEl = document.getElementById('resumePhotoBase64Input');
+            if (!resumePhotoInputEl || !resumePhotoInputEl.value.trim()) {
+                e.preventDefault();
+                const photoPreviewEl = document.getElementById('resume-photo-preview');
+                scrollToAndFlagField(photoPreviewEl);
+                showValidationAlert('提示', '請上傳大頭照後再送出。');
+                return false;
+            }
+
+            // 🎯 學歷/畢業年月必填
+            let eduEndMissingEl = null;
+            document.querySelectorAll('#education-list .dynamic-row-edu').forEach(row => {
+                if (eduEndMissingEl) return;
+                const endHidden = row.querySelector('input[name="EndDateList"]');
+                if (!endHidden || !endHidden.value) {
+                    const endWrap = row.querySelectorAll('.ym-select-wrap')[1];
+                    eduEndMissingEl = endWrap ? endWrap.querySelector('[data-part="year"]') : endHidden;
+                }
+            });
+            if (eduEndMissingEl) {
+                e.preventDefault();
+                scrollToAndFlagField(eduEndMissingEl);
+                showValidationAlert('提示', '請選擇每一筆學歷的畢業年月。');
+                return false;
+            }
+
+            // 🎯 日期前後關係檢查
+            let dateOrderErrorEl = null;
+            document.querySelectorAll('#education-list .dynamic-row-edu').forEach(row => {
+                applyEduInProgressStatus(row);
+                if (dateOrderErrorEl) return;
+                const s = row.querySelector('input[name="StartDateList"]')?.value;
+                const en = row.querySelector('input[name="EndDateList"]')?.value;
+                if (isEndBeforeStart(s, en)) {
+                    const endWrap = row.querySelectorAll('.ym-select-wrap')[1];
+                    dateOrderErrorEl = endWrap ? endWrap.querySelector('[data-part="year"]') : null;
+                }
+            });
+            document.querySelectorAll('#work-list .dynamic-row-work').forEach(row => {
+                if (dateOrderErrorEl) return;
+                const s = row.querySelector('input[name="WorkStartDateList"]')?.value;
+                const en = row.querySelector('input[name="WorkEndDateList"]')?.value;
+                if (isEndBeforeStart(s, en)) {
+                    const endWrap = row.querySelectorAll('.ym-select-wrap')[1];
+                    dateOrderErrorEl = endWrap ? endWrap.querySelector('[data-part="year"]') : null;
+                }
+            });
+            if (dateOrderErrorEl) {
+                e.preventDefault();
+                scrollToAndFlagField(dateOrderErrorEl);
+                showValidationAlert('提示', '有學歷或工作經歷的結束日期早於開始日期，請修正後再送出。');
+                return false;
+            }
+
+            // 🎯 工作經歷檢查
+            let workRowErrorEl = null;
+            document.querySelectorAll('#work-list .dynamic-row-work').forEach(row => {
+                if (workRowErrorEl) return;
+                const company = row.querySelector('.work-company');
+                const startEl = row.querySelector('input[name="WorkStartDateList"]');
+                if (company && company.value.trim() && (!startEl || !startEl.value)) {
+                    const startWrap = row.querySelectorAll('.ym-select-wrap')[0];
+                    workRowErrorEl = startWrap ? startWrap.querySelector('[data-part="year"]') : company;
+                }
+            });
+            if (workRowErrorEl) {
+                e.preventDefault();
+                scrollToAndFlagField(workRowErrorEl);
+                showValidationAlert('提示', '已填寫的工作經歷請至少補上「開始日期」');
+                return false;
+            }
         }
 
-        // 🎯 送出前的最後把關：學歷/畢業年月必填（原本靠 <input required>，
-        //    現在年/月下拉選單本身已經加了 required，瀏覽器會先擋下來；這裡是多一層保險，
-        //    防止極端情況下（例如列是用非預期方式插入 DOM）漏掉 required 屬性）
-        let eduEndMissingEl = null;
-        document.querySelectorAll('#education-list .dynamic-row-edu').forEach(row => {
-            if (eduEndMissingEl) return;
-            const endHidden = row.querySelector('input[name="EndDateList"]');
-            if (!endHidden || !endHidden.value) {
-                const endWrap = row.querySelectorAll('.ym-select-wrap')[1];
-                eduEndMissingEl = endWrap ? endWrap.querySelector('[data-part="year"]') : endHidden;
-            }
-        });
-        if (eduEndMissingEl) {
-            e.preventDefault();
-            scrollToAndFlagField(eduEndMissingEl);
-            showValidationAlert('提示', '請選擇每一筆學歷的畢業年月。');
-            return false;
-        }
-
-        // 🎯 學歷/工作經歷的起訖年月下拉選單本身已經鎖住「結束不能選在開始之前」，
-        //    這裡只是送出前的最後一道保險（以防萬一有列漏了初始化互動）
-        let dateOrderErrorEl = null;
-        document.querySelectorAll('#education-list .dynamic-row-edu').forEach(row => {
-            applyEduInProgressStatus(row); // 送出前再確認一次「畢業年月未到就自動視為在學」
-            if (dateOrderErrorEl) return;
-            const s = row.querySelector('input[name="StartDateList"]')?.value;
-            const en = row.querySelector('input[name="EndDateList"]')?.value;
-            if (isEndBeforeStart(s, en)) {
-                const endWrap = row.querySelectorAll('.ym-select-wrap')[1];
-                dateOrderErrorEl = endWrap ? endWrap.querySelector('[data-part="year"]') : null;
-            }
-        });
-        document.querySelectorAll('#work-list .dynamic-row-work').forEach(row => {
-            if (dateOrderErrorEl) return;
-            const s = row.querySelector('input[name="WorkStartDateList"]')?.value;
-            const en = row.querySelector('input[name="WorkEndDateList"]')?.value;
-            if (isEndBeforeStart(s, en)) {
-                const endWrap = row.querySelectorAll('.ym-select-wrap')[1];
-                dateOrderErrorEl = endWrap ? endWrap.querySelector('[data-part="year"]') : null;
-            }
-        });
-        if (dateOrderErrorEl) {
-            e.preventDefault();
-            scrollToAndFlagField(dateOrderErrorEl);
-            showValidationAlert('提示', '有學歷或工作經歷的結束日期早於開始日期，請修正後再送出。');
-            return false;
-        }
-
-        // 🎯 工作經歷若有填公司名稱，至少要同時填開始日期，否則無法換算年資
-        let workRowErrorEl = null;
-        document.querySelectorAll('#work-list .dynamic-row-work').forEach(row => {
-            if (workRowErrorEl) return;
-            const company = row.querySelector('.work-company');
-            const startEl = row.querySelector('input[name="WorkStartDateList"]');
-            if (company && company.value.trim() && (!startEl || !startEl.value)) {
-                const startWrap = row.querySelectorAll('.ym-select-wrap')[0];
-                workRowErrorEl = startWrap ? startWrap.querySelector('[data-part="year"]') : company;
-            }
-        });
-        if (workRowErrorEl) {
-            e.preventDefault();
-            scrollToAndFlagField(workRowErrorEl);
-            showValidationAlert('提示', '已填寫的工作經歷請至少補上「開始日期」');
-            return false;
-        }
-        }
         const workYearsInput = document.getElementById('workYearsInput');
         if (workYearsInput) workYearsInput.value = calcWorkExperienceYears();
 
@@ -1203,8 +1214,7 @@ if (resumeFormEl) {
             finalTimeEl.value = now.toISOString();
         }
 
-        // 🎯 語言選「其他」卻沒填自訂名稱，或填了但查不到是真實語言，先擋下來，
-        //    不要讓一筆有問題的語言資料送進資料庫
+        // 🎯 語言檢查
         let langOtherErrorEl = null;
         document.querySelectorAll('#language-list .dynamic-row-simple').forEach(row => {
             const nameSelect = row.querySelector('.lang-name-select');
@@ -1237,13 +1247,13 @@ if (resumeFormEl) {
                 langResults.push(`${name}(${lvSelect.value})`);
             }
         });
-        // 🎯 一筆都沒填，就自動視為「不具外文能力」，不用使用者手動勾選
         if (langResults.length === 0) {
             langResults.push("不具外文能力");
         }
         const finalLangEl = document.getElementById('finalLanguageSkills');
         if (finalLangEl) finalLangEl.value = langResults.join(', ');
 
+        // 駕照組裝
         let licenseResults = [];
         document.querySelectorAll('.license-row').forEach(row => {
             let type = row.getAttribute('data-type');
@@ -1261,6 +1271,7 @@ if (resumeFormEl) {
         const finalLicenseEl = document.getElementById('finalDriverLicense');
         if (finalLicenseEl) finalLicenseEl.value = licenseResults.join(', ');
 
+        // 專長組裝
         let specResults = [];
         document.querySelectorAll('.spec-input').forEach(input => {
             if(input.value.trim()) specResults.push(input.value.trim());
@@ -1268,14 +1279,7 @@ if (resumeFormEl) {
         const finalSpecEl = document.getElementById('finalSpecialty');
         if (finalSpecEl) finalSpecEl.value = specResults.join('; ');
 
-        // 🎯 證照職類及級別：若這一列的級別欄位目前「有顯示」且「有建議清單（下拉選項）」可選，
-        //    卻沒有選擇/填寫級別，就擋下送出並提示錯誤。
-        //    🚨 這裡改成直接檢查畫面上 datalist 目前實際塞了哪些選項（由 updateCertLevelOptions
-        //    即時維護），而不是重新去比對 globalCertList —— 因為 globalCertList 是頁面載入時
-        //    非同步 fetch 回來的，若使用者送出當下清單「還沒抓回來」，比對永遠找不到、檢查等於失效。
-        //    直接看 datalist 的即時狀態就不會有這個時間差問題。
-        // 🚨 證照對照表還沒抓回來之前，沒辦法判斷「這張證照到底有沒有級別可選」，
-        //    此時若使用者已經填了至少一筆證照名稱，先擋下送出，請使用者稍後再試，避免誤放行。
+        // 證照對照表檢查
         if (!certListLoaded) {
             let hasAnyCertTyped = false;
             document.querySelectorAll('.cert-item .cert-select').forEach(nameInput => {
@@ -1296,10 +1300,10 @@ if (resumeFormEl) {
             const levelWrap = item.querySelector('.cert-level-wrap');
             if (!nameInput || !levelInput) return;
 
-            if (!nameInput.value.trim()) return; // 這一列還沒填證照名稱，不用檢查級別
+            if (!nameInput.value.trim()) return;
 
             const isLevelFieldVisible = !levelWrap || levelWrap.style.display !== 'none';
-            if (!isLevelFieldVisible) return; // 級別欄位已被判定為「這張證照沒有級別」而隱藏，不用檢查
+            if (!isLevelFieldVisible) return;
 
             const levelDatalist = document.getElementById(levelInput.getAttribute('list'));
             const hasLevelOptions = !!levelDatalist && levelDatalist.options && levelDatalist.options.length > 0;
@@ -1315,6 +1319,7 @@ if (resumeFormEl) {
             return false;
         }
 
+        // 多益分數檢查
         let invalidToeicScoreEl = null;
         document.querySelectorAll('.cert-item').forEach(item => {
             if (invalidToeicScoreEl) return;
@@ -1337,7 +1342,7 @@ if (resumeFormEl) {
             return false;
         }
 
-        // 🎯 證照組合區塊（.cert-item 數量已經是動態的，這段邏輯本來就是用 .each 跑全部，不用改）
+        // 證照字串組裝
         let certResults = [];
         $('.cert-item').each(function () {
             const certName = $(this).find('.cert-select').val();
@@ -1356,8 +1361,46 @@ if (resumeFormEl) {
         const finalCompEl = document.getElementById('finalComputerSkills');
         if (finalCompEl) finalCompEl.value = compResults.join('; ');
 
-        // 學歷已改為 EduLevelList/SchoolNameList/MajorList/EduStatusList/StartDateList/EndDateList
-        // 多筆動態列，表單送出時瀏覽器會直接把每個 input 的值一起 POST，不需要在這裡額外組字串
+        // =========================================================
+        // 🔒 關鍵防呆區域：全部驗證都通過，真的準備送出才執行這段！
+        // =========================================================
+
+        // 1. 🎯 動態補強被點擊按鈕的 name/value (防止 disabled 後欄位丟失)
+        if (submitter && submitter.name) {
+            const oldHidden = resumeFormEl.querySelector('input[type="hidden"][data-dynamic-submitter]');
+            if (oldHidden) oldHidden.remove();
+
+            const hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = submitter.name;
+            hiddenInput.value = submitter.value;
+            hiddenInput.setAttribute('data-dynamic-submitter', 'true');
+            resumeFormEl.appendChild(hiddenInput);
+        }
+
+        // 2. 禁用所有提交按鈕，防止二次點擊
+        resumeFormEl.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(btn => {
+            btn.disabled = true;
+        });
+
+        // 3. 顯示遮罩視窗
+        const actionText = isDraft ? '暫存中' : '儲存繳交中';
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: `${actionText}，請稍候...`,
+                text: '資料正在傳送至伺服器，請勿關閉視窗。',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+        } else {
+            if (submitter) {
+                submitter.innerText = `${actionText}...`;
+            }
+        }
 
         return true;
     });
