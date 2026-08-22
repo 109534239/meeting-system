@@ -990,22 +990,47 @@ namespace InterviewProject.Services
         //    而不是像以前那樣只在某個工作人員自己的瀏覽器裡用 SpeechSynthesis 講給自己聽）。
         //    ⚠️ 沒接 Simli（沒設定 ApiKey/FaceId）或 Simli 連線失敗時，這裡就只是安靜地不做事，
         //    不會讓面試流程掛掉——冷場提問的文字內容還是會透過原本的邏輯顯示在畫面上給大家看。
+        // 🐛 這輪新增：AI 面試官「現在正在說話中」的狀態，房間代碼 → 是否正在講話。
+        //    用來避免多個地方（例如多個使用者的瀏覽器各自倒數冷場計時、剛好同時倒數到）
+        //    同時觸發 AI 講話，導致疊在一起搶話。RoomController 在真的呼叫 SpeakAsync 之前
+        //    會先檢查這個狀態，是 true 就直接略過這次觸發。
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _speakingRooms = new();
+
+        public bool IsSpeaking(string roomCode)
+            => !string.IsNullOrEmpty(roomCode) && _speakingRooms.TryGetValue(roomCode.Trim(), out var v) && v;
+
         public async Task SpeakAsync(string roomCode, string text)
         {
             if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text)) return;
             roomCode = roomCode.Trim();
 
-            if (!_activeBots.TryGetValue(roomCode, out var instance))
+            // 🐛 這輪新增：防搶話保險——雖然 RoomController 那邊已經先擋過一次，這裡在真正
+            //    送出語音之前再擋一次（就算被某個地方繞過檢查直接呼叫這個方法，也不會疊講）。
+            if (_speakingRooms.GetOrAdd(roomCode, false))
             {
-                Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 沒有正在運作的 AI 面試官，略過。");
+                Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 的 AI 面試官目前正在說話中，這次的內容略過（避免搶話）：「{text}」");
                 return;
             }
+            _speakingRooms[roomCode] = true;
 
             try
             {
+                if (!_activeBots.TryGetValue(roomCode, out var instance))
+                {
+                    Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 沒有正在運作的 AI 面試官，略過。");
+                    return;
+                }
+
                 using var scope = _scopeFactory.CreateScope();
                 var gemini = scope.ServiceProvider.GetRequiredService<GeminiService>();
-                var audioBytes = await gemini.SynthesizeSpeechAsync(text);
+                // 🎯 語音改成可設定（appsettings 的 Gemini:TtsVoice），不用改程式碼就能換聲音試聽。
+                //    ⚠️ 我沒辦法實際聽聲音來確認哪個預設語音的音色、性別聽起來最自然，
+                //    Gemini TTS 的各個語音名稱在不同版本文件上的描述可能已經跟訓練資料不同步，
+                //    建議實際各生成一小段來聽過再決定，appsettings 沒設定時預設用 "Kore"。
+                var voiceName = _config["Gemini:TtsVoice"];
+                var audioBytes = string.IsNullOrWhiteSpace(voiceName)
+                    ? await gemini.SynthesizeSpeechAsync(text)
+                    : await gemini.SynthesizeSpeechAsync(text, voiceName);
                 if (audioBytes == null || audioBytes.Length == 0)
                 {
                     Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 的語音合成失敗或沒有內容，略過。");
@@ -1019,10 +1044,24 @@ namespace InterviewProject.Services
 
                 await instance.PageInstance.EvaluateAsync(speakScript);
                 Console.WriteLine($"[JitsiBot] 房間 {roomCode} 的 AI 面試官已送出語音：「{text}」");
+
+                // 🐛 這輪新增：__simliSpeak 內部只是把音訊丟給 Simli 播放（sendAudioData），
+                //    不會等虛擬人真的講完才 resolve，所以呼叫完馬上 return 並不代表話已經講完。
+                //    這裡改成用送出去的 PCM16／24000Hz 音訊本身的長度，換算出實際要講幾秒鐘
+                //    （bytes ÷ 2 為取樣數，除以 24000 取樣率＝秒數），再多留一點緩衝時間才真的
+                //    把「正在說話」的狀態解除。這個時間點很重要——RoomController 會拿它來決定
+                //    什麼時候廣播「AI 說完了」給全場，讓大家的冷場計時器重新啟動的時機才會準。
+                var speechSeconds = (audioBytes.Length / 2.0) / 24000.0;
+                var waitMs = (int)(speechSeconds * 1000) + 700; // +700ms：涵蓋網路/Simli 端一點播放延遲的緩衝
+                await Task.Delay(Math.Max(waitMs, 0));
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[JitsiBot] SpeakAsync 失敗（房間 {roomCode}）：{ex.Message}");
+            }
+            finally
+            {
+                _speakingRooms[roomCode] = false;
             }
         }
     }

@@ -561,6 +561,7 @@
         // ══════════════════════════════════
         const IS_STAFF   = @(isStaff ? "true" : "false");
         const IS_HOST    = @(isHost ? "true" : "false");
+        const MY_ROLE    = "@memberRole"; // 🐛 這輪新增：給冷場提問的「換人講話判斷」用，區分 director/manager/hr/jobseeker
         const MY_NAME    = "@Html.Raw(displayName.Replace("\"", "\\\""))";
         const ROOM_CODE  = "@room.JitsiRoomName";
         const ALREADY_IN_PROGRESS = @(room.MeetingStatus == "InProgress" ? "true" : "false");
@@ -580,6 +581,23 @@
         let lastSpeechMs = 0;
         let recentSpeech = [];
         let silInterval = null;
+
+        // 🐛 這輪新增：冷場提問要懂得「換人講話的空檔不算冷場」，需要知道最近一次是誰講的、
+        //    聽起來像不像問題。這幾個狀態靠 SpeechTurnInfo（其他人講完一句話時廣播的輕量訊號）
+        //    跟 AiSpeakingStateChanged（AI 自己開講時）維護，只有主持人（IS_HOST）會真的拿它們
+        //    來決定要不要觸發 AI，但每個人都會收廣播、更新這些狀態，避免主持人換人時掉資料。
+        let lastSpeakerName = null;
+        let lastSpeakerRole = null;   // 'director' | 'manager' | 'hr' | 'jobseeker' | 'ai'
+        let lastWasQuestion = false;
+        let aiSpeakingRemote = false; // AI 現在是不是正在講話（全場共享的狀態，不是只有觸發者自己知道）
+
+        // 🎯 簡單的中文/英文問句判斷：結尾問號，或包含常見疑問詞。只是啟發式規則，
+        //    抓不準也沒關係——最壞情況只是冷場等待時間退回比較保守的預設值，不影響其他功能。
+        function looksLikeQuestion(t) {
+            if (!t) return false;
+            if (/[?？]\s*$/.test(t)) return true;
+            return /(嗎|呢\s*$|為什麼|怎麼|如何|能不能|可不可以|有沒有|是不是|多少|哪裡|哪個|什麼時候|可以.*嗎)/.test(t);
+        }
 
         // ══════════════════════════════════
         //  SignalR
@@ -615,6 +633,38 @@
             lastSpeechMs = Date.now();
             silT = 0; setSilBar(0);
             if (!isSp) setSt('li', '👂 聆聽中');
+        });
+
+        // 🐛 這輪新增：收到別人剛講完一句話的輕量資訊（誰講的、像不像問題），
+        //    更新「換人講話該不該算冷場」判斷用的共享狀態
+        hub.on("SpeechTurnInfo", (name, isQuestion, role) => {
+            lastSpeakerName = name;
+            lastWasQuestion = !!isQuestion;
+            lastSpeakerRole = role;
+        });
+
+        // 🐛 這輪新增：AI 面試官現在開始/結束講話的全場廣播（取代原本只有觸發者自己聽得到的
+        //    瀏覽器內建語音合成）。收到 true：全場一起暫停冷場計時、顯示字幕、暫停自己的語音辨識
+        //    （避免收到 AI 自己的聲音、被當成有人在講話混進逐字稿）。收到 false：全場一起恢復。
+        hub.on("AiSpeakingStateChanged", (isSpeaking, text) => {
+            aiSpeakingRemote = !!isSpeaking;
+            isSp = aiSpeakingRemote; // 🐛 這輪新增：跟 isSp 同步，recognition.onend 的自動重啟判斷才不會跟這裡打架
+            if (aiSpeakingRemote) {
+                lastSpeakerRole = 'ai';
+                lastWasQuestion = looksLikeQuestion(text);
+                lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
+                if (recognition) { try { recognition.stop(); } catch {} }
+                if (text) showMsg(text);
+                setSt('sp', '🗣️ 說話中'); setRing(true); showDots();
+                if (IS_HOST && text) {
+                    const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                    trxLines.push({ sp: 'AI 面試官', tx: text, time: now }); // 只有主持人記一次，避免逐字稿重複
+                }
+            } else {
+                lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
+                setSt('li', '👂 聆聽中'); setRing(false);
+                if (!ended && started && recognition) setTimeout(() => { try { recognition.start(); } catch {} }, 400);
+            }
         });
 
         async function startHub() {
@@ -875,6 +925,10 @@
 
                             // 🎯 不再用 SignalR 廣播給其他人（不可靠），本機先累積，離開/結束時再一次送去伺服器
                             try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
+
+                            // 🐛 這輪新增：順便廣播「是誰講的、像不像問題」這個輕量資訊，
+                            //    給主持人那邊判斷「現在是不是在等別人回答，不算冷場」用
+                            try { hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE); } catch {}
                         }
                     }
                     // 中間結果也重置冷場
@@ -905,6 +959,21 @@
         // ══════════════════════════════════
         //  冷場偵測（基於音量 + SignalR 同步）
         // ══════════════════════════════════
+        // 🐛 這輪新增：不再用固定的 SIL_SEC，改成依「最近是誰講的、像不像問題」動態決定
+        //    要等多久才算冷場——主管/主持人剛問完問題時，多給求職者一些思考+開口的時間，
+        //    不要在單純「換人講話」的空檔就被誤判成冷場；求職者剛講完、可能還在組織下一句時，
+        //    也多留一點餘裕，避免打斷正在思考的人。
+        function getSilenceThresholdSec() {
+            if (lastSpeakerRole === 'ai') return 26; // AI 剛問完，給正常一點的等待
+            if (lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker') {
+                return 40; // 主管/主持人/HR 剛問完問題，等求職者回答，多給充裕的思考時間
+            }
+            if (lastSpeakerRole === 'jobseeker') {
+                return 30; // 求職者剛講完（可能還在想下一句），多留一點喘息空間
+            }
+            return SIL_SEC; // 預設值（例如會議剛開始、還沒人真的講過話）
+        }
+
         function startSilenceDetect() {
             if (audioStream) {
                 const ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -913,7 +982,9 @@
                 const buf = new Uint8Array(an.frequencyBinCount);
 
                 silInterval = setInterval(() => {
-                    if (!started || ended || isSp) { setSilBar(0); return; }
+                    // 🐛 這輪新增 aiSpeakingRemote 檢查：AI 正在講話時，全場一起暫停冷場計時，
+                    //    不然還沒收到廣播的瀏覽器可能在 AI 講話當下又觸發一次，疊在一起搶話
+                    if (!started || ended || isSp || aiSpeakingRemote) { setSilBar(0); return; }
                     an.getByteFrequencyData(buf);
                     const avg = buf.reduce((a,b)=>a+b,0)/buf.length;
                     if (avg > 8) {
@@ -922,19 +993,21 @@
                         setSt('li','👂 聆聽中');
                         try { hub.invoke("BroadcastSpeech", ROOM_CODE); } catch {}
                     } else {
+                        const threshold = getSilenceThresholdSec();
                         const secSince = (Date.now() - lastSpeechMs) / 1000;
-                        const pct = Math.min((secSince / SIL_SEC) * 100, 100);
+                        const pct = Math.min((secSince / threshold) * 100, 100);
                         setSilBar(pct);
-                        if (secSince >= SIL_SEC) { lastSpeechMs = Date.now(); triggerAI(); }
+                        if (secSince >= threshold) { lastSpeechMs = Date.now(); triggerAI(); }
                     }
                 }, 800);
             } else {
                 // 無麥克風 fallback
                 silInterval = setInterval(() => {
-                    if (!started || ended || isSp) return;
+                    if (!started || ended || isSp || aiSpeakingRemote) return;
+                    const threshold = getSilenceThresholdSec();
                     const secSince = (Date.now() - lastSpeechMs) / 1000;
-                    setSilBar(Math.min((secSince / SIL_SEC) * 100, 100));
-                    if (secSince >= SIL_SEC) { lastSpeechMs = Date.now(); triggerAI(); }
+                    setSilBar(Math.min((secSince / threshold) * 100, 100));
+                    if (secSince >= threshold) { lastSpeechMs = Date.now(); triggerAI(); }
                 }, 800);
             }
         }
@@ -957,68 +1030,54 @@
         let fqIdx = 0;
         function getFQ() { return FQ[fqIdx++ % FQ.length]; }
 
+        // 🐛 這輪新增：只有主持人（最高主管）的瀏覽器真的觸發 AI 講話——原本每個人各自倒數、
+        //    各自觸發，多人同時倒數到同一時間點時會一起打去伺服器，AI 可能被要求同時講兩句話疊在一起。
+        //    改成只有一個權威來源做這個決定；其他人的瀏覽器還是繼續跑倒數計時（給自己畫面上的
+        //    冷場偵測進度條用），但不會真的呼叫伺服器。
         async function triggerAI() {
-            if (isSp || ended || !started) return;
+            if (!IS_HOST) return;
+            if (isSp || ended || !started || aiSpeakingRemote) return;
             if ((Date.now() - lastSpeechMs) < 3000) return;
 
             setSt('th','💭 思考中...');
+
+            // 🐛 這輪新增：區分「主管/主持人剛問完問題、求職者還沒開始回答」跟「真的沒人在講話」
+            //    這兩種情況要生成不一樣語氣的話——前者要溫和鼓勵、不施加壓力，不要聽起來像在催促；
+            //    後者才是真的要拋出新問題或打破冷場。
+            const waitingForAnswer = lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker' && lastSpeakerRole !== 'ai';
             const ctx = recentSpeech.slice(-3).map(s=>`${s.name}：${s.text}`).join('；') || "面試進行中";
-            const prompt = `你是AI面試官，協助主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場（${SIL_SEC}秒無人說話）。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
+            const prompt = waitingForAnswer
+                ? `你是AI面試官，協助主持「@room.RoomName」面試。剛剛${lastSpeakerName ? '（' + lastSpeakerName + '）' : ''}問了一個問題，求職者已經安靜了一段時間還沒開始回答。請用一句簡短、溫和、不給壓力的話鼓勵對方開始回答，或表示可以慢慢想，不超過25字，直接說，不加引號或前綴。`
+                : `你是AI面試官，協助主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場，一段時間沒人說話。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
 
             let q = null;
             try {
                 const r = await fetch('/Claude/Ask', {
                     method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({ prompt, system:"你是台灣企業面試主管，說繁體中文，語氣自然。", maxTokens:80 })
+                    // 🎯 這輪加強語氣要求：避免生成出來的句子太制式、太像機器人在照稿念，
+                    //    講話自然口語一點，TTS 唸出來才不會顯得生硬
+                    body: JSON.stringify({ prompt, system:"你是台灣企業面試主管，說話自然口語、溫暖不生硬，像真人在對話，避免制式或機械感的用詞。", maxTokens:80 })
                 });
                 if (r.ok) { const d = await r.json(); if (d.text?.length > 3) q = d.text.trim(); }
             } catch {}
 
-            if (!q) q = getFQ();
+            if (!q) q = waitingForAnswer ? "不用緊張，可以慢慢想沒關係。" : getFQ();
             aiSpeak(q);
         }
 
         function aiSpeak(text) {
-            if (isSp || ended || !started) return;
+            if (ended || !started) return;
 
-            // 🐛 這輪新增：以前這裡只有 window.speechSynthesis，只有「觸發的這個人自己的瀏覽器」聽得到，
-            //    不會真的傳到會議室裡讓其他人聽到。改成同時呼叫伺服器，讓 AI 面試官這個真正的 Jitsi
-            //    參與者（透過 Simli 虛擬人）把話說出來，其他人才聽得到。不擋住畫面上的文字顯示邏輯，
-            //    語音合成需要幾秒鐘，用背景送出就好，不用等它回應。
+            // 🐛 這輪簡化：現在 Simli 虛擬人已經確認能真的加入會議室講話了，這裡不再疊播
+            //    瀏覽器內建的 window.speechSynthesis（以前會變成「Simli 真人聲音 + 觸發者自己
+            //    的瀏覽器又講一次機械合成音」兩個聲音疊在一起）。改成只呼叫伺服器，
+            //    畫面顯示/字幕/逐字稿記錄都交給 AiSpeakingStateChanged 的廣播統一處理，
+            //    全場（包含觸發者自己）都是同一套邏輯、同一個時間點看到，不會不一致。
             fetch('/Room/AiSpeak', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&text=' + encodeURIComponent(text)
             }).catch(() => {});
-
-            if (!window.speechSynthesis) { showMsg(text); return; }
-
-            window.speechSynthesis.cancel();
-            isSp = true; silT = 0;
-            if (recognition) { try { recognition.stop(); } catch {} }
-
-            setSt('sp','🗣️ 說話中'); setRing(true); showDots();
-
-            const u = new SpeechSynthesisUtterance(text);
-            const vs = window.speechSynthesis.getVoices();
-            const zh = vs.find(v=>v.lang?.startsWith('zh')) || vs[0];
-            if (zh) u.voice = zh;
-            u.lang='zh-TW'; u.rate=0.85; u.pitch=1; u.volume=1;
-
-            u.onstart = () => {
-                showMsg(text);
-                if (IS_STAFF) {
-                    const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-                    trxLines.push({ sp:'AI 面試官', tx:text, time:now });
-                }
-            };
-            u.onend = u.onerror = () => {
-                isSp = false; lastSpeechMs = Date.now();
-                setSt('li','👂 聆聽中'); setRing(false);
-                if (!ended && recognition)
-                    setTimeout(()=>{ try{ recognition.start(); }catch{} }, 400);
-            };
-            setTimeout(()=>window.speechSynthesis.speak(u), 150);
         }
 
         // ══════════════════════════════════

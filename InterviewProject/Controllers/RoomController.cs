@@ -2,6 +2,8 @@
 using InterviewProject.Data;
 using InterviewProject.Models;
 using InterviewProject.Services;
+using InterviewProject.Hubs;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using System;
@@ -21,14 +23,16 @@ namespace InterviewProject.Controllers
         private readonly IWebHostEnvironment _env;
         private readonly R2StorageService _storage;
         private readonly GeminiService _gemini;
+        private readonly IHubContext<MeetingHub> _hub;
 
-        public RoomController(AppDbContext context, JitsiBotService botService, IWebHostEnvironment env, R2StorageService storage, GeminiService gemini)
+        public RoomController(AppDbContext context, JitsiBotService botService, IWebHostEnvironment env, R2StorageService storage, GeminiService gemini, IHubContext<MeetingHub> hub)
         {
             _context = context;
             _botService = botService;
             _env = env;
             _storage = storage;
             _gemini = gemini;
+            _hub = hub;
         }
 
         private bool IsEmployee()
@@ -529,14 +533,43 @@ namespace InterviewProject.Controllers
         //    這個「真正的 Jitsi 參與者」把話說出來（Gemini TTS 生語音 + Simli 對嘴型）。
         //    這裡不驗證是誰呼叫的（求職者/主管都可能觸發冷場提問），只要帶對房間代碼就會嘗試觸發；
         //    如果那個房間根本沒有 AI 面試官在線上（例如還沒設定 Simli），就安靜地不做事。
+        //
+        //    🐛 這輪再新增：AI 開始說話、講完了，都會透過 SignalR 廣播「AiSpeakingStateChanged」
+        //    給這個房間所有人（不只觸發的那個人），前端收到後會：
+        //      1. 全場一起暫停冷場計時（不然還沒收到廣播的人可能在 AI 講話當下又觸發一次，疊在一起搶話）
+        //      2. 全場的字幕同時顯示 AI 現在講的話（不再只有觸發的人自己看得到）
+        //      3. AI 講完後，全場的冷場計時器從這個時間點重新起算，而不是各自猜什麼時候該恢復
+        //    如果這個房間 AI 已經在說話中（IsSpeaking 回傳 true），直接略過這次觸發，不重疊。
         [HttpPost]
         public async Task<IActionResult> AiSpeak([FromForm] string roomCode, [FromForm] string text)
         {
             if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text))
                 return Ok(new { success = true });
 
-            _ = _botService.SpeakAsync(roomCode, text); // 🎯 不擋住呼叫端：語音合成+送進 Simli 需要幾秒鐘，讓它背景執行就好
+            roomCode = roomCode.Trim();
+
+            if (_botService.IsSpeaking(roomCode))
+            {
+                Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 的 AI 面試官已經在說話中，這次的觸發略過（避免搶話）：「{text}」");
+                return Ok(new { success = true, skipped = true });
+            }
+
+            _ = SpeakAndBroadcastAsync(roomCode, text); // 🎯 不擋住呼叫端：語音合成+送進 Simli 需要幾秒鐘，讓它背景執行就好
             return Ok(new { success = true });
+        }
+
+        private async Task SpeakAndBroadcastAsync(string roomCode, string text)
+        {
+            try
+            {
+                await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", true, text);
+                await _botService.SpeakAsync(roomCode, text); // 這裡面會等到真的講完（依音訊長度換算）才回傳
+            }
+            finally
+            {
+                // 不管上面成功還失敗，都要廣播「說完了」，不然全場的冷場計時器會永遠卡在暫停狀態
+                await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", false, text);
+            }
         }
 
         // 🐛 這輪新增：給「結束會議」畫面用的真實狀態查詢，不要再無條件顯示「錄影已完成上傳」。

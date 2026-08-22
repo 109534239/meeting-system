@@ -26,6 +26,14 @@ namespace InterviewProject.Hubs
         public async Task JoinRoom(string roomCode)
             => await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
 
+        // 🐛 這輪新增：給「冷場提問要懂得換人講話、不要打斷」用的輕量廣播。
+        //    只傳「誰講的、聽起來像不像問題、什麼身份」這幾個小欄位，不傳完整逐字稿內容——
+        //    完整逐字稿還是靠會議結束時各自送出片段、伺服器合併那套可靠機制，這裡只是給
+        //    「現在該不該讓 AI 開口」這個即時判斷用的輔助訊號，就算偶爾漏收一兩次也不影響逐字稿本身，
+        //    只是讓冷場判斷退回比較保守的預設值，不會整個功能掛掉。
+        public async Task NotifySpeechTurn(string roomCode, string speakerName, bool isQuestion, string role)
+            => await Clients.Group(roomCode).SendAsync("SpeechTurnInfo", speakerName, isQuestion, role);
+
         // 🎯 只有「這個房間受邀的最高主管」才能真的把會議狀態改成進行中
         public async Task StartMeeting(string roomCode)
         {
