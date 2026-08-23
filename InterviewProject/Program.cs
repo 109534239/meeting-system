@@ -47,9 +47,21 @@ builder.Services.AddSession(options =>
 });
 
 // DB Context
+// 🐛 這輪新增：加上連線重試（EnableRetryOnFailure）。
+//    現有的 log 已經出現過好幾次「Npgsql.NpgsqlException...遠端主機已強制關閉一個現存的連線」
+//    這種 transient（暫時性）連線中斷錯誤——這是雲端 Postgres（尤其免費/入門方案）常見的行為：
+//    連線閒置一段時間會被伺服器端主動斷掉，但 EF Core 的連線池不知道，下一個請求剛好撿到
+//    一條已經死掉的連線就會直接炸掉整個 request（例如 /Room/Join 這種需要查好幾次資料庫的頁面）。
+//    這跟使用哪台電腦、哪種瀏覽器完全無關，純粹是「剛好那個當下連線池裡的連線是不是活的」的機率問題。
+//    加上這個設定後，遇到這類已知的暫時性錯誤，EF Core 會自動重試（預設最多 6 次、遞增等待時間），
+//    大部分情況使用者根本不會感覺到、頁面照常載入，不會再看到這種整頁報錯的畫面。
 builder.Services.AddDbContext<AppDbContext>(options =>
      options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection")));
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        npgsqlOptions => npgsqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 6,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorCodesToAdd: null)));
 //options.UseSqlite("Data Source=app.db"));
 //options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
