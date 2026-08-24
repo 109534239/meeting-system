@@ -557,7 +557,12 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> AiSpeak([FromForm] string roomCode, [FromForm] string text)
         {
             if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text))
+            {
+                // 🐛 這輪新增：連「參數是空的」這種最早期就會被擋下來的情況也印出來，
+                //    不然完全查不到 AiSpeak 這個端點到底有沒有被呼叫過
+                Console.WriteLine($"[RoomController] AiSpeak：收到請求但 roomCode 或 text 是空的，roomCode={roomCode}，text={text}");
                 return Ok(new { success = true });
+            }
 
             roomCode = roomCode.Trim();
 
@@ -566,6 +571,10 @@ namespace InterviewProject.Controllers
                 Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 的 AI 面試官已經在說話中，這次的觸發略過（避免搶話）：「{text}」");
                 return Ok(new { success = true, skipped = true });
             }
+
+            // 🐛 這輪新增：這裡一定要印出來，不然沒辦法從伺服器 log 確認 /Room/AiSpeak 這個端點
+            //    到底有沒有真的被觸發過——之前只有「略過」的分支會印，正常觸發完全沒有留下任何痕跡。
+            Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 收到觸發請求，內容：「{text}」，準備轉發給 JitsiBotService。");
 
             _ = SpeakAndBroadcastAsync(roomCode, text); // 🎯 不擋住呼叫端：語音合成+送進 Simli 需要幾秒鐘，讓它背景執行就好
             return Ok(new { success = true });
