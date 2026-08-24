@@ -498,6 +498,14 @@ namespace InterviewProject.Controllers
         [RequestSizeLimit(25_000_000)]
         public async Task<IActionResult> SubmitAudioTranscript([FromQuery] string roomCode, [FromQuery] string speakerName, IFormFile? audio)
         {
+            // 🐛 這輪新增：印出伺服器實際收到的 roomCode / speakerName / 音檔大小。
+            //    這輪出現「大家的話全部被貼上『最高主管』的標籤」這個症狀，需要先確認問題出在
+            //    「每個人送出去的 speakerName 參數本身就已經是錯的」還是「名字是對的，但音檔內容
+            //    混到別人的聲音」——這行 log 能直接看到伺服器這邊實際收到的 speakerName 是什麼，
+            //    拿去跟各自瀏覽器主控台那行 [submitMyAudioTranscript] 印出來的名字互相比對，
+            //    兩邊對不起來就是參數傳遞的問題，兩邊一致但內容是別人的聲音就是漏音/麥克風的問題。
+            Console.WriteLine($"[SubmitAudioTranscript] 收到請求：roomCode={roomCode}，speakerName={speakerName}，音檔大小={(audio?.Length ?? 0)} bytes");
+
             if (string.IsNullOrEmpty(roomCode) || audio == null || audio.Length == 0)
                 return Ok(new { success = true });
 
@@ -512,7 +520,12 @@ namespace InterviewProject.Controllers
             var text = await _gemini.TranscribeAudioAsync(bytes, mimeType);
 
             if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容"))
+            {
+                Console.WriteLine($"[SubmitAudioTranscript] speakerName={speakerName} 這段轉錄結果是空的或判定無語音內容，不存入。");
                 return Ok(new { success = true }); // 轉錄失敗或整段都沒講話，不用存
+            }
+
+            Console.WriteLine($"[SubmitAudioTranscript] speakerName={speakerName} 轉錄成功，內容前 40 字：{text.Substring(0, Math.Min(40, text.Length))}");
 
             var timeLabel = DateTime.Now.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW"));
             _context.TranscriptChunks.Add(new TranscriptChunkRecord

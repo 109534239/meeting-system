@@ -913,6 +913,41 @@ namespace InterviewProject.Services
                     Console.WriteLine($"[JitsiBot 驗證] 房間 {roomCode} 查詢會議室參與者名單失敗（不影響主流程，但代表這次沒辦法交叉驗證）：{ex.Message}");
                 }
 
+                // 🐛 這輪新增：加入確認成功了，但畫面上這個參與者的格子卻只顯示大頭貼圓圈、不是真的畫面。
+                //    Jitsi 只有在認定「這條 video track 沒有真的在送畫面」時才會顯示大頭貼，所以直接去問
+                //    Jitsi 自己記錄的本地視訊 track 狀態（muted／enabled／readyState／實際解析度），
+                //    比用眼睛看畫面猜測準確很多——這幾個欄位任何一個不對勁，都能直接對應到根因：
+                //    muted=true 通常代表 Jitsi 自己判定沒收到畫面訊號而自動靜音；
+                //    readyState 不是 'live' 代表 track 中途死掉了；width/height 是 0 代表根本沒有真的產生畫面幀。
+                try
+                {
+                    var videoTrackState = await page.EvaluateAsync<string>(@"() => {
+                        try {
+                            const room = window.APP && window.APP.conference && window.APP.conference._room;
+                            if (!room) return 'no-room-object';
+                            const localTracks = typeof room.getLocalTracks === 'function' ? room.getLocalTracks() : [];
+                            const videoTrack = localTracks.find(t => t.getType && t.getType() === 'video');
+                            if (!videoTrack) return 'no-local-video-track';
+                            const rtcTrack = videoTrack.track || (videoTrack.stream && videoTrack.stream.getVideoTracks && videoTrack.stream.getVideoTracks()[0]);
+                            const settings = rtcTrack && rtcTrack.getSettings ? rtcTrack.getSettings() : null;
+                            return JSON.stringify({
+                                jitsiMuted: typeof videoTrack.isMuted === 'function' ? videoTrack.isMuted() : 'unknown',
+                                rtcEnabled: rtcTrack ? rtcTrack.enabled : 'no-rtc-track',
+                                rtcMuted: rtcTrack ? rtcTrack.muted : 'no-rtc-track',
+                                readyState: rtcTrack ? rtcTrack.readyState : 'no-rtc-track',
+                                width: settings ? settings.width : null,
+                                height: settings ? settings.height : null,
+                                frameRate: settings ? settings.frameRate : null
+                            });
+                        } catch (e) { return 'error:' + e.message; }
+                    }");
+                    Console.WriteLine($"[JitsiBot 視訊診斷] 房間 {roomCode} 的本地視訊 track 狀態：{videoTrackState}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[JitsiBot 視訊診斷] 房間 {roomCode} 查詢視訊 track 狀態失敗：{ex.Message}");
+                }
+
                 Console.WriteLine($"[JitsiBot Success] 房間 {roomCode} 的 AI 面試官瀏覽器自動化流程已跑完，並啟動錄影（⚠️ 這句話只代表我們自己的腳本沒出錯，不代表 Jitsi 端真的把這個參與者算進會議室——請看上面幾行「[JitsiBot 驗證]」的實際參與者數字才是可信的訊號）！");
             }
             catch (Exception ex)
