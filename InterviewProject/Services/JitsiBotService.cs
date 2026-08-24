@@ -329,8 +329,17 @@ namespace InterviewProject.Services
     //    每個人（含 AI 面試官自己）最原始的視訊 MediaStreamTrack，自己動手建一個「藏起來、畫面外」的
     //    <video> 元素把這條原始軌道接上去，不管 Jitsi 自己的畫面有沒有渲染出東西，我們都能拿到真正的畫面。
     //    這些自己建的 video 元素會記錄對應的參與者 id 跟名字，畫格時直接用，不用再靠 DOM 去猜是誰。
+    // 🐛 這輪修正：AI 面試官自己的畫面在錄影裡重複出現 2~3 次、最後整個變黑。
+    //    根因：下面這個陣列原本只用 track.id 去重，從來沒有清除機制。如果 Simli 那條視訊軌道
+    //    中途因為任何原因重新建立（SDK 內部重連、網路狀況等），就會拿到全新的 track.id，
+    //    被當成「另一個人的另一格」重複加進來——但舊的那個隱藏 <video> 元素還留在 DOM 裡，
+    //    瀏覽器會一直凍結顯示它收到的最後一幀畫面，於是同一個人的臉，用不同時間點凍結的畫面
+    //    同時佔用好幾格，看起來像重複出現；等到全部軌道都斷線，才會整格變黑。
+    //    改成用 Map，key 是「參與者 id」而不是「track id」——同一個人的新軌道進來時，
+    //    直接覆蓋掉舊的那筆（連同移除舊的隱藏 <video> 元素），而不是並存疊加；
+    //    軌道本身結束時（track.onended）也主動從 Map 裡移除，畫面上就不會再留著一格凍結的死畫面。
     const syntheticVideoTrackIds = new Set();
-    const syntheticVideoCells = []; // { el, participantId, label }
+    const syntheticVideoByParticipant = new Map(); // participantId -> { el, participantId, label, trackId }
 
     function connectJitsiVideoTracks() {
         try {
@@ -351,8 +360,7 @@ namespace InterviewProject.Services
                     });
                 } catch (e) {}
             });
-            // 本地（AI 面試官自己）的視訊軌道——這個就是「男性面試官.y4m」那個假攝影機畫面，
-            // 這輪修正的重點就是它，一定要抓到
+            // 本地（AI 面試官自己）的視訊軌道——這個就是 Simli 虛擬人的畫面，這輪修正的重點就是它，一定要抓到
             try {
                 const localVideo = window.APP.conference.localVideo;
                 if (localVideo && typeof localVideo.getTrack === 'function') {
@@ -364,7 +372,17 @@ namespace InterviewProject.Services
 
             candidates.forEach(({ track, participantId }) => {
                 if (!track || syntheticVideoTrackIds.has(track.id)) return;
+                if (!participantId) return; // 沒有參與者 id 就沒辦法用它來去重/覆蓋，寧可跳過也不要留下永遠洗不掉的幽靈格
+
                 try {
+                    // 🎯 同一個參與者如果已經有一筆舊的，先把舊的隱藏 <video> 元素從 DOM 移掉，
+                    //    不要讓它繼續凍結顯示最後一幀畫面
+                    const old = syntheticVideoByParticipant.get(participantId);
+                    if (old) {
+                        try { old.el.srcObject = null; old.el.remove(); } catch (e) {}
+                        syntheticVideoTrackIds.delete(old.trackId);
+                    }
+
                     const v = document.createElement('video');
                     v.autoplay = true; v.muted = true; v.playsInline = true;
                     v.style.position = 'fixed'; v.style.left = '-9999px'; v.style.top = '-9999px'; // 藏起來，不用真的顯示在畫面上
@@ -373,7 +391,19 @@ namespace InterviewProject.Services
 
                     syntheticVideoTrackIds.add(track.id);
                     const label = (participantId && nameMap[participantId]) ? nameMap[participantId] : '';
-                    syntheticVideoCells.push({ el: v, participantId, label, trackId: track.id });
+                    const entry = { el: v, participantId, label, trackId: track.id };
+                    syntheticVideoByParticipant.set(participantId, entry);
+
+                    // 🎯 軌道自己結束時（不管什麼原因），主動把這筆從 Map 移除，
+                    //    這樣畫格時就不會再畫到一格凍結的死畫面，寧可讓這個人暫時變回「未開啟鏡頭」佔位格
+                    track.addEventListener('ended', () => {
+                        const cur = syntheticVideoByParticipant.get(participantId);
+                        if (cur && cur.trackId === track.id) {
+                            syntheticVideoByParticipant.delete(participantId);
+                            syntheticVideoTrackIds.delete(track.id);
+                            try { v.srcObject = null; v.remove(); } catch (e) {}
+                        }
+                    });
                 } catch (e) {}
             });
         } catch (e) {}
@@ -479,12 +509,12 @@ namespace InterviewProject.Services
         //    把「有名字、但沒有對應到任何一格畫面」的人，補一格灰底＋姓名的佔位格，
         //    至少看得出這場面試「誰在場但沒開鏡頭」，不是憑空消失。
         // 3. 「AI 面試官自己的畫面錄不到」：改用 connectJitsiVideoTracks() 直接接上的隱藏 video 元素
-        //    （syntheticVideoCells），這些元素我們自己建立時就已經知道正確的參與者 id/名字，
+        //    （syntheticVideoByParticipant），這些元素我們自己建立時就已經知道正確的參與者 id/名字，
         //    優先信任這批、再補上畫面上原生找得到的 <video> 元素，兩邊一樣用軌道 id 去重避免重複。
         const seenKeys = new Set();
         const cells = []; // { type: 'video', el, label, participantId? } | { type: 'placeholder', label }
 
-        syntheticVideoCells.forEach(sc => {
+        syntheticVideoByParticipant.forEach(sc => {
             if (!sc.el || sc.el.videoWidth <= 0) return; // 軌道還沒真的有畫面（例如剛連上），這輪先跳過
             const dedupeKey = 'track:' + sc.trackId;
             if (seenKeys.has(dedupeKey)) return;
@@ -509,7 +539,7 @@ namespace InterviewProject.Services
                 if (!v.__aiRecorderCellKey) v.__aiRecorderCellKey = 'el:' + Math.random().toString(36).slice(2);
                 dedupeKey = v.__aiRecorderCellKey;
             }
-            if (seenKeys.has(dedupeKey)) return; // 已經被上面的 syntheticVideoCells 畫過同一條軌道了
+            if (seenKeys.has(dedupeKey)) return; // 已經被上面的 syntheticVideoByParticipant 畫過同一條軌道了
             seenKeys.add(dedupeKey);
 
             const label = findLabelForVideo(v, nameMap);
@@ -568,6 +598,26 @@ namespace InterviewProject.Services
                 } catch (e) {}
             });
         }
+
+        // 🐛 這輪新增：這次測試出現「整支錄影裡完全沒看到任何人類參與者」，需要知道到底是
+        //    room.getParticipants() 這層看到的人名單本身就是空的/不完整（Jitsi 內部資料問題），
+        //    還是有看到人名單、但 rawVideos 那層 DOM 掃描完全找不到對應的 <video> 元素
+        //    （畫面渲染/選取器問題）。這行 log 節流成每 10 秒印一次（不要每一影格都印，
+        //    一秒 15 幀會洗爆 log），把這幾個數字攤開來看就能直接判斷是哪一層斷掉的。
+        const nowTs = Date.now();
+        if (!window.__lastDiagLogTs || nowTs - window.__lastDiagLogTs > 10000) {
+            window.__lastDiagLogTs = nowTs;
+            try {
+                const room = window.APP && window.APP.conference && window.APP.conference._room;
+                const participantCount = room && typeof room.getParticipants === 'function' ? room.getParticipants().length : 'no-room';
+                console.log('[Recorder 診斷] nameMap人數=' + Object.keys(nameMap).length +
+                    '，room.getParticipants()人數=' + participantCount +
+                    '，syntheticVideo人數=' + syntheticVideoByParticipant.size +
+                    '，rawVideos找到=' + document.querySelectorAll('video').length + '個(videoWidth>0的有' + Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0).length + '個)' +
+                    '，這輪畫格cells數=' + cells.length);
+            } catch (e) {}
+        }
+
         window.__rafId = requestAnimationFrame(drawFrame);
     }
     drawFrame();
