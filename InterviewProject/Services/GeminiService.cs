@@ -223,7 +223,14 @@ namespace InterviewProject.Services
                             .GetProperty("text")
                             .GetString() ?? "";
 
-                        return CleanUpHallucination(text.Trim());
+                        var rawText = text.Trim();
+                        // 🐛 這輪新增：這輪測試出現「音檔明明 1240 萬 bytes（肯定不是靜音），
+                        //    卻被判定成無語音內容」的狀況，光看最終結果沒辦法分辨是「Gemini 自己就
+                        //    回覆無內容」還是「我們自己的 CleanUpHallucination() 防呆過濾器誤殺了
+                        //    本來零星但有效的內容」。這裡把 Gemini 原始回覆（過濾前）也印出來，
+                        //    下次遇到同樣狀況直接比對這行跟最終結果，就能分辨是哪一層的問題。
+                        Console.WriteLine($"[GeminiService] TranscribeAudioAsync 原始回覆（過濾前，前 200 字）：{rawText.Substring(0, Math.Min(200, rawText.Length))}");
+                        return CleanUpHallucination(rawText);
                     }
                     catch (Exception ex)
                     {

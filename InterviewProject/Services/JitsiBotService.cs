@@ -41,7 +41,31 @@ namespace InterviewProject.Services
         //    搶在 Jitsi 呼叫 getUserMedia 之前把攔截裝好。
         private const string SimliInitScript = @"
 (function () {
-    window.__simliReady = null;   // 會變成一個 resolve 出 MediaStream 的 Promise
+    // 🐛 這輪修正（新發現的根因）：抓到 log 顯示 Jitsi 呼叫 getUserMedia 的時間點，
+    //    比 Simli 連線準備好早了非常多——document ready 之後不到 0.7 秒，Jitsi 內部
+    //    的 createInitialLocalTracks 就已經在呼叫 getUserMedia 了，但 Simli 那邊光是
+    //    載入 SDK bundle + 跟伺服器換 session token 這兩個網路來回，正常都要抓好幾秒。
+    //    原本 window.__simliReady 是先設成 null，要等到 initSimli() 這個 async 函式
+    //    執行到中段（等 bundle 載入、session token 換到）才會真的變成一個 Promise 物件。
+    //    如果 Jitsi 剛好在這個空窗期就呼叫了 getUserMedia，我們的攔截函式看到
+    //    window.__simliReady 還是 null（falsy），就會誤判成『Simli 還沒開始初始化』，
+    //    直接放棄、退回瀏覽器原生的 getUserMedia——但無頭伺服器根本沒有真正的麥克風/攝影機
+    //    裝置，原生呼叫必定失敗（NotFoundError: Requested device not found），
+    //    這就是『AI 面試官從一開始就看不到畫面』的真正原因，跟這台伺服器有沒有裝置、
+    //    跟環境設定都無關，純粹是這個時間差競爭條件（race condition）。
+    //    修正：window.__simliReady 改成在最一開始、還沒開始任何非同步工作之前，
+    //    就同步建立成一個『真正的』Promise 物件（此時還沒 resolve，但物件本身已經存在），
+    //    resolve/reject 的時機點完全不變，只是不再等到中途才把變數本身換成 Promise。
+    //    這樣不管 Jitsi 什麼時候呼叫 getUserMedia，看到的都會是這個一開始就存在的 Promise，
+    //    自然就會老實等到 Simli 真的連上（或真的失敗）才繼續，不會再提早誤判成『還沒開始』。
+    let __simliReadyResolve, __simliReadyReject;
+    window.__simliReady = new Promise((resolve, reject) => {
+        __simliReadyResolve = resolve;
+        __simliReadyReject = reject;
+    });
+    // 同上一輪就有的處理：避免瀏覽器把還沒被消費的 rejection 當成『未處理』噴出雜訊 log
+    window.__simliReady.catch(() => {});
+
     window.__simliClient = null;
     window.__simliSpeak = null;   // function(base64Pcm24k) -> 把音訊送進 Simli 講出來
 
@@ -92,34 +116,26 @@ namespace InterviewProject.Services
             );
             window.__simliClient = client;
 
-            window.__simliReady = new Promise((resolve, reject) => {
-                client.on('start', () => {
-                    console.log('[Simli] WebRTC 已連線（start 事件），等待畫面/聲音串流就緒...');
-                    // 連上之後，Simli 會把畫面/聲音接到我們給的 video/audio 元素的 srcObject 上，
-                    // 稍等一下讓 srcObject 真的被賦值，再從這兩個元素身上把 MediaStream 撈出來組成一個假串流
-                    setTimeout(() => {
-                        try {
-                            const vStream = videoEl.srcObject;
-                            const aStream = audioEl.srcObject;
-                            const tracks = [];
-                            if (vStream) tracks.push(...vStream.getVideoTracks());
-                            if (aStream) tracks.push(...aStream.getAudioTracks());
-                            else if (vStream) tracks.push(...vStream.getAudioTracks());
-                            if (tracks.length === 0) { reject(new Error('Simli 已連線但抓不到 MediaStream track')); return; }
-                            console.log('[Simli] 成功組出虛擬人 MediaStream，共 ' + tracks.length + ' 條軌道');
-                            resolve(new MediaStream(tracks));
-                        } catch (e) { reject(e); }
-                    }, 800);
-                });
-                client.on('error', (e) => reject(new Error('SimliClient 發生錯誤：' + e)));
-                client.on('startup_error', (msg) => reject(new Error('SimliClient 啟動失敗（常見原因：Face ID 無效、或 Simli 額度用完）：' + msg)));
+            client.on('start', () => {
+                console.log('[Simli] WebRTC 已連線（start 事件），等待畫面/聲音串流就緒...');
+                // 連上之後，Simli 會把畫面/聲音接到我們給的 video/audio 元素的 srcObject 上，
+                // 稍等一下讓 srcObject 真的被賦值，再從這兩個元素身上把 MediaStream 撈出來組成一個假串流
+                setTimeout(() => {
+                    try {
+                        const vStream = videoEl.srcObject;
+                        const aStream = audioEl.srcObject;
+                        const tracks = [];
+                        if (vStream) tracks.push(...vStream.getVideoTracks());
+                        if (aStream) tracks.push(...aStream.getAudioTracks());
+                        else if (vStream) tracks.push(...vStream.getAudioTracks());
+                        if (tracks.length === 0) { __simliReadyReject(new Error('Simli 已連線但抓不到 MediaStream track')); return; }
+                        console.log('[Simli] 成功組出虛擬人 MediaStream，共 ' + tracks.length + ' 條軌道');
+                        __simliReadyResolve(new MediaStream(tracks));
+                    } catch (e) { __simliReadyReject(e); }
+                }, 800);
             });
-            // 🐛 window.__simliReady 如果最後是 rejected 狀態、卻沒有任何人「立刻」去 .catch() 它，
-            //    瀏覽器會在下一個 microtask 就判定成「未處理的 Promise rejection」，噴出不必要的雜訊 log。
-            //    這裡加一個空的 .catch() 把這個「已經處理過了」的訊號送出去，不影響下面 getUserMedia 覆寫那邊
-            //    之後照樣能 await/catch 到同一個 Promise 的真正結果（同一個 Promise 可以被多個地方分別
-            //    await/catch，互不影響）。
-            window.__simliReady.catch(() => {});
+            client.on('error', (e) => __simliReadyReject(new Error('SimliClient 發生錯誤：' + e)));
+            client.on('startup_error', (msg) => __simliReadyReject(new Error('SimliClient 啟動失敗（常見原因：Face ID 無效、或 Simli 額度用完）：' + msg)));
 
             await client.start();
 
@@ -154,8 +170,7 @@ namespace InterviewProject.Services
             };
         } catch (e) {
             console.error('[Simli] 初始化失敗：', e);
-            window.__simliReady = Promise.reject(e);
-            window.__simliReady.catch(() => {}); // 同上，避免噴出不必要的「未處理 rejection」雜訊
+            __simliReadyReject(e);
         }
     }
     initSimli();
