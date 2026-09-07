@@ -691,6 +691,10 @@ namespace InterviewProject.Services
 ";
 
         private static readonly Dictionary<string, BotInstance> _activeBots = new();
+        // 🐛 這輪新增：搭配下面 JoinRoomAsync 的修正一起用——確保「檢查這個房間有沒有 AI 面試官」
+        //    跟「登記佔用這個房間」這兩件事是原子化的一個動作，不會被同一個房間幾乎同時進來的
+        //    第二次呼叫插隊，導致真的啟動兩個分身。
+        private static readonly object _activeBotsLock = new();
         private readonly JaasJwtService _jaasJwt;
         private readonly IConfiguration _config;
         private readonly IServiceScopeFactory _scopeFactory;
@@ -711,15 +715,29 @@ namespace InterviewProject.Services
             if (string.IsNullOrEmpty(roomCode)) return;
             roomCode = roomCode.Trim();
 
-            if (_activeBots.ContainsKey(roomCode))
+            // 🐛 這輪新增：這次測試錄影裡整段穩定看到「兩個 AI 面試官」，不是前面重複、
+            //    後面變黑那種殘影模式，比較像真的啟動了兩個獨立分身。根因：原本「檢查字典裡有沒有
+            //    這個房間」通過之後，要跑完一長串很花時間的非同步啟動流程（開瀏覽器、導航、
+            //    等加入、等錄影機，實測 30~60 秒以上）才會真的把這個房間登記進字典。如果同一個房間
+            //    在這段等待期間內被觸發第二次（按鈕連點兩下、SignalR 重連導致 StartMeeting 被重複
+            //    呼叫等），第二次呼叫進來檢查時字典還是空的，兩次呼叫都會覺得『這個房間還沒有 AI
+            //    面試官』，各自獨立啟動一個瀏覽器分身，兩個都成功加入——變成畫面上真的有兩個。
+            //    修正：檢查跟登記（先佔位）這兩件事包在同一個鎖裡原子化完成，只要通過檢查就立刻
+            //    佔位，不等真正啟動完成才登記，這樣幾乎同時進來的第二次呼叫一定會看到佔位、直接跳過。
+            lock (_activeBotsLock)
             {
-                Console.WriteLine($"[JitsiBot] 房間 {roomCode} 內已有 AI 面試官，跳過。");
-                return;
+                if (_activeBots.ContainsKey(roomCode))
+                {
+                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 內已有 AI 面試官（或正在啟動中），跳過，避免出現兩個分身。");
+                    return;
+                }
+                _activeBots[roomCode] = null; // 先佔位卡住這個房間，真正的 BotInstance 稍後才會補上
             }
 
             if (!File.Exists(videoPath))
             {
                 Console.WriteLine($"[JitsiBot Error] 找不到 y4m 視訊檔案: {videoPath}");
+                lock (_activeBotsLock) { _activeBots.Remove(roomCode); } // 佔位登記了但根本沒真的啟動，清掉讓之後還能重試
                 return;
             }
 
@@ -926,13 +944,16 @@ namespace InterviewProject.Services
                     Console.WriteLine($"[JitsiBot] 啟動自訂錄影機失敗：{ex.Message}（這場面試會沒有錄影）");
                 }
 
-                _activeBots[roomCode] = new BotInstance
+                lock (_activeBotsLock)
                 {
-                    PlaywrightInstance = localPlaywright,
-                    BrowserInstance = localBrowser,
-                    ContextInstance = localContext,
-                    PageInstance = page
-                };
+                    _activeBots[roomCode] = new BotInstance
+                    {
+                        PlaywrightInstance = localPlaywright,
+                        BrowserInstance = localBrowser,
+                        ContextInstance = localContext,
+                        PageInstance = page
+                    };
+                }
 
                 // 🐛 這輪修正：這行原本是「無條件」印成功，只代表上面這一大段 try 區塊沒有噴例外
                 //   （頁面有載入、截圖有存到、錄影腳本有啟動），完全沒有真的去確認 Jitsi 內部
@@ -1021,7 +1042,7 @@ namespace InterviewProject.Services
                 if (localContext != null) { try { await localContext.CloseAsync(); } catch { } }
                 if (localBrowser != null) await localBrowser.CloseAsync();
                 localPlaywright?.Dispose();
-                _activeBots.Remove(roomCode);
+                lock (_activeBotsLock) { _activeBots.Remove(roomCode); } // 佔位或半成品都要清掉，不然這個房間會被卡死永遠不能重試
                 throw;
             }
         }
@@ -1033,7 +1054,11 @@ namespace InterviewProject.Services
             if (string.IsNullOrEmpty(roomCode)) return null;
             roomCode = roomCode.Trim();
 
-            if (!_activeBots.TryGetValue(roomCode, out var instance)) return null;
+            // 🐛 這輪新增 instance == null 這個檢查：現在 _activeBots 裡的值在「已經佔位、
+            //    但真正的瀏覽器分身還沒啟動完成」這段短暫期間會是 null（見 JoinRoomAsync 的修正），
+            //    這裡沒有一起判斷的話，剛好在這個空窗期呼叫 LeaveRoomAsync 會直接對 null 的
+            //    instance.PageInstance 炸出 NullReferenceException。
+            if (!_activeBots.TryGetValue(roomCode, out var instance) || instance == null) return null;
 
             string? videoPath = null;
             try
@@ -1115,7 +1140,9 @@ namespace InterviewProject.Services
 
             try
             {
-                if (!_activeBots.TryGetValue(roomCode, out var instance))
+                // 🐛 這輪新增 instance == null 這個檢查，理由跟 LeaveRoomAsync 那邊一樣：
+                //    佔位期間 instance 會是 null，沒擋住的話下面用到 instance.PageInstance 會炸掉。
+                if (!_activeBots.TryGetValue(roomCode, out var instance) || instance == null)
                 {
                     Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 沒有正在運作的 AI 面試官，略過。");
                     return;
