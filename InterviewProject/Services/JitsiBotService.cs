@@ -527,6 +527,14 @@ namespace InterviewProject.Services
         //    （syntheticVideoByParticipant），這些元素我們自己建立時就已經知道正確的參與者 id/名字，
         //    優先信任這批、再補上畫面上原生找得到的 <video> 元素，兩邊一樣用軌道 id 去重避免重複。
         const seenKeys = new Set();
+        // 🐛 這輪新增：光靠 track id 去重不夠——Jitsi 原生畫面上很可能也會用自己內部複製
+        //    （clone）出來的另一個 track 物件渲染「自己的畫面」縮圖，clone 出來的 track
+        //    會有全新的 .id，跟 connectJitsiVideoTracks() 抓到的原始 track id 完全不同，
+        //    導致同一個人的畫面在「synthetic 這條路徑」跟「rawVideos 這條路徑」各自被認成
+        //    不同的東西，兩邊都畫進去，變成重複。改成額外用 participantId 當第二層去重依據：
+        //    只要這個人已經被 synthetic 那批（比較可信，因為是我們自己主動接的，id/名字都確定）
+        //    畫過一次，rawVideos 這邊掃到同一個 participantId 就直接跳過，不管 track id 是否相同。
+        const seenParticipantIds = new Set();
         const cells = []; // { type: 'video', el, label, participantId? } | { type: 'placeholder', label }
 
         syntheticVideoByParticipant.forEach(sc => {
@@ -534,12 +542,26 @@ namespace InterviewProject.Services
             const dedupeKey = 'track:' + sc.trackId;
             if (seenKeys.has(dedupeKey)) return;
             seenKeys.add(dedupeKey);
+            if (sc.participantId) seenParticipantIds.add(sc.participantId);
             const label = sc.label || nameMap[sc.participantId] || '';
             cells.push({ type: 'video', el: sc.el, label, participantId: sc.participantId });
         });
 
         const rawVideos = Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0);
         rawVideos.forEach(v => {
+            // 🎯 先算出這個 video 元素對應的 participantId，跟 synthetic 那批比對——
+            //    這一步要放在 track id 去重「之前」，因為就是要抓「track id 不同、但其實是
+            //    同一個人」這種情況，用 track id 比對本來就抓不到，必須靠 participantId 才行
+            let participantId = null;
+            try {
+                let idHolder = v, pid = extractParticipantId(idHolder), hops = 0;
+                while (!pid && idHolder && idHolder.parentElement && hops < 5) {
+                    idHolder = idHolder.parentElement; pid = extractParticipantId(idHolder); hops++;
+                }
+                participantId = pid;
+            } catch (e) {}
+            if (participantId && seenParticipantIds.has(participantId)) return; // 這個人已經被畫過了，不管 track id 是否相同都跳過
+
             let dedupeKey = null;
             try {
                 const stream = v.srcObject;
@@ -556,17 +578,9 @@ namespace InterviewProject.Services
             }
             if (seenKeys.has(dedupeKey)) return; // 已經被上面的 syntheticVideoByParticipant 畫過同一條軌道了
             seenKeys.add(dedupeKey);
+            if (participantId) seenParticipantIds.add(participantId);
 
             const label = findLabelForVideo(v, nameMap);
-            let participantId = null;
-            try {
-                let idHolder = v, pid = extractParticipantId(idHolder), hops = 0;
-                while (!pid && idHolder && idHolder.parentElement && hops < 5) {
-                    idHolder = idHolder.parentElement; pid = extractParticipantId(idHolder); hops++;
-                }
-                participantId = pid;
-            } catch (e) {}
-
             cells.push({ type: 'video', el: v, label, participantId });
         });
 
