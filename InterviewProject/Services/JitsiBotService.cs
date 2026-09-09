@@ -660,11 +660,10 @@ namespace InterviewProject.Services
             });
         }
 
-        // 🐛 這輪新增：這次測試出現「整支錄影裡完全沒看到任何人類參與者」，需要知道到底是
-        //    room.getParticipants() 這層看到的人名單本身就是空的/不完整（Jitsi 內部資料問題），
-        //    還是有看到人名單、但 rawVideos 那層 DOM 掃描完全找不到對應的 <video> 元素
-        //    （畫面渲染/選取器問題）。這行 log 節流成每 10 秒印一次（不要每一影格都印，
-        //    一秒 15 幀會洗爆 log），把這幾個數字攤開來看就能直接判斷是哪一層斷掉的。
+        // 🐛 這輪新增：這次回報「其中一格 AI 面試官的畫面/佔位格，其實應該是某個人類參與者
+        //    （沒開鏡頭）才對」——要分辨這是「nameMap 把那個人的 id 對應到錯的名字」，
+        //    還是「單純多出一個重複的 AI 面試官佔位格」，光看畫面猜不出來，必須把
+        //    nameMap 的完整內容、以及每一格 cell 實際用的 participantId+label 都印出來比對。
         const nowTs = Date.now();
         if (!window.__lastDiagLogTs || nowTs - window.__lastDiagLogTs > 10000) {
             window.__lastDiagLogTs = nowTs;
@@ -676,6 +675,8 @@ namespace InterviewProject.Services
                     '，syntheticVideo人數=' + syntheticVideoByParticipant.size +
                     '，rawVideos找到=' + document.querySelectorAll('video').length + '個(videoWidth>0的有' + Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0).length + '個)' +
                     '，這輪畫格cells數=' + cells.length);
+                console.log('[Recorder 診斷] nameMap 完整內容：' + JSON.stringify(nameMap));
+                console.log('[Recorder 診斷] 這輪每一格的 participantId/label：' + JSON.stringify(cells.map(c => ({ type: c.type, participantId: c.participantId || null, label: c.label || null }))));
             } catch (e) {}
         }
 

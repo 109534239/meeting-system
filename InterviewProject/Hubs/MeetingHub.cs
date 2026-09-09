@@ -52,6 +52,16 @@ namespace InterviewProject.Hubs
                 //    避免這次其實還在嘗試中，畫面卻先顯示了上一輪的舊錯誤
                 room.AiBotErrorMessage = null;
 
+                // 🐛 這輪新增：發現逐字稿裡出現「會議明明是這個時間點才開始，內容卻有更早時間點」
+                //    的殘留資料——根因是 SaveTranscript 合併完之後才會清空 TranscriptChunks，
+                //    如果上一次同一個房間代碼的測試中途失敗（例如上傳到雲端儲存那步噴例外、
+                //    或伺服器中途被關掉），合併/清空那步從沒真的跑到，那些舊資料就會一直卡在
+                //    表裡，等這次重新開始會議、又有新資料寫進來，混在一起就會出現「時間跳來跳去」
+                //    的詭異逐字稿。改成每次「真的重新開始」一場會議時，先把這個房間代碼底下
+                //    可能殘留的舊資料清乾淨，確保這次的逐字稿只會有這次會議的內容。
+                var staleChunks = _db.TranscriptChunks.Where(c => c.RoomCode == roomCode);
+                _db.TranscriptChunks.RemoveRange(staleChunks);
+
                 await _db.SaveChangesAsync();
             }
 
