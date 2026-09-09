@@ -274,6 +274,19 @@ namespace InterviewProject.Services
     const ctx = canvas.getContext('2d');
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // 🐛 這輪修正（找到整份錄影音軌完全是純靜音的真正根因）：
+    //    量測過上傳的錄影檔案，音軌整整 10 分鐘全部是 -91dB（不是很小聲，是真正的數位靜音），
+    //    連已經確定有講話的主持人聲音都完全沒錄進去。查了整支腳本，從頭到尾沒有呼叫過
+    //    audioCtx.resume()——Chrome 的自動播放政策規定 AudioContext 建立出來預設是「暫停」狀態，
+    //    除非明確呼叫 .resume()（或由真人使用者實際點擊過頁面），不然它會永遠停在暫停狀態、
+    //    不做任何音訊處理，下游 createMediaStreamDestination() 產生的音訊軌道存在，
+    //    但內容永遠是純靜音。這在無頭瀏覽器（Playwright 自動化、沒有真人點擊任何東西）這種
+    //    環境下幾乎必然會發生。這解釋了「AI 面試官講話沒聲音」也解釋了「連主持人的聲音都
+    //    沒錄進去」——兩者其實是同一個根因，都是因為這整個混音圖從來沒有真的在跑。
+    audioCtx.resume().then(() => {
+        console.log('[Recorder] AudioContext.resume() 完成，目前狀態：' + audioCtx.state);
+    }).catch(e => console.error('[Recorder] AudioContext.resume() 失敗：', e));
+    console.log('[Recorder] AudioContext 建立完成，初始狀態：' + audioCtx.state);
     const dest = audioCtx.createMediaStreamDestination();
     const connected = new WeakSet();
     const connectedTrackIds = new Set(); // 🎯 記錄「已經透過任何管道接上的原始音軌 id」，避免同一個人的聲音被接兩次造成疊音
@@ -811,7 +824,13 @@ namespace InterviewProject.Services
                         //    ⚠️ 這個問題本質上只會在「本機測試」時發生（App:BaseUrl 是 localhost 這種私有位址）；
                         //    部署到 Render 之後 App:BaseUrl 會是公開網址，理論上不會再踩到這個限制，
                         //    但保留這個參數不影響正式環境運作，所以兩邊都留著。
-                        "--disable-features=BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults"
+                        "--disable-features=BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults",
+                        // 🐛 這輪新增：Chrome 的自動播放政策會讓 AudioContext 預設卡在「暫停」狀態，
+                        //    這是造成整份錄影音軌完全靜音的根因之一（另一半是程式碼裡真的沒呼叫
+                        //    audioCtx.resume()，那個已經修正）。這裡多加這個參數當第二層保險——
+                        //    這個瀏覽器是我們自己完全控制的專用瀏覽器，不是給真人瀏覽的一般瀏覽器，
+                        //    放寬自動播放限制沒有資安疑慮。
+                        "--autoplay-policy=no-user-gesture-required"
                     }
                 };
 
