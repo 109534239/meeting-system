@@ -181,22 +181,48 @@ namespace InterviewProject.Services
     try {
         const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
 
-        // 🐛 這輪修正（下一個症狀：AI 連線成功但人類端完全看不到這個參與者）：
-        //    原本這裡不管 Jitsi 這次要的是 audio、video 還是兩個都要，一律回傳「同一個」
-        //    window.__simliReady resolve 出來的 MediaStream/MediaStreamTrack 物件。
-        //    真正的瀏覽器規格是：每呼叫一次 getUserMedia，就算是同一支實體攝影機，也一定拿到
-        //    全新的 track 實例；很多程式（包括 lib-jitsi-meet 內部的裝置探測/權限檢查流程）
-        //    會呼叫 getUserMedia 不只一次，而且很常見的寫法是「探測完就把拿到的臨時 stream
-        //    的 track .stop() 掉」，因為正常情況下這不會影響之後真正要用的那個 track。
-        //    但這裡因為每次回傳的是同一個 track 物件，只要任何一次呼叫的消費端把它 stop 掉，
-        //    後面真正要送進會議室的那次呼叫拿到的也是同一個已經 ended 的 track——
-        //    這種情況下 Jitsi 很多路徑是「安靜地不建立/不送出這個 track」，不會跳出
-        //    使用者看得到的錯誤（尤其無頭瀏覽器根本沒有 UI），這很可能就是「AI 自己端一切正常、
-        //    人類端整個參與者格子消失、人數少一個」這個矛盾組合的真正原因。
-        //    修正：每次呼叫都用 .clone() 出全新的 track 實例再回傳，並且依照 constraints 只回傳
-        //    有要求的種類（audio-only 的呼叫就不要順便夾帶 video track，反之亦然），
-        //    盡量貼近瀏覽器原生 getUserMedia 的行為，減少任何下游程式碼因為「以為是單一用途的
-        //    stream」而做出非預期操作（例如提早 stop）時的連帶傷害範圍。
+        // 🎯 這裡要 clone 而不是直接回傳同一個 track 物件的原因：
+        //    很多程式（包括 lib-jitsi-meet 內部的裝置探測/權限檢查流程）會呼叫 getUserMedia
+        //    不只一次，而且常見寫法是「探測完就把拿到的臨時 stream 的 track .stop() 掉」。
+        //    如果每次都回傳同一個 track 物件，只要任何一次呼叫的消費端把它 stop 掉，後面真正
+        //    要送進會議室的那次呼叫拿到的也是同一個已經 ended 的 track，會安靜地連不上、
+        //    且不一定會有看得到的錯誤。
+        //    但同時「每次都 clone 一個全新的」也有問題（下面 getOrCloneTrack 那段修正的重點）：
+        //    如果 Jitsi 把好幾次呼叫拿到的好幾個不同 track 物件都當成合法來源加進會議室，
+        //    Jitsi 的會議物件本來就只允許存在一條本地音訊軌道，多出來的會直接被拒絕
+        //    （「Cannot add second audio track to the conference」），導致整場沒聲音。
+        //    折衷做法：clone 出來的 track 用快取重複使用，只有真的死掉（ended）才補生新的。
+        // 🐛 這輪修正（新症狀：整場會議 AI 面試官完全沒有聲音）：
+        //    瀏覽器主控台抓到明確的例外：「Cannot add second audio track to the conference」
+        //    （[app:base/conference] Failed to add local track to conference）。
+        //    根因：上一輪修正是「每次呼叫 getUserMedia 都 clone 出一個全新的 track」，這解決了
+        //    「同一個 track 物件被提早 stop 掉、後面的呼叫也遭殃」的問題，但矯枉過正——
+        //    如果 Jitsi 內部呼叫 getUserMedia 不只一次（例如先做裝置探測、後面才是真正要加入會議
+        //    那次），現在會回傳兩個「不同」的 track 物件，Jitsi 把兩個都當成合法的本地音訊來源
+        //    嘗試加進會議室，但 Jitsi 的會議物件本來就只允許存在一條本地音訊軌道，第二次
+        //    addTrack 就直接被拒絕、噴出這個例外——而且這個音訊軌道很可能就是這輪唯一真正
+        //    成功送出去的那個，被拒絕之後 AI 面試官就整場沒聲音。
+        //    修正：改成「快取」clone 出來的 track，同一種類（video/audio）在還活著（readyState
+        //    還是 live）的情況下，之後的呼叫都回傳同一個快取的 track 物件，不再每次都生一個新的；
+        //    只有在快取的那個真的結束了（ended），才會補生一個新的 clone。這樣不管 Jitsi
+        //    呼叫幾次，拿到的都是「同一個」track 物件（除非真的死掉才會換新的），
+        //    就不會再出現兩條「不同但都活著」的音訊軌道同時存在、互相打架的情況。
+        let cachedVideoClone = null;
+        let cachedAudioClone = null;
+
+        function getOrCloneTrack(sourceTrack, cachedRef, kindLabel) {
+            if (cachedRef.track && cachedRef.track.readyState === 'live') return cachedRef.track;
+            const c = sourceTrack.clone();
+            c.addEventListener('ended', () => {
+                console.warn('[Simli] 警告：快取的' + kindLabel + ' track 進入 ended 狀態（來源 track id=' + sourceTrack.id + '），下次呼叫會補生一個新的');
+                if (cachedRef.track === c) cachedRef.track = null;
+            });
+            cachedRef.track = c;
+            return c;
+        }
+        const videoCloneRef = { track: null };
+        const audioCloneRef = { track: null };
+
         navigator.mediaDevices.getUserMedia = async function (constraints) {
             console.log('[Simli] getUserMedia 被呼叫，constraints=' + JSON.stringify(constraints));
             try {
@@ -211,24 +237,17 @@ namespace InterviewProject.Services
 
                         const clonedTracks = [];
                         if (includeVideo) {
-                            simliStream.getVideoTracks().forEach(t => {
-                                const c = t.clone();
-                                c.addEventListener('ended', () => console.warn('[Simli] 警告：一份 clone 出來的視訊 track 進入 ended 狀態（來源 track id=' + t.id + '）'));
-                                c.addEventListener('mute', () => console.warn('[Simli] 警告：一份 clone 出來的視訊 track 被 mute（來源 track id=' + t.id + '）'));
-                                clonedTracks.push(c);
-                            });
+                            const src = simliStream.getVideoTracks()[0];
+                            if (src) clonedTracks.push(getOrCloneTrack(src, videoCloneRef, '視訊'));
                         }
                         if (includeAudio) {
-                            simliStream.getAudioTracks().forEach(t => {
-                                const c = t.clone();
-                                c.addEventListener('ended', () => console.warn('[Simli] 警告：一份 clone 出來的音訊 track 進入 ended 狀態（來源 track id=' + t.id + '）'));
-                                clonedTracks.push(c);
-                            });
+                            const src = simliStream.getAudioTracks()[0];
+                            if (src) clonedTracks.push(getOrCloneTrack(src, audioCloneRef, '音訊'));
                         }
 
                         if (clonedTracks.length > 0) {
                             const outStream = new MediaStream(clonedTracks);
-                            console.log('[Simli] 回傳虛擬人串流給 getUserMedia（clone），視訊軌道數=' + outStream.getVideoTracks().length + '，音訊軌道數=' + outStream.getAudioTracks().length);
+                            console.log('[Simli] 回傳虛擬人串流給 getUserMedia（快取 clone），視訊軌道數=' + outStream.getVideoTracks().length + '，音訊軌道數=' + outStream.getAudioTracks().length);
                             return outStream;
                         }
                     }
@@ -1137,6 +1156,44 @@ namespace InterviewProject.Services
 
         public bool IsSpeaking(string roomCode)
             => !string.IsNullOrEmpty(roomCode) && _speakingRooms.TryGetValue(roomCode.Trim(), out var v) && v;
+
+        // 🐛 這輪新增：這次測試「AI 面試官重複出現」的畫面模式（一開始就重複、整段穩定存在，
+        //    跟殘影/搶跑那兩種模式都不一樣）讓我懷疑是**上一場測試殘留的舊分身，根本沒被關掉，
+        //    一直卡在同一個 Jitsi 房間裡**。這通常發生在開發時直接把伺服器程序關掉（Ctrl+C、
+        //    Visual Studio 按停止、或當機）而不是走正常的結束流程——Playwright 開的無頭瀏覽器
+        //    是獨立的作業系統行程，.NET 這邊的記憶體字典（_activeBots）歸零了，不代表那個瀏覽器
+        //    行程真的被關掉，它會繼續留在會議室裡，變成一個沒人知道存在、但畫面上真實存在的
+        //    「AI 面試官」分身。
+        //    加這個方法，掛在伺服器正常關閉的生命週期事件上（見 Program.cs），
+        //    伺服器收到關閉信號時會先把所有還開著的瀏覽器分身乾淨地關掉，
+        //    降低這種「殘留分身跨測試留下來」的機率。
+        //    ⚠️ 這個只能處理「伺服器有機會走到正常關閉流程」的情況（例如 Ctrl+C、正常重啟）；
+        //    如果是当機、被工作管理員強制結束程序，還是會留下孤兒行程，那種情況目前只能請你
+        //    自己去工作管理員手動檢查有沒有殘留的 chrome.exe / headless_shell.exe 並關掉。
+        public async Task CloseAllBotsAsync()
+        {
+            List<BotInstance> instances;
+            lock (_activeBotsLock)
+            {
+                instances = _activeBots.Values.Where(v => v != null).ToList()!;
+                _activeBots.Clear();
+            }
+
+            foreach (var instance in instances)
+            {
+                try
+                {
+                    if (instance.ContextInstance != null) await instance.ContextInstance.CloseAsync();
+                    if (instance.BrowserInstance != null) await instance.BrowserInstance.CloseAsync();
+                    instance.PlaywrightInstance?.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[JitsiBot] CloseAllBotsAsync：關閉某個分身時發生例外（忽略，繼續關下一個）：{ex.Message}");
+                }
+            }
+            Console.WriteLine($"[JitsiBot] CloseAllBotsAsync：已嘗試關閉 {instances.Count} 個還在運作的 AI 面試官分身。");
+        }
 
         public async Task SpeakAsync(string roomCode, string text)
         {

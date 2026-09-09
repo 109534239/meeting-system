@@ -67,6 +67,30 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 var app = builder.Build();
 
+// 🐛 這輪新增：這次測試「AI 面試官重複出現」的畫面模式（一開始就重複、整段穩定存在）
+//    讓我懷疑是上一場測試殘留的舊分身沒被關掉，一直卡在同一個 Jitsi 房間裡——
+//    開發時常見的操作（Ctrl+C、Visual Studio 按停止）不會走到程式裡任何「結束會議」的
+//    正常清理流程，Playwright 開的無頭瀏覽器是獨立的作業系統行程，不會因為 .NET 這邊的
+//    記憶體歸零就自動關掉，於是留下一個沒人知道存在、但畫面上真實存在的「AI 面試官」分身，
+//    下次啟動伺服器、重新測試同一個房間時，新的分身加進去，畫面上就看得到兩個。
+//    這裡掛一個「伺服器正常關閉時」的生命週期事件，關閉前把所有還開著的分身都清乾淨。
+//    ⚠️ 只能處理「伺服器有機會走到正常關閉流程」的情況；當機、被工作管理員強制結束程序
+//    還是會留下孤兒行程，那種情況要自己去工作管理員手動檢查有沒有殘留的
+//    chrome.exe / headless_shell.exe 並關掉。
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+lifetime.ApplicationStopping.Register(() =>
+{
+    try
+    {
+        var botService = app.Services.GetRequiredService<JitsiBotService>();
+        botService.CloseAllBotsAsync().GetAwaiter().GetResult();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Program] 關閉伺服器時清理 AI 面試官分身失敗：{ex.Message}");
+    }
+});
+
 // 🚀 雲端專用：讓 Render 啟動時自動下載 Playwright 瀏覽器核心（解決無核心卡死問題）
 if (!app.Environment.IsDevelopment())
 {
