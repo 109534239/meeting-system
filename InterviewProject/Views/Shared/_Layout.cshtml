@@ -132,29 +132,53 @@
                             </div>
 
                             <div class="nav-user-logged">
-                                <div class="nav-avatar" onclick="toggleDropdown(event)">
-                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                                        <circle cx="12" cy="8" r="4" fill="#fff" />
-                                        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"
-                                              stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none" />
-                                    </svg>
-                                </div>
+                                <!-- 👤 人頭帳號容器（將鈴鐺定位在其右上角） -->
+                                <div class="nav-avatar-wrap">
+                                    <div class="nav-avatar" onclick="toggleDropdown(event)">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                                            <circle cx="12" cy="8" r="4" fill="#fff" />
+                                            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none" />
+                                        </svg>
+                                    </div>
 
-                                <div class="dropdown-menu" id="dropdown-menu">
-                                    @if (isHr || isManager || isDirector)
+                                    @* 🔔 只有一般求職者 (非 HR/主管) 才顯示右上角鈴鐺通知 *@
+                                    @if (!isHr && !isManager && !isDirector)
                                     {
-                                        <a asp-controller="Employee" asp-action="Profile" class="dropdown-item">個人資料</a>
-                                        <a asp-controller="Login" asp-action="Logout" class="dropdown-item logout">登出</a>
+                                        <div class="nav-notification-badge-btn" onclick="toggleNotificationMenu(event)">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                                                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                                            </svg>
+                                            <!-- 未讀紅點 -->
+                                            <span class="notification-badge" id="notificationBadge" style="display: none;"></span>
+                                        </div>
+
+                                        <!-- 通知下拉選單 -->
+                                        <div class="notification-dropdown" id="notificationDropdown">
+                                            <div class="notification-header">最新通知</div>
+                                            <ul class="notification-list" id="notificationList">
+                                                <li class="notification-empty">載入中...</li>
+                                            </ul>
+                                        </div>
                                     }
-                                    else
-                                    {
-                                        <a asp-controller="Member" asp-action="Profile" class="dropdown-item">個人資料</a>
-                                        <a asp-controller="Member" asp-action="Resume" class="dropdown-item">我的履歷</a>
-                                        <a asp-controller="Member" asp-action="Application" class="dropdown-item">應徵管理</a>
-                                        <a asp-controller="Member" asp-action="Favorites" class="dropdown-item">我的收藏</a>
-                                        <a asp-controller="JobseekerFAQ" asp-action="Index" class="dropdown-item">Q&A回覆</a>
-                                        <a asp-controller="Login" asp-action="Logout" class="dropdown-item logout">登出</a>
-                                    }
+
+                                    <!-- 下拉選單 (選單內容維持不變) -->
+                                    <div class="dropdown-menu" id="dropdown-menu">
+                                        @if (isHr || isManager || isDirector)
+                                        {
+                                            <a asp-controller="Employee" asp-action="Profile" class="dropdown-item">個人資料</a>
+                                            <a asp-controller="Login" asp-action="Logout" class="dropdown-item logout">登出</a>
+                                        }
+                                        else
+                                        {
+                                            <a asp-controller="Member" asp-action="Profile" class="dropdown-item">個人資料</a>
+                                            <a asp-controller="Member" asp-action="Resume" class="dropdown-item">我的履歷</a>
+                                            <a asp-controller="Member" asp-action="Application" class="dropdown-item">應徵管理</a>
+                                            <a asp-controller="Member" asp-action="Favorites" class="dropdown-item">我的收藏</a>
+                                            <a asp-controller="JobseekerFAQ" asp-action="Index" class="dropdown-item">Q&A回覆</a>
+                                            <a asp-controller="Login" asp-action="Logout" class="dropdown-item logout">登出</a>
+                                        }
+                                    </div>
                                 </div>
                             </div>
                         }
@@ -180,7 +204,9 @@
     @await RenderSectionAsync("Scripts", required: false)
 
     <script>
-        // 漢堡選單切換
+        // --------------------------------------------------
+        // 1. 漢堡選單切換
+        // --------------------------------------------------
         const navToggle = document.getElementById('navToggle');
         const navCollapse = document.getElementById('navCollapse');
 
@@ -195,20 +221,123 @@
             });
         }
 
-        // 頭像下拉選單切換
+        // --------------------------------------------------
+        // 2. 頭像下拉選單切換 (點擊頭像)
+        // --------------------------------------------------
         function toggleDropdown(e) {
             if (e) e.stopPropagation();
+
+            // 打開頭像選單時，先關閉通知選單
+            const notifDropdown = document.getElementById('notificationDropdown');
+            if (notifDropdown && notifDropdown.classList.contains('show')) {
+                notifDropdown.classList.remove('show');
+            }
+
             const menu = document.getElementById('dropdown-menu');
             if (menu) menu.classList.toggle('show');
         }
 
+                // --------------------------------------------------
+        // 3. 通知下拉選單切換 (點擊鈴鐺)
+        // --------------------------------------------------
+        function toggleNotificationMenu(e) {
+            if (e) e.stopPropagation();
+
+            // 互斥邏輯：打開通知選單時，先關閉頭像選單
+            const userMenu = document.getElementById('dropdown-menu');
+            if (userMenu && userMenu.classList.contains('show')) {
+                userMenu.classList.remove('show');
+            }
+
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('show');
+
+                // 🎯 已讀邏輯：點擊開啟選單後，自動將黃色微亮點隱藏
+                if (dropdown.classList.contains('show')) {
+                    const badge = document.getElementById('notificationBadge');
+                    if (badge) {
+                        badge.style.display = 'none'; // 隱藏未讀指示點
+                    }
+                }
+            }
+        }
+
+        // --------------------------------------------------
+        // 4. 全域點擊判定 (點擊空白處關閉選單)
+        // --------------------------------------------------
         document.addEventListener('click', function (e) {
-            const userLogged = document.querySelector('.nav-user-logged');
-            if (userLogged && !userLogged.contains(e.target)) {
-                const menu = document.getElementById('dropdown-menu');
-                if (menu) menu.classList.remove('show');
+            const userMenu = document.getElementById('dropdown-menu');
+            const notifDropdown = document.getElementById('notificationDropdown');
+
+            if (userMenu && userMenu.classList.contains('show')) {
+                if (!userMenu.contains(e.target)) {
+                    userMenu.classList.remove('show');
+                }
+            }
+
+            if (notifDropdown && notifDropdown.classList.contains('show')) {
+                if (!notifDropdown.contains(e.target)) {
+                    notifDropdown.classList.remove('show');
+                }
             }
         });
+
+        // --------------------------------------------------
+        // 5. 頁面載入時請求最新通知
+        // --------------------------------------------------
+        document.addEventListener('DOMContentLoaded', function () {
+            fetchLatestStatusNotifications();
+        });
+
+                function fetchLatestStatusNotifications() {
+            fetch('/Member/GetLatestStatusNotifications')
+                .then(response => response.json())
+                .then(res => {
+                    const badge = document.getElementById('notificationBadge');
+                    const listEl = document.getElementById('notificationList');
+
+                    if (!listEl) return;
+
+                    if (res && res.success && res.data && res.data.length > 0) {
+                        if (badge) badge.style.display = 'block';
+
+                        // 1. 渲染前 3 筆通知
+                        let htmlContent = res.data.map(item => `
+                            <li>
+                                <a href="/Member/Application" class="notification-item">
+                                    「<strong>${escapeHtml(item.jobTitle)}</strong>」${escapeHtml(item.message)}
+                                </a>
+                            </li>
+                        `).join('');
+
+                        // 2. 如果筆數超過 3 筆，追加「查看更多」選項
+                        if (res.hasMore) {
+                            htmlContent += `
+                                <li class="notification-more-wrap">
+                                    <a href="/Member/Application" class="notification-more-btn">
+                                        查看更多通知 <i class="fa-solid fa-chevron-right"></i>
+                                    </a>
+                                </li>
+                            `;
+                        }
+
+                        listEl.innerHTML = htmlContent;
+                    } else {
+                        if (badge) badge.style.display = 'none';
+                        listEl.innerHTML = '<li class="notification-empty">目前沒有新的狀態變更通知</li>';
+                    }
+                })
+                .catch(err => {
+                    console.error('抓取通知失敗：', err);
+                    const listEl = document.getElementById('notificationList');
+                    if (listEl) listEl.innerHTML = '<li class="notification-empty">無法載入通知</li>';
+                });
+        }
+
+        function escapeHtml(str) {
+            return str ? str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : '';
+        }
     </script>
 </body>
 </html>

@@ -172,9 +172,192 @@ img, svg, video {
 
 /* ── USER DROPDOWN ── */
 .nav-user-logged {
-    position: relative;
-    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
+
+.nav-notification-wrap {
+    position: relative;
+}
+
+/* 人頭與鈴鐺容器 */
+.nav-avatar-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+/* 右上角鈴鐺按鈕（再往右上偏移） */
+.nav-notification-badge-btn {
+    position: absolute;
+    top: -8px; /* 原本 -4px，調成 -8px 往上移 */
+    right: -10px; /* 原本 -6px，調成 -10px 往右移 */
+    background: linear-gradient(135deg, #ff4d4f, #ff7875);
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 3px 8px rgba(255, 77, 79, 0.35);
+    z-index: 10;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+    .nav-notification-badge-btn:hover {
+        transform: scale(1.18);
+        box-shadow: 0 5px 12px rgba(255, 77, 79, 0.5);
+    }
+
+/* 未讀黃色微亮指示點 */
+.notification-badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 7px;
+    height: 7px;
+    background-color: #ffec3d;
+    border-radius: 50%;
+    box-shadow: 0 0 4px rgba(255, 236, 61, 0.8);
+    transition: opacity 0.2s ease;
+}
+
+/* ── 下拉選單主體 ── */
+.notification-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 12px);
+    right: -6px;
+    width: 320px;
+    background-color: #ffffff;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.04);
+    z-index: 1000;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+    /* 展開狀態（含動畫） */
+    .notification-dropdown.show {
+        display: block;
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+/* 頁籤標頭 */
+.notification-header {
+    padding: 14px 18px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+    background-color: #ffffff;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* 通知列表區域 */
+.notification-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+    /* 客製化滾動條 */
+    .notification-list::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .notification-list::-webkit-scrollbar-thumb {
+        background-color: #e5e7eb;
+        border-radius: 10px;
+    }
+
+        .notification-list::-webkit-scrollbar-thumb:hover {
+            background-color: #d1d5db;
+        }
+
+    /* 單筆通知項目 */
+    .notification-list li {
+        border-bottom: 1px solid #f9fafb;
+        transition: background-color 0.15s ease;
+    }
+
+        .notification-list li:last-child {
+            border-bottom: none;
+        }
+
+        .notification-list li:hover {
+            background-color: #f8fafc;
+        }
+
+/* 通知連結樣式 */
+.notification-item {
+    display: block;
+    padding: 12px 18px;
+    color: #4b5563;
+    font-size: 13.5px;
+    line-height: 1.5;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+    .notification-item strong {
+        color: #111827;
+        font-weight: 600;
+    }
+
+    .notification-item:hover {
+        color: #2563eb;
+    }
+
+/* 空白與載入中狀態 */
+.notification-empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 13.5px;
+}
+
+/* 查看更多按鈕容器 */
+.notification-more-wrap {
+    background-color: #f8fafc;
+    border-top: 1px solid #f1f5f9;
+    text-align: center;
+}
+
+.notification-more-btn {
+    display: block;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+    .notification-more-btn:hover {
+        background-color: #eff6ff;
+        color: #1d4ed8;
+    }
+
+    .notification-more-btn i {
+        font-size: 11px;
+        margin-left: 4px;
+        transition: transform 0.2s ease;
+    }
+
+    .notification-more-btn:hover i {
+        transform: translateX(3px);
+    }
 
 .nav-avatar {
     width: 38px;

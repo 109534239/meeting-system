@@ -856,5 +856,75 @@ namespace InterviewProject.Controllers
             // 4. 將履歷資料傳給 View (回傳單一 Resume 物件)
             return View(resume);
         }
+
+        [HttpGet]
+        public async Task<IActionResult> GetLatestStatusNotifications()
+        {
+            // 1. 取得目前登入者的 MemberId
+            var currentMemberId = GetCurrentUserId();
+
+            if (currentMemberId == 0)
+            {
+                return Json(new { success = false, message = "未登入" });
+            }
+
+            // 2. 撈取該會員最新的 4 筆履歷狀態變更紀錄（多撈 1 筆用來判斷是否有更多）
+            var rawResumes = await _db.Resumes
+                .Where(r => r.MembersId == currentMemberId && r.Status != "暫存")
+                .OrderByDescending(r => r.ResumeTime)
+                .Take(4)
+                .Select(r => new
+                {
+                    JobId = r.Job,
+                    JobTitle = r.Job != null ? r.Job.Title : "該職缺",
+                    Status = r.Status,
+                    InterviewStatus = r.InterviewStatus,
+                    AdmissionResult = r.AdmissionResult,
+                    ResumeTime = r.ResumeTime
+                })
+                .ToListAsync();
+
+            // 判斷是否超過 3 筆
+            bool hasMore = rawResumes.Count > 3;
+
+            // 只取前 3 筆做顯示
+            var notifications = rawResumes.Take(3).Select(r =>
+            {
+                string message = "";
+                string finalAdmission = r.AdmissionResult;
+
+                if (r.InterviewStatus == "面試結束" && string.IsNullOrEmpty(finalAdmission))
+                {
+                    finalAdmission = "等待結果中";
+                }
+
+                if (!string.IsNullOrEmpty(finalAdmission))
+                {
+                    message = $"錄取結果：{finalAdmission}";
+                }
+                else if (!string.IsNullOrEmpty(r.InterviewStatus))
+                {
+                    message = $"面試狀態：{r.InterviewStatus}";
+                }
+                else if (!string.IsNullOrEmpty(r.Status))
+                {
+                    message = $"履歷狀態：{r.Status}";
+                }
+                else
+                {
+                    message = "狀態已更新";
+                }
+
+                return new
+                {
+                    jobId = r.JobId,
+                    jobTitle = r.JobTitle,
+                    message = message,
+                    resumeTime = r.ResumeTime
+                };
+            });
+
+            return Json(new { success = true, data = notifications, hasMore = hasMore });
+        }
     }
 }
