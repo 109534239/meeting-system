@@ -21,8 +21,8 @@ namespace InterviewProject.Controllers
 {
     public class ResumeController : Controller
     {
-        // 🚨 替換為你真實的 API Key
-        private const string GeminiApiKey = "";
+        // 🚨 替換為你真實的 API Key
+        private const string GeminiApiKey = "";
 
         private readonly IWebHostEnvironment _env;
         private readonly AppDbContext _db;
@@ -43,8 +43,8 @@ namespace InterviewProject.Controllers
             return userId ?? 0;
         }
 
-        // 綁定基礎會員資料到 ViewBag，避免驗證失敗時畫面資料遺失
-        private async Task PopulateViewBagData(int userId)
+        // 綁定基礎會員資料到 ViewBag，避免驗證失敗時畫面資料遺失
+        private async Task PopulateViewBagData(int userId)
         {
             var member = await _db.Members.FindAsync(userId);
             ViewBag.UserName = member?.Name;
@@ -333,7 +333,14 @@ namespace InterviewProject.Controllers
                     await UpdateWorkExperiences(trackedResume.Id, CompanyNameList, JobTitleList, JobDescriptionList, WorkStartDateList, WorkEndDateList);
 
                     var portfolioMember = await _db.Members.FindAsync(userId);
-                    var portfolioJob = await _db.Jobs.FindAsync(model.JobsId);
+                    // 🎯 修正：AI 審查需要職缺的 SkillTags / MajorRequirements / LanguageRequirements 才能組出完整的
+                    //    「職缺要求」內容（BuildJobRequirementsText 會用到這三個集合），改用 FindAsync 抓不到導覽屬性，
+                    //    這三段之前一直是空的，AI 完全看不到職缺的技能/科系/語文要求。這裡改成用 Include 帶出來。
+                    var portfolioJob = await _db.Jobs
+                        .Include(j => j.SkillTags)
+                        .Include(j => j.MajorRequirements)
+                        .Include(j => j.LanguageRequirements)
+                        .FirstOrDefaultAsync(j => j.Id == model.JobsId);
                     await UpdatePortfolios(trackedResume.Id, portfolioMember?.Name ?? "", portfolioJob?.Title ?? "", PortfolioTitleList, PortfolioDescList, PortfolioLinkList, portfolioFilesByRow, PortfolioExistingFileList);
 
                     // 🌟 3. 判斷是否需要呼叫 AI 評分
@@ -356,6 +363,7 @@ namespace InterviewProject.Controllers
                         trackedResume.DriverLicense = model.DriverLicense;
                         trackedResume.ComputerSkills = model.ComputerSkills;
                         trackedResume.Certificates = model.Certificates;
+                        trackedResume.Specialty = model.Specialty; // 🎯 修正：確保 AI 審查時能拿到最新的專長資料
                         trackedResume.Educations = await _db.Educations
                             .Where(e => e.ResumeId == trackedResume.Id)
                             .OrderBy(e => e.SortOrder)
@@ -410,11 +418,12 @@ namespace InterviewProject.Controllers
             }
         }
 
-        // 獨立出只負責「拿 AI 結果」的方法，不再處理資料庫寫入
+        // 獨立出只負責「拿 AI 結果」的方法，不再處理資料庫寫入
         // 🎯 Job.Requirements 欄位已刪除，改把 SkillTags / MajorRequirements / LanguageRequirements /
         //    CertRequired / OtherRequirements 組成一段文字，餵給 AI 當作「職缺要求」內容
         //    ⚠️ 呼叫前記得確保 job 是用 Include 帶出 SkillTags/MajorRequirements/LanguageRequirements 的，
         //       否則這幾個集合會是空的（不會報錯，但 AI 審查會少了這些條件）
+        //       🎯 修正：SaveResume 內呼叫本方法前，portfolioJob 已改用 Include 帶出這三個集合。
         private string BuildJobRequirementsText(Job? job)
         {
             if (job == null) return "無";
@@ -455,6 +464,16 @@ namespace InterviewProject.Controllers
                 var jobDesc = resume.Job?.Description ?? "無說明";
                 var jobReq = BuildJobRequirementsText(resume.Job);
 
+                // 🎯 修正：以下四行是原本沒有放進 AI 審查 prompt 的欄位，
+                //    使用者在履歷表單裡「專長」「使用電腦能力」「駕照種類」「作品集」都有實際填寫，
+                //    但先前完全沒有被組進 promptBody，AI 審查時看不到這些資訊。
+                var specialtyText = string.IsNullOrWhiteSpace(resume.Specialty) ? "無" : resume.Specialty;
+                var computerSkillText = string.IsNullOrWhiteSpace(resume.ComputerSkills) ? "無" : resume.ComputerSkills;
+                var driverLicenseText = string.IsNullOrWhiteSpace(resume.DriverLicense) ? "無" : resume.DriverLicense;
+                var portfolioText = FormatPortfolioString(resume.Portfolios);
+                var languageText = string.IsNullOrWhiteSpace(resume.LanguageSkills) ? "不具外文能力" : resume.LanguageSkills;
+                var certificateText = string.IsNullOrWhiteSpace(resume.Certificates) ? "無" : resume.Certificates;
+
                 var promptBody = $@"
 你是一位嚴格的資深人資主管，請針對以下職缺與履歷進行一對一精準匹配審查。
 
@@ -467,8 +486,12 @@ namespace InterviewProject.Controllers
 學歷：{FormatEducationString(resume.Educations)}
 工作年資：{resume.WorkExperienceYears} 年
 工作經歷：{FormatWorkExperienceString(resume.WorkExperiences)}
-語文：{resume.LanguageSkills}
-證照：{resume.Certificates}
+語文：{languageText}
+證照：{certificateText}
+專長：{specialtyText}
+使用電腦能力：{computerSkillText}
+駕照：{driverLicenseText}
+作品集：{portfolioText}
 自傳：{resume.Autobiography}
 
 🚨 你必須嚴格遵守以下輸出格式，不可包含任何 Markdown (如 ```json) 或其他廢話：
@@ -498,8 +521,8 @@ namespace InterviewProject.Controllers
                   .GetProperty("text")
                   .GetString() ?? "";
 
-                // 🚨 嚴格擷取分數與評語
-                var scoreMatch = Regex.Match(rawText, @"\[SCORE\]\s*(\d+)", RegexOptions.IgnoreCase);
+                // 🚨 嚴格擷取分數與評語
+                var scoreMatch = Regex.Match(rawText, @"\[SCORE\]\s*(\d+)", RegexOptions.IgnoreCase);
                 var commentMatch = Regex.Match(rawText, @"\[COMMENT\]\s*([\s\S]*)", RegexOptions.IgnoreCase);
 
                 if (!scoreMatch.Success || !commentMatch.Success)
@@ -683,6 +706,21 @@ namespace InterviewProject.Controllers
                     ? $"，{w.StartDate?.ToString("yyyy/MM")}~{(w.EndDate.HasValue ? w.EndDate.Value.ToString("yyyy/MM") : "至今")}"
                     : "";
                 return $"{w.CompanyName} - {w.JobTitle}（{w.JobDescription}）{period}";
+            }));
+        }
+
+        // 🎯 修正：新增作品集的格式化函式，給 AI 審查 prompt 用（先前完全沒有把作品集餵給 AI）
+        private string FormatPortfolioString(ICollection<Portfolio>? portfolios)
+        {
+            if (portfolios == null || !portfolios.Any()) return "無";
+
+            return string.Join("; ", portfolios.OrderBy(p => p.SortOrder).Select(p =>
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrWhiteSpace(p.Title)) parts.Add(p.Title);
+                if (!string.IsNullOrWhiteSpace(p.Description)) parts.Add(p.Description);
+                if (!string.IsNullOrWhiteSpace(p.Link)) parts.Add($"連結:{p.Link}");
+                return parts.Count > 0 ? string.Join(" - ", parts) : "（未填寫說明）";
             }));
         }
 
