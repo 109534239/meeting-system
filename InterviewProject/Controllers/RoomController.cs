@@ -700,6 +700,27 @@ namespace InterviewProject.Controllers
                         content = await _gemini.TranscribeInterviewVideoAsync(geminiFileUri, "video/webm", participantNames!);
                     }
 
+                    // 🐛 這輪修正：Gemini 產生的逐字稿用的是「影片開頭 00:00 起算」的相對時間戳記
+                    //    （[分:秒]），但 TranscriptChunks 那份備援內容用的是真實時鐘時間
+                    //    （下午HH:MM:SS），兩份接在同一份檔案裡，時間格式不一致，讀起來很奇怪、
+                    //    也沒辦法直接比對是不是同一個時間點。改成把 Gemini 回傳的相對時間，
+                    //    用「會議開始時間」（room.StartAt）當基準，換算成同樣的「下午HH:MM:SS」格式，
+                    //    跟備援內容的時間格式統一。
+                    //    ⚠️ 這個換算會有一點誤差（AI 面試官從會議開始到真的加入、錄影機真的啟動，
+                    //    中間有幾秒到幾十秒的延遲，不是完全零誤差），但比起兩種完全不同的時間格式
+                    //    混在一起，這樣至少讀起來一致、大致對得上，已經是目前能做到最準的版本。
+                    if (!string.IsNullOrEmpty(content) && room.StartAt.HasValue)
+                    {
+                        var baseTime = room.StartAt.Value;
+                        content = System.Text.RegularExpressions.Regex.Replace(content, @"^\[(\d{1,2}):(\d{2})\]", m =>
+                        {
+                            var minutes = int.Parse(m.Groups[1].Value);
+                            var seconds = int.Parse(m.Groups[2].Value);
+                            var absoluteTime = baseTime.AddMinutes(minutes).AddSeconds(seconds);
+                            return "[" + absoluteTime.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW")) + "]";
+                        }, System.Text.RegularExpressions.RegexOptions.Multiline);
+                    }
+
                     if (!string.IsNullOrEmpty(geminiFileName)) await _gemini.DeleteFileAsync(geminiFileName); // 用完主動清掉，比較乾淨
                 }
             }

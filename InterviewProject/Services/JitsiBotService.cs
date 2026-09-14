@@ -706,14 +706,46 @@ namespace InterviewProject.Services
         ...dest.stream.getAudioTracks()
     ]);
 
+    // 🐛 這輪新增：追查「錄影會在會議進行到一半就停止」這個問題，已經排除是分頁當機
+    //    （沒有觸發 Playwright 的 page.Crash 事件）、也排除是伺服器中途重啟。剩下最大的嫌疑是
+    //    MediaRecorder 自己內部出錯、或它賴以運作的某條底層軌道中途結束——但這兩種情況原本完全
+    //    沒有任何 log，等於是全黑的盲區。這裡把 combined stream 裡每一條軌道的 ended 事件、
+    //    還有 MediaRecorder 自己的 onerror/onstop 都掛上 log，下次如果真的再發生，
+    //    至少能看到「是哪一條軌道先斷的」或「MediaRecorder 自己回報了什麼錯誤」。
+    combined.getTracks().forEach(t => {
+        t.addEventListener('ended', () => {
+            console.error('[Recorder] ⚠️⚠️ combined stream 裡有一條 ' + t.kind + ' 軌道結束了（ended），這很可能是錄影提早中斷的原因！readyState=' + t.readyState);
+        });
+    });
+
     const mimeCandidates = ['video/webm;codecs=vp8,opus', 'video/webm'];
     let mime = '';
     for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
 
     const rec = new MediaRecorder(combined, mime ? { mimeType: mime } : {});
     rec.ondataavailable = e => { if (e.data && e.data.size > 0) window.__recChunks.push(e.data); };
+    rec.onerror = (e) => {
+        console.error('[Recorder] ⚠️⚠️⚠️ MediaRecorder 發生錯誤：' + (e.error ? (e.error.name + '：' + e.error.message) : JSON.stringify(e)) + '，目前狀態：' + rec.state + '，已經錄到的片段數：' + window.__recChunks.length);
+    };
+    rec.onstop = () => {
+        console.log('[Recorder] MediaRecorder 已停止（onstop 事件），已經錄到的片段數：' + window.__recChunks.length + '，距離開始錄影經過：' + Math.round((Date.now() - window.__recStartMs) / 1000) + ' 秒');
+    };
     rec.start(1000);
     window.__mediaRecorder = rec;
+
+    // 🎯 每 30 秒印一次記憶體用量（Chrome 專有的 performance.memory API，無頭環境也能用）——
+    //    如果這個數字隨時間一直漲不停，就代表真的是記憶體壓力太大，瀏覽器可能因此被系統強制回收資源，
+    //    這種情況不一定會觸發正式的 crash 事件，但一樣會讓分頁停止正常運作、錄影跟著中斷。
+    window.__memCheckInterval = setInterval(() => {
+        try {
+            if (performance.memory) {
+                console.log('[Recorder 記憶體診斷] 已用 JS heap=' + Math.round(performance.memory.usedJSHeapSize / 1024 / 1024) + 'MB' +
+                    '，heap 上限=' + Math.round(performance.memory.jsHeapSizeLimit / 1024 / 1024) + 'MB' +
+                    '，已錄片段數=' + window.__recChunks.length +
+                    '，MediaRecorder 狀態=' + (window.__mediaRecorder ? window.__mediaRecorder.state : 'N/A'));
+            }
+        } catch (e) {}
+    }, 30000);
 })();
 ";
 
@@ -724,6 +756,7 @@ namespace InterviewProject.Services
         if (window.__mediaObserver) { try { window.__mediaObserver.disconnect(); } catch (e) {} }
         if (window.__rafId) { try { cancelAnimationFrame(window.__rafId); } catch (e) {} }
         if (window.__trackPollInterval) { try { clearInterval(window.__trackPollInterval); } catch (e) {} }
+        if (window.__memCheckInterval) { try { clearInterval(window.__memCheckInterval); } catch (e) {} }
 
         if (!window.__mediaRecorder || window.__mediaRecorder.state === 'inactive') {
             resolve(null);
