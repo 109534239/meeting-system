@@ -704,31 +704,47 @@ namespace InterviewProject.Controllers
                 }
             }
 
-            if (!string.IsNullOrEmpty(content))
+            // 🐛 這輪修正（真實案例：這次錄影中途被截斷，只錄到 3 分多鐘，但主持人自己那份
+            //    透過舊機制送出的音檔，明明成功轉錄出一段更完整的面試問答內容）：
+            //    原本的邏輯是「影片轉錄有拿到內容，就整個不看 TranscriptChunks 那份備援」——
+            //    但「有拿到內容」不代表「內容完整」，像這次影片被截斷，轉錄結果雖然不是 null，
+            //    卻只涵蓋了整場會議的一小段，舊機制那邊明明撿到了更多內容，卻被整個捨棄掉，
+            //    等於白白浪費掉已經成功收集到的資料。
+            //    改成兩邊都看：影片轉錄的內容當主要逐字稿（結構完整、有正確的時間軸），
+            //    TranscriptChunks 裡如果還有內容，一律附加在後面當「補充」區塊，明確標示來源，
+            //    不會因為主要來源「部分成功」就把備援來源整個丟掉。
+            var chunks = await _context.TranscriptChunks
+                .Where(c => c.RoomCode == roomCode)
+                .OrderBy(c => c.ReceivedAt)
+                .ToListAsync();
+
+            string? supplementary = null;
+            if (chunks.Count > 0)
             {
+                supplementary = string.Join("\n", chunks.Select(c =>
+                    $"[{c.TimeLabel}] {c.Speaker}：{c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim()}"));
+            }
+
+            if (!string.IsNullOrEmpty(content) && !string.IsNullOrEmpty(supplementary))
+            {
+                content = content + "\n\n" +
+                    "── 以下是各參與者自己裝置額外收集到的內容（可能與上面重複，或涵蓋上面錄影沒錄到的部分，例如錄影中途中斷後的內容）──\n\n" +
+                    supplementary;
+                isEmpty = false;
+            }
+            else if (!string.IsNullOrEmpty(content))
+            {
+                isEmpty = false;
+            }
+            else if (!string.IsNullOrEmpty(supplementary))
+            {
+                content = supplementary;
                 isEmpty = false;
             }
             else
             {
-                // 🎯 影片還沒準備好、或 Gemini 轉錄失敗——退回舊機制，看 TranscriptChunks 這張暫存表裡
-                //    有沒有任何人（通常是主持人自己）透過瀏覽器端語音辨識/音檔上傳留下的內容，
-                //    有撿到就用，總比完全空白好
-                var chunks = await _context.TranscriptChunks
-                    .Where(c => c.RoomCode == roomCode)
-                    .OrderBy(c => c.ReceivedAt)
-                    .ToListAsync();
-
-                if (chunks.Count > 0)
-                {
-                    content = string.Join("\n", chunks.Select(c =>
-                        $"[{c.TimeLabel}] {c.Speaker}：{c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim()}"));
-                    isEmpty = false;
-                }
-                else
-                {
-                    content = "（本場會議未能產生逐字稿內容，可能原因：錄影尚未準備好、上傳給 Gemini 分析失敗，或會議全程沒有可辨識的人聲）";
-                    isEmpty = true;
-                }
+                content = "（本場會議未能產生逐字稿內容，可能原因：錄影尚未準備好、上傳給 Gemini 分析失敗，或會議全程沒有可辨識的人聲）";
+                isEmpty = true;
             }
 
             var fileName = BuildFileName(room, "txt");
@@ -742,8 +758,8 @@ namespace InterviewProject.Controllers
             }
 
             // 🎯 不管這次逐字稿是用哪條路徑產生的，TranscriptChunks 這張暫存表裡屬於這個房間的資料
-            //    都可以清掉了——它的任務只是在「新機制失敗時」當備援，備援用過了或沒用到都一樣該清空，
-            //    不然會一直卡在表裡，變成下次同一個房間代碼重測時的殘留干擾
+            //    都可以清掉了——內容已經併進上面的逐字稿了，留著只會變成下次同一個房間代碼
+            //    重測時的殘留干擾
             var leftoverChunks = _context.TranscriptChunks.Where(c => c.RoomCode == roomCode);
             _context.TranscriptChunks.RemoveRange(leftoverChunks);
 
