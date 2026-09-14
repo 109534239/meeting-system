@@ -616,6 +616,22 @@ namespace InterviewProject.Services
             cells.push({ type: 'video', el: v, label, participantId });
         });
 
+        // 🐛 這輪修正（抓到明確的 log 證據：AI 面試官自己的 video 格子 participantId 一直是 null，
+        //    導致下面的去重判斷永遠找不到「AI 已經顯示過了」，每一輪都多算出一格重複的
+        //    AI 面試官佔位格）：不管是走 synthetic 那條路（目前實測這條路一直沒有真的抓到任何東西，
+        //    syntheticVideo人數 始終是 0，這是另一個要繼續查的問題，但不影響這裡的修正）還是
+        //    rawVideos 那條 DOM 掃描備援路徑，只要抓不到真正的參與者 id，這一格的 participantId
+        //    就會是 null——但這格的「名字」（label）其實已經靠字幕文字備援機制正確找到了
+        //    （例如「AI 面試官」），只是沒有 id 可以拿去跟 nameMap 比對而已。
+        //    補一個反查：如果這一格沒有 participantId、但 label 已經確定了，就去 nameMap 裡
+        //    反查有沒有哪個 id 的名字剛好等於這個 label，找到就直接把那個 id 補回來，
+        //    這樣下面的去重判斷才抓得到「這個人已經顯示過了」，不會再重複多算一格。
+        const nameToId = {};
+        Object.keys(nameMap).forEach(pid => { if (nameMap[pid]) nameToId[nameMap[pid]] = pid; });
+        cells.forEach(c => {
+            if (!c.participantId && c.label && nameToId[c.label]) c.participantId = nameToId[c.label];
+        });
+
         const coveredIds = new Set(cells.map(c => c.participantId).filter(Boolean));
         Object.keys(nameMap).forEach(pid => {
             if (coveredIds.has(pid)) return;

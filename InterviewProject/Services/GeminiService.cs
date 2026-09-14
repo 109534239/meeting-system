@@ -474,5 +474,89 @@ namespace InterviewProject.Services
             }
         }
 
+        // 🐛 這輪新增：徹底取代「每個人自己瀏覽器抓自己聲音、各自送出」這整套逐字稿機制
+        //    （追了快 15 輪，每次都是新的失敗模式：audio-capture、no-speech、network、
+        //    永遠只有主持人成功——問題根源是瀏覽器端語音辨識這條路徑本質上不可靠，
+        //    不管怎麼調整攔截/去重/快取邏輯都沒辦法穩定）。
+        //    改成直接用同一份「整場會議錄影」（跟 AnalyzeInterviewVideoAsync 用的是同一支影片，
+        //    同一個 fileUri，不用再重新上傳一次）讓 Gemini 直接看畫面+聽聲音，自己產生完整逐字稿。
+        //    畫面上每個人名字都有標籤（Jitsi 原生渲染或我們自己的錄影腳本都會畫上名字），
+        //    Gemini 有多模態能力，看得到誰在講話、對得上名字。
+        //    這樣可以繞開整個瀏覽器端語音辨識這條不可靠的路徑，順便解決「只有主持人」「時間亂序」
+        //    這一整組糾纏很多輪的問題，因為它們的共同根源就是那條路徑。
+        public async Task<string?> TranscribeInterviewVideoAsync(string fileUri, string fileMimeType, List<string> participantNames)
+        {
+            var apiKey = _config["Gemini:ApiKey"] ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
+            if (string.IsNullOrEmpty(apiKey)) return null;
+
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromMinutes(3);
+
+            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+
+            var namesHint = participantNames != null && participantNames.Count > 0
+                ? "這場會議畫面上會出現的參與者名字標籤包括：" + string.Join("、", participantNames) + "。"
+                : "";
+
+            var promptText =
+                $"這是一場面試的完整錄影（包含畫面與聲音）。{namesHint}\n" +
+                $"請實際觀看畫面、聆聽聲音，產生一份完整的逐字稿（繁體中文）。要求：\n" +
+                $"1. 依照實際發生的時間先後順序（不是誰先講完就先寫誰，是照真正的時間軸），每一句話一行\n" +
+                $"2. 每一行的格式固定是：[分:秒] 講者姓名：講話內容（例如「[02:15] 最高主管-王小明：你好，先自我介紹一下」）——" +
+                $"時間戳記從影片開頭 00:00 起算，用畫面裡的秒數/進度去判斷，不要用真實世界的時鐘時間\n" +
+                $"3. 講者姓名要對應畫面上顯示的名字標籤，同一個人前後要用同一個名字，不要一下子用全名一下子用暱稱\n" +
+                $"4. 如果某段時間畫面/聲音都判斷不出是誰在講話，寫「不明講者」，不要亂猜、不要跳過那段內容\n" +
+                $"5. 背景雜音、非人聲、AI 面試官單純沒開口的空白時段都不用寫進逐字稿\n" +
+                $"6. 只要輸出逐字稿本身，不要加任何前言、結語、或跟逐字稿無關的說明文字";
+
+            var body = new
+            {
+                contents = new[]
+                {
+                    new
+                    {
+                        parts = new object[]
+                        {
+                            new { text = promptText },
+                            new { file_data = new { mime_type = fileMimeType, file_uri = fileUri } }
+                        }
+                    }
+                },
+                generationConfig = new
+                {
+                    maxOutputTokens = 8000,
+                    temperature = 0.2 // 🎯 逐字稿要求盡量貼著實際內容，溫度調低一點，減少自由發揮
+                }
+            };
+
+            try
+            {
+                var json = JsonSerializer.Serialize(body);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var response = await client.PostAsync(url, content);
+                var respBody = await response.Content.ReadAsStringAsync();
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[GeminiService] TranscribeInterviewVideoAsync 失敗：HTTP {(int)response.StatusCode}，內容前 300 字：{respBody.Substring(0, Math.Min(300, respBody.Length))}");
+                    return null;
+                }
+
+                using var doc = JsonDocument.Parse(respBody);
+                var text = doc.RootElement
+                    .GetProperty("candidates")[0]
+                    .GetProperty("content")
+                    .GetProperty("parts")[0]
+                    .GetProperty("text")
+                    .GetString() ?? "";
+
+                return text.Trim();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GeminiService] TranscribeInterviewVideoAsync 例外：{ex.Message}");
+                return null;
+            }
+        }
+
     }
 }

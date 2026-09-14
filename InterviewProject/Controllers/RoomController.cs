@@ -624,36 +624,111 @@ namespace InterviewProject.Controllers
 
         // 🎯 逐字稿改存到 Cloudflare R2，不再存本機 wwwroot
         //    這樣本機執行跟部署到 Render，讀到的都是同一份雲端檔案，不會再有兩邊結果不一致的問題
-        //    🐛 內容不再信任客戶端傳來的單一字串（那是舊架構，只有主持人自己聽到的+SignalR廣播成功的部分）
-        //    改成合併 TranscriptChunks 表裡「這個房間所有人各自送來」的片段，依伺服器收到的時間排序
+        //
+        //    🐛 這輪大改：原本「合併 TranscriptChunks 表裡每個人各自送來的片段」這套機制，
+        //    追了快 15 輪，每次都是新的失敗模式（audio-capture、no-speech、network、
+        //    永遠只有主持人成功）——問題根源是瀏覽器端語音辨識這條路徑本質上不可靠。
+        //    改成主要依賴「整場會議錄影」直接讓 Gemini 產生逐字稿：同一份錄影本來就會拿去給
+        //    AnalyzeInterviewVideoAsync 做多模態分析，這裡用同樣的方式上傳一次，讓 Gemini
+        //    直接看畫面（每個人名字都有標籤）+ 聽聲音，產生完整逐字稿，不再依賴任何人自己
+        //    瀏覽器端的麥克風/語音辨識。
+        //    TranscriptChunks 那套機制保留當作「影片還沒準備好/轉錄失敗」時的備援，不會整個刪掉，
+        //    確保就算這條新路徑失敗，舊機制還有機會撿到一些內容，不會直接變成完全空白。
         [HttpPost]
         public async Task<IActionResult> SaveTranscript([FromForm] string roomCode)
         {
             var room = await _context.Rooms.Include(r => r.Job).FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            // 🎯 合併這個房間所有人各自送來的逐字稿片段（存資料庫的，不管是誰在哪一台電腦送出的都查得到），
-            //    依伺服器收到的時間排序（不是靠客戶端自己拼的順序）
-            var chunks = await _context.TranscriptChunks
-                .Where(c => c.RoomCode == roomCode)
-                .OrderBy(c => c.ReceivedAt)
-                .ToListAsync();
-
+            string? content = null;
             bool isEmpty;
-            string content;
-            if (chunks.Count > 0)
+
+            // 🎯 錄影上傳是背景工作（結束會議後 AI 面試官才離開、轉檔、上傳），這裡跟 SaveAiAnalysis
+            //    用同樣的等待邏輯——最多等 2 分鐘，本機測試上傳頻寬常常比較慢，等不到才放棄改用備援。
+            string? recordingFileName = room.RecordingFileName;
+            for (int i = 0; i < 60 && string.IsNullOrEmpty(recordingFileName); i++)
             {
-                // 🐛 防呆：Tx 內容理論上已經在 GeminiService.CleanUpHallucination() 清過，
-                //    但保險起見，這裡還是把任何殘留的換行壓成空白，確保輸出的每一行
-                //    一定都有「[時間] 講者：」開頭，不會再冒出前面一段有幾十行看不出是誰講的裸行
-                content = string.Join("\n", chunks.Select(c =>
-                    $"[{c.TimeLabel}] {c.Speaker}：{c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim()}"));
+                await Task.Delay(2000);
+                await _context.Entry(room).ReloadAsync();
+                recordingFileName = room.RecordingFileName;
+            }
+
+            if (!string.IsNullOrEmpty(recordingFileName) && _storage.IsConfigured)
+            {
+                string? geminiFileUri = null;
+                string? geminiFileName = null;
+                try
+                {
+                    var videoBytes = await _storage.DownloadBytesAsync($"錄影錄音/{recordingFileName}");
+                    if (videoBytes.Length > 0 && videoBytes.Length < 200_000_000)
+                    {
+                        (geminiFileUri, geminiFileName) = await _gemini.UploadFileAsync(videoBytes, "video/webm", recordingFileName);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SaveTranscript] 房間 {roomCode} 下載/上傳錄影檔給 Gemini 失敗，改用備援機制：{ex.Message}");
+                }
+
+                if (!string.IsNullOrEmpty(geminiFileUri))
+                {
+                    // 🎯 把這個房間所有已知參與者的名字整理出來，當提示給 Gemini 對照畫面上的名字標籤
+                    var participants = await _context.RoomParticipants
+                        .Where(p => p.RoomId == room.Id)
+                        .Include(p => p.Resume).ThenInclude(r => r!.Member)
+                        .Include(p => p.Employee)
+                        .ToListAsync();
+                    var participantNames = participants.Select(p =>
+                    {
+                        if (p.Role == ParticipantRole.AI) return "AI 面試官";
+                        var personName = p.Role == ParticipantRole.Jobseeker ? p.Resume?.Member?.Name : p.Employee?.Name;
+                        if (string.IsNullOrEmpty(personName)) return null;
+                        var roleLabel = p.Role switch
+                        {
+                            ParticipantRole.Director => "最高主管",
+                            ParticipantRole.Manager => "主管",
+                            ParticipantRole.Jobseeker => "求職者",
+                            _ => null
+                        };
+                        return roleLabel != null ? $"{roleLabel}-{personName}" : personName;
+                    }).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList()!;
+
+                    content = await _gemini.TranscribeInterviewVideoAsync(geminiFileUri, "video/webm", participantNames!);
+                    if (content == null)
+                    {
+                        await Task.Delay(2000);
+                        content = await _gemini.TranscribeInterviewVideoAsync(geminiFileUri, "video/webm", participantNames!);
+                    }
+
+                    if (!string.IsNullOrEmpty(geminiFileName)) await _gemini.DeleteFileAsync(geminiFileName); // 用完主動清掉，比較乾淨
+                }
+            }
+
+            if (!string.IsNullOrEmpty(content))
+            {
                 isEmpty = false;
             }
             else
             {
-                content = "（本場會議未收集到逐字稿內容，可能原因：所有參與者的麥克風權限都被 Jitsi 視訊佔用，或麥克風未授權給瀏覽器）";
-                isEmpty = true;
+                // 🎯 影片還沒準備好、或 Gemini 轉錄失敗——退回舊機制，看 TranscriptChunks 這張暫存表裡
+                //    有沒有任何人（通常是主持人自己）透過瀏覽器端語音辨識/音檔上傳留下的內容，
+                //    有撿到就用，總比完全空白好
+                var chunks = await _context.TranscriptChunks
+                    .Where(c => c.RoomCode == roomCode)
+                    .OrderBy(c => c.ReceivedAt)
+                    .ToListAsync();
+
+                if (chunks.Count > 0)
+                {
+                    content = string.Join("\n", chunks.Select(c =>
+                        $"[{c.TimeLabel}] {c.Speaker}：{c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim()}"));
+                    isEmpty = false;
+                }
+                else
+                {
+                    content = "（本場會議未能產生逐字稿內容，可能原因：錄影尚未準備好、上傳給 Gemini 分析失敗，或會議全程沒有可辨識的人聲）";
+                    isEmpty = true;
+                }
             }
 
             var fileName = BuildFileName(room, "txt");
@@ -666,10 +741,11 @@ namespace InterviewProject.Controllers
                 return StatusCode(500, new { success = false, message = "逐字稿上傳到雲端儲存失敗：" + ex.Message });
             }
 
-            if (chunks.Count > 0)
-            {
-                _context.TranscriptChunks.RemoveRange(chunks); // 合併完成，暫存的可以清掉了
-            }
+            // 🎯 不管這次逐字稿是用哪條路徑產生的，TranscriptChunks 這張暫存表裡屬於這個房間的資料
+            //    都可以清掉了——它的任務只是在「新機制失敗時」當備援，備援用過了或沒用到都一樣該清空，
+            //    不然會一直卡在表裡，變成下次同一個房間代碼重測時的殘留干擾
+            var leftoverChunks = _context.TranscriptChunks.Where(c => c.RoomCode == roomCode);
+            _context.TranscriptChunks.RemoveRange(leftoverChunks);
 
             room.TranscriptFileName = fileName;
             await _context.SaveChangesAsync();
