@@ -1156,7 +1156,17 @@
         //    用 sendBeacon（跟 markLeftBeacon 同一套手法），確保就算馬上要跳轉頁面也送得出去
         function submitMyTranscript() {
             if (trxLines.length === 0) return;
-            const payload = JSON.stringify(trxLines.map(l => ({ sp: l.sp, tx: l.tx, time: l.time })));
+            // 🐛 這輪修正（回報：逐字稿裡每個人的每一句話都出現兩次一模一樣的）：
+            //    這個函式會被好幾個地方呼叫（pagehide、結束會議時、離開房間的備援），
+            //    但原本每次呼叫都是把 trxLines 整包送出去，而且從來沒有清空過——
+            //    只要這個函式在同一次會議裡被呼叫超過一次（例如結束會議時呼叫了一次，
+            //    緊接著瀏覽器分頁的 pagehide 事件又觸發了一次），同一批內容就會整包重送一次，
+            //    在資料庫裡留下一模一樣的重複列。改成送出「之前」就先把 trxLines 清空
+            //    （用複製一份快照送出去，原陣列直接清空），這樣不管這個函式被呼叫幾次，
+            //    同一句話都只會真的送出一次。
+            const snapshot = trxLines.map(l => ({ sp: l.sp, tx: l.tx, time: l.time }));
+            trxLines.length = 0;
+            const payload = JSON.stringify(snapshot);
             const url = '/Room/SubmitTranscriptChunk?roomCode=' + encodeURIComponent(ROOM_CODE);
             try {
                 const blob = new Blob([payload], { type: 'application/json' });
