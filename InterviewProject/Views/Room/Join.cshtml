@@ -938,7 +938,20 @@
                 for (let i = e.resultIndex; i < e.results.length; i++) {
                     if (e.results[i].isFinal) {
                         const txt = e.results[i][0].transcript.trim();
-                        if (txt.length > 1) {
+                        // 🐛 這輪修正（回報：逐字稿被「嗯」洗版，一秒一則洗了好幾分鐘）：
+                        //    原本只檢查 txt.length > 1，但語音辨識引擎常常會自動幫辨識結果加標點符號
+                        //    （例如「嗯。」），這樣長度就變成 2，直接繞過這個過濾器。
+                        //    加上這是持續聆聽模式，麥克風如果收到的是雜音/呼吸聲之類的背景音，
+                        //    很容易連續好幾分鐘、每一兩秒就被誤判成一次新的正式辨識結果。
+                        //    改成先把常見標點符號去掉，用「去標點後的實際內容長度」來判斷是否夠有意義；
+                        //    另外加一個節流：跟「上一次成功記錄的內容」完全相同、而且在很短時間內
+                        //    （3 秒）又出現一次，視為雜音誤判造成的重複，直接跳過不記錄。
+                        const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
+                        const nowMs = Date.now();
+                        const isDuplicateSpam = stripped === window.__lastSttText && (nowMs - (window.__lastSttTime || 0)) < 3000;
+                        if (stripped.length > 1 && !isDuplicateSpam) {
+                            window.__lastSttText = stripped;
+                            window.__lastSttTime = nowMs;
                             // ✅ 所有角色都記錄自己說的話
                             const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
                             trxLines.push({ sp: MY_NAME, tx: txt, time: now });

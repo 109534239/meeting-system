@@ -492,7 +492,20 @@ namespace InterviewProject.Services
 
             const collect = (obj) => {
                 if (!obj) return;
-                const arr = Array.isArray(obj) ? obj : Object.values(obj);
+                // 🐛 這輪修正（終於抓到「nameMap 永遠只有 AI 自己一筆」這個持續好幾輪的謎團）：
+                //    這個 Jitsi 版本的 participantsState.remote 很可能是一個真正的 JavaScript
+                //    Map 物件，不是普通物件——對 Map 呼叫 Object.values() 會回傳空陣列
+                //    （Map 的內容不是存在一般物件屬性上的），導致這裡永遠抓不到任何遠端參與者的
+                //    名字，只有本地的 AI 自己（走下面 participantsState.local 那條路）撿得到。
+                //    這正是「沒開鏡頭的人會被誤判成 AI 面試官」的真正根因：佔位格邏輯只能用
+                //    nameMap 裡「有的」名字去補「沒畫面的人」，nameMap 裡永遠只有「AI 面試官」
+                //    這個名字可以用，任何沒開鏡頭的人自然就只能被貼上這個唯一能用的名字，
+                //    不是真的認錯人，是壓根沒有別的名字可以選。
+                //    改成同時處理 Map 物件、陣列、跟一般物件三種可能的資料型別。
+                let arr;
+                if (typeof Map !== 'undefined' && obj instanceof Map) arr = Array.from(obj.values());
+                else if (Array.isArray(obj)) arr = obj;
+                else arr = Object.values(obj);
                 arr.forEach(p => { if (p && p.id && p.name) map[p.id] = p.name; });
             };
             collect(participantsState.remote);

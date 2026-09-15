@@ -764,7 +764,25 @@ namespace InterviewProject.Controllers
             //    哪個才是準的。改成：誰在 TranscriptChunks 裡本來就有內容（代表這個人自己裝置的
             //    錄音/辨識有成功），就完全信任那份、影片轉錄裡屬於同一個人的行全部捨棄不用；
             //    影片轉錄只拿來補「TranscriptChunks 完全沒有内容」的人（目前最常見就是求職者）。
-            var speakersWithChunks = new HashSet<string>(chunks.Select(c => c.Speaker));
+            //
+            //    🐛 這輪再修正：發現「有內容」不代表「內容可信」——如果麥克風收到的是雜音/呼吸聲，
+            //    瀏覽器語音辨識可能會把同一個很短的字（例如「嗯」）連續好幾分鐘、每一兩秒就誤判成
+            //    一次新的正式結果，這種情況下 TranscriptChunks 裡「有很多筆」反而是雜訊洗出來的，
+            //    比影片轉錄還不可信。加一個簡單的品質判斷：如果這個人的內容裡，同一句很短的話
+            //    （5 字以內）反覆出現超過一半，就當作是雜訊洗版，不信任這份、改用影片轉錄的內容。
+            var speakersWithChunks = new HashSet<string>();
+            foreach (var group in chunks.GroupBy(c => c.Speaker))
+            {
+                var textsInGroup = group.Select(c => c.Text.Trim()).ToList();
+                var mostCommonCount = textsInGroup
+                    .Where(t => t.Length <= 5)
+                    .GroupBy(t => t)
+                    .Select(g => g.Count())
+                    .DefaultIfEmpty(0)
+                    .Max();
+                var looksLikeSpam = textsInGroup.Count >= 6 && mostCommonCount >= textsInGroup.Count / 2;
+                if (!looksLikeSpam) speakersWithChunks.Add(group.Key);
+            }
 
             if (!string.IsNullOrEmpty(content) && room.StartAt.HasValue)
             {
@@ -788,6 +806,8 @@ namespace InterviewProject.Controllers
 
             foreach (var c in chunks)
             {
+                // 🎯 被判定是雜訊洗版的人，這些原始片段就不要輸出了——影片轉錄那邊已經補上這個人的內容了
+                if (!speakersWithChunks.Contains(c.Speaker)) continue;
                 var text = c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim();
                 merged.Add((c.ReceivedAt, $"[{c.ReceivedAt:tt h:mm:ss}] {c.Speaker}：{text}"));
             }
