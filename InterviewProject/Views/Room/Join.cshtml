@@ -975,6 +975,22 @@
         }
 
         function startSilenceDetect() {
+            // 🐛 這輪新增：連續好幾輪回報 AI 完全不會講話，「思考中」這幾個字從來沒出現過，
+            //    代表卡在 triggerAI() 前面某個關卡，但到底是哪一關，光用猜的已經猜了好幾輪都沒猜中。
+            //    這裡加一個節流過的診斷 log（每 10 秒印一次），把這個迴圈每次檢查用到的所有關鍵
+            //    狀態值都印出來，下次測完直接看這行，就能確定「有沒有真的算到冷場門檻」、
+            //    「isSp/aiSpeakingRemote 這些擋門的旗標是不是卡在 true」。
+            let lastLoopDiagLog = 0;
+            function logLoopDiag(secSince, threshold) {
+                const now = Date.now();
+                if (now - lastLoopDiagLog < 10000) return;
+                lastLoopDiagLog = now;
+                console.log('[冷場診斷] IS_HOST=' + IS_HOST + '，started=' + started + '，ended=' + ended +
+                    '，isSp=' + isSp + '，aiSpeakingRemote=' + aiSpeakingRemote +
+                    '，secSince=' + (secSince != null ? secSince.toFixed(1) : 'N/A') +
+                    '，threshold=' + threshold + '，lastSpeakerRole=' + lastSpeakerRole + '，lastWasQuestion=' + lastWasQuestion);
+            }
+
             if (audioStream) {
                 const ac = new (window.AudioContext || window.webkitAudioContext)();
                 const an = ac.createAnalyser(); an.fftSize = 256;
@@ -984,7 +1000,7 @@
                 silInterval = setInterval(() => {
                     // 🐛 這輪新增 aiSpeakingRemote 檢查：AI 正在講話時，全場一起暫停冷場計時，
                     //    不然還沒收到廣播的瀏覽器可能在 AI 講話當下又觸發一次，疊在一起搶話
-                    if (!started || ended || isSp || aiSpeakingRemote) { setSilBar(0); return; }
+                    if (!started || ended || isSp || aiSpeakingRemote) { setSilBar(0); logLoopDiag(null, null); return; }
                     an.getByteFrequencyData(buf);
                     const avg = buf.reduce((a,b)=>a+b,0)/buf.length;
                     if (avg > 8) {
@@ -997,16 +1013,18 @@
                         const secSince = (Date.now() - lastSpeechMs) / 1000;
                         const pct = Math.min((secSince / threshold) * 100, 100);
                         setSilBar(pct);
+                        logLoopDiag(secSince, threshold);
                         if (secSince >= threshold) { lastSpeechMs = Date.now(); triggerAI(); }
                     }
                 }, 800);
             } else {
                 // 無麥克風 fallback
                 silInterval = setInterval(() => {
-                    if (!started || ended || isSp || aiSpeakingRemote) return;
+                    if (!started || ended || isSp || aiSpeakingRemote) { logLoopDiag(null, null); return; }
                     const threshold = getSilenceThresholdSec();
                     const secSince = (Date.now() - lastSpeechMs) / 1000;
                     setSilBar(Math.min((secSince / threshold) * 100, 100));
+                    logLoopDiag(secSince, threshold);
                     if (secSince >= threshold) { lastSpeechMs = Date.now(); triggerAI(); }
                 }, 800);
             }
@@ -1035,9 +1053,21 @@
         //    改成只有一個權威來源做這個決定；其他人的瀏覽器還是繼續跑倒數計時（給自己畫面上的
         //    冷場偵測進度條用），但不會真的呼叫伺服器。
         async function triggerAI() {
-            if (!IS_HOST) return;
-            if (isSp || ended || !started || aiSpeakingRemote) return;
-            if ((Date.now() - lastSpeechMs) < 3000) return;
+            // 🐛 這輪新增：這幾個提早 return 的關卡，之前完全沒有留下任何 log，如果卡在這裡，
+            //    連「triggerAI 有沒有真的被呼叫到」都無從得知。這裡每個關卡都印一行，
+            //    下次測完直接搜尋 [冷場診斷-triggerAI] 就能確定卡在哪一關，或是根本沒被呼叫到
+            //    （如果連一行 [冷場診斷-triggerAI] 都沒出現，代表問題在更上游，
+            //    是 startSilenceDetect() 那個迴圈的 threshold 從來沒有被跨過）。
+            if (!IS_HOST) { console.log('[冷場診斷-triggerAI] 被呼叫但 IS_HOST=false，不是主持人不會真的觸發，正常'); return; }
+            if (isSp || ended || !started || aiSpeakingRemote) {
+                console.log('[冷場診斷-triggerAI] 被呼叫但提早返回：isSp=' + isSp + '，ended=' + ended + '，started=' + started + '，aiSpeakingRemote=' + aiSpeakingRemote);
+                return;
+            }
+            if ((Date.now() - lastSpeechMs) < 3000) {
+                console.log('[冷場診斷-triggerAI] 被呼叫但距離上次有聲音不到 3 秒，先跳過這次');
+                return;
+            }
+            console.log('[冷場診斷-triggerAI] 通過所有關卡，準備呼叫 /Claude/Ask 產生問句');
 
             setSt('th','💭 思考中...');
 
@@ -1059,14 +1089,17 @@
                     body: JSON.stringify({ prompt, system:"你是台灣企業面試主管，說話自然口語、溫暖不生硬，像真人在對話，避免制式或機械感的用詞。", maxTokens:80 })
                 });
                 if (r.ok) { const d = await r.json(); if (d.text?.length > 3) q = d.text.trim(); }
-            } catch {}
+                else { console.warn('[冷場診斷-triggerAI] /Claude/Ask 回應不是 200，status=' + r.status); }
+            } catch (e) { console.warn('[冷場診斷-triggerAI] /Claude/Ask 呼叫本身噴例外：' + e.message); }
 
             if (!q) q = waitingForAnswer ? "不用緊張，可以慢慢想沒關係。" : getFQ();
+            console.log('[冷場診斷-triggerAI] 準備呼叫 aiSpeak，內容：「' + q + '」');
             aiSpeak(q);
         }
 
         function aiSpeak(text) {
-            if (ended || !started) return;
+            console.log('[冷場診斷-aiSpeak] 被呼叫，即將 fetch /Room/AiSpeak，內容：「' + text + '」');
+            if (ended || !started) { console.warn('[冷場診斷-aiSpeak] 提早返回：ended=' + ended + '，started=' + started); return; }
 
             // 🐛 這輪簡化：現在 Simli 虛擬人已經確認能真的加入會議室講話了，這裡不再疊播
             //    瀏覽器內建的 window.speechSynthesis（以前會變成「Simli 真人聲音 + 觸發者自己

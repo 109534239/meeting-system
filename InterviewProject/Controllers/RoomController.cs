@@ -471,6 +471,14 @@ namespace InterviewProject.Controllers
                 return Ok(new { success = true });
 
             var now = DateTime.UtcNow;
+            // 🐛 這輪修正（回報：逐字稿裡同一個人一大串話全部都是同一個時間戳記）：
+            //    根因就在這裡——原本 ReceivedAt 是整批一次算好一個 now，這批裡的每一行不管
+            //    實際上是什麼時候講的，通通蓋上同一個「送到伺服器的當下」時間。
+            //    submitMyTranscript() 是整場會議累積到結束才一次用 sendBeacon 全部送出，
+            //    等於整場話最後全部變成同一秒的時間戳記，難怪看起來一團亂。
+            //    改成優先解析每一行自己帶的 TimeLabel（瀏覽器端當下辨識到那句話時自己算的時間），
+            //    還原成真正的 DateTime 當作 ReceivedAt，這樣才是每一行各自對應到實際講話的時間；
+            //    解析失敗（格式跑掉之類的意外情況）才退回用整批送達的時間當備援，不會整個掛掉。
             var records = lines
                 .Where(l => !string.IsNullOrWhiteSpace(l.Tx))
                 .Select(l => new TranscriptChunkRecord
@@ -479,7 +487,7 @@ namespace InterviewProject.Controllers
                     Speaker = l.Sp,
                     Text = l.Tx,
                     TimeLabel = l.Time,
-                    ReceivedAt = now
+                    ReceivedAt = TryParseTimeLabel(l.Time, now) ?? now
                 })
                 .ToList();
 
@@ -489,6 +497,36 @@ namespace InterviewProject.Controllers
                 await _context.SaveChangesAsync();
             }
             return Ok(new { success = true });
+        }
+
+        // 🎯 解析瀏覽器端送來的中文時間字串（例如「下午02:32:25」或「下午 2:32:25」，
+        //    格式可能因為產生的來源不同（.NET ToString 還是瀏覽器 Intl API）而略有差異，
+        //    這裡盡量寬鬆比對），還原成當天實際的 DateTime。解析不出來就回傳 null，
+        //    呼叫端會自己接住、退回用預設值。
+        private static DateTime? TryParseTimeLabel(string? timeLabel, DateTime referenceDate)
+        {
+            if (string.IsNullOrWhiteSpace(timeLabel)) return null;
+            try
+            {
+                var isPm = timeLabel.Contains("下午");
+                var isAm = timeLabel.Contains("上午");
+                var digitsPart = System.Text.RegularExpressions.Regex.Match(timeLabel, @"(\d{1,2}):(\d{2}):(\d{2})");
+                if (!digitsPart.Success) return null;
+
+                var hour = int.Parse(digitsPart.Groups[1].Value);
+                var minute = int.Parse(digitsPart.Groups[2].Value);
+                var second = int.Parse(digitsPart.Groups[3].Value);
+
+                if (isPm && hour < 12) hour += 12;
+                if (isAm && hour == 12) hour = 0;
+                if (hour > 23) return null;
+
+                return new DateTime(referenceDate.Year, referenceDate.Month, referenceDate.Day, hour, minute, second, referenceDate.Kind);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         // 🎯 逐字稿改用這個當主要來源：不再依賴瀏覽器原生 SpeechRecognition
