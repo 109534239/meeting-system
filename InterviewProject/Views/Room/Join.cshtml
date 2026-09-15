@@ -764,19 +764,41 @@
             // 🎯 修正：麥克風容易被 Jitsi 搶走獨佔權，導致語音辨識完全抓不到聲音（逐字稿整場空白）。
             //    改成先讓語音辨識/錄音去搶麥克風，搶到之後才連 Jitsi，提高語音辨識搶到麥克風的機率。
             //    這是瀏覽器/作業系統層級的裝置獨占限制，無法 100% 保證解決，需要實測確認。
+            //
+            // 🐛 這輪新增：好幾輪回報「冷場診斷」這個 log 連一行都沒出現過，代表這個 .then() 整個
+            //    callback 可能從來沒有執行到、或執行到一半某一步驟丟出例外就整個中斷（因為這裡
+            //    原本完全沒有 try/catch，.then() 裡面如果哪一步驟同步噴出例外，後面的步驟——
+            //    包括 startSilenceDetect() 甚至 initJitsi()——會全部安靜地不執行，變成一個
+            //    「未處理的 Promise rejection」，不會有明顯的紅字錯誤跳出來）。
+            //    改成每一步都包自己的 try/catch、都印明確的 log，這樣任何一步失敗都不會拖累
+            //    後面的步驟，下次測完直接看 [onMeetingStart 診斷] 這幾行，就能確定到底執行到哪裡。
+            console.log('[onMeetingStart 診斷] 開始呼叫 initAudio()...');
             initAudio().then(() => {
-                initSTT();
-                startSilenceDetect();
+                console.log('[onMeetingStart 診斷] initAudio() 已完成（resolve），開始執行後續步驟');
+
+                try { initSTT(); console.log('[onMeetingStart 診斷] initSTT() 執行完成'); }
+                catch (e) { console.error('[onMeetingStart 診斷] initSTT() 噴出例外：' + e.message); }
+
+                try { startSilenceDetect(); console.log('[onMeetingStart 診斷] startSilenceDetect() 執行完成，冷場計時器應該已經啟動'); }
+                catch (e) { console.error('[onMeetingStart 診斷] startSilenceDetect() 噴出例外：' + e.message); }
 
                 // 這裡才是真正連線進 Jitsi 視訊會議的時機——大家（含主持人自己）
                 // 收到「會議開始」廣播的當下才一起連線，計時器才會是共同、從 0 起算的
                 // 非主持人延遲一點點再連線，讓主持人的連線先把會議室在 Jitsi 那邊真的建立起來，
                 // 不然求職者/主管的連線有時候會比主持人早一步，變成「conference not found」連不進去
-                if (IS_HOST) {
-                    initJitsi();
-                } else {
-                    setTimeout(initJitsi, 2000);
-                }
+                try {
+                    if (IS_HOST) {
+                        initJitsi();
+                    } else {
+                        setTimeout(initJitsi, 2000);
+                    }
+                } catch (e) { console.error('[onMeetingStart 診斷] initJitsi() 噴出例外：' + e.message); }
+            }).catch(e => {
+                // 🐛 這輪新增：initAudio() 內部理論上已經自己 try/catch 過，正常不該走到這裡，
+                //    但萬一真的還是有沒接住的例外，至少要留下痕跡，而且不能讓 Jitsi 連線
+                //    整個卡死不動——就算冷場偵測沒能啟動，至少要讓大家能正常開會
+                console.error('[onMeetingStart 診斷] initAudio() 整個 Promise reject 了（不應該發生，但真的發生了）：' + (e && e.message));
+                try { if (IS_HOST) initJitsi(); else setTimeout(initJitsi, 2000); } catch (e2) {}
             });
 
             document.getElementById('notStartedModal').classList.remove('show');

@@ -752,24 +752,40 @@ namespace InterviewProject.Controllers
             //    ReceivedAt（真正的 DateTime，不是猜的）放在同一個時間軸上比較、排序。
             var merged = new List<(DateTime time, string line)>();
 
+            var chunks = await _context.TranscriptChunks
+                .Where(c => c.RoomCode == roomCode)
+                .OrderBy(c => c.ReceivedAt)
+                .ToListAsync();
+
+            // 🐛 這輪修正（回報：「最高主管還不如 TranscriptChunks 準確」）：
+            //    主持人自己裝置錄音轉出來的內容，一直都比影片轉錄準（影片轉錄是從整場會議合成畫面
+            //    去猜聲音內容，音質/畫質都打了折扣，難免比較容易聽錯）。原本兩邊內容不分青紅皂白
+            //    全部混在一起，同一個人講的話可能兩邊各出現一次、內容還兜不起來，反而讓人搞不清楚
+            //    哪個才是準的。改成：誰在 TranscriptChunks 裡本來就有內容（代表這個人自己裝置的
+            //    錄音/辨識有成功），就完全信任那份、影片轉錄裡屬於同一個人的行全部捨棄不用；
+            //    影片轉錄只拿來補「TranscriptChunks 完全沒有内容」的人（目前最常見就是求職者）。
+            var speakersWithChunks = new HashSet<string>(chunks.Select(c => c.Speaker));
+
             if (!string.IsNullOrEmpty(content) && room.StartAt.HasValue)
             {
                 var baseTime = room.StartAt.Value;
                 foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
                     content, @"^\[(\d{1,2}):(\d{2})\]\s*(.+)$", System.Text.RegularExpressions.RegexOptions.Multiline))
                 {
+                    var rest = m.Groups[3].Value.Trim();
+                    var colonIdx = rest.IndexOf('：');
+                    var speakerName = colonIdx > 0 ? rest.Substring(0, colonIdx).Trim() : null;
+
+                    // 這個人已經有自己裝置錄音的內容了，影片轉錄這行就跳過，避免同一句話出現兩個版本
+                    if (speakerName != null && speakersWithChunks.Contains(speakerName)) continue;
+
                     var minutes = int.Parse(m.Groups[1].Value);
                     var seconds = int.Parse(m.Groups[2].Value);
                     var lineTime = baseTime.AddMinutes(minutes).AddSeconds(seconds);
-                    var rest = m.Groups[3].Value.Trim();
                     merged.Add((lineTime, $"[{lineTime:tt h:mm:ss}] {rest}"));
                 }
             }
 
-            var chunks = await _context.TranscriptChunks
-                .Where(c => c.RoomCode == roomCode)
-                .OrderBy(c => c.ReceivedAt)
-                .ToListAsync();
             foreach (var c in chunks)
             {
                 var text = c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim();
