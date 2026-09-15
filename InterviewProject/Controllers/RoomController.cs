@@ -700,66 +700,47 @@ namespace InterviewProject.Controllers
                         content = await _gemini.TranscribeInterviewVideoAsync(geminiFileUri, "video/webm", participantNames!);
                     }
 
-                    // 🐛 這輪修正：Gemini 產生的逐字稿用的是「影片開頭 00:00 起算」的相對時間戳記
-                    //    （[分:秒]），但 TranscriptChunks 那份備援內容用的是真實時鐘時間
-                    //    （下午HH:MM:SS），兩份接在同一份檔案裡，時間格式不一致，讀起來很奇怪、
-                    //    也沒辦法直接比對是不是同一個時間點。改成把 Gemini 回傳的相對時間，
-                    //    用「會議開始時間」（room.StartAt）當基準，換算成同樣的「下午HH:MM:SS」格式，
-                    //    跟備援內容的時間格式統一。
-                    //    ⚠️ 這個換算會有一點誤差（AI 面試官從會議開始到真的加入、錄影機真的啟動，
-                    //    中間有幾秒到幾十秒的延遲，不是完全零誤差），但比起兩種完全不同的時間格式
-                    //    混在一起，這樣至少讀起來一致、大致對得上，已經是目前能做到最準的版本。
-                    if (!string.IsNullOrEmpty(content) && room.StartAt.HasValue)
-                    {
-                        var baseTime = room.StartAt.Value;
-                        content = System.Text.RegularExpressions.Regex.Replace(content, @"^\[(\d{1,2}):(\d{2})\]", m =>
-                        {
-                            var minutes = int.Parse(m.Groups[1].Value);
-                            var seconds = int.Parse(m.Groups[2].Value);
-                            var absoluteTime = baseTime.AddMinutes(minutes).AddSeconds(seconds);
-                            return "[" + absoluteTime.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW")) + "]";
-                        }, System.Text.RegularExpressions.RegexOptions.Multiline);
-                    }
-
                     if (!string.IsNullOrEmpty(geminiFileName)) await _gemini.DeleteFileAsync(geminiFileName); // 用完主動清掉，比較乾淨
                 }
             }
 
-            // 🐛 這輪修正（真實案例：這次錄影中途被截斷，只錄到 3 分多鐘，但主持人自己那份
-            //    透過舊機制送出的音檔，明明成功轉錄出一段更完整的面試問答內容）：
-            //    原本的邏輯是「影片轉錄有拿到內容，就整個不看 TranscriptChunks 那份備援」——
-            //    但「有拿到內容」不代表「內容完整」，像這次影片被截斷，轉錄結果雖然不是 null，
-            //    卻只涵蓋了整場會議的一小段，舊機制那邊明明撿到了更多內容，卻被整個捨棄掉，
-            //    等於白白浪費掉已經成功收集到的資料。
-            //    改成兩邊都看：影片轉錄的內容當主要逐字稿（結構完整、有正確的時間軸），
-            //    TranscriptChunks 裡如果還有內容，一律附加在後面當「補充」區塊，明確標示來源，
-            //    不會因為主要來源「部分成功」就把備援來源整個丟掉。
+            // 🐛 這輪修正（回報：逐字稿時間格式對了，但「所有角色應該照時間排序，而不是按角色分開」）：
+            //    原本是把影片轉錄的內容整段放前面，TranscriptChunks 的備援內容整段接在後面，
+            //    等於是「先列完一個人再列另一個人」，不是真正照時間先後交錯排列。
+            //    改成把兩邊的內容都拆成一行一行、各自帶著真正的時間戳記，混在一起依時間重新排序，
+            //    才會是「誰先講就先列誰」的正確順序。
+            //    影片轉錄的內容用的是「影片開頭 00:00 起算」的相對時間，這裡用會議開始時間
+            //    （room.StartAt）當基準換算成真正的時鐘時間，這樣才能跟 TranscriptChunks 的
+            //    ReceivedAt（真正的 DateTime，不是猜的）放在同一個時間軸上比較、排序。
+            var merged = new List<(DateTime time, string line)>();
+
+            if (!string.IsNullOrEmpty(content) && room.StartAt.HasValue)
+            {
+                var baseTime = room.StartAt.Value;
+                foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                    content, @"^\[(\d{1,2}):(\d{2})\]\s*(.+)$", System.Text.RegularExpressions.RegexOptions.Multiline))
+                {
+                    var minutes = int.Parse(m.Groups[1].Value);
+                    var seconds = int.Parse(m.Groups[2].Value);
+                    var lineTime = baseTime.AddMinutes(minutes).AddSeconds(seconds);
+                    var rest = m.Groups[3].Value.Trim();
+                    merged.Add((lineTime, $"[{lineTime:tt h:mm:ss}] {rest}"));
+                }
+            }
+
             var chunks = await _context.TranscriptChunks
                 .Where(c => c.RoomCode == roomCode)
                 .OrderBy(c => c.ReceivedAt)
                 .ToListAsync();
-
-            string? supplementary = null;
-            if (chunks.Count > 0)
+            foreach (var c in chunks)
             {
-                supplementary = string.Join("\n", chunks.Select(c =>
-                    $"[{c.TimeLabel}] {c.Speaker}：{c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim()}"));
+                var text = c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim();
+                merged.Add((c.ReceivedAt, $"[{c.ReceivedAt:tt h:mm:ss}] {c.Speaker}：{text}"));
             }
 
-            if (!string.IsNullOrEmpty(content) && !string.IsNullOrEmpty(supplementary))
+            if (merged.Count > 0)
             {
-                content = content + "\n\n" +
-                    "── 以下是各參與者自己裝置額外收集到的內容（可能與上面重複，或涵蓋上面錄影沒錄到的部分，例如錄影中途中斷後的內容）──\n\n" +
-                    supplementary;
-                isEmpty = false;
-            }
-            else if (!string.IsNullOrEmpty(content))
-            {
-                isEmpty = false;
-            }
-            else if (!string.IsNullOrEmpty(supplementary))
-            {
-                content = supplementary;
+                content = string.Join("\n", merged.OrderBy(x => x.time).Select(x => x.line));
                 isEmpty = false;
             }
             else

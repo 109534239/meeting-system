@@ -97,7 +97,14 @@ namespace InterviewProject.Services
                     faceId: window.__SIMLI_FACE_ID__,
                     handleSilence: true,
                     maxSessionLength: 3600,
-                    maxIdleTime: 300
+                    // 🐛 這輪修正：抓到明確證據——AI 面試官畫面變黑的時間點（5:30、更早幾輪回報的
+                    //    「4 分鐘左右消失」）都很接近這個 300 秒（5 分鐘）的門檻，不是巧合。
+                    //    冷場提問會不會準時觸發，這整個除錯過程一直沒有穩定驗證過，這幾次測試
+                    //    很可能 AI 真的整場沒開口說過話，Simli 判定「閒置超過 5 分鐘」，
+                    //    就不再繼續送畫面（或直接把連線關掉），導致格子變黑。
+                    //    改成跟 maxSessionLength 一樣長（一整場面試的量級），避免 AI 只是單純比較晚
+                    //    才被觸發講話、或這次剛好完全沒被觸發，就被 Simli 自己提早斷線。
+                    maxIdleTime: 3600
                 }
             });
             const sessionToken = tokenResp && tokenResp.session_token;
