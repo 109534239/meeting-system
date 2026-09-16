@@ -40,30 +40,31 @@ namespace InterviewProject.Hubs
             var room = await GetAuthorizedHostRoomAsync(roomCode);
             if (room == null) return;
 
+            // 🐛 這輪修正（回報：逐字稿裡混進完全不同時段的內容，時間跳來跳去、內容也兜不起來）：
+            //    根因是這一整段清空殘留資料 + 重設 StartAt 的邏輯，原本包在
+            //    `if (room.MeetingStatus != "InProgress")` 裡面——如果上一次同一個房間代碼的測試
+            //    中途沒有正常走到「結束會議」（伺服器被強制關掉、瀏覽器直接關分頁），
+            //    MeetingStatus 會一直卡在 "InProgress"，這次再按「開始會議」時，這個 if 判斷會是
+            //    false，整段清空/重設直接被跳過——上一次殘留的 TranscriptChunks 舊資料、舊的
+            //    StartAt 基準，全部原封不動留到這次測試，混進新內容裡，逐字稿當然時間錯亂、
+            //    內容也像是兩場不同時間的對話被接在一起。
+            //    改成不管 MeetingStatus 現在是什麼，只要按下「開始會議」，就無條件先清掉這個房間
+            //    代碼底下的殘留 TranscriptChunks、無條件重設 StartAt——這個防呆機制本來就不該有
+            //    例外情況讓它失效。
+            var staleChunks = _db.TranscriptChunks.Where(c => c.RoomCode == roomCode);
+            _db.TranscriptChunks.RemoveRange(staleChunks);
+            room.StartAt = DateTime.Now; // 🎯 這裡才是真正的開始時間，不是排程時預先填的
+            room.AiBotErrorMessage = null; // 🎯 上一次可能殘留的 AI 加入失敗訊息也一併清掉
+
             if (room.MeetingStatus != "InProgress")
             {
                 room.MeetingStatus = "InProgress";
-                room.StartAt = DateTime.Now; // 🎯 這裡才是真正的開始時間，不是排程時預先填的
 
                 // 🎯 求職者的面試狀態同步推進到「面試中」
                 await UpdateJobseekerInterviewStatusAsync(room.Id, InterviewStatusValues.InProgress, null);
-
-                // 🎯 這次重新開始會議，先把上一次可能殘留的 AI 加入失敗訊息清掉，
-                //    避免這次其實還在嘗試中，畫面卻先顯示了上一輪的舊錯誤
-                room.AiBotErrorMessage = null;
-
-                // 🐛 這輪新增：發現逐字稿裡出現「會議明明是這個時間點才開始，內容卻有更早時間點」
-                //    的殘留資料——根因是 SaveTranscript 合併完之後才會清空 TranscriptChunks，
-                //    如果上一次同一個房間代碼的測試中途失敗（例如上傳到雲端儲存那步噴例外、
-                //    或伺服器中途被關掉），合併/清空那步從沒真的跑到，那些舊資料就會一直卡在
-                //    表裡，等這次重新開始會議、又有新資料寫進來，混在一起就會出現「時間跳來跳去」
-                //    的詭異逐字稿。改成每次「真的重新開始」一場會議時，先把這個房間代碼底下
-                //    可能殘留的舊資料清乾淨，確保這次的逐字稿只會有這次會議的內容。
-                var staleChunks = _db.TranscriptChunks.Where(c => c.RoomCode == roomCode);
-                _db.TranscriptChunks.RemoveRange(staleChunks);
-
-                await _db.SaveChangesAsync();
             }
+
+            await _db.SaveChangesAsync();
 
             // 🎯 先讓大家（含主持人自己）收到「會議開始」廣播，不要卡在等 AI 面試官加入會議
             await Clients.Group(roomCode).SendAsync("MeetingStarted");

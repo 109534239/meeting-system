@@ -652,6 +652,33 @@ namespace InterviewProject.Services
             if (!c.participantId && c.label && nameToId[c.label]) c.participantId = nameToId[c.label];
         });
 
+        // 🐛 這輪修正（回報：補回 participantId 之後，AI 面試官／沒開鏡頭的人還是會出現兩次畫面）：
+        //    根因是上面這段補 id 的邏輯，只是把 participantId 「寫回」每一格，並沒有真的拿這個
+        //    補回來的 id 去移除已經重複塞進 cells 陣列的那一格——如果 synthetic 那條路徑跟
+        //    rawVideos 那條 DOM 掃描路徑，一開始因為抓不到 participantId（各自是 null／抓到不同的
+        //    id），沒有互相認出對方是同一個人，兩邊就已經各自把同一個人塞進 cells 陣列了；補 id
+        //    這段只會讓兩格「現在都有了同一個 participantId」，但陣列裡依然是兩個獨立的元素，
+        //    最後畫格子時兩格都還是會被畫出來，這才是「照理說 id 補回去了，畫面還是重複」的真正原因。
+        //    改成在這裡加一個收尾的去重：依 participantId（沒有 id 才退回用 label）當 key，
+        //    同一個 key 只留一格——有真的畫面（type === 'video'）優先於佔位格，
+        //    先出現的（signal 較新、通常是比較可信的 synthetic 那批）優先於後出現的。
+        const dedupedCells = [];
+        const seenCellKeys = new Map(); // key -> dedupedCells 裡的 index
+        cells.forEach(c => {
+            const key = c.participantId ? ('id:' + c.participantId) : (c.label ? ('label:' + c.label) : null);
+            if (!key) { dedupedCells.push(c); return; } // 完全沒有 id 也沒有 label，沒辦法判斷是不是同一個人，直接保留
+            if (!seenCellKeys.has(key)) {
+                seenCellKeys.set(key, dedupedCells.length);
+                dedupedCells.push(c);
+            } else {
+                const idx = seenCellKeys.get(key);
+                // 同一個人已經出現過：如果目前留著的是佔位格、這格是真的畫面，就換成這格
+                if (dedupedCells[idx].type === 'placeholder' && c.type === 'video') dedupedCells[idx] = c;
+            }
+        });
+        cells.length = 0;
+        cells.push(...dedupedCells);
+
         const coveredIds = new Set(cells.map(c => c.participantId).filter(Boolean));
         Object.keys(nameMap).forEach(pid => {
             if (coveredIds.has(pid)) return;
