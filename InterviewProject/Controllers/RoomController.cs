@@ -467,8 +467,16 @@ namespace InterviewProject.Controllers
         [HttpPost]
         public async Task<IActionResult> SubmitTranscriptChunk([FromQuery] string roomCode, [FromBody] List<TranscriptChunkDto>? lines)
         {
+            // 🐛 這輪新增：這支端點原本完全沒有 log，回報「TranscriptChunks 表整場都沒資料」時，
+            //    完全無法判斷是「前端根本沒送」、「送了但這裡收到的是空陣列」，還是「收到了、
+            //    但存檔那步失敗」。不管是哪一種情況都先印出來，下次測完直接看伺服器 log 就能定位。
+            Console.WriteLine($"[SubmitTranscriptChunk] 收到請求：roomCode={roomCode}，lines={(lines == null ? "null" : lines.Count.ToString())} 筆");
+
             if (string.IsNullOrEmpty(roomCode) || lines == null || lines.Count == 0)
+            {
+                Console.WriteLine($"[SubmitTranscriptChunk] roomCode 是空的或 lines 是空的/沒有內容，直接略過不存檔。");
                 return Ok(new { success = true });
+            }
 
             var now = DateTime.UtcNow;
             // 🐛 這輪修正（回報：逐字稿裡同一個人一大串話全部都是同一個時間戳記）：
@@ -491,10 +499,13 @@ namespace InterviewProject.Controllers
                 })
                 .ToList();
 
+            Console.WriteLine($"[SubmitTranscriptChunk] roomCode={roomCode}，過濾掉空白內容後剩 {records.Count} 筆，準備寫入資料庫。");
+
             if (records.Count > 0)
             {
                 _context.TranscriptChunks.AddRange(records);
                 await _context.SaveChangesAsync();
+                Console.WriteLine($"[SubmitTranscriptChunk] roomCode={roomCode} 已成功寫入 {records.Count} 筆（講者：{string.Join("、", records.Select(r => r.Speaker).Distinct())}）。");
             }
             return Ok(new { success = true });
         }

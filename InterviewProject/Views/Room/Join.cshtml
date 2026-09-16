@@ -830,6 +830,7 @@
             isSp = false;
             if (recognition) { try { recognition.stop(); } catch {} }
             if (silInterval) clearInterval(silInterval);
+            if (window.__micDiagInterval) clearInterval(window.__micDiagInterval);
 
             setSt('wa', '✅ 面試結束');
             showMsg('面試已結束，感謝所有人的參與！');
@@ -885,6 +886,20 @@
                     myAudioRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) myAudioChunks.push(e.data); };
                     myAudioRecorder.start(1000);
                     console.log('[initAudio] 已開始錄製自己的麥克風音檔（' + MY_NAME + '）');
+
+                    // 🐛 這輪新增：懷疑「Jitsi 加入會議後把麥克風獨佔權搶走」這個舊問題其實還沒真的解決，
+                    //    只是這次影響到的是「自己錄自己」這條新路徑，而不是舊的 SpeechRecognition。
+                    //    每 10 秒印一次麥克風軌道現在的狀態（readyState/muted/enabled）+ 目前累積的
+                    //    音檔片段數量跟總位元組數——如果 Jitsi 連線進去之後這幾個數字忽然停止成長，
+                    //    或者 muted 從 false 變成 true，就能直接證實是被 Jitsi 搶走獨佔權，不用再用猜的。
+                    const micTrack = audioStream.getAudioTracks()[0];
+                    window.__micDiagInterval = setInterval(() => {
+                        const totalBytes = myAudioChunks.reduce((s, c) => s + c.size, 0);
+                        console.log('[initAudio 診斷] 麥克風軌道 readyState=' + (micTrack ? micTrack.readyState : 'N/A') +
+                            ' muted=' + (micTrack ? micTrack.muted : 'N/A') +
+                            ' enabled=' + (micTrack ? micTrack.enabled : 'N/A') +
+                            '，目前累積 ' + myAudioChunks.length + ' 個片段、共 ' + totalBytes + ' bytes（' + MY_NAME + '）');
+                    }, 10000);
                 } catch (e) {
                     console.warn('[initAudio] 啟動錄音失敗：' + e.message + '（' + MY_NAME + '）');
                 }
@@ -897,21 +912,39 @@
         // 🎯 停止錄音、把整段音檔送給伺服器做語音轉文字（取代不可靠的瀏覽器 SpeechRecognition）
         //    要用 await 等它做完，不能像 submitMyTranscript() 那樣用 sendBeacon（音檔太大，sendBeacon 不適合傳大檔案）
         async function submitMyAudioTranscript() {
-            if (!myAudioRecorder || myAudioRecorder.state === 'inactive') return;
+            // 🐛 這輪新增：這支函式原本在「根本沒有錄音機可用」時是完全靜默地直接 return，
+            //    回報「TranscriptChunks 整場都沒資料」時，這種靜默略過會讓人誤以為它「有跑但沒送到」，
+            //    其實可能從一開始 initAudio() 那步就沒成功建立 myAudioRecorder。先印出來區分。
+            if (!myAudioRecorder) {
+                console.warn('[submitMyAudioTranscript] myAudioRecorder 是 null，代表 initAudio() 當初就沒有成功建立錄音機（可能是麥克風權限失敗，或啟動 MediaRecorder 本身噴例外），這次不會送出任何音檔（' + MY_NAME + '）');
+                return;
+            }
+            if (myAudioRecorder.state === 'inactive') {
+                console.warn('[submitMyAudioTranscript] myAudioRecorder.state 是 inactive（已經停止），這次不會送出任何音檔（' + MY_NAME + '）');
+                return;
+            }
 
             const stopped = new Promise(resolve => { myAudioRecorder.onstop = resolve; });
-            try { myAudioRecorder.stop(); } catch (e) { return; }
+            try { myAudioRecorder.stop(); } catch (e) {
+                console.warn('[submitMyAudioTranscript] myAudioRecorder.stop() 噴出例外：' + e.message + '（' + MY_NAME + '）');
+                return;
+            }
             await stopped;
 
-            if (myAudioChunks.length === 0) return;
+            console.log('[submitMyAudioTranscript] 錄音已停止，累積了 ' + myAudioChunks.length + ' 個音檔片段（' + MY_NAME + '）');
+            if (myAudioChunks.length === 0) {
+                console.warn('[submitMyAudioTranscript] myAudioChunks 是空的，整場會議 ondataavailable 一次都沒有真的拿到資料，代表麥克風從頭到尾可能都沒有真的收到聲音（' + MY_NAME + '）');
+                return;
+            }
 
             try {
                 const blob = new Blob(myAudioChunks, { type: myAudioRecorder.mimeType || 'audio/webm' });
+                console.log('[submitMyAudioTranscript] 準備送出音檔，大小=' + blob.size + ' bytes（' + MY_NAME + '）');
                 const fd = new FormData();
                 fd.append('audio', blob, 'audio.webm');
                 const url = '/Room/SubmitAudioTranscript?roomCode=' + encodeURIComponent(ROOM_CODE) + '&speakerName=' + encodeURIComponent(MY_NAME);
-                await fetch(url, { method: 'POST', body: fd });
-                console.log('[submitMyAudioTranscript] 音檔已送出（' + MY_NAME + '）');
+                const r = await fetch(url, { method: 'POST', body: fd });
+                console.log('[submitMyAudioTranscript] 音檔已送出，伺服器回應狀態碼=' + r.status + '（' + MY_NAME + '）');
             } catch (e) {
                 console.warn('[submitMyAudioTranscript] 送出失敗：' + e.message + '（' + MY_NAME + '）');
             }
@@ -1155,7 +1188,14 @@
         //    離開視訊或會議結束時都要呼叫一次，伺服器那邊會依收到時間把大家的片段合併成完整逐字稿
         //    用 sendBeacon（跟 markLeftBeacon 同一套手法），確保就算馬上要跳轉頁面也送得出去
         function submitMyTranscript() {
-            if (trxLines.length === 0) return;
+            // 🐛 這輪新增：這支函式原本完全沒有 log，回報「TranscriptChunks 表整場都沒資料」時，
+            //    完全無法判斷是「trxLines 本來就是空的（STT 根本沒抓到任何一句話）」，
+            //    還是「trxLines 有內容，但送出去這步失敗/沒送到」。先把這兩種情況都印出來區分。
+            console.log('[submitMyTranscript] 被呼叫，目前 trxLines 有 ' + trxLines.length + ' 筆（' + MY_NAME + '）');
+            if (trxLines.length === 0) {
+                console.warn('[submitMyTranscript] trxLines 是空的，不會送出任何內容——代表這整場會議 SpeechRecognition 完全沒有產生過任何一筆最終結果（' + MY_NAME + '）');
+                return;
+            }
             // 🐛 這輪修正（回報：逐字稿裡每個人的每一句話都出現兩次一模一樣的）：
             //    這個函式會被好幾個地方呼叫（pagehide、結束會議時、離開房間的備援），
             //    但原本每次呼叫都是把 trxLines 整包送出去，而且從來沒有清空過——
@@ -1172,12 +1212,18 @@
                 const blob = new Blob([payload], { type: 'application/json' });
                 const ok = navigator.sendBeacon(url, blob);
                 if (!ok) throw new Error('sendBeacon 排入失敗');
+                console.log('[submitMyTranscript] sendBeacon 已排入送出，' + snapshot.length + ' 筆（' + MY_NAME + '）');
             } catch (e) {
+                console.warn('[submitMyTranscript] sendBeacon 失敗（' + e.message + '），改用 fetch 送出（' + MY_NAME + '）');
                 fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: payload
-                }).catch(() => {});
+                }).then(() => {
+                    console.log('[submitMyTranscript] fetch 備援送出成功，' + snapshot.length + ' 筆（' + MY_NAME + '）');
+                }).catch(err => {
+                    console.warn('[submitMyTranscript] fetch 備援也送出失敗：' + err.message + '（' + MY_NAME + '）');
+                });
             }
         }
 
