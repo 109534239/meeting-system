@@ -184,12 +184,12 @@ namespace InterviewProject.Controllers
     List<string>? PortfolioExistingFileList,
     string? ProfileImageBase64,
     string? actionType,
-    string? submitType) // 🎯 設為可空，防止沒傳入時出錯
+    string? submitType)
         {
-            // 🎯 1. 修正判斷：同時相容 actionType 與 submitType
+            // 🎯 1. 判斷是否為暫存
             bool isDraft = (actionType == "draft" || submitType == "draft");
 
-            // 🎯 作品集檔案解析 (保持原樣)
+            // 🎯 作品集檔案解析
             var portfolioFilesByRow = new Dictionary<int, List<IFormFile>>();
             const string portfolioFilePrefix = "PortfolioFileList_";
             foreach (var f in Request.Form.Files)
@@ -227,15 +227,7 @@ namespace InterviewProject.Controllers
 
             model.MembersId = userId;
 
-            // 🎯 大頭照處理：如果有傳入 Base64 圖片，依舊儲存
-            var photoMember = await _db.Members.FindAsync(userId);
-            if (photoMember != null && !string.IsNullOrEmpty(ProfileImageBase64) && ProfileImageBase64.StartsWith("data:image"))
-            {
-                photoMember.ProfileImagePath = ProfileImageBase64;
-                await _db.SaveChangesAsync();
-            }
-
-            // 🚨 職缺編號檢查 (不管暫存或繳交都必須有 JobsId)
+            // 🚨 職缺編號檢查
             if (model.JobsId <= 0)
             {
                 TempData["ApiError"] = "❌ 系統錯誤：未接收到職缺編號。";
@@ -244,11 +236,14 @@ namespace InterviewProject.Controllers
                 return View("Resume", model);
             }
 
-            // 🚨 僅在「正式繳交 (!isDraft)」時才執行嚴格驗證 (暫存可允許未完成)
+            // 🚨 僅在「正式繳交 (!isDraft)」時執行嚴格驗證
+            var photoMember = await _db.Members.FindAsync(userId);
             if (!isDraft)
             {
-                // 1. 檢查大頭照必填
-                if (photoMember == null || string.IsNullOrWhiteSpace(photoMember.ProfileImagePath))
+                bool hasProfilePhoto = photoMember != null && !string.IsNullOrWhiteSpace(photoMember.ProfileImagePath);
+                bool hasNewBase64Photo = !string.IsNullOrEmpty(ProfileImageBase64) && ProfileImageBase64.StartsWith("data:image");
+
+                if (!hasProfilePhoto && !hasNewBase64Photo)
                 {
                     TempData["ApiError"] = "❌ 請上傳大頭照後再送出履歷。";
                     model.Job = await _db.Jobs.FindAsync(model.JobsId);
@@ -256,7 +251,6 @@ namespace InterviewProject.Controllers
                     return View("Resume", model);
                 }
 
-                // 2. ModelState 驗證
                 if (!ModelState.IsValid)
                 {
                     var errorDetails = string.Join(" | ", ModelState
@@ -269,7 +263,6 @@ namespace InterviewProject.Controllers
                     return View("Resume", model);
                 }
 
-                // 3. 證照級別檢查
                 var certLevelError = await ValidateCertificateLevelsAsync(model.Certificates);
                 if (!string.IsNullOrEmpty(certLevelError))
                 {
@@ -280,142 +273,108 @@ namespace InterviewProject.Controllers
                 }
             }
 
-            // 🌟 開啟資料庫交易 (Transaction)
-            using (var transaction = await _db.Database.BeginTransactionAsync())
+            // 🌟 資料庫交易處理 (相容 Npgsql / PostgreSQL 重試策略)
+            bool isSuccess = false;
+            string errorMessage = string.Empty;
+
+            var strategy = _db.Database.CreateExecutionStrategy();
+
+            await strategy.ExecuteAsync(async () =>
             {
-                try
+                using (var transaction = await _db.Database.BeginTransactionAsync())
                 {
-                    // 🎯 2. 優先以 model.Id (履歷編號) 尋找，找不到才用 (MembersId + JobsId) 搜尋
-                    Resume existing = null;
-                    if (model.Id > 0)
+                    try
                     {
-                        existing = await _db.Resumes.FirstOrDefaultAsync(r => r.Id == model.Id && r.MembersId == userId);
-                    }
-                    if (existing == null)
-                    {
-                        existing = await _db.Resumes.FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == model.JobsId);
-                    }
-
-                    DateTime now = DateTime.Now;
-                    Resume trackedResume;
-
-                    // 確定狀態名稱
-                    string newStatus = isDraft ? "暫存" : "待審核";
-
-                    // 1. 將基本履歷資料寫入資料庫
-                    if (existing == null)
-                    {
-                        model.ResumeTime = now;
-                        model.Status = newStatus;
-                        _db.Resumes.Add(model);
-                        await _db.SaveChangesAsync(); // 產生 ID
-                        trackedResume = model;
-                    }
-                    else
-                    {
-                        model.ResumeTime = now;
-                        model.Status = newStatus;
-                        model.AiScore = existing.AiScore;   // 保留舊分數
-                        model.AiComment = existing.AiComment; // 保留舊評語
-
-                        _db.Entry(existing).CurrentValues.SetValues(model);
-                        await _db.SaveChangesAsync();
-                        trackedResume = existing;
-                    }
-
-                    // 2. 寫入關聯資料表
-                    await UpdateLanguageProficiency(trackedResume.Id, model.LanguageSkills);
-                    await UpdateDriverLicense(trackedResume.Id, model.DriverLicense);
-                    await UpdateComputerSkills(trackedResume.Id, model.ComputerSkills);
-                    await UpdateSpecialties(trackedResume.Id, model.Specialty);
-                    await UpdateCertificates(trackedResume.Id, model.Certificates);
-                    await UpdateEducations(trackedResume.Id, EduLevelList, SchoolNameList, MajorList, EduStatusList, StartDateList, EndDateList);
-                    await UpdateWorkExperiences(trackedResume.Id, CompanyNameList, JobTitleList, JobDescriptionList, WorkStartDateList, WorkEndDateList);
-
-                    var portfolioMember = await _db.Members.FindAsync(userId);
-                    // 🎯 修正：AI 審查需要職缺的 SkillTags / MajorRequirements / LanguageRequirements 才能組出完整的
-                    //    「職缺要求」內容（BuildJobRequirementsText 會用到這三個集合），改用 FindAsync 抓不到導覽屬性，
-                    //    這三段之前一直是空的，AI 完全看不到職缺的技能/科系/語文要求。這裡改成用 Include 帶出來。
-                    var portfolioJob = await _db.Jobs
-                        .Include(j => j.SkillTags)
-                        .Include(j => j.MajorRequirements)
-                        .Include(j => j.LanguageRequirements)
-                        .FirstOrDefaultAsync(j => j.Id == model.JobsId);
-                    await UpdatePortfolios(trackedResume.Id, portfolioMember?.Name ?? "", portfolioJob?.Title ?? "", PortfolioTitleList, PortfolioDescList, PortfolioLinkList, portfolioFilesByRow, PortfolioExistingFileList);
-
-                    // 🌟 3. 判斷是否需要呼叫 AI 評分
-                    if (isDraft)
-                    {
-                        // 🎯 若為「暫存」，提交交易，不呼叫 AI 審查
-                        await transaction.CommitAsync();
-
-                        TempData["AlertTitle"] = "暫存成功！";
-                        TempData["ShowSuccessAlert"] = "履歷已成功暫存。";
-
-                        // 🎯 提示：若從 Member/ResumeDetail 進來暫存，導回 ResumeDetail，否則導回 Job_detail
-                        return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
-                    }
-                    else
-                    {
-                        // 🎯 若為「儲存並繳交」，補齊資料後呼叫 AI
-                        trackedResume.Job = portfolioJob;
-                        trackedResume.LanguageSkills = model.LanguageSkills;
-                        trackedResume.DriverLicense = model.DriverLicense;
-                        trackedResume.ComputerSkills = model.ComputerSkills;
-                        trackedResume.Certificates = model.Certificates;
-                        trackedResume.Specialty = model.Specialty; // 🎯 修正：確保 AI 審查時能拿到最新的專長資料
-                        trackedResume.Educations = await _db.Educations
-                            .Where(e => e.ResumeId == trackedResume.Id)
-                            .OrderBy(e => e.SortOrder)
-                            .ToListAsync();
-                        trackedResume.WorkExperiences = await _db.WorkExperiences
-                            .Where(w => w.ResumeId == trackedResume.Id)
-                            .OrderBy(w => w.SortOrder)
-                            .ToListAsync();
-                        trackedResume.Portfolios = await _db.Portfolios
-                            .Where(p => p.ResumeId == trackedResume.Id)
-                            .OrderBy(p => p.SortOrder)
-                            .ToListAsync();
-
-                        // 呼叫 AI API 進行審核
-                        var apiResult = await GetGeminiReviewAsync(trackedResume);
-
-                        // 如果 AI 連線失敗或格式錯誤 -> 取消寫入並 Alert
-                        if (!apiResult.IsSuccess)
+                        // 1. 大頭照更新
+                        if (photoMember != null && !string.IsNullOrEmpty(ProfileImageBase64) && ProfileImageBase64.StartsWith("data:image"))
                         {
-                            await transaction.RollbackAsync();
-                            TempData["ApiError"] = $"無法儲存履歷！\nAI 審查連線異常或失敗，原因：\n{apiResult.Message}";
-
-                            model.Job = trackedResume.Job;
-                            await PopulateViewBagData(userId);
-                            return View("Resume", model);
+                            photoMember.ProfileImagePath = ProfileImageBase64;
+                            await _db.SaveChangesAsync();
                         }
 
-                        // AI 成功，將分數寫入欄位
-                        trackedResume.AiScore = apiResult.Score;
-                        trackedResume.AiComment = apiResult.Comment;
+                        // 2. 尋找舊履歷
+                        Resume existing = null;
+                        if (model.Id > 0)
+                        {
+                            existing = await _db.Resumes.FirstOrDefaultAsync(r => r.Id == model.Id && r.MembersId == userId);
+                        }
+                        if (existing == null)
+                        {
+                            existing = await _db.Resumes.FirstOrDefaultAsync(r => r.MembersId == userId && r.JobsId == model.JobsId);
+                        }
 
-                        _db.Entry(trackedResume).Property(r => r.AiScore).IsModified = true;
-                        _db.Entry(trackedResume).Property(r => r.AiComment).IsModified = true;
-                        await _db.SaveChangesAsync();
+                        DateTime now = DateTime.Now;
+                        Resume trackedResume;
+                        string newStatus = isDraft ? "暫存" : "待審核";
 
-                        // 一切順利，正式提交進資料庫
+                        // 3. 主表寫入 / 更新
+                        if (existing == null)
+                        {
+                            model.ResumeTime = now;
+                            model.Status = newStatus;
+                            _db.Resumes.Add(model);
+                            await _db.SaveChangesAsync();
+                            trackedResume = model;
+                        }
+                        else
+                        {
+                            model.ResumeTime = now;
+                            model.Status = newStatus;
+                            model.AiScore = existing.AiScore;
+                            model.AiComment = existing.AiComment;
+
+                            _db.Entry(existing).CurrentValues.SetValues(model);
+                            await _db.SaveChangesAsync();
+                            trackedResume = existing;
+                        }
+
+                        // 4. 更新子資料表
+                        await UpdateLanguageProficiency(trackedResume.Id, model.LanguageSkills);
+                        await UpdateDriverLicense(trackedResume.Id, model.DriverLicense);
+                        await UpdateComputerSkills(trackedResume.Id, model.ComputerSkills);
+                        await UpdateSpecialties(trackedResume.Id, model.Specialty);
+                        await UpdateCertificates(trackedResume.Id, model.Certificates);
+                        await UpdateEducations(trackedResume.Id, EduLevelList, SchoolNameList, MajorList, EduStatusList, StartDateList, EndDateList);
+                        await UpdateWorkExperiences(trackedResume.Id, CompanyNameList, JobTitleList, JobDescriptionList, WorkStartDateList, WorkEndDateList);
+
+                        var portfolioMember = await _db.Members.FindAsync(userId);
+                        var portfolioJob = await _db.Jobs
+                            .Include(j => j.SkillTags)
+                            .Include(j => j.MajorRequirements)
+                            .Include(j => j.LanguageRequirements)
+                            .FirstOrDefaultAsync(j => j.Id == model.JobsId);
+
+                        await UpdatePortfolios(trackedResume.Id, portfolioMember?.Name ?? "", portfolioJob?.Title ?? "", PortfolioTitleList, PortfolioDescList, PortfolioLinkList, portfolioFilesByRow, PortfolioExistingFileList);
+
+                        // 5. 提交交易
                         await transaction.CommitAsync();
-
-                        TempData["AlertTitle"] = "繳交成功！";
-                        TempData["ShowSuccessAlert"] = "履歷已成功送出！";
-                        return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
+                        isSuccess = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        await transaction.RollbackAsync();
+                        isSuccess = false;
+                        errorMessage = ex.Message;
                     }
                 }
-                catch (Exception ex)
-                {
-                    await transaction.RollbackAsync();
-                    TempData["ApiError"] = $"❌ 系統處理異常，履歷未儲存：{ex.Message}";
-                    model.Job = await _db.Jobs.FindAsync(model.JobsId);
-                    await PopulateViewBagData(userId);
-                    return View("Resume", model);
-                }
+            });
+
+            // 🎯 依據資料庫執行結果進行頁面跳轉或返回 View
+            if (!isSuccess)
+            {
+                TempData["ApiError"] = $"❌ 系統處理異常，履歷未儲存：{errorMessage}";
+                model.Job = await _db.Jobs.FindAsync(model.JobsId);
+                await PopulateViewBagData(userId);
+                return View("Resume", model);
             }
+
+            if (isDraft)
+            {
+                TempData["AlertTitle"] = "暫存成功！";
+                TempData["ShowSuccessAlert"] = "履歷已成功暫存。";
+            }
+
+            return RedirectToAction("Job_detail", "Job", new { id = model.JobsId });
         }
 
         // 獨立出只負責「拿 AI 結果」的方法，不再處理資料庫寫入
@@ -1222,15 +1181,15 @@ namespace InterviewProject.Controllers
         {
             try
             {
-                // 💡 1. 儘量在資料庫端就先把名稱 Trim 好，減少記憶體浪費
+                // 💡 1. 撈取資料庫 (加上 c.CertCode)
                 var dbCerts = await _db.Certificatecategories
                     .Select(c => new {
+                        c.CertCode, // 👈 補上這一行
                         CertName = c.CertName != null ? c.CertName.Trim() : "",
                         c.AvailableLevels
                     })
                     .ToListAsync();
 
-                // 🎯 如果有帶 jobId，撈出該職缺的 CertRequired 文字，拆出關鍵字列表，用來標記「推薦」
                 List<string> certKeywords = new List<string>();
                 if (jobId.HasValue)
                 {
@@ -1238,31 +1197,27 @@ namespace InterviewProject.Controllers
                     certKeywords = ParseCertKeywords(job?.CertRequired);
                 }
 
-                // 💡 2. 記憶體內處理字串切分與補「級」字邏輯
+                // 💡 2. 記憶體內處理 (將 CertCode 帶入回傳物件)
                 var certs = dbCerts.Select(c => new
                 {
+                    c.CertCode, // 👈 補上這一行
                     c.CertName,
                     Levels = (c.AvailableLevels ?? "")
                         .Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
                         .Select(l =>
                         {
                             var val = l.Trim();
-                            // 如果是單字 甲/乙/丙/丁 且結尾不是級，就自動補上「級」，否則保持原樣（如：單一級）
                             return (val.Length == 1 && "甲乙丙丁".Contains(val)) ? val + "級" : val;
                         })
                         .ToArray(),
-                    // 🎯 雙向模糊比對：職缺關鍵字包含證照名稱、或證照名稱包含職缺關鍵字，只要有一邊命中就算推薦
-                    //    （例如關鍵字「AWS Certified Cloud Practitioner」完全等於證照名稱；
-                    //      關鍵字「多益(TOEIC) 900分以上」則包含證照名稱「多益 TOEIC」）
                     IsRecommended = certKeywords.Any(k =>
                         !string.IsNullOrWhiteSpace(c.CertName) &&
                         (k.IndexOf(c.CertName, StringComparison.OrdinalIgnoreCase) >= 0 ||
                          c.CertName.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0))
                 })
-                .OrderByDescending(c => c.IsRecommended) // 推薦的排最前面
+                .OrderByDescending(c => c.IsRecommended)
                 .ToList();
 
-                // 強制使用 PascalCase (不改動屬性大小寫)
                 return Json(certs, new System.Text.Json.JsonSerializerOptions
                 {
                     PropertyNamingPolicy = null
