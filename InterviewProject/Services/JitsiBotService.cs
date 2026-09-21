@@ -564,6 +564,12 @@ namespace InterviewProject.Services
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         const nameMap = getParticipantNameMap();
+        // 🐛 這輪新增：回報「3 個人卻硬塞出 4 格，角色重複」——目前的去重都是「找得到 id/名字才能
+        //    比對」，如果某一格畫面兩種身份都抓不到（既沒有 participantId，也沒有 label），
+        //    會直接跳過所有去重邏輯、被當成一個全新的人塞進 cells。先記下 nameMap 目前認定的
+        //    真實人數，等一下 rawVideos 那段掃到這種「完全沒有身份」的畫面時，如果格數已經夠了，
+        //    寧可不畫這一格，也不要多塞一個沒人知道是誰的重複格子。
+        const expectedParticipantCount = Object.keys(nameMap).length;
 
         // 🐛 這輪修正的問題：
         // 1. 「同一張臉出現兩次」：Jitsi 在 speaker/stage view 底下，同一位參與者的畫面常常會同時存在
@@ -633,6 +639,14 @@ namespace InterviewProject.Services
             if (participantId) seenParticipantIds.add(participantId);
 
             const label = findLabelForVideo(v, nameMap);
+            // 🐛 這輪新增：這格畫面既沒有 participantId、也找不到任何 label——完全是個「不知道是誰」
+            //    的神秘畫面。如果目前已經湊到的格數已經 >= nameMap 認定的真實人數，代表這格很可能
+            //    只是別人的畫面被重複渲染出來（clone track / 縮圖），不是真的第 4 個人，這種情況
+            //    寧可不畫，也不要塞一個沒有名字、無法去重的重複格子進去。
+            if (!participantId && !label && cells.length >= expectedParticipantCount) {
+                console.log('[Recorder 診斷] 跳過一格找不到 participantId 也找不到 label 的神秘畫面（目前 ' + cells.length + ' 格 >= 已知 ' + expectedParticipantCount + ' 人），避免多塞一格重複');
+                return;
+            }
             cells.push({ type: 'video', el: v, label, participantId });
         });
 

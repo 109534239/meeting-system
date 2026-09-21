@@ -576,6 +576,13 @@ namespace InterviewProject.Controllers
 
             Console.WriteLine($"[SubmitAudioTranscript] speakerName={speakerName} 轉錄成功，內容前 40 字：{text.Substring(0, Math.Min(40, text.Length))}");
 
+            // 🐛 這輪修正（回報：逐字稿裡出現一段時間完全兜不起來的內容，例如整場應該是凌晨，
+            //    卻冒出一行「下午 4:11」）：根因是這裡 TimeLabel 用 DateTime.Now（本地時間）格式化，
+            //    但 ReceivedAt 卻存 DateTime.UtcNow（UTC 時間）——而 SaveTranscript 合併/輸出逐字稿時，
+            //    是直接把 ReceivedAt 當「本地時鐘時間」拿去格式化顯示（不是用 TimeLabel 那個字串），
+            //    等於把 UTC 時間當本地時間顯示，台灣時區（UTC+8）差了整整 8 小時，難怪對不起來。
+            //    改成 TimeLabel 跟 ReceivedAt 都統一用 DateTime.Now（本地時間），
+            //    跟 SubmitTranscriptChunk／MeetingHub.StartAt 那些地方的時間基準一致。
             var timeLabel = DateTime.Now.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW"));
             _context.TranscriptChunks.Add(new TranscriptChunkRecord
             {
@@ -583,7 +590,7 @@ namespace InterviewProject.Controllers
                 Speaker = speakerName,
                 Text = text,
                 TimeLabel = timeLabel,
-                ReceivedAt = DateTime.UtcNow
+                ReceivedAt = DateTime.Now
             });
             await _context.SaveChangesAsync();
             return Ok(new { success = true });
@@ -767,6 +774,31 @@ namespace InterviewProject.Controllers
                 .Where(c => c.RoomCode == roomCode)
                 .OrderBy(c => c.ReceivedAt)
                 .ToListAsync();
+
+            // 🐛 這輪新增：發現一種前面的雜訊判斷完全抓不到的洗版模式——SubmitAudioTranscript
+            //    這條新路徑是「整段音檔一次轉錄成一整行」，如果麥克風整場收到的幾乎都是同一個
+            //    語助詞（例如「嗯」），Gemini 可能會原封不動轉出一整行幾百字的「嗯嗯嗯…嗯」。
+            //    這種情況下面那個「同一句 5 字以內的話反覆出現超過一半」的判斷完全抓不到——
+            //    因為它是『一整行』，不是『很多筆 5 字以內的短行』，`t.Length <= 5` 那個篩選條件
+            //    直接把它排除在外，等於完全沒被檢查過就直接被當成正常內容用了。
+            //    改成在這裡先逐筆檢查每一行本身：如果這一行去掉空白後夠長（>=20 字），
+            //    但裡面出現的「不同字元種類」少到誇張（<=3 種），幾乎可以確定是同一兩個字
+            //    重複堆出來的雜訊（正常語句用字非常多樣，不可能一整段只用不到 4 種字），
+            //    直接把這一筆從 chunks 裡剔除，不讓它有機會混進最終逐字稿。
+            bool LooksLikeRepeatedFillerSpam(string text)
+            {
+                var chars = text.Where(ch => !char.IsWhiteSpace(ch)).ToList();
+                if (chars.Count < 20) return false;
+                var distinct = chars.Distinct().Count();
+                return distinct <= 3;
+            }
+            var spamFilteredChunks = chunks.Where(c => !LooksLikeRepeatedFillerSpam(c.Text)).ToList();
+            var droppedAsSpam = chunks.Count - spamFilteredChunks.Count;
+            if (droppedAsSpam > 0)
+            {
+                Console.WriteLine($"[SaveTranscript] roomCode={roomCode}：有 {droppedAsSpam} 筆內容被判定成單行雜訊洗版（例如一整行都是重複的「嗯」），已直接剔除不放進逐字稿。");
+            }
+            chunks = spamFilteredChunks;
 
             // 🐛 這輪修正（回報：「最高主管還不如 TranscriptChunks 準確」）：
             //    主持人自己裝置錄音轉出來的內容，一直都比影片轉錄準（影片轉錄是從整場會議合成畫面
