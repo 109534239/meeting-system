@@ -295,6 +295,30 @@ namespace InterviewProject.Services
     }).catch(e => console.error('[Recorder] AudioContext.resume() 失敗：', e));
     console.log('[Recorder] AudioContext 建立完成，初始狀態：' + audioCtx.state);
     const dest = audioCtx.createMediaStreamDestination();
+
+    // 🐛 這輪新增：光靠 audioCtx.state 顯示 'running' 不代表混音圖裡真的有聲音在流動——
+    //    這輪用 ffmpeg 逐段量測上傳的錄影檔案，發現幾乎整場 19 分鐘都是 -91dB 真正的數位靜音，
+    //    只有中間一小段 30 秒左右突然有真的聲音，其他時間完全沒有。這種「忽有忽無」的模式，
+    //    光看 audioCtx.state 或 resume() 有沒有成功完全看不出來（這兩個從頭到尾都可能一直顯示
+    //    正常）。加一個 AnalyserNode 接在 dest 前面，每 5 秒量一次目前這個混音圖裡的音量峰值，
+    //    直接印出來——下次測完，拿這幾行 log 對照當下會議裡實際發生什麼事（誰在講話、
+    //    AI 有沒有觸發說話），才能抓到音訊到底是在哪個時間點、哪種情況下斷掉的。
+    const diagAnalyser = audioCtx.createAnalyser();
+    diagAnalyser.fftSize = 2048;
+    dest.stream.getAudioTracks().length; // 只是確保 dest.stream 已經初始化
+    try {
+        audioCtx.createMediaStreamSource(dest.stream).connect(diagAnalyser);
+    } catch (e) { console.warn('[Recorder 音量診斷] 接上 AnalyserNode 失敗：' + e.message); }
+    const diagBuf = new Float32Array(diagAnalyser.fftSize);
+    window.__audioLevelInterval = setInterval(() => {
+        try {
+            diagAnalyser.getFloatTimeDomainData(diagBuf);
+            let peak = 0;
+            for (let i = 0; i < diagBuf.length; i++) { const a = Math.abs(diagBuf[i]); if (a > peak) peak = a; }
+            const peakDb = peak > 0 ? (20 * Math.log10(peak)).toFixed(1) : '-Infinity';
+            console.log('[Recorder 音量診斷] audioCtx.state=' + audioCtx.state + '，混音圖目前峰值=' + peakDb + 'dB，已接上的原始音軌數=' + connectedTrackIds.size);
+        } catch (e) {}
+    }, 5000);
     const connected = new WeakSet();
     const connectedTrackIds = new Set(); // 🎯 記錄「已經透過任何管道接上的原始音軌 id」，避免同一個人的聲音被接兩次造成疊音
 
@@ -818,6 +842,7 @@ namespace InterviewProject.Services
         if (window.__rafId) { try { cancelAnimationFrame(window.__rafId); } catch (e) {} }
         if (window.__trackPollInterval) { try { clearInterval(window.__trackPollInterval); } catch (e) {} }
         if (window.__memCheckInterval) { try { clearInterval(window.__memCheckInterval); } catch (e) {} }
+        if (window.__audioLevelInterval) { try { clearInterval(window.__audioLevelInterval); } catch (e) {} }
 
         if (!window.__mediaRecorder || window.__mediaRecorder.state === 'inactive') {
             resolve(null);
@@ -936,6 +961,20 @@ namespace InterviewProject.Services
                         //    部署到 Render 之後 App:BaseUrl 會是公開網址，理論上不會再踩到這個限制，
                         //    但保留這個參數不影響正式環境運作，所以兩邊都留著。
                         "--disable-features=BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults",
+                        // 🐛 這輪新增（回報：整份 19 分鐘的錄影，用 ffmpeg 逐段量測，幾乎全程都是
+                        //    -91dB 真正的數位靜音，只有中間某一小段 30 秒左右突然量到真的聲音，
+                        //    其他時間完全沒有）：懷疑是 Chromium 的「背景分頁節流」機制搞的鬼——
+                        //    無頭瀏覽器雖然沒有真人在看，但 Chromium 內部排程還是可能把這個分頁
+                        //    當成「被遮擋/背景中的視窗」，间歇性地降頻或暫停計時器、音訊處理等
+                        //    子系統，導致 AudioContext 的混音圖時跑時停，只有極少數時間點真的有
+                        //    在處理音訊，這正好符合「幾乎全程靜音、只有零星一小段有聲音」這種
+                        //    忽有忽無的模式（如果單純是沒呼叫 resume() 那種問題，應該是整場永遠
+                        //    靜音，不會有這種時有時無的情況）。加上這三個參數，明確告訴 Chromium
+                        //    不要對這個分頁做背景節流，這是 Playwright/Puppeteer 社群處理無頭瀏覽器
+                        //    音訊/計時器不穩定問題的標準做法。
+                        "--disable-backgrounding-occluded-windows",
+                        "--disable-renderer-backgrounding",
+                        "--disable-background-timer-throttling",
                         // 🐛 這輪新增：Chrome 的自動播放政策會讓 AudioContext 預設卡在「暫停」狀態，
                         //    這是造成整份錄影音軌完全靜音的根因之一（另一半是程式碼裡真的沒呼叫
                         //    audioCtx.resume()，那個已經修正）。這裡多加這個參數當第二層保險——
