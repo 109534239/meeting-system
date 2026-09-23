@@ -971,14 +971,16 @@
                 for (let i = e.resultIndex; i < e.results.length; i++) {
                     if (e.results[i].isFinal) {
                         const txt = e.results[i][0].transcript.trim();
-                        // 🐛 這輪修正（回報：逐字稿被「嗯」洗版，一秒一則洗了好幾分鐘）：
-                        //    原本只檢查 txt.length > 1，但語音辨識引擎常常會自動幫辨識結果加標點符號
-                        //    （例如「嗯。」），這樣長度就變成 2，直接繞過這個過濾器。
-                        //    加上這是持續聆聽模式，麥克風如果收到的是雜音/呼吸聲之類的背景音，
-                        //    很容易連續好幾分鐘、每一兩秒就被誤判成一次新的正式辨識結果。
-                        //    改成先把常見標點符號去掉，用「去標點後的實際內容長度」來判斷是否夠有意義；
-                        //    另外加一個節流：跟「上一次成功記錄的內容」完全相同、而且在很短時間內
-                        //    （3 秒）又出現一次，視為雜音誤判造成的重複，直接跳過不記錄。
+                        // 🐛 這輪修正（回報：抓到 [冷場診斷] log 證據，secSince 每隔幾秒就被重置一次，
+                        //    從來沒有真的累加到 threshold，AI 面試官從頭到尾沒有機會開口）：
+                        //    根因在下面——原本不管這次 STT 結果是不是「中間結果」（interim，
+                        //    引擎還在猜、還沒確定的暫時結果），都會重置冷場計時器。continuous +
+                        //    interimResults 模式下，只要麥克風有任何風吹草動（呼吸聲、環境雜音），
+                        //    引擎就會很頻繁地吐出中間結果，等於冷場計時器被雜音每一兩秒重置一次，
+                        //    在麥克風不安靜的環境下幾乎不可能真的累加到 22~40 秒的門檻。
+                        //    改成只有「這次確實被判定成有意義的內容」（通過下面 stripped.length > 1
+                        //    且不是雜訊節流掉的那個判斷，跟記錄逐字稿用的是同一個標準）才重置冷場計時器；
+                        //    單純的中間結果、或被判定是雜訊洗版的內容，都不再重置。
                         const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
                         const nowMs = Date.now();
                         const isDuplicateSpam = stripped === window.__lastSttText && (nowMs - (window.__lastSttTime || 0)) < 3000;
@@ -997,11 +999,12 @@
                             // 🐛 這輪新增：順便廣播「是誰講的、像不像問題」這個輕量資訊，
                             //    給主持人那邊判斷「現在是不是在等別人回答，不算冷場」用
                             try { hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE); } catch {}
+
+                            // 🎯 只有真的判定成有意義內容的最終結果，才重置冷場計時器（見上方註解）
+                            lastSpeechMs = Date.now();
+                            silT = 0; setSilBar(0);
                         }
                     }
-                    // 中間結果也重置冷場
-                    lastSpeechMs = Date.now();
-                    silT = 0; setSilBar(0);
                 }
             };
             recognition.onstart = () => {
@@ -1547,12 +1550,21 @@
             // 🎯 只有「會議已經在進行中」才立即連線（遲到 / 重新整理頁面的情況）
             //    否則一律等主持人真的按下「開始會議」，收到廣播才連線 —— 這樣所有人的視訊時鐘才會一起從 0 開始算，
             //    而不是誰先載入頁面誰的計時器就先跑
+            //
+            // 🐛 這輪修正（回報：主持人不小心關掉瀏覽器離開會議，AI 面試官也跟著離開；
+            //    重新整理進來後，畫面上「開始會議」按鈕還在，「結束會議」按鈕卻不見了，
+            //    導致沒辦法正常結束會議）：根因是這裡原本只是「手動」重做了 onMeetingStart() 裡
+            //    的其中一小部分（把 started 設成 true、連 Jitsi、更新 banner 文字），完全沒有
+            //    呼叫 onMeetingStart() 本身——導致 onMeetingStart() 裡其他所有事情都沒發生，
+            //    包括「把 startBtn 藏起來、把 endBtn 顯示出來」那幾行（第 810~813 行），
+            //    也包括 initAudio()／initSTT()／startSilenceDetect() 這些初始化。也就是說，
+            //    主持人這種「重新整理後回到進行中的會議」的情況，不只是按鈕顯示錯誤，
+            //    連自己的語音辨識／錄音／冷場提問這輪都完全沒有啟動，等於重新整理之後這個人
+            //    後面全程都不會被記錄到逐字稿、也不會觸發冷場提問。
+            //    改成直接呼叫 onMeetingStart()，這樣它原本該做的事情（含按鈕顯示、音訊初始化）
+            //    才會真的全部執行到，不會再各自維護一份不完整的複製邏輯。
             if (ALREADY_IN_PROGRESS) {
-                started = true;
-                initJitsi();
-                const b = document.getElementById('banner');
-                b.className = 'banner live';
-                b.textContent = '🔴 會議進行中';
+                onMeetingStart();
             } else if (!IS_HOST) {
                 // 求職者/主管：等待主持人開始，800ms 沒收到通知就顯示提示
                 setTimeout(()=>{

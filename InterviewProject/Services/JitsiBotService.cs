@@ -317,10 +317,26 @@ namespace InterviewProject.Services
             for (let i = 0; i < diagBuf.length; i++) { const a = Math.abs(diagBuf[i]); if (a > peak) peak = a; }
             const peakDb = peak > 0 ? (20 * Math.log10(peak)).toFixed(1) : '-Infinity';
             console.log('[Recorder 音量診斷] audioCtx.state=' + audioCtx.state + '，混音圖目前峰值=' + peakDb + 'dB，已接上的原始音軌數=' + connectedTrackIds.size);
+            // 🐛 這輪新增：逐條印出每一條已接上音軌「現在」的狀態——如果某條音軌的
+            //    readyState 從 'live' 變成 'ended'，或 muted 從 false 變成 true，就是這條軌道
+            //    中途斷線/被靜音的直接證據；如果某個人（例如主管）從頭到尾都沒有出現在這份清單裡，
+            //    代表他的音軌從來沒有被成功接上過，問題出在更前面的 connectJitsiTracks() 那一步。
+            connectedTracksById.forEach(({ track, participantId, label }, trackId) => {
+                console.log('[Recorder 音量診斷] 軌道 participantId=' + participantId + '，label=' + label + '，readyState=' + track.readyState + '，muted=' + track.muted + '，enabled=' + track.enabled);
+            });
         } catch (e) {}
     }, 5000);
     const connected = new WeakSet();
     const connectedTrackIds = new Set(); // 🎯 記錄「已經透過任何管道接上的原始音軌 id」，避免同一個人的聲音被接兩次造成疊音
+    // 🐛 這輪新增：上一輪加的「背景分頁節流」猜測（加那三個 Chromium 參數）沒有解決問題——
+    //    這次用 ffmpeg 逐段量測新的錄影，還是幾乎全程靜音，只有零星兩小段（開頭 aa 自我介紹、
+    //    大約 1:30 附近）有真的聲音，中間主管問問題那幾分鐘完全沒錄到。這代表問題不是「分頁被
+    //    整體降頻」（那樣應該是規律地變差，不會這樣忽有忽無、剛好只在特定人開口的瞬間有），
+    //    比較像是「某些人的原始音軌，根本沒有持續被接進混音圖裡，或者接上了又斷開」。
+    //    加一個 Map 記錄每一條已接上的軌道本身（不只是 id），下面的診斷 log 會逐條印出
+    //    每一條音軌目前的 readyState / muted / label，這樣才能看出「是連上之後又斷了」
+    //    還是「當時的某個人根本沒被接上過」。
+    const connectedTracksById = new Map(); // trackId -> { track, participantId, label }
 
     function connectAudio(el) {
         if (connected.has(el)) return;
@@ -344,7 +360,10 @@ namespace InterviewProject.Services
             try {
                 const stream = el.srcObject;
                 if (stream && typeof stream.getAudioTracks === 'function') {
-                    stream.getAudioTracks().forEach(t => connectedTrackIds.add(t.id));
+                    stream.getAudioTracks().forEach(t => {
+                        connectedTrackIds.add(t.id);
+                        connectedTracksById.set(t.id, { track: t, participantId: null, label: '(DOM element)' });
+                    });
                 }
             } catch (e) {}
         } catch (e) { /* 某些元素可能不支援或已連過，忽略即可 */ }
@@ -374,7 +393,7 @@ namespace InterviewProject.Services
                     tracks.forEach(t => {
                         if (t && typeof t.isAudioTrack === 'function' && t.isAudioTrack() && typeof t.getTrack === 'function') {
                             const nt = t.getTrack();
-                            if (nt) nativeTracks.push(nt);
+                            if (nt) nativeTracks.push({ nt, participantId: p.getId ? p.getId() : (p.id || null), label: (p.getDisplayName ? p.getDisplayName() : (p.name || '')) });
                         }
                     });
                 } catch (e) {}
@@ -384,17 +403,19 @@ namespace InterviewProject.Services
                 const localAudio = window.APP.conference.localAudio;
                 if (localAudio && typeof localAudio.getTrack === 'function') {
                     const nt = localAudio.getTrack();
-                    if (nt) nativeTracks.push(nt);
+                    if (nt) nativeTracks.push({ nt, participantId: 'local', label: 'AI 面試官（自己）' });
                 }
             } catch (e) {}
 
-            nativeTracks.forEach(track => {
+            nativeTracks.forEach(({ nt: track, participantId, label }) => {
                 if (!track || connectedTrackIds.has(track.id)) return;
                 try {
                     const stream = new MediaStream([track]);
                     const src = audioCtx.createMediaStreamSource(stream);
                     src.connect(dest);
                     connectedTrackIds.add(track.id);
+                    connectedTracksById.set(track.id, { track, participantId, label });
+                    console.log('[Recorder 音量診斷] 新接上一條音軌：participantId=' + participantId + '，label=' + label + '，trackId=' + track.id + '，初始 readyState=' + track.readyState + '，muted=' + track.muted);
                 } catch (e) {}
             });
         } catch (e) {}
