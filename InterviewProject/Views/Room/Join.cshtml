@@ -984,7 +984,20 @@
                         const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
                         const nowMs = Date.now();
                         const isDuplicateSpam = stripped === window.__lastSttText && (nowMs - (window.__lastSttTime || 0)) < 3000;
-                        if (stripped.length > 1 && !isDuplicateSpam) {
+                        // 🐛 這輪再修正（回報：改完上面那個「只有有意義內容才重置冷場」之後，
+                        //    這輪整場測試 [JitsiBot] SpeakAsync／[RoomController] AiSpeak 還是完全查不到，
+                        //    代表冷場計時器還是從來沒有真的累加到門檻）：問題出在「有意義內容」這個
+                        //    判斷本身太寬鬆——原本只擋「3 秒內一模一樣的重複字」，但麥克風不安靜時，
+                        //    引擎吐出來的語助詞常常每次都「有一點點不一樣」（這次「嗯」、下次「嗯嗯」、
+                        //    再下次「嗯嗯嗯」），或者剛好間隔超過 3 秒，這樣完全繞過了 isDuplicateSpam
+                        //    這個節流，每一次都被當成「新的、有意義的內容」，冷場計時器又被重置一次——
+                        //    等於只要麥克風持續有雜音，不管夾雜多少次「嗯」，冷場計時器實質上永遠不會
+                        //    累加超過幾秒鐘。改成額外判斷：如果去標點後的內容「整段都只由常見語助詞
+                        //    （嗯/呃/啊/喔/噢/欸/唉）組成」，不管講了幾次、間隔多久，一律當成雜訊——
+                        //    不計入逐字稿，也不重置冷場計時器。真正在回答問題的內容，就算夾雜語助詞，
+                        //    也一定會有其他實質的字，不會被這個規則誤傷。
+                        const isFillerOnly = /^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped);
+                        if (stripped.length > 1 && !isDuplicateSpam && !isFillerOnly) {
                             window.__lastSttText = stripped;
                             window.__lastSttTime = nowMs;
                             // ✅ 所有角色都記錄自己說的話
@@ -1074,12 +1087,29 @@
                     if (!started || ended || isSp || aiSpeakingRemote) { setSilBar(0); logLoopDiag(null, null); return; }
                     an.getByteFrequencyData(buf);
                     const avg = buf.reduce((a,b)=>a+b,0)/buf.length;
+                    // 🐛 這輪修正（回報：上一輪修完 STT 中間結果誤重置那個 bug 之後，secSince 確實有
+                    //    比較能往上爬了，但整場還是連一次 [JitsiBot] SpeakAsync／[RoomController] AiSpeak
+                    //    都查不到，代表還有更頻繁的重置來源）：根因在這裡——這個迴圈完全獨立於
+                    //    SpeechRecognition 之外，直接量測麥克風「原始音量」，`avg > 8`（滿分 255）
+                    //    這個門檻在安靜的錄音室可能沒問題，但在雜音比較明顯的麥克風環境下，
+                    //    幾乎任何一點環境音（打字聲、椅子聲、冷氣聲、呼吸聲）都會讓某一次 800ms
+                    //    取樣的平均值超過 8，馬上重置冷場計時器、還廣播給全場一起重置——等於
+                    //    只要麥克風不是絕對安靜，這個迴圈自己每 800ms 就有機會把計時器打掉一次，
+                    //    跟 STT 那邊修得再乾淨都沒用，因為根本繞過了 STT 那條路。
+                    //    改成要求「連續兩次（約 1.6 秒）都偵測到超過門檻」才真的算有人在講話、
+                    //    才重置計時器——單一次的瞬間雜音（例如椅子聲、打字聲）通常不會連續兩個
+                    //    取樣週期都超標，但真的有人開口講話一定會持續超標好幾個週期，這樣能過濾掉
+                    //    大部分瞬間雜音，又不影響真的偵測到有人講話的靈敏度。
                     if (avg > 8) {
-                        lastSpeechMs = Date.now();
-                        silT = 0; setSilBar(0);
-                        setSt('li','👂 聆聽中');
-                        try { hub.invoke("BroadcastSpeech", ROOM_CODE); } catch {}
+                        window.__loudStreak = (window.__loudStreak || 0) + 1;
+                        if (window.__loudStreak >= 2) {
+                            lastSpeechMs = Date.now();
+                            silT = 0; setSilBar(0);
+                            setSt('li','👂 聆聽中');
+                            try { hub.invoke("BroadcastSpeech", ROOM_CODE); } catch {}
+                        }
                     } else {
+                        window.__loudStreak = 0;
                         const threshold = getSilenceThresholdSec();
                         const secSince = (Date.now() - lastSpeechMs) / 1000;
                         const pct = Math.min((secSince / threshold) * 100, 100);

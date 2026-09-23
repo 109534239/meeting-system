@@ -739,10 +739,21 @@ namespace InterviewProject.Services
         cells.push(...dedupedCells);
 
         const coveredIds = new Set(cells.map(c => c.participantId).filter(Boolean));
+        // 🐛 這輪修正（抓到明確的 log/畫面證據：求職者-aa 同時出現一格真的畫面、又出現一格
+        //    「未開啟鏡頭」佔位格，變成畫面上有兩個她）：根因是這裡原本只用 participantId 判斷
+        //    「這個人是不是已經有畫面了」——如果 aa 的 video 格子，即使 label 已經正確顯示
+        //    「求職者-aa」，但 participantId 這欄最終還是沒能對到任何一個 id（例如她的畫面來自
+        //    某種掃 DOM 也抓不到 id 的路徑），這格在 coveredIds 裡就不會被算進去。等一下這個
+        //    迴圈去比對 nameMap 時，會覺得「求職者-aa 這個 id 還沒有畫面」，於是又補了一格
+        //    佔位格——變成同一個人，一格是真的畫面、一格是佔位格，同時存在。
+        //    改成除了比對 id，也額外比對「名字是不是已經有一格真的畫面在用了」，只要名字對得上，
+        //    就不再需要靠 id 才能判斷「這個人已經有畫面了」。
+        const coveredLabels = new Set(cells.filter(c => c.type === 'video' && c.label).map(c => c.label));
         Object.keys(nameMap).forEach(pid => {
             if (coveredIds.has(pid)) return;
             const name = nameMap[pid];
             if (!name) return;
+            if (coveredLabels.has(name)) return;
             cells.push({ type: 'placeholder', label: name });
         });
 
