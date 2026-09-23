@@ -758,6 +758,28 @@ namespace InterviewProject.Services
         });
 
         if (cells.length > 0) {
+            // 🐛 這輪新增（回報：影片角色區塊會一直跳動）：每一輪畫面的 cells 順序，是跟著
+            //    document.querySelectorAll('video') 掃到的 DOM 順序、以及 nameMap 當下的鍵值順序
+            //    走的——但 Jitsi 自己的畫面會依「目前誰在講話」動態把參與者的縮圖重新排列
+            //    （active speaker 會被排到比較前面），所以我們掃到的 DOM 順序每一輪都可能不一樣，
+            //    連帶讓我們畫出來的格子位置跟著一直重排、跳來跳去，即使畫面裡的人根本沒有變動。
+            //    改成：每個人第一次出現時，就用一個固定的「座位」記住他（以 participantId 優先，
+            //    沒有的話退回用 label），之後不管 DOM 掃描順序怎麼變，永遠依這個固定座位排序，
+            //    畫面位置就會穩定下來，只有真的有人離開/加入才會變動格數。
+            if (!window.__seatOrder) window.__seatOrder = new Map();
+            let nextSeat = window.__seatOrder.size;
+            cells.forEach(c => {
+                const key = c.participantId ? ('id:' + c.participantId) : (c.label ? ('label:' + c.label) : null);
+                if (key && !window.__seatOrder.has(key)) window.__seatOrder.set(key, nextSeat++);
+            });
+            cells.sort((a, b) => {
+                const ka = a.participantId ? ('id:' + a.participantId) : (a.label ? ('label:' + a.label) : null);
+                const kb = b.participantId ? ('id:' + b.participantId) : (b.label ? ('label:' + b.label) : null);
+                const sa = ka && window.__seatOrder.has(ka) ? window.__seatOrder.get(ka) : 9999;
+                const sb = kb && window.__seatOrder.has(kb) ? window.__seatOrder.get(kb) : 9999;
+                return sa - sb;
+            });
+
             const cols = Math.ceil(Math.sqrt(cells.length));
             const rows = Math.ceil(cells.length / cols);
             const cellW = canvas.width / cols, cellH = canvas.height / rows;
