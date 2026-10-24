@@ -1193,6 +1193,42 @@ namespace InterviewProject.Services
                     Console.WriteLine($"[JitsiBot] 存除錯截圖失敗：{ex.Message}");
                 }
 
+                // 🐛 這輪新增：找到「AI 面試官嘴型有動、但完全沒聲音」的真正根因——
+                //    上面導航網址裡的 config.startWithAudioMuted=true，讓 AI 面試官一進會議室
+                //    麥克風就是靜音狀態（Jitsi 層級的靜音，不是 Simli 本身的問題），而整支程式
+                //    從頭到尾都沒有任何地方把它解除靜音。Simli 的嘴型動畫是在 AI 面試官自己的
+                //    瀏覽器本地播放／算繪，不受這個靜音狀態影響，所以會看到嘴型動，但因為音訊軌道
+                //    被 Jitsi 擋著沒送出去，其他人完全聽不到聲音——這跟語音合成本身是否成功是
+                //    兩個獨立的問題，前面修好的 TTS 只是讓聲音「有產生」，這裡才是讓聲音「真的送得出去」。
+                //    加入會議之後，輪詢等待 window.APP.conference.muteAudio 這個 Jitsi 內部 API
+                //    準備好（最多等 10 秒），準備好就呼叫 muteAudio(false) 解除靜音。
+                try
+                {
+                    var unmuteResult = await page.EvaluateAsync<string>(@"
+                        (async () => {
+                            for (let i = 0; i < 20; i++) {
+                                if (window.APP && window.APP.conference && typeof window.APP.conference.muteAudio === 'function') {
+                                    try {
+                                        const wasMuted = typeof window.APP.conference.isLocalAudioMuted === 'function'
+                                            ? window.APP.conference.isLocalAudioMuted() : null;
+                                        window.APP.conference.muteAudio(false);
+                                        return '成功呼叫 muteAudio(false)，呼叫前 isLocalAudioMuted=' + wasMuted;
+                                    } catch (e) {
+                                        return '呼叫 muteAudio(false) 本身噴例外：' + e.message;
+                                    }
+                                }
+                                await new Promise(r => setTimeout(r, 500));
+                            }
+                            return '等了 10 秒，window.APP.conference.muteAudio 還是不存在，放棄解除靜音';
+                        })()
+                    ");
+                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 嘗試解除 AI 面試官麥克風靜音：{unmuteResult}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[JitsiBot] 解除 AI 面試官麥克風靜音時發生例外（房間 {roomCode}）：{ex.Message}");
+                }
+
                 // 🎯 注入自訂錄影機：用 Canvas 每禎把畫面上所有人的 <video> 畫格畫進去（簡單網格排版），
                 //    用 Web Audio API 把所有人的 <video>/<audio> 元素的聲音混在一起，
                 //    兩個一起餵進同一個 MediaRecorder，才會是「有畫面又有聲音」的完整檔案。
