@@ -20,13 +20,14 @@ namespace InterviewProject.Services
         }
 
         // 🎯 這是要接 Simli 虛擬人講話用的：把 AI 面試官要說的一句話轉成語音。
-        //    ⚠️ 這裡走的是 Gemini 比較新的「Interactions API」（v1beta/interactions），
-        //    跟這個檔案裡其他方法用的舊版 generateContent 端點是不同的 API、不同的驗證方式
-        //    （這個要用 x-goog-api-key 標頭，不是網址上的 ?key= 參數）——因為 TTS 目前官方文件只
-        //    展示這種呼叫方式。這塊完全沒有實機測試過，是這輪最容易需要除錯的地方之一。
-        //    回傳的是原始 PCM16 單聲道 24000Hz 音訊（沒有 WAV 檔頭），呼叫端如果要餵給 Simli
-        //    （Simli 要 16000Hz），還需要自己做取樣率轉換——這裡故意不轉，因為 Simli 那邊是在瀏覽器
-        //    的 JS 端接收，用 Web Audio API 轉比較方便，不在這裡用 C# 轉。
+        //    🐛 這輪確認並修正：之前這裡打的 v1beta/interactions 端點／body 格式是錯的
+        //    （從來沒真的成功過，每次都是 HTTP 400 content_blocked，或解析不存在的
+        //    output_audio 欄位直接噴例外），已經改成 Gemini 原生 TTS 真正的
+        //    generateContent 端點／正確格式（詳見下面實作），用 x-goog-api-key 標頭驗證。
+        //    回傳的是原始 PCM16 單聲道 24000Hz 音訊（沒有 WAV 檔頭）。呼叫端要餵給 Simli
+        //    （Simli 要 16000Hz）還需要自己做取樣率轉換——這裡故意不轉，因為 Simli 那邊是在瀏覽器
+        //    的 JS 端接收，用 Web Audio API 轉比較方便（JitsiBotService 的 __simliSpeak 已經在做
+        //    這個降取樣了），不在這裡用 C# 轉。
         public async Task<byte[]?> SynthesizeSpeechAsync(string text, string voice = "Kore")
         {
             var apiKey = _config["Gemini:ApiKey"] ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
@@ -35,15 +36,37 @@ namespace InterviewProject.Services
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(30);
 
-            var url = "https://generativelanguage.googleapis.com/v1beta/interactions";
+            // 🐛 真正根因找到了：找到冷場觸發鏈的 bug 修好之後，這次測試的 server log
+            //    證實 RoomController/AiSpeak、JitsiBotService/SpeakAsync 都確實有被呼叫到
+            //    （連著 6 次），但每一次都卡在這個方法本身——因為這裡原本打的
+            //    "https://generativelanguage.googleapis.com/v1beta/interactions"
+            //    根本不是 Gemini 真正的語音合成端點，body／回應格式也是錯的，
+            //    導致每次都收到 HTTP 400「content_blocked」，或是解析
+            //    "output_audio" 這個不存在的欄位時直接噴例外
+            //    （log：「The given key was not present in the dictionary.」）。
+            //    改成 Gemini 原生 TTS 真正的端點／格式：generateContent +
+            //    responseModalities:["AUDIO"] + speechConfig.voiceConfig，
+            //    回應在 candidates[0].content.parts[].inlineData.data，
+            //    格式是 16-bit PCM、24000Hz、單聲道——跟 JitsiBotService.SpeakAsync
+            //    原本就假設的格式（用 bytes/2/24000 換算要講幾秒）完全吻合，
+            //    下游（Simli 播放那段）完全不用動。
+            var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent";
             var body = new
             {
-                model = "gemini-2.5-flash-preview-tts",
-                input = text,
-                response_format = new { type = "audio" },
-                generation_config = new
+                contents = new[]
                 {
-                    speech_config = new object[] { new { voice } }
+                    new { parts = new[] { new { text } } }
+                },
+                generationConfig = new
+                {
+                    responseModalities = new[] { "AUDIO" },
+                    speechConfig = new
+                    {
+                        voiceConfig = new
+                        {
+                            prebuiltVoiceConfig = new { voiceName = voice }
+                        }
+                    }
                 }
             };
 
@@ -62,8 +85,27 @@ namespace InterviewProject.Services
                 }
 
                 using var doc = JsonDocument.Parse(respBody);
-                var base64Audio = doc.RootElement.GetProperty("output_audio").GetProperty("data").GetString();
-                if (string.IsNullOrEmpty(base64Audio)) return null;
+                var parts = doc.RootElement
+                    .GetProperty("candidates")[0]
+                    .GetProperty("content")
+                    .GetProperty("parts");
+
+                string? base64Audio = null;
+                foreach (var part in parts.EnumerateArray())
+                {
+                    if (part.TryGetProperty("inlineData", out var inlineData) &&
+                        inlineData.TryGetProperty("data", out var dataEl))
+                    {
+                        base64Audio = dataEl.GetString();
+                        break;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(base64Audio))
+                {
+                    Console.WriteLine($"[GeminiService] SynthesizeSpeechAsync：回應成功但找不到音訊內容，內容前 300 字：{respBody.Substring(0, Math.Min(300, respBody.Length))}");
+                    return null;
+                }
 
                 return Convert.FromBase64String(base64Audio);
             }
