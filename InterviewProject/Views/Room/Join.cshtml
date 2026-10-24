@@ -581,6 +581,17 @@
         let lastSpeechMs = 0;
         let recentSpeech = [];
         let silInterval = null;
+        // 🐛 真正根因找到了：冷場迴圈每次跨過 threshold 呼叫 triggerAI() 之前，
+        //    會先自己把 lastSpeechMs 重置成 Date.now()（原意是避免 800ms 迴圈在
+        //    triggerAI() 還在跑的時候重複呼叫）。但 triggerAI() 內部又有一道
+        //    「距離上次有聲音不到 3 秒就跳過」的關卡，而這個關卡讀到的 lastSpeechMs
+        //    正是剛剛才被設成「現在」的那個值，兩者相減必定 < 3000ms——等於冷場迴圈
+        //    自己重置、自己又把自己擋下來，觸發鏈結永遠在這一關自爆，跟前面任何一輪
+        //    修「有沒有跨過 threshold」都無關，難怪 [JitsiBot] SpeakAsync／
+        //    [RoomController] AiSpeak 從來沒出現過。改成用獨立的忙碌旗標
+        //    coldCallBusy 來防止重複呼叫，不再去動 lastSpeechMs，triggerAI() 內部
+        //    那道 3 秒關卡就能正常運作（保留它原本要擋「幾乎同時有人真的在講話」的用途）。
+        let coldCallBusy = false;
 
         // 🐛 這輪新增：冷場提問要懂得「換人講話的空檔不算冷場」，需要知道最近一次是誰講的、
         //    聽起來像不像問題。這幾個狀態靠 SpeechTurnInfo（其他人講完一句話時廣播的輕量訊號）
@@ -1115,7 +1126,9 @@
                         const pct = Math.min((secSince / threshold) * 100, 100);
                         setSilBar(pct);
                         logLoopDiag(secSince, threshold);
-                        if (secSince >= threshold) { lastSpeechMs = Date.now(); triggerAI(); }
+                        // 🐛 修正：不再在這裡動 lastSpeechMs（原因見上方 coldCallBusy 宣告處的說明），
+                        //    改用 coldCallBusy 防止 triggerAI() 還在跑的時候被 800ms 迴圈重複呼叫。
+                        if (secSince >= threshold && !coldCallBusy) { coldCallBusy = true; triggerAI(); }
                     }
                 }, 800);
             } else {
@@ -1126,7 +1139,7 @@
                     const secSince = (Date.now() - lastSpeechMs) / 1000;
                     setSilBar(Math.min((secSince / threshold) * 100, 100));
                     logLoopDiag(secSince, threshold);
-                    if (secSince >= threshold) { lastSpeechMs = Date.now(); triggerAI(); }
+                    if (secSince >= threshold && !coldCallBusy) { coldCallBusy = true; triggerAI(); }
                 }, 800);
             }
         }
@@ -1154,48 +1167,53 @@
         //    改成只有一個權威來源做這個決定；其他人的瀏覽器還是繼續跑倒數計時（給自己畫面上的
         //    冷場偵測進度條用），但不會真的呼叫伺服器。
         async function triggerAI() {
-            // 🐛 這輪新增：這幾個提早 return 的關卡，之前完全沒有留下任何 log，如果卡在這裡，
-            //    連「triggerAI 有沒有真的被呼叫到」都無從得知。這裡每個關卡都印一行，
-            //    下次測完直接搜尋 [冷場診斷-triggerAI] 就能確定卡在哪一關，或是根本沒被呼叫到
-            //    （如果連一行 [冷場診斷-triggerAI] 都沒出現，代表問題在更上游，
-            //    是 startSilenceDetect() 那個迴圈的 threshold 從來沒有被跨過）。
-            if (!IS_HOST) { console.log('[冷場診斷-triggerAI] 被呼叫但 IS_HOST=false，不是主持人不會真的觸發，正常'); return; }
-            if (isSp || ended || !started || aiSpeakingRemote) {
-                console.log('[冷場診斷-triggerAI] 被呼叫但提早返回：isSp=' + isSp + '，ended=' + ended + '，started=' + started + '，aiSpeakingRemote=' + aiSpeakingRemote);
-                return;
-            }
-            if ((Date.now() - lastSpeechMs) < 3000) {
-                console.log('[冷場診斷-triggerAI] 被呼叫但距離上次有聲音不到 3 秒，先跳過這次');
-                return;
-            }
-            console.log('[冷場診斷-triggerAI] 通過所有關卡，準備呼叫 /Claude/Ask 產生問句');
-
-            setSt('th','💭 思考中...');
-
-            // 🐛 這輪新增：區分「主管/主持人剛問完問題、求職者還沒開始回答」跟「真的沒人在講話」
-            //    這兩種情況要生成不一樣語氣的話——前者要溫和鼓勵、不施加壓力，不要聽起來像在催促；
-            //    後者才是真的要拋出新問題或打破冷場。
-            const waitingForAnswer = lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker' && lastSpeakerRole !== 'ai';
-            const ctx = recentSpeech.slice(-3).map(s=>`${s.name}：${s.text}`).join('；') || "面試進行中";
-            const prompt = waitingForAnswer
-                ? `你是AI面試官，協助主持「@room.RoomName」面試。剛剛${lastSpeakerName ? '（' + lastSpeakerName + '）' : ''}問了一個問題，求職者已經安靜了一段時間還沒開始回答。請用一句簡短、溫和、不給壓力的話鼓勵對方開始回答，或表示可以慢慢想，不超過25字，直接說，不加引號或前綴。`
-                : `你是AI面試官，協助主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場，一段時間沒人說話。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
-
-            let q = null;
+            // 🐛 這幾個提早 return 的關卡都印一行 log，下次測完搜尋 [冷場診斷-triggerAI]
+            //    就能確定卡在哪一關，或是根本沒被呼叫到（如果連一行都沒出現，代表問題在
+            //    更上游，是 startSilenceDetect() 那個迴圈的 threshold 從來沒有被跨過）。
+            // 🐛 真正根因：不管從哪個關卡返回，都要記得把 coldCallBusy 放回 false，
+            //    否則冷場迴圈會以為「上一次還在處理中」，之後永遠不會再呼叫第二次。
+            //    用 try/finally 包住全部，確保每一條路徑都會釋放這個旗標。
             try {
-                const r = await fetch('/Claude/Ask', {
-                    method:'POST', headers:{'Content-Type':'application/json'},
-                    // 🎯 這輪加強語氣要求：避免生成出來的句子太制式、太像機器人在照稿念，
-                    //    講話自然口語一點，TTS 唸出來才不會顯得生硬
-                    body: JSON.stringify({ prompt, system:"你是台灣企業面試主管，說話自然口語、溫暖不生硬，像真人在對話，避免制式或機械感的用詞。", maxTokens:80 })
-                });
-                if (r.ok) { const d = await r.json(); if (d.text?.length > 3) q = d.text.trim(); }
-                else { console.warn('[冷場診斷-triggerAI] /Claude/Ask 回應不是 200，status=' + r.status); }
-            } catch (e) { console.warn('[冷場診斷-triggerAI] /Claude/Ask 呼叫本身噴例外：' + e.message); }
+                if (!IS_HOST) { console.log('[冷場診斷-triggerAI] 被呼叫但 IS_HOST=false，不是主持人不會真的觸發，正常'); return; }
+                if (isSp || ended || !started || aiSpeakingRemote) {
+                    console.log('[冷場診斷-triggerAI] 被呼叫但提早返回：isSp=' + isSp + '，ended=' + ended + '，started=' + started + '，aiSpeakingRemote=' + aiSpeakingRemote);
+                    return;
+                }
+                if ((Date.now() - lastSpeechMs) < 3000) {
+                    console.log('[冷場診斷-triggerAI] 被呼叫但距離上次有聲音不到 3 秒，先跳過這次');
+                    return;
+                }
+                console.log('[冷場診斷-triggerAI] 通過所有關卡，準備呼叫 /Claude/Ask 產生問句');
 
-            if (!q) q = waitingForAnswer ? "不用緊張，可以慢慢想沒關係。" : getFQ();
-            console.log('[冷場診斷-triggerAI] 準備呼叫 aiSpeak，內容：「' + q + '」');
-            aiSpeak(q);
+                setSt('th','💭 思考中...');
+
+                // 🐛 這輪新增：區分「主管/主持人剛問完問題、求職者還沒開始回答」跟「真的沒人在講話」
+                //    這兩種情況要生成不一樣語氣的話——前者要溫和鼓勵、不施加壓力，不要聽起來像在催促；
+                //    後者才是真的要拋出新問題或打破冷場。
+                const waitingForAnswer = lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker' && lastSpeakerRole !== 'ai';
+                const ctx = recentSpeech.slice(-3).map(s=>`${s.name}：${s.text}`).join('；') || "面試進行中";
+                const prompt = waitingForAnswer
+                    ? `你是AI面試官，協助主持「@room.RoomName」面試。剛剛${lastSpeakerName ? '（' + lastSpeakerName + '）' : ''}問了一個問題，求職者已經安靜了一段時間還沒開始回答。請用一句簡短、溫和、不給壓力的話鼓勵對方開始回答，或表示可以慢慢想，不超過25字，直接說，不加引號或前綴。`
+                    : `你是AI面試官，協助主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場，一段時間沒人說話。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
+
+                let q = null;
+                try {
+                    const r = await fetch('/Claude/Ask', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        // 🎯 這輪加強語氣要求：避免生成出來的句子太制式、太像機器人在照稿念，
+                        //    講話自然口語一點，TTS 唸出來才不會顯得生硬
+                        body: JSON.stringify({ prompt, system:"你是台灣企業面試主管，說話自然口語、溫暖不生硬，像真人在對話，避免制式或機械感的用詞。", maxTokens:80 })
+                    });
+                    if (r.ok) { const d = await r.json(); if (d.text?.length > 3) q = d.text.trim(); }
+                    else { console.warn('[冷場診斷-triggerAI] /Claude/Ask 回應不是 200，status=' + r.status); }
+                } catch (e) { console.warn('[冷場診斷-triggerAI] /Claude/Ask 呼叫本身噴例外：' + e.message); }
+
+                if (!q) q = waitingForAnswer ? "不用緊張，可以慢慢想沒關係。" : getFQ();
+                console.log('[冷場診斷-triggerAI] 準備呼叫 aiSpeak，內容：「' + q + '」');
+                aiSpeak(q);
+            } finally {
+                coldCallBusy = false;
+            }
         }
 
         function aiSpeak(text) {
