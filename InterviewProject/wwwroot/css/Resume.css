@@ -129,6 +129,25 @@ textarea {
     font-family: inherit;
 }
 
+.parse-resume-bar {
+    background-color: #f8f9fa;
+    border: 1px dashed #0d6efd;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+}
+
+.parse-resume-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-grow: 1;
+}
+
 /* 🎯 大頭照：原本這裡跟 Resume.cshtml 的內嵌 <style> 各寫一份 .photo-cell，
    這份是舊版（120x150 + object-fit:fill 會把照片硬拉伸變形），
    兩份靠「後面寫的贏」在互相蓋，非常危險。現在統一只在這裡定義一份正確的版本：

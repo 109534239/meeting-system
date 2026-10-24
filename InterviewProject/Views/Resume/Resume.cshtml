@@ -7,6 +7,7 @@
 @section Styles {
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Resume.css" asp-append-version="true" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 }
 
 @* 在最外層標籤加上動態 Class *@
@@ -28,6 +29,25 @@
             }
         </span>
     </div>
+
+    @if (!isReadOnly)
+    {
+        <div class="parse-resume-bar no-print">
+            <div class="parse-resume-info">
+                <i class="fa-solid fa-file-arrow-up text-primary" style="font-size: 1.5rem;"></i>
+                <div>
+                    <strong>匯入既有履歷檔</strong>
+                    <div class="text-muted style-small" style="font-size:0.85rem;">上傳您現有的履歷檔案（如附件 PDF / Word），點擊「套用」即可自動將資料填入下方欄位。</div>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <input type="file" id="resumeUploadFile" class="form-control form-control-sm" accept=".pdf,.doc,.docx,.txt" style="max-width: 250px;" />
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="uploadAndApplyResume()">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> 套用
+                </button>
+            </div>
+        </div>
+    }
 
     @* 🎯 修改重點：加入 id="resumeForm" 確保下方腳本綁定正確表單 *@
     <form id="resumeForm" method="post" asp-controller="Resume" asp-action="SaveResume" enctype="multipart/form-data">
@@ -336,21 +356,25 @@
                 <td colspan="4">
                     <input type="hidden" asp-for="DriverLicense" id="finalDriverLicense" />
                     <div id="licenseGroup">
-                        <div class="license-row" data-type="自用">
-                            自用：
-                            <input type="checkbox" class="license-chk" value="小" />小
-                            <input type="checkbox" class="license-chk" value="大" />大
+                        <div class="license-row" data-type="普通">
+                            普通：
+                            <input type="checkbox" class="license-chk" value="小型車" />小型車
+                            <input type="checkbox" class="license-chk" value="大貨車" />大貨車
+                            <input type="checkbox" class="license-chk" value="大客車" />大客車
+                            <input type="checkbox" class="license-chk" value="連結車" />連結車
                         </div>
                         <div class="license-row" data-type="職業">
                             職業：
-                            <input type="checkbox" class="license-chk" value="小" />小
-                            <input type="checkbox" class="license-chk" value="大" />大
-                            <input type="checkbox" class="license-chk" value="客" />客
+                            <input type="checkbox" class="license-chk" value="小型車" />小型車
+                            <input type="checkbox" class="license-chk" value="大貨車" />大貨車
+                            <input type="checkbox" class="license-chk" value="大客車" />大客車
+                            <input type="checkbox" class="license-chk" value="連結車" />連結車
                         </div>
                         <div class="license-row" data-type="機車">
                             機車：
                             <input type="checkbox" class="license-chk" value="輕型" />輕型
-                            <input type="checkbox" class="license-chk" value="重型" />重型
+                            <input type="checkbox" class="license-chk" value="普通重型" />普通重型
+                            <input type="checkbox" class="license-chk" value="大型重型" />大型重型
                         </div>
                         <div class="license-row" data-type="汽(機)車">
                             汽(機)車：
@@ -432,12 +456,12 @@
             <i class="fa-solid fa-arrow-left"></i> 回上一頁
         </button>
 
-        @if (isReadOnly)
-        {
-            <button type="submit" asp-controller="Resume" asp-action="ExportToPdf" class="btn btn-secondary" formnovalidate>
-                列印 PDF
-            </button>
-        }
+            @if (isReadOnly)
+            {
+                <button type="submit" asp-controller="Resume" asp-action="ExportToPdf" class="btn btn-secondary btn-pdf-export" formnovalidate>
+                    列印 PDF
+                </button>
+            }
         else
         {
             <button type="submit" name="submitType" value="draft" class="btn btn-success" formnovalidate>
@@ -474,6 +498,570 @@ function populateCertNameOptions() {
         }
     });
 }
+
+    // 🎯 上傳履歷檔並解析填入（全面修復版：修正學歷/經歷未帶入、自傳被截斷、切換檔案殘留舊資料問題）
+        function uploadAndApplyResume() {
+            console.log("「套用」按鈕被點擊了！");
+
+            const fileInput = document.getElementById('resumeUploadFile');
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                alert('請先選擇要上傳的履歷檔案 (.pdf, .docx, .doc)。');
+                return;
+            }
+
+            const fileName = fileInput.files[0].name;
+            const formData = new FormData();
+            formData.append('resumeFile', fileInput.files[0]);
+
+            // 1. 彈出「資料正在套用中」的讀取視窗
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    title: '資料正在套用中，請稍後...',
+                    text: `正在套用 ${fileName} 檔案內容`,
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+            } else {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/sweetalert2@11';
+                document.head.appendChild(script);
+            }
+
+            fetch('@Url.Action("ParseResumeFile", "Resume")', {
+                method: 'POST',
+                body: formData
+            })
+            .then(async res => {
+                const text = await res.text();
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    throw new Error("伺服器處理異常（回傳非 JSON 格式）");
+                }
+            })
+            .then(data => {
+                if (!data.success) throw new Error(data.message || '套用失敗');
+                const d = data.data;
+                    console.log("套用成功，準備填入欄位：", d);
+
+                // 2. 填入基礎資料與自傳
+                try {
+                    const phoneVal = d.phone || d.Phone;
+                    const phoneEl = document.getElementById('Phone1');
+                    if (phoneEl) phoneEl.value = phoneVal || '';
+
+                    const addrVal = d.address || d.Address;
+                    const addrEl = document.getElementById('ContactAddress');
+                    if (addrEl) addrEl.value = addrVal || '';
+
+                    // 自傳填入
+                    let autoVal = d.autobiography || d.Autobiography || '';
+                    autoVal = autoVal.replace(/^自傳[:：\s]*/, '').trim();
+                    const autoEl = document.getElementById('Autobiography');
+                    if (autoEl) {
+                        autoEl.value = autoVal;
+                        if (typeof autoGrowTextarea === 'function') {
+                            autoGrowTextarea(autoEl);
+                        } else {
+                            autoEl.style.height = 'auto';
+                            autoEl.style.height = autoEl.scrollHeight + 'px';
+                        }
+                    }
+
+                    // 婚姻狀況與兵役狀況（若新檔沒有則取消選取）
+                    document.querySelectorAll('input[name="MaritalStatus"]').forEach(r => r.checked = false);
+                    const maritalVal = d.maritalStatus || d.MaritalStatus;
+                    if (maritalVal) {
+                        const mRadio = document.querySelector(`input[name="MaritalStatus"][value="${maritalVal}"]`);
+                        if (mRadio) mRadio.checked = true;
+                    }
+
+                    document.querySelectorAll('input[name="MilitaryService"]').forEach(r => r.checked = false);
+                    const milVal = d.militaryService || d.MilitaryService;
+                    if (milVal) {
+                        const milRadio = document.querySelector(`input[name="MilitaryService"][value="${milVal}"]`);
+                        if (milRadio) milRadio.checked = true;
+                    }
+                } catch (e) { console.error("基礎資料填入錯誤", e); }
+
+                // 3. 填入學歷（若無則清空）
+                try {
+                    const eduContainer = document.getElementById('education-list');
+                    if (eduContainer) {
+                        eduContainer.innerHTML = '';
+                        const eduList = d.educations || d.Educations;
+                        if (Array.isArray(eduList) && eduList.length > 0) {
+                            eduList.forEach(edu => {
+                                const eduLevel = edu.eduLevel || edu.EduLevel || '';
+                                const schoolName = edu.schoolName || edu.SchoolName || '';
+                                const major = edu.major || edu.Major || '';
+                                const eduStatus = edu.eduStatus || edu.EduStatus || '';
+                                let startDate = cleanDateString(edu.startDate || edu.StartDate || '');
+                                let endDate = cleanDateString(edu.endDate || edu.EndDate || '');
+
+                                const row = document.createElement('tr');
+                                row.className = 'dynamic-row-edu';
+                                row.innerHTML = `
+                                    <td>
+                                        <select name="EduLevelList" class="form-control" required>
+                                            <option value="" disabled ${!eduLevel ? 'selected' : ''}>請選擇</option>
+                                            <option value="博士" ${eduLevel === '博士' ? 'selected' : ''}>博士</option>
+                                            <option value="碩士" ${eduLevel === '碩士' ? 'selected' : ''}>碩士</option>
+                                            <option value="大學" ${eduLevel === '大學' ? 'selected' : ''}>大學</option>
+                                            <option value="專科" ${eduLevel === '專科' ? 'selected' : ''}>專科</option>
+                                            <option value="高職" ${eduLevel === '高職' ? 'selected' : ''}>高職</option>
+                                            <option value="高中" ${eduLevel === '高中' ? 'selected' : ''}>高中</option>
+                                            <option value="國中" ${eduLevel === '國中' ? 'selected' : ''}>國中</option>
+                                            <option value="國小" ${eduLevel === '國小' ? 'selected' : ''}>國小</option>
+                                        </select>
+                                    </td>
+                                    <td><div class="scroll-input-wrap"><input type="text" name="SchoolNameList" class="form-control" value="${schoolName}" placeholder="學校名稱" required oninput="autoSizeInput(this)" /></div></td>
+                                    <td><div class="scroll-input-wrap"><input type="text" name="MajorList" class="form-control" value="${major}" placeholder="科系所" required oninput="autoSizeInput(this)" /></div></td>
+                                    <td>
+                                        <select name="EduStatusList" class="form-control" required>
+                                            <option value="" disabled ${!eduStatus ? 'selected' : ''}>請選擇</option>
+                                            <option value="畢業" ${eduStatus === '畢業' ? 'selected' : ''}>畢業</option>
+                                            <option value="肄業" ${eduStatus === '肄業' ? 'selected' : ''}>肄業</option>
+                                            <option value="在學" ${eduStatus === '在學' ? 'selected' : ''}>在學</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <div class="ym-select-wrap">
+                                            <select class="form-control" data-part="year" required></select>
+                                            <select class="form-control" data-part="month" required></select>
+                                        </div>
+                                        <input type="hidden" name="StartDateList" value="${startDate}" />
+                                    </td>
+                                    <td>
+                                        <div class="ym-select-wrap">
+                                            <select class="form-control" data-part="year" required></select>
+                                            <select class="form-control" data-part="month" required></select>
+                                        </div>
+                                        <input type="hidden" name="EndDateList" value="${endDate}" />
+                                    </td>
+                                    <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeRow(this)">✕</button></td>
+                                `;
+                                eduContainer.appendChild(row);
+
+                                const ymWraps = row.querySelectorAll('.ym-select-wrap');
+                                const startHidden = row.querySelector('input[name="StartDateList"]');
+                                const endHidden = row.querySelector('input[name="EndDateList"]');
+                                if (ymWraps.length >= 2 && startHidden && endHidden) {
+                                    initYmRange(ymWraps[0], startHidden, ymWraps[1], endHidden);
+                                }
+                            });
+                        }
+                    }
+                } catch (e) { console.error("學歷填入錯誤", e); }
+
+                // 4. 填入工作經歷（若無則清空）
+                try {
+                    const workContainer = document.getElementById('work-list');
+                    if (workContainer) {
+                        workContainer.innerHTML = '';
+                        const workList = d.workExperiences || d.WorkExperiences;
+                        if (Array.isArray(workList) && workList.length > 0) {
+                            workList.forEach(work => {
+                                const companyName = work.companyName || work.CompanyName || '';
+                                const jobTitle = work.jobTitle || work.JobTitle || '';
+                                const jobDescription = work.jobDescription || work.JobDescription || '';
+                                let startDate = cleanDateString(work.startDate || work.StartDate || '');
+                                let endDate = cleanDateString(work.endDate || work.EndDate || '');
+
+                                const row = document.createElement('tr');
+                                row.className = 'dynamic-row-work';
+                                row.innerHTML = `
+                                    <td><textarea name="CompanyNameList" class="form-control work-company" placeholder="公司名稱" rows="1" oninput="autoGrowTextarea(this)">${companyName}</textarea></td>
+                                    <td><textarea name="JobTitleList" class="form-control work-title" placeholder="職位" rows="1" oninput="autoGrowTextarea(this)">${jobTitle}</textarea></td>
+                                    <td><textarea name="JobDescriptionList" class="form-control" placeholder="工作內容" rows="1" oninput="autoGrowTextarea(this)">${jobDescription}</textarea></td>
+                                    <td>
+                                        <div class="ym-select-wrap">
+                                            <select class="form-control" data-part="year"></select>
+                                            <select class="form-control" data-part="month"></select>
+                                        </div>
+                                        <input type="hidden" name="WorkStartDateList" value="${startDate}" />
+                                    </td>
+                                    <td>
+                                        <div class="ym-select-wrap">
+                                            <select class="form-control" data-part="year"></select>
+                                            <select class="form-control" data-part="month"></select>
+                                        </div>
+                                        <input type="hidden" name="WorkEndDateList" value="${endDate}" />
+                                    </td>
+                                    <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeWorkRow(this)">✕</button></td>
+                                `;
+                                workContainer.appendChild(row);
+
+                                const ymWraps = row.querySelectorAll('.ym-select-wrap');
+                                const startHidden = row.querySelector('input[name="WorkStartDateList"]');
+                                const endHidden = row.querySelector('input[name="WorkEndDateList"]');
+                                if (ymWraps.length >= 2 && startHidden && endHidden) {
+                                    initYmRange(ymWraps[0], startHidden, ymWraps[1], endHidden);
+                                }
+                            });
+                        }
+                        if (typeof updateNoWorkExpHint === 'function') updateNoWorkExpHint();
+                    }
+                } catch (e) { console.error("工作經歷填入錯誤", e); }
+
+                // 5. 填入語文能力（若無則清空）
+                try {
+                    const langContainer = document.getElementById('language-list');
+                    if (langContainer) {
+                        langContainer.innerHTML = '';
+                        const langList = d.languages || d.Languages;
+                        if (Array.isArray(langList) && langList.length > 0) {
+                            langList.forEach(item => {
+                                let langName = item;
+                                let langDegree = '普通';
+                                const match = item.match(/(.+)\((.+)\)/);
+                                if (match) {
+                                    langName = match[1].trim();
+                                    langDegree = match[2].trim();
+                                } else if (item.includes('英文')) {
+                                    langName = '英語';
+                                    if (item.includes('略懂')) langDegree = '稍懂';
+                                    else if (item.includes('精通')) langDegree = '精通';
+                                }
+
+                                if (langName === '英文') langName = '英語';
+                                if (langName === '日文') langName = '日語';
+                                if (langName === '韓文') langName = '韓語';
+
+                                if (typeof addLanguageRow === 'function') addLanguageRow();
+                                const rows = langContainer.querySelectorAll('.dynamic-row-simple');
+                                const row = rows[rows.length - 1];
+                                if (!row) return;
+
+                                const nameSelect = row.querySelector('.lang-name-select');
+                                const otherInput = row.querySelector('.lang-name-other');
+                                const lvSelect = row.querySelector('.lang-lv-select');
+
+                                if (nameSelect) {
+                                    const matched = Array.from(nameSelect.options).some(opt => opt.value === langName);
+                                    if (matched) {
+                                        nameSelect.value = langName;
+                                    } else {
+                                        nameSelect.value = '其他';
+                                        if (otherInput) {
+                                            otherInput.value = langName;
+                                            otherInput.style.display = '';
+                                        }
+                                    }
+                                }
+                                if (lvSelect) {
+                                    const lvMatched = Array.from(lvSelect.options).some(opt => opt.value === langDegree);
+                                    if (lvMatched) lvSelect.value = langDegree;
+                                }
+                            });
+                        }
+                        if (typeof updateNoLangHint === 'function') updateNoLangHint();
+                    }
+                } catch (e) { console.error("語文能力填入錯誤", e); }
+
+                // 6. 填入專長（若無則清空）
+                try {
+                    const specContainer = document.getElementById('specialty-list');
+                    if (specContainer) {
+                        specContainer.innerHTML = '';
+                        const specList = d.specialties || d.Specialties;
+                        if (Array.isArray(specList) && specList.length > 0) {
+                            specList.forEach(spec => {
+                                const row = document.createElement('div');
+                                row.className = 'dynamic-row-simple';
+                                row.innerHTML = `
+                                    <textarea class="spec-input full-input" placeholder="專長" rows="1" oninput="autoGrowTextarea(this)">${spec}</textarea>
+                                    <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
+                                `;
+                                specContainer.appendChild(row);
+                            });
+                        }
+                        if (typeof updateNoSpecHint === 'function') updateNoSpecHint();
+                    }
+                } catch (e) { console.error("專長填入錯誤", e); }
+
+                // 7. 填入電腦能力（若無則清空）
+                try {
+                    const compContainer = document.getElementById('compskill-list');
+                    if (compContainer) {
+                        compContainer.innerHTML = '';
+                        const compList = d.computerSkills || d.ComputerSkills;
+                        if (Array.isArray(compList) && compList.length > 0) {
+                            compList.forEach(comp => {
+                                const row = document.createElement('div');
+                                row.className = 'dynamic-row-simple';
+                                row.innerHTML = `
+                                    <textarea class="comp-input full-input" placeholder="電腦能力" rows="1" oninput="autoGrowTextarea(this)">${comp}</textarea>
+                                    <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
+                                `;
+                                compContainer.appendChild(row);
+                            });
+                        }
+                        if (typeof updateNoCompHint === 'function') updateNoCompHint();
+                    }
+                } catch (e) { console.error("電腦能力填入錯誤", e); }
+
+                // 8. 填入作品集（若無則清空）
+                try {
+                    const portfolioContainer = document.getElementById('portfolio-list');
+                    if (portfolioContainer) {
+                        portfolioContainer.innerHTML = '';
+                        const portfolioList = d.portfolios || d.Portfolios;
+                        if (Array.isArray(portfolioList) && portfolioList.length > 0) {
+                            portfolioList.forEach(pf => {
+                                const title = pf.title || pf.Title || '';
+                                const desc = pf.description || pf.Description || '';
+                                const link = pf.link || pf.Link || '';
+
+                                const row = document.createElement('tr');
+                                row.className = 'dynamic-row-portfolio';
+                                row.innerHTML = `
+                                    <td><textarea name="PortfolioTitleList" class="form-control" placeholder="作品名稱" rows="1" oninput="autoGrowTextarea(this)">${title}</textarea></td>
+                                    <td><textarea name="PortfolioDescList" class="form-control" placeholder="作品說明" rows="1" oninput="autoGrowTextarea(this)">${desc}</textarea></td>
+                                    <td><textarea name="PortfolioLinkList" class="form-control portfolio-link" placeholder="https://" rows="1" autocomplete="off" oninput="autoGrowTextarea(this)">${link}</textarea></td>
+                                    <td class="portfolio-file-cell">
+                                        <input type="hidden" name="PortfolioExistingFileList" class="portfolio-existing-file" value="" />
+                                        <div class="portfolio-existing-list"></div>
+                                        <label class="btn-upload-file no-print-in-readonly">
+                                            選擇檔案
+                                            <input type="file" name="PortfolioFileList" class="portfolio-file-input no-print-in-readonly" multiple onchange="handlePortfolioFileSelect(this)" />
+                                        </label>
+                                        <div class="portfolio-new-files"></div>
+                                    </td>
+                                    <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removePortfolioRow(this)">✕</button></td>
+                                `;
+                                portfolioContainer.appendChild(row);
+                            });
+                        }
+                        if (typeof updateNoPortfolioHint === 'function') updateNoPortfolioHint();
+                    }
+                } catch (e) { console.error("作品集填入錯誤", e); }
+
+                // 9. 填入證照職類及級別（若無則清空）
+                try {
+                    const certContainer = document.getElementById('cert-list');
+                    if (certContainer) {
+                        certContainer.innerHTML = '';
+                        const certList = d.certificates || d.Certificates;
+                        if (Array.isArray(certList) && certList.length > 0) {
+                            certList.forEach(certStr => {
+                                let certName = certStr;
+                                let certLevel = '';
+                                const match = certStr.match(/(.+)\((.+)\)/);
+                                if (match) {
+                                    certName = match[1].trim();
+                                    certLevel = match[2].trim();
+                                } else {
+                                    const levelMatch = certStr.match(/(.*)(甲級|乙級|丙級|單一級)\$/);
+                                    if (levelMatch) {
+                                        certName = levelMatch[1].trim();
+                                        certLevel = levelMatch[2].trim();
+                                    }
+                                }
+
+                                const levelDatalistId = 'certLevelOptions_' + (typeof certLevelDatalistCounter !== 'undefined' ? certLevelDatalistCounter++ : 1);
+                                const row = document.createElement('div');
+                                row.className = 'cert-item dynamic-row-simple';
+                                row.style.marginBottom = '8px';
+                                row.innerHTML = `
+                                    <input type="text" class="cert-select" list="certNameOptions" value="${certName}" placeholder="輸入或選擇證照名稱" oninput="autoGrowInputWidth(this)" />
+                                    <span class="cert-level-wrap">
+                                        級別：<input type="text" class="cert-level-select" list="${levelDatalistId}" value="${certLevel}" placeholder="級別（無則留空）" />
+                                        <datalist id="${levelDatalistId}"></datalist>
+                                    </span>
+                                    <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
+                                `;
+                                certContainer.appendChild(row);
+                                if (typeof updateCertLevelOptions === 'function') updateCertLevelOptions(row);
+                            });
+                        }
+                    }
+                } catch (e) { console.error("證照填入錯誤", e); }
+
+                // 10. 填入駕照種類（先全部取消勾選，再依新檔勾選）
+                try {
+                    document.querySelectorAll('.license-chk').forEach(chk => chk.checked = false);
+                    const licenseList = d.driverLicense || d.DriverLicense;
+                    if (Array.isArray(licenseList) && licenseList.length > 0) {
+                        licenseList.forEach(p => {
+                            let typeName = "";
+                            let subValues = [];
+
+                            if (p.includes('(')) {
+                                typeName = p.split('(')[0].trim();
+                                subValues = p.split('(')[1].replace(')', '').split('/');
+                            } else if (p.includes('小型車')) {
+                                typeName = '普通';
+                                subValues = ['小型車'];
+                            } else if (p.includes('機車')) {
+                                typeName = '機車';
+                                if (p.includes('普通重型')) subValues = ['普通重型'];
+                                else if (p.includes('輕型')) subValues = ['輕型'];
+                                else if (p.includes('大型重型')) subValues = ['大型重型'];
+                            }
+
+                            if (typeName) {
+                                const row = document.querySelector(`.license-row[data-type="${typeName}"]`);
+                                if (row) {
+                                    subValues.forEach(v => {
+                                        const chk = row.querySelector(`.license-chk[value="${v.trim()}"]`);
+                                        if (chk) chk.checked = true;
+                                    });
+                                }
+                            }
+                        });
+                    }
+                } catch (e) { console.error("駕照填入錯誤", e); }
+
+                // 11. 成功提示
+                setTimeout(() => {
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            title: '套用完成！',
+                            text: '已成功帶入履歷資料，請查看或修改相關內容。',
+                            icon: 'success',
+                            confirmButtonColor: '#206c8b',
+                            confirmButtonText: '確定'
+                        });
+                    } else {
+                        alert('套用完成！已成功帶入履歷資料，請查看或修改相關內容。');
+                    }
+                }, 300);
+            })
+            .catch(err => {
+                    console.error("套用過程發生錯誤：", err);
+                if (typeof Swal !== 'undefined') {
+                        Swal.fire({ icon: 'error', title: '套用失敗', text: err.message });
+                } else {
+                        alert('解套用失敗：' + err.message);
+                }
+            });
+        }
+        // 💡 日期清理輔助函式：將各種日期格式（如 2025/9、2025.09）統一轉為 yyyy-MM 格式
+    function cleanDateString(dateStr) {
+        if (!dateStr) return '';
+        let str = String(dateStr).trim().replace(/\.|\//g, '-');
+        const parts = str.split('-');
+        if (parts.length >= 2) {
+            const y = parts[0];
+            const m = parts[1].padStart(2, '0');
+            return `${y}-${m}`;
+        }
+        return str;
+    }
+
+        // 🎯 統一處理 PDF 下載與「列印 PDF」按鈕，等檔案完全下載後才關閉視窗
+    document.addEventListener("DOMContentLoaded", function () {
+
+        // 1. 處理一般的 .btn-pdf 連結
+        document.querySelectorAll('.btn-pdf').forEach(function (pdfBtn) {
+            pdfBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                const downloadUrl = pdfBtn.getAttribute('href');
+                executePdfDownload(downloadUrl, null, 'GET');
+            });
+        });
+
+        // 2. 處理唯讀檢視下的「列印 PDF」按鈕 (.btn-pdf-export)
+        const pdfExportBtn = document.querySelector('.btn-pdf-export');
+        if (pdfExportBtn) {
+            pdfExportBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                const form = document.getElementById('resumeForm');
+                const actionUrl = pdfExportBtn.getAttribute('formaction') || '@Url.Action("ExportToPdf", "Resume")';
+                const formData = new FormData(form);
+                executePdfDownload(actionUrl, formData, 'POST');
+            });
+        }
+    });
+
+        // 共用的 PDF 非同步下載與 SweetAlert 控管函式
+    function executePdfDownload(url, data, method) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: '檔案下載中，請稍候...',
+                text: '正在產生 PDF 履歷檔案，請勿關閉視窗。',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+        }
+
+        const fetchOptions = {
+            method: method || 'GET'
+        };
+        if (data) {
+            fetchOptions.body = data;
+        }
+
+        let extractedFilename = '履歷表.pdf'; // 預設備用檔名
+
+        fetch(url, fetchOptions)
+            .then(async response => {
+                const contentType = response.headers.get("content-type");
+
+                // 🎯 檢查後端是否回傳 HTML（例如未安裝工具的錯誤導引訊息）
+                if (contentType && contentType.includes("text/html")) {
+                    const htmlText = await response.text();
+                    document.open();
+                    document.write(htmlText);
+                    document.close();
+                    return null;
+                }
+
+                if (!response.ok) throw new Error('下載失敗');
+
+                // 🎯 從後端的 Content-Disposition Header 抓取真實的檔案名稱
+                const disposition = response.headers.get("content-disposition");
+                if (disposition && disposition.indexOf("attachment") !== -1) {
+                    // 支援標準 filename*=UTF-8''... 與一般 filename="..." 的解析
+                    const filenameUtf8Match = disposition.match(/filename\*=UTF-8''([^;\n]+)/);
+                    if (filenameUtf8Match && filenameUtf8Match[1]) {
+                        extractedFilename = decodeURIComponent(filenameUtf8Match[1].replace(/['"]/g, ''));
+                    } else {
+                        const filenameMatch = disposition.match(/filename="?([^";\n]+)"?/);
+                        if (filenameMatch && filenameMatch[1]) {
+                            extractedFilename = decodeURIComponent(filenameMatch[1]);
+                        }
+                    }
+                }
+
+                return response.blob();
+            })
+            .then(blob => {
+                if (!blob) return; // 若前面已經處理過 HTML 錯誤，直接跳過
+
+                // 建立暫時的下載連結並觸發瀏覽器存檔（使用後端帶過來的動態檔名）
+                const blobUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = extractedFilename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(blobUrl);
+
+                // 📥 檔案已經完整下載完畢，此時才關閉提示視窗
+                if (typeof Swal !== 'undefined') {
+                    Swal.close();
+                }
+            })
+            .catch(err => {
+                console.error('PDF 下載發生錯誤:', err);
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        icon: 'error',
+                        title: '下載失敗',
+                        text: '無法順利產生 PDF，請稍後再試。'
+                    });
+                }
+            });
+    }
 
 // 🎯 自動判斷證照是否為「分數」、「級別」或「無級別/隱藏」
 function updateCertLevelOptions(certItemEl) {

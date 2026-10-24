@@ -11,6 +11,7 @@
     @* 套用 Job_Search 的篩選欄樣式 *@
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 }
 
 @{
@@ -161,4 +162,91 @@
     function resetFilter() {
         window.location.href = '@Url.Action("Resume", "Member")';
     }
+
+    // 🎯 攔截 PDF 下載按鈕，等檔案完全下載後才關閉視窗
+    document.addEventListener("DOMContentLoaded", function () {
+        document.querySelectorAll('.btn-pdf').forEach(function (pdfBtn) {
+            pdfBtn.addEventListener('click', function (e) {
+                e.preventDefault(); // 阻止超連結預設跳轉行為
+                const downloadUrl = pdfBtn.getAttribute('href');
+
+                // 如果頁面有載入 Swal，顯示漂亮的下載提示
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        title: '檔案下載中，請稍候...',
+                        text: '正在產生 PDF 履歷檔案，請勿關閉視窗。',
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                        showConfirmButton: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+                }
+
+                let extractedFilename = '履歷表.pdf'; // 預設備用檔名
+
+                // 使用 fetch 請求 PDF 檔案串流
+                fetch(downloadUrl)
+                    .then(async response => {
+                        const contentType = response.headers.get("content-type");
+
+                        // 🎯 檢查後端是否回傳 HTML（例如未安裝 LibreOffice 的錯誤導引訊息）
+                        if (contentType && contentType.includes("text/html")) {
+                            const htmlText = await response.text();
+                            document.open();
+                            document.write(htmlText);
+                            document.close();
+                            return null;
+                        }
+
+                        if (!response.ok) throw new Error('下載失敗');
+
+                        // 🎯 從後端 Content-Disposition 標頭中解析真實的動態檔名
+                        const disposition = response.headers.get("content-disposition");
+                        if (disposition && disposition.indexOf("attachment") !== -1) {
+                            const filenameUtf8Match = disposition.match(/filename\*=UTF-8''([^;\n]+)/);
+                            if (filenameUtf8Match && filenameUtf8Match[1]) {
+                                extractedFilename = decodeURIComponent(filenameUtf8Match[1].replace(/['"]/g, ''));
+                            } else {
+                                const filenameMatch = disposition.match(/filename="?([^";\n]+)"?/);
+                                if (filenameMatch && filenameMatch[1]) {
+                                    extractedFilename = decodeURIComponent(filenameMatch[1]);
+                                }
+                            }
+                        }
+
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        if (!blob) return; // 如果前面已經處理過 HTML 錯誤導引，這裡直接跳過
+
+                        // 建立暫時的下載連結並使用後端帶過來的動態檔名存檔
+                        const blobUrl = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = blobUrl;
+                        a.download = extractedFilename;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        window.URL.revokeObjectURL(blobUrl);
+
+                        // 📥 檔案已經完整下載完畢，此時才關閉提示視窗
+                        if (typeof Swal !== 'undefined') {
+                            Swal.close();
+                        }
+                    })
+                    .catch(err => {
+                        console.error('PDF 下載發生錯誤:', err);
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({
+                                icon: 'error',
+                                title: '下載失敗',
+                                text: '無法順利產生 PDF，請稍後再試。'
+                            });
+                        }
+                    });
+            });
+        });
+    });
 </script>

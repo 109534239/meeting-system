@@ -16,6 +16,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Text.Json.Serialization;
 
 namespace InterviewProject.Controllers
 {
@@ -160,6 +161,214 @@ namespace InterviewProject.Controllers
 
             await PopulateViewBagData(userId);
             return View(model);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> ParseResumeFile(IFormFile resumeFile)
+        {
+            if (resumeFile == null || resumeFile.Length == 0)
+            {
+                return Json(new { success = false, message = "請選擇檔案上傳" });
+            }
+
+            try
+            {
+                byte[] fileBytes;
+                using (var ms = new MemoryStream())
+                {
+                    await resumeFile.CopyToAsync(ms);
+                    fileBytes = ms.ToArray();
+                }
+
+                var parsedData = await ExtractResumeInfoWithGeminiAsync(fileBytes, resumeFile.ContentType, resumeFile.FileName);
+
+                return Json(new { success = true, data = parsedData });
+            }
+            catch (Exception ex)
+            {
+                // 🎯 這裡會直接把真實的錯誤訊息回傳到前端彈窗，方便你看出是 API Key 錯還是模型錯
+                return Json(new { success = false, message = "解析失敗: " + ex.Message });
+            }
+        }
+
+        private async Task<ParsedResumeDto> ExtractResumeInfoWithGeminiAsync(byte[] fileBytes, string contentType, string fileName)
+        {
+            var apiKey = GeminiApiKey;
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                throw new Exception("伺服器未設定 GeminiApiKey");
+            }
+
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(60); // 🎯 縮短至 60 秒（極速 Flash 模型通常在 3~8 秒內完成）
+
+            // 🎯 改用最穩定且高效能的 gemini-2.5-flash 確保速度與精準度
+            string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey.Trim()}";
+
+            string base64Content = Convert.ToBase64String(fileBytes);
+
+            string mimeType = contentType;
+            if (fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) mimeType = "application/pdf";
+            else if (fileName.EndsWith(".doc", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".docx", StringComparison.OrdinalIgnoreCase)) mimeType = "application/pdf";
+
+            // 🎯 精簡並結構化 Prompt，提升模型解析速度與欄位對齊準確率
+            var promptText = "你是一個高精確度的履歷解析助理。請分析傳入的履歷檔案（包含圖片或文字 PDF），精確擷取以下資訊，並**必須回傳一個純 JSON 物件（以 { 開頭，以 } 結尾，絕對不要回傳陣列 [...]）**，結構與解析規則如下：\n" +
+"1. Languages: 請簡化語文能力，格式固定為 [\"語言名稱(熟練度)\"]，例如 [\"英語(略懂)\", \"日語(精通)\"]。若 PDF 寫 \"英文 聽/略懂...\" 請直接轉為 \"英語(略懂)\"。\n" +
+"2. Certificates: 請將證照名稱與級別分開，格式固定為 [\"證照名稱(級別)\"]。例如 PDF 寫 \"電腦軟體應用乙級\" 請轉為 \"電腦軟體應用(乙級)\"；若為 MOS 等無級別證照，則寫 \"Microsoft Office Specialist(PowerPoint 2019)\"。\n" +
+"3. DriverLicense: 駕照請比對種類，例如 \"普通小型車駕照\" 請轉為 [\"普通(小型車)\"]。\n" +
+"4. Autobiography: 僅擷取「自傳」標題底下的所有文字內容。**包含內文中的任何顏色、粗體或不同樣式的小標題（例如『考取專業證照』、『社團經驗...』等）都必須完整抓取並保留**。請務必保留原文中的段落與換行（以 \\n 表示換行），切勿遺漏任何小標題或段落。\n" +
+"5. Portfolios: 請擷取「專案成就」區塊，包含 Title, Description, Link。\n\n" +
+"請嚴格輸出純 JSON 物件，絕對不要包含任何 Markdown 標記（如 ```json）：\n" +
+"{\n" +
+"  \"Phone\": \"手機號碼\",\n" +
+"  \"Address\": \"居住地址\",\n" +
+"  \"MaritalStatus\": \"已婚或單身\",\n" +
+"  \"MilitaryService\": \"免役、役畢、未役或待役中\",\n" +
+"  \"Educations\": [{\"EduLevel\": \"學歷(僅限填：博士、碩士、大學、專科、高職、高中、國中、國小)\", \"SchoolName\": \"學校名稱\", \"Major\": \"科系所\", \"EduStatus\": \"畢業/肄業/在學\", \"StartDate\": \"yyyy-MM\", \"EndDate\": \"yyyy-MM\"}],\n" +
+"  \"WorkExperiences\": [{\"CompanyName\": \"公司名稱\", \"JobTitle\": \"職位\", \"JobDescription\": \"工作內容\", \"StartDate\": \"yyyy-MM\", \"EndDate\": \"yyyy-MM\"}],\n" +
+"  \"Languages\": [\"語言名稱(熟練度)\"],\n" +
+"  \"Specialties\": [\"專長\"],\n" +
+"  \"ComputerSkills\": [\"電腦能力\"],\n" +
+"  \"Certificates\": [\"證照名稱(級別)\"],\n" +
+"  \"DriverLicense\": [\"駕照種類\"],\n" +
+"  \"Portfolios\": [{\"Title\": \"專案名稱\", \"Description\": \"專案說明\", \"Link\": \"連結\"}],\n" +
+"  \"Autobiography\": \"自傳全文內文（含所有小標題與段落換行 \\n）\"\n" +
+"}";
+
+            // 🎯 加入 system_instruction 與 generationConfig (temperature: 0) 提升速度與精準度
+            var requestBody = new
+            {
+                contents = new[]
+                {
+            new
+            {
+                parts = new object[]
+                {
+                    new { inline_data = new { mime_type = mimeType, data = base64Content } },
+                    new { text = promptText }
+                }
+            }
+        },
+                generationConfig = new
+                {
+                    temperature = 0.0, // 設為 0 可以讓 AI 專心萃取資料，大幅提升正確率並減少思考時間
+                    response_mime_type = "application/json" // 🎯 強制 AI 輸出純 JSON 格式，省去前後端額外正規化與解析的時間
+                }
+            };
+
+            var response = await client.PostAsJsonAsync(url, requestBody);
+            var respString = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"Google API 回應錯誤 (HTTP {response.StatusCode}): {respString}");
+            }
+
+            using var doc = JsonDocument.Parse(respString);
+            string rawResponseText = doc.RootElement
+                .GetProperty("candidates")[0]
+                .GetProperty("content")
+                .GetProperty("parts")[0]
+                .GetProperty("text")
+                .GetString() ?? "{}";
+
+            // 雙重保險：以防萬一仍有包裹 Markdown 標記
+            rawResponseText = Regex.Replace(rawResponseText, @"```json\s*", "", RegexOptions.IgnoreCase);
+            rawResponseText = Regex.Replace(rawResponseText, @"```\s*$", "", RegexOptions.IgnoreCase).Trim();
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return JsonSerializer.Deserialize<ParsedResumeDto>(rawResponseText, options) ?? new ParsedResumeDto();
+        }
+
+        public class ParsedResumeDto
+        {
+            public string? Phone { get; set; }
+            public string? Address { get; set; }
+            public string? MaritalStatus { get; set; }
+            public string? MilitaryService { get; set; }
+            public List<ParsedEduDto> Educations { get; set; } = new();
+            public List<ParsedWorkDto> WorkExperiences { get; set; } = new();
+
+            [JsonConverter(typeof(FlexibleStringListConverter))]
+            public List<string> Languages { get; set; } = new();
+
+            [JsonConverter(typeof(FlexibleStringListConverter))]
+            public List<string> Specialties { get; set; } = new();
+
+            [JsonConverter(typeof(FlexibleStringListConverter))]
+            public List<string> ComputerSkills { get; set; } = new();
+
+            [JsonConverter(typeof(FlexibleStringListConverter))]
+            public List<string> Certificates { get; set; } = new();
+
+            [JsonConverter(typeof(FlexibleStringListConverter))]
+            public List<string> DriverLicense { get; set; } = new();
+
+            public List<ParsedPortfolioDto> Portfolios { get; set; } = new();
+
+            public string? Autobiography { get; set; }
+        }
+
+        public class ParsedPortfolioDto
+        {
+            public string? Title { get; set; }
+            public string? Description { get; set; }
+            public string? Link { get; set; }
+        }
+
+        // 🎯 彈性解析轉換器：完美相容 List<string> 或純字串/逗號分隔字串
+        public class FlexibleStringListConverter : System.Text.Json.Serialization.JsonConverter<List<string>>
+        {
+            public override List<string> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                if (reader.TokenType == JsonTokenType.StartArray)
+                {
+                    // 如果本身就是 JSON 陣列，直接讓內建的 JsonSerializer 幫我們完美還原
+                    return JsonSerializer.Deserialize<List<string>>(ref reader, options) ?? new List<string>();
+                }
+                else if (reader.TokenType == JsonTokenType.String)
+                {
+                    // 如果 AI 不小心回傳成純字串，則用逗號/分號/頓號拆成 List<string>
+                    var val = reader.GetString();
+                    if (string.IsNullOrWhiteSpace(val)) return new List<string>();
+
+                    return val.Split(new[] { ',', ';', '、' }, StringSplitOptions.RemoveEmptyEntries)
+                              .Select(s => s.Trim())
+                              .ToList();
+                }
+                else if (reader.TokenType == JsonTokenType.Null)
+                {
+                    return new List<string>();
+                }
+
+                // 其他未知型態略過
+                reader.Skip();
+                return new List<string>();
+            }
+
+            public override void Write(Utf8JsonWriter writer, List<string> value, JsonSerializerOptions options)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+            }
+        }
+
+        public class ParsedEduDto
+        {
+            public string? EduLevel { get; set; }
+            public string? SchoolName { get; set; }
+            public string? Major { get; set; }
+            public string? EduStatus { get; set; }
+            public string? StartDate { get; set; }
+            public string? EndDate { get; set; }
+        }
+
+        public class ParsedWorkDto
+        {
+            public string? CompanyName { get; set; }
+            public string? JobTitle { get; set; }
+            public string? JobDescription { get; set; }
+            public string? StartDate { get; set; }
+            public string? EndDate { get; set; }
         }
 
         [HttpPost]
@@ -577,7 +786,7 @@ namespace InterviewProject.Controllers
             if (licenses == null || !licenses.Any()) return "無";
 
             var lines = new List<string>();
-            string[] order = { "自用", "職業", "機車", "汽(機)車" };
+            string[] order = { "普通", "職業", "機車", "汽(機)車" };
             foreach (var category in order)
             {
                 var types = licenses.Where(l => l.Driver == category).Select(l => l.Type).ToList();
