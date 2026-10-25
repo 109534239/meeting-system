@@ -12,6 +12,48 @@
     var aiAnalysisByRoom = ViewBag.AiAnalysisByRoom as Dictionary<int, List<string>>
                          ?? new Dictionary<int, List<string>>();
     var endedRooms = (Model ?? new List<InterviewProject.Models.Room>()).Where(r => r.MeetingStatus == "Ended").ToList();
+    // 🎯 改版：主持人是每場面試各自指定的，所以要一間房一間房判斷「我是不是這場的主持人」
+    var hostRoomIds = ViewBag.HostRoomIds as HashSet<int> ?? new HashSet<int>();
+    // 🎯 改版：求職者的適性測驗結果（評分時參考）
+    var aptitudeResultsByResume = ViewBag.AptitudeResultsByResume as Dictionary<int, InterviewProject.Models.AptitudeTestResult>
+                         ?? new Dictionary<int, InterviewProject.Models.AptitudeTestResult>();
+}
+
+@functions {
+    // 適性測驗五個構面的雷達圖（分數 1~5）
+    static string BuildRadarSvg(InterviewProject.Models.AptitudeTestResult t)
+    {
+        var labels = new[] { "抗壓性", "團隊合作", "積極主動", "可靠負責", "溝通表達" };
+        var values = new[] { t.StressToleranceScore, t.TeamworkScore, t.ProactivenessScore, t.ReliabilityScore, t.CommunicationScore };
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        double cx = 130, cy = 115, r = 80;
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<svg viewBox='0 0 260 230' width='260' height='230' xmlns='http://www.w3.org/2000/svg' role='img' aria-label='適性測驗雷達圖'>");
+        for (int level = 1; level <= 5; level++)
+        {
+            var pts = new List<string>();
+            for (int i = 0; i < 5; i++)
+            {
+                double a = -Math.PI / 2 + i * 2 * Math.PI / 5;
+                pts.Add((cx + r * level / 5.0 * Math.Cos(a)).ToString("0.##", ci) + "," + (cy + r * level / 5.0 * Math.Sin(a)).ToString("0.##", ci));
+            }
+            sb.Append("<polygon points='" + string.Join(" ", pts) + "' fill='none' stroke='#d0d7de' stroke-width='1'/>");
+        }
+        var dataPts = new List<string>();
+        for (int i = 0; i < 5; i++)
+        {
+            double a = -Math.PI / 2 + i * 2 * Math.PI / 5;
+            sb.Append("<line x1='" + cx.ToString(ci) + "' y1='" + cy.ToString(ci) + "' x2='" + (cx + r * Math.Cos(a)).ToString("0.##", ci) + "' y2='" + (cy + r * Math.Sin(a)).ToString("0.##", ci) + "' stroke='#d0d7de'/>");
+            var v = Math.Max(0, Math.Min(5, values[i]));
+            dataPts.Add((cx + r * v / 5.0 * Math.Cos(a)).ToString("0.##", ci) + "," + (cy + r * v / 5.0 * Math.Sin(a)).ToString("0.##", ci));
+            double lx = cx + (r + 18) * Math.Cos(a), ly = cy + (r + 18) * Math.Sin(a) + 4;
+            var anchor = Math.Abs(Math.Cos(a)) < 0.3 ? "middle" : (Math.Cos(a) > 0 ? "start" : "end");
+            sb.Append("<text x='" + lx.ToString("0.##", ci) + "' y='" + ly.ToString("0.##", ci) + "' font-size='12' text-anchor='" + anchor + "' fill='#444'>" + labels[i] + " " + values[i].ToString("0.0", ci) + "</text>");
+        }
+        sb.Append("<polygon points='" + string.Join(" ", dataPts) + "' fill='rgba(52,120,246,0.25)' stroke='#3478f6' stroke-width='2'/>");
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
 }
 
 @section Styles {
@@ -19,6 +61,26 @@
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
     <style>
+        .host-badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #3478f6;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-align: middle;
+        }
+
+        .aptitude-box {
+            margin: 8px 0 10px;
+            padding: 8px 12px;
+            border: 1px solid #e3e8ef;
+            border-radius: 8px;
+            background: #fafbfd;
+        }
+
         .candidate-list {
             display: flex;
             flex-direction: column;
@@ -406,7 +468,13 @@
                     };
 
                     <div class="interview-row">
-                        <div class="interview-title">@(room.Job?.Title ?? "未指定職缺")</div>
+                        <div class="interview-title">
+                            @(room.Job?.Title ?? "未指定職缺")
+                            @if (hostRoomIds.Contains(room.Id))
+                            {
+                                <span class="host-badge">主持人</span>
+                            }
+                        </div>
 
                         <div class="interview-time" id="time-@room.Id">
                             @if (room.ScheduledAt != null)
@@ -418,7 +486,7 @@
                             {
                                 <span class="text-muted">未設定時間</span>
                             }
-                            @if (role == "director" && room.MeetingStatus == "NotStarted")
+                            @if (hostRoomIds.Contains(room.Id) && room.MeetingStatus == "NotStarted")
                             {
                                 <button type="button" class="btn-reschedule" onclick="openReschedule(@room.Id)">修改時間</button>
                                 <div class="reschedule-box" id="reschedule-@room.Id" style="display:none">
@@ -486,7 +554,13 @@
                 .ToList() ?? new List<InterviewProject.Models.RoomParticipant>();
 
                 <div class="eval-room-card">
-                    <div class="eval-room-title">@(room.Job?.Title ?? "未指定職缺")</div>
+                    <div class="eval-room-title">
+                        @(room.Job?.Title ?? "未指定職缺")
+                        @if (hostRoomIds.Contains(room.Id))
+                        {
+                            <span class="host-badge">你是這場的主持人</span>
+                        }
+                    </div>
                     <div class="eval-room-sub">
                         @(room.StartAt?.ToString("yyyy-MM-dd HH:mm") ?? "") ｜ 房間代碼：@room.JitsiRoomName
                     </div>
@@ -588,11 +662,27 @@
                             <div class="eval-candidate">
                                 <div class="eval-candidate-name">@name</div>
 
-                                @* 🎯 最高主管：無論自己是否已評分，都能看到部門主管的評分紀錄作為參考 *@
-                                @if (role == "director")
+                                @* 🎯 適性測驗結果：跟逐字稿／影片／AI分析一樣當評分參考 *@
+                                @{
+                                    var aptitude = resume != null && aptitudeResultsByResume.TryGetValue(resume.Id, out var apt) ? apt : null;
+                                }
+                                <div class="aptitude-box">
+                                    <div class="manager-eval-ref-title">適性測驗結果（參考，1~5分）</div>
+                                    @if (aptitude != null)
+                                    {
+                                        @Html.Raw(BuildRadarSvg(aptitude))
+                                    }
+                                    else
+                                    {
+                                        <div class="text-muted" style="font-size:13px;">這位求職者沒有適性測驗結果</div>
+                                    }
+                                </div>
+
+                                @* 🎯 主持人：無論自己是否已評分，都能看到其他職員的評分紀錄作為參考 *@
+                                @if (hostRoomIds.Contains(room.Id))
                                 {
                                     <div class="manager-eval-ref">
-                                        <div class="manager-eval-ref-title">部門主管評分紀錄（參考）</div>
+                                        <div class="manager-eval-ref-title">其他職員評分紀錄（參考）</div>
                                         @if (managerEvalsForThisResume.Any())
                                         {
                                             foreach (var me in managerEvalsForThisResume)
@@ -606,7 +696,7 @@
                                         }
                                         else
                                         {
-                                            <div class="manager-eval-item" style="border-top:none;">尚無部門主管評分</div>
+                                            <div class="manager-eval-item" style="border-top:none;">尚無其他職員評分</div>
                                         }
                                     </div>
                                 }
@@ -632,23 +722,29 @@
                                     </div>
                                 }
 
-                                @if (role == "director" && resume != null)
+                                @* 🎯 改版：主持人不用等所有職員評完分，可以直接決定；職員評分只是參考。
+                                   送出後先通知 HR，由 HR 通知求職者。 *@
+                                @if (hostRoomIds.Contains(room.Id) && resume != null)
                                 {
                                     <div class="admission-actions" style="margin-top:10px;">
-                                        @if (resume.AdmissionResult == "錄取")
+                                        @if (room.ResultSubmittedAt != null)
                                         {
-                                            <span class="admission-result" style="color:#2e7d32;">✅ 已定案：錄取</span>
-                                        }
-                                        else if (resume.AdmissionResult == "未錄取")
-                                        {
-                                            <span class="admission-result" style="color:#c0392b;">❌ 已定案：未錄取</span>
-                                        }
-                                        else if (!allManagersEvaluated)
-                                        {
-                                            <div class="eval-pending-manager">⏳ 尚有部門主管未完成評分（@managerProgressText 位已評分），須所有主管評分完成後才能定案錄取結果。你可以先自行評分，不影響這項限制。</div>
+                                            var shown = !string.IsNullOrEmpty(resume.PendingAdmissionResult) ? resume.PendingAdmissionResult : resume.AdmissionResult;
+                                            <span class="admission-result" style="color:@(shown == "錄取" ? "#2e7d32" : "#c0392b");">
+                                                @(shown == "錄取" ? "✅" : "❌") 已送出：@shown
+                                                @(resume.AdmissionResult == "錄取" || resume.AdmissionResult == "未錄取" ? "（HR 已通知求職者）" : "（等 HR 通知求職者）")
+                                            </span>
                                         }
                                         else
                                         {
+                                            if (!string.IsNullOrEmpty(resume.PendingAdmissionResult))
+                                            {
+                                                <div class="eval-pending-manager">目前決定：<b>@resume.PendingAdmissionResult</b>（全部決定好後，請到本場最下方按「送出並通知 HR」；送出前可改）</div>
+                                            }
+                                            else if (!allManagersEvaluated)
+                                            {
+                                                <div class="eval-pending-manager">職員評分進度：@managerProgressText（僅供參考，不影響你直接決定）</div>
+                                            }
                                             <button type="button" class="btn-admit" onclick="setAdmission(@room.Id, @resume.Id, '錄取')">錄取</button>
                                             <button type="button" class="btn-reject" onclick="setAdmission(@room.Id, @resume.Id, '未錄取')">未錄取</button>
                                         }
@@ -660,6 +756,22 @@
                     else
                     {
                         <div class="text-muted">這場面試沒有求職者資料</div>
+                    }
+
+                    @* 🎯 主持人決定好每位求職者後，送出並寄 email 通知 HR，由 HR 通知求職者 *@
+                    @if (hostRoomIds.Contains(room.Id) && candidates.Any())
+                    {
+                        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #cfd6df;">
+                            @if (room.ResultSubmittedAt != null)
+                            {
+                                <span class="eval-pending-manager">✅ 已於 @room.ResultSubmittedAt.Value.ToString("yyyy-MM-dd HH:mm") 送出錄取結果並通知 HR</span>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn-admit" onclick="submitResults(@room.Id)">送出錄取結果並通知 HR</button>
+                                <span class="reschedule-msg" id="submit-msg-@room.Id"></span>
+                            }
+                        </div>
                     }
                 </div>
             }
@@ -771,8 +883,25 @@
             }
         }
 
+        async function submitResults(roomId) {
+            if (!confirm('確定要送出這場面試的錄取結果並通知 HR 嗎？送出後無法再修改。')) return;
+            const msg = document.getElementById('submit-msg-' + roomId);
+            try {
+                const res = await fetch('/Interview/SubmitResults', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'roomId=' + roomId
+                });
+                const data = await res.json();
+                if (data.success) { location.reload(); }
+                else if (msg) { msg.textContent = data.message || '送出失敗'; }
+            } catch (err) {
+                if (msg) msg.textContent = '送出失敗，請稍後再試';
+            }
+        }
+
         async function setAdmission(roomId, resumeId, result) {
-            if (!confirm('確定要把這位求職者定案為「' + result + '」嗎？')) return;
+            if (!confirm('確定要把這位求職者決定為「' + result + '」嗎？')) return;
             try {
                 const res = await fetch('/Interview/SetAdmission', {
                     method: 'POST',

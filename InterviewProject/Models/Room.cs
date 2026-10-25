@@ -28,6 +28,15 @@ namespace InterviewProject.Models
         // Ended：已結束
         public string MeetingStatus { get; set; } = "NotStarted";
 
+        // 🎯 這場面試的主持人（HR 建立會議室時從該部門職員中指定一位，面試開始前可改）。
+        //    關聯到 Employees 表；RoomParticipants 裡 Role=Director 那一列會同步維持一致（會議程式讀的是那一列）。
+        public int? HostEmployeeId { get; set; }
+
+        // 主持人在面試後「送出錄取結果」並通知HR的時間（null = 還沒送出）
+        public DateTime? ResultSubmittedAt { get; set; }
+        [ForeignKey("HostEmployeeId")]
+        public virtual Employee? HostEmployee { get; set; }
+
         // 🎯 JaaS 伺服器端錄影完成後，透過 Webhook 收到的下載連結（24小時內有效）
         public string? RecordingUrl { get; set; }
 
@@ -70,6 +79,9 @@ namespace InterviewProject.Models
             var now = DateTime.Now;
             if (StartAt.HasValue && now < StartAt.Value)
                 return $"尚未開放（{StartAt.Value:MM/dd HH:mm} 後可進入）";
+            // 還沒開始、且還沒到預計面試時間：要跟 CanEnter() 的判斷一致，不能顯示「進行中」
+            if (MeetingStatus == "NotStarted" && ScheduledAt.HasValue && now < ScheduledAt.Value)
+                return $"尚未開放（{ScheduledAt.Value:MM/dd HH:mm} 後可進入）";
             if (EndAt.HasValue && now > EndAt.Value)
                 return "已結束";
             return "進行中";

@@ -237,13 +237,16 @@ namespace InterviewProject.Hubs
             if (httpContext == null) return null;
 
             var sessionMemberId = httpContext.Session.GetInt32("MemberId");
-            var sessionRole = httpContext.Session.GetString("MemberRole")?.ToLower();
-            if (sessionMemberId == null || sessionRole != "director") return null;
+            // 🎯 改版：主持人是HR替每場面試指定的職員，跟帳號角色無關，
+            //    所以不再檢查帳號角色是不是 director，只看下面「是不是這間房的主持人」
+            if (sessionMemberId == null) return null;
 
             var room = await _db.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return null;
 
-            var isDirectorOfThisRoom = await _db.RoomParticipants.AnyAsync(p =>
+            // 以 Rooms.HostEmployeeId 為準；舊資料退回看 RoomParticipants 的 Director 那一列
+            var isDirectorOfThisRoom = room.HostEmployeeId == sessionMemberId.Value
+                || await _db.RoomParticipants.AnyAsync(p =>
                 p.RoomId == room.Id
                 && p.Role == ParticipantRole.Director
                 && p.EmployeeId == sessionMemberId.Value);

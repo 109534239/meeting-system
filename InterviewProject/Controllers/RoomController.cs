@@ -35,6 +35,15 @@ namespace InterviewProject.Controllers
             _hub = hub;
         }
 
+        // 🎯 改版：主持人是HR替每場面試指定的職員（RoomParticipants.Role==Director），跟帳號角色無關
+        private async Task<bool> IsRoomHostAsync(int roomId, int employeeId)
+        {
+            // 以 Rooms.HostEmployeeId 為準；舊資料（沒有這個欄位值）退回看 RoomParticipants 的 Director 那一列
+            return await _context.Rooms.AnyAsync(r => r.Id == roomId && r.HostEmployeeId == employeeId)
+                || await _context.RoomParticipants.AnyAsync(p =>
+                    p.RoomId == roomId && p.Role == ParticipantRole.Director && p.EmployeeId == employeeId);
+        }
+
         private bool IsEmployee()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
@@ -301,11 +310,14 @@ namespace InterviewProject.Controllers
         [HttpGet]
         public async Task<IActionResult> GetPendingParticipants(string code)
         {
-            var sessionRole = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (sessionRole != "director") return Json(new List<object>());
+            var sessionMemberId = HttpContext.Session.GetInt32("MemberId");
+            if (sessionMemberId == null) return Json(new List<object>());
 
             var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(x => x.JitsiRoomName == code);
             if (room == null) return Json(new List<object>());
+
+            // 🎯 改版：只有「這場面試的主持人」看得到候審名單（不再看帳號角色）
+            if (!await IsRoomHostAsync(room.Id, sessionMemberId.Value)) return Json(new List<object>());
 
             var pending = await _context.RoomParticipants
                 .Where(p => p.RoomId == room.Id && p.Status == ParticipantStatus.Pending)
@@ -330,18 +342,14 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> AdmitParticipant(int participantId, bool approve)
         {
             var sessionMemberId = HttpContext.Session.GetInt32("MemberId");
-            var sessionRole = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (sessionMemberId == null || sessionRole != "director")
-                return Json(new { success = false, message = "只有最高主管能同意或拒絕候審申請" });
+            if (sessionMemberId == null)
+                return Json(new { success = false, message = "請先登入" });
 
             var participant = await _context.RoomParticipants.FirstOrDefaultAsync(p => p.Id == participantId);
             if (participant == null) return Json(new { success = false, message = "找不到這位候審中的人" });
 
             // 🎯 一定要確認這個最高主管真的是「這位候審者所在房間」受邀的主持人，不能跨房間操作別人的候審名單
-            var isDirectorOfThisRoom = await _context.RoomParticipants.AnyAsync(p =>
-                p.RoomId == participant.RoomId
-                && p.Role == ParticipantRole.Director
-                && p.EmployeeId == sessionMemberId.Value);
+            var isDirectorOfThisRoom = await IsRoomHostAsync(participant.RoomId, sessionMemberId.Value);
             if (!isDirectorOfThisRoom)
                 return Json(new { success = false, message = "你不是這場面試的主持人" });
 
@@ -741,7 +749,7 @@ namespace InterviewProject.Controllers
                         if (string.IsNullOrEmpty(personName)) return null;
                         var roleLabel = p.Role switch
                         {
-                            ParticipantRole.Director => "最高主管",
+                            ParticipantRole.Director => "主持人",
                             ParticipantRole.Manager => "主管",
                             ParticipantRole.Jobseeker => "求職者",
                             _ => null

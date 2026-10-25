@@ -1,0 +1,58 @@
+﻿@model InterviewProject.Models.HrMeetingFormVm
+
+<form asp-action="@Model.Action" asp-controller="Interview" method="post" class="hr-meeting-form" data-uid="@Model.Uid">
+    @if (Model.JobId.HasValue)
+    {
+        <input type="hidden" name="jobId" value="@Model.JobId" />
+    }
+    @if (Model.RoomId.HasValue)
+    {
+        <input type="hidden" name="roomId" value="@Model.RoomId" />
+    }
+
+    <div class="hr-form-block">
+        <label class="hr-form-label">面試時間</label>
+        <input type="datetime-local" name="scheduledAt" required
+               value="@Model.ScheduledAt.ToString("yyyy-MM-ddTHH:mm")"
+               min="@DateTime.Now.ToString("yyyy-MM-ddTHH:mm")" />
+    </div>
+
+    <div class="hr-form-block">
+        <label class="hr-form-label">求職者（履歷已通過）</label>
+        <div class="hr-check-list">
+            @foreach (var r in Model.Resumes)
+            {
+                <label class="hr-check-item">
+                    <input type="checkbox" name="resumeIds" value="@r.Id" @(Model.SelectedResumeIds.Contains(r.Id) ? "checked" : "") />
+                    <span>@(r.Member?.Name ?? "未知")</span>
+                </label>
+            }
+        </div>
+    </div>
+
+    <div class="hr-form-block">
+        <label class="hr-form-label">職員（該職缺部門）與主持人（只能指定一位）</label>
+        <div class="hr-check-list">
+            @foreach (var st in Model.Staff)
+            {
+                <div class="hr-check-item hr-staff-row">
+                    <label>
+                        <input type="checkbox" class="hr-staff-cb" name="staffIds" value="@st.Id" @(Model.SelectedStaffIds.Contains(st.Id) ? "checked" : "") />
+                        <span>@st.Name</span>
+                    </label>
+                    <label class="hr-host-pick">
+                        <input type="radio" class="hr-host-radio" name="hostEmployeeId" value="@st.Id" @(Model.HostId == st.Id ? "checked" : "") />
+                        <span>設為主持人</span>
+                    </label>
+                </div>
+            }
+            @if (!Model.Staff.Any())
+            {
+                <div class="text-muted">這個部門目前沒有職員帳號，無法安排面試。</div>
+            }
+        </div>
+        <div class="text-muted" style="font-size:12px;margin-top:4px;">AI 面試官會自動加入，不用選。</div>
+    </div>
+
+    <button type="submit" class="hr-btn-primary">@Model.SubmitText</button>
+</form>

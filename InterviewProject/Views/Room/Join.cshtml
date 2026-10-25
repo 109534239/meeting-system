@@ -8,10 +8,17 @@
     var memberRole = Context.Session.GetString("MemberRole")?.ToLower() ?? "";
     var sessionMemberId = Context.Session.GetInt32("MemberId") ?? 0;
     var isStaff = memberRole == "hr" || memberRole == "manager" || memberRole == "director";
-    var isHost = memberRole == "director"; // 🎯 只有最高主管是主持人，能開始/結束會議
-    string staffLabel = memberRole switch
+    // 🎯 改版：主持人是HR替「這一場面試」指定的職員，不再看帳號角色。
+    //    RoomController.Join 已把這個人在這間房的參與者角色放進 ViewBag.ParticipantRole；
+    //    只有在這間房沒有參與者名單（極舊資料）時，才退回舊的帳號角色判斷當保險。
+    var participantRole = ViewBag.ParticipantRole as string;
+    var isHost = participantRole != null
+        ? participantRole == InterviewProject.Models.ParticipantRole.Director
+        : memberRole == "director";
+    // 🎯 標籤要跟 RoomController 產生逐字稿講者名單用的標籤一致（主持人／主管／人資）
+    string staffLabel = isHost ? "主持人" : memberRole switch
     {
-        "director" => "最高主管",
+        "director" => "主管",
         "manager" => "主管",
         "hr" => "人資",
         _ => "員工"

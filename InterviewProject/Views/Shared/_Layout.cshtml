@@ -64,6 +64,8 @@
                                asp-controller="AdminHome" asp-action="Dashboard">招募數據</a>
                             <a class="nav-btn @(controller == "HrJob" ? "active" : "")"
                                asp-controller="HrJob" asp-action="Index">職缺管理</a>
+                            <a class="nav-btn @(controller == "Interview" ? "active" : "")"
+                               asp-controller="Interview" asp-action="Index">面試管理</a>
                             <a class="nav-btn @(controller == "AdminAnnouncement" ? "active" : "")"
                                asp-controller="AdminAnnouncement" asp-action="Index">公告管理</a>
                             <a class="nav-btn @(controller == "AdminFAQ" && action != "Report" ? "active" : "")"
@@ -78,9 +80,11 @@
                                asp-controller="AdminApplication" asp-action="Index">應徵管理</a>
                             <a class="nav-btn @(controller == "Interview" ? "active" : "")"
                                asp-controller="Interview" asp-action="Index">面試管理</a>
+                            <a class="nav-btn @(controller == "AdminFAQ" && action != "Report" ? "active" : "")"
+                               asp-controller="AdminFAQ" asp-action="Index">Q&A管理</a>
                         }
                         @* 最高主管 *@
-                        else if (isDirector)
+                        @* else if (isDirector)
                         {
                             <a class="nav-btn @(controller == "AdminHome" && action == "Dashboard" ? "active" : "")"
                                asp-controller="AdminHome" asp-action="Dashboard">招募數據</a>
@@ -92,7 +96,7 @@
                                asp-controller="DirectorManager" asp-action="Index">權限管理</a>
                             <a class="nav-btn @(controller == "AdminFAQ" && action != "Report" ? "active" : "")"
                                asp-controller="AdminFAQ" asp-action="Index">Q&A管理</a>
-                        }
+                        } *@
                         @* 求職者（已登入） *@
                         else if (isApplicant)
                         {

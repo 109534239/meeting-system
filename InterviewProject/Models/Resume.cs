@@ -65,6 +65,11 @@ namespace InterviewProject.Models
         // 🎯 錄取結果：null → 等待結果中 → 未錄取 / 錄取
         public string? AdmissionResult { get; set; }
 
+        // 主持人面試後替這位求職者決定的結果（"錄取"/"未錄取"），一位求職者一筆，不記錄是誰決定的。
+        // 因為求職者畫面直接讀 AdmissionResult，所以先暫存在這裡；要等HR按下「通知求職者」，
+        // 才會被複製到上面的 AdmissionResult，求職者才看得到。
+        public string? PendingAdmissionResult { get; set; }
+
         public int? AiScore { get; set; }
         public string? AiComment { get; set; }
     }

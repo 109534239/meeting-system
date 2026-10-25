@@ -1,0 +1,433 @@
+﻿@model InterviewProject.Models.HrInterviewVm
+@using InterviewProject.Models
+
+@{
+    ViewData["Title"] = "面試管理";
+    var notStarted = Model.Rooms.Where(r => r.Room.MeetingStatus == "NotStarted").ToList();
+    var inProgress = Model.Rooms.Where(r => r.Room.MeetingStatus == "InProgress").ToList();
+    var ended = Model.Rooms.Where(r => r.Room.MeetingStatus == "Ended").ToList();
+
+    // 主持人已送出、但 HR 還沒通知求職者的場次數（顯示在分頁上提醒）
+    int pendingNotify = ended.Count(rm => rm.Room.ResultSubmittedAt != null && rm.Candidates.Any(c =>
+        !string.IsNullOrEmpty(c.PendingAdmissionResult) && c.AdmissionResult != "錄取" && c.AdmissionResult != "未錄取"));
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/Interview.css" asp-append-version="true" />
+    <style>
+        .hr-wrap {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 0 16px 40px;
+        }
+
+        .hr-tabs {
+            display: flex;
+            gap: 8px;
+            margin: 18px 0;
+            flex-wrap: wrap;
+        }
+
+        .hr-tab-btn {
+            padding: 8px 18px;
+            border: 1px solid #cfd6df;
+            border-radius: 20px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+            .hr-tab-btn.active {
+                background: #3478f6;
+                color: #fff;
+                border-color: #3478f6;
+            }
+
+            .hr-tab-btn .hr-count {
+                display: inline-block;
+                min-width: 18px;
+                margin-left: 6px;
+                padding: 0 6px;
+                border-radius: 9px;
+                background: #e74c3c;
+                color: #fff;
+                font-size: 12px;
+            }
+
+        .hr-pane {
+            display: none;
+        }
+
+            .hr-pane.active {
+                display: block;
+            }
+
+        .hr-card {
+            border: 1px solid #e3e8ef;
+            border-radius: 10px;
+            background: #fff;
+            padding: 16px 18px;
+            margin-bottom: 14px;
+        }
+
+        .hr-card-title {
+            font-size: 17px;
+            font-weight: 700;
+        }
+
+        .hr-card-sub {
+            color: #667;
+            font-size: 13px;
+            margin: 4px 0 10px;
+        }
+
+        .hr-form-block {
+            margin: 12px 0;
+        }
+
+        .hr-form-label {
+            display: block;
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+
+        .hr-check-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .hr-check-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+        }
+
+        .hr-staff-row {
+            justify-content: space-between;
+            max-width: 420px;
+        }
+
+        .hr-host-pick {
+            color: #3478f6;
+            font-size: 13px;
+        }
+
+        .hr-btn-primary {
+            padding: 8px 20px;
+            border: 0;
+            border-radius: 6px;
+            background: #3478f6;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .hr-btn-small {
+            padding: 4px 12px;
+            border: 0;
+            border-radius: 5px;
+            background: #2e7d32;
+            color: #fff;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .hr-msg {
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin: 12px 0;
+            font-size: 14px;
+        }
+
+            .hr-msg.ok {
+                background: #e8f5e9;
+                color: #2e7d32;
+            }
+
+            .hr-msg.err {
+                background: #fdecea;
+                color: #c0392b;
+            }
+
+        .hr-tag {
+            display: inline-block;
+            padding: 2px 9px;
+            border-radius: 10px;
+            font-size: 12px;
+            background: #eef2f7;
+            color: #445;
+            margin-right: 6px;
+        }
+
+            .hr-tag.host {
+                background: #3478f6;
+                color: #fff;
+            }
+
+        .hr-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 0;
+            border-top: 1px solid #f0f2f5;
+            font-size: 14px;
+        }
+
+        details.hr-edit > summary {
+            cursor: pointer;
+            color: #3478f6;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .hr-empty {
+            padding: 30px;
+            text-align: center;
+            color: #889;
+        }
+    </style>
+}
+
+<div class="page-header">
+    <div class="page-header-inner">
+        <h1>面試管理</h1>
+        <p>安排面試、修改時間與人員、通知求職者錄取結果</p>
+    </div>
+</div>
+
+<div class="hr-wrap">
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="hr-msg err">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div class="hr-msg ok">@TempData["Success"]</div>
+    }
+
+    <div class="hr-tabs">
+        <button type="button" class="hr-tab-btn active" data-tab="waiting">等待安排面試 (@Model.ReadyJobs.Count)</button>
+        <button type="button" class="hr-tab-btn" data-tab="scheduled">已安排面試 (@(notStarted.Count + inProgress.Count))</button>
+        <button type="button" class="hr-tab-btn" data-tab="results">
+            面試結果與錄取通知
+            @if (pendingNotify > 0)
+            {
+                <span class="hr-count">@pendingNotify</span>
+            }
+        </button>
+    </div>
+
+    @* ═══════════ 等待安排面試 ═══════════ *@
+    <div class="hr-pane active" id="pane-waiting">
+        <p class="text-muted" style="font-size:13px;">職缺已下架、且所有送出的履歷都已審核完畢（至少一位通過）後，會出現在這裡，由你手動安排面試。預設邀請所有通過的求職者與該職缺部門的所有職員。</p>
+        @if (!Model.ReadyJobs.Any())
+        {
+            <div class="hr-empty">目前沒有等待安排面試的職缺</div>
+        }
+        @foreach (var rj in Model.ReadyJobs)
+        {
+            <div class="hr-card">
+                <div class="hr-card-title">@rj.Job.Title</div>
+                <div class="hr-card-sub">部門：@rj.Job.Department ｜ 通過 @rj.ApprovedResumes.Count 位求職者</div>
+                @await Html.PartialAsync("_HrMeetingForm", new HrMeetingFormVm
+                {
+                    Uid = "c" + rj.Job.Id,
+                        Action = "HrCreateMeeting",
+                        JobId = rj.Job.Id,
+                        ScheduledAt = DateTime.Today.AddDays(1).AddHours(10),
+                        Resumes = rj.ApprovedResumes,
+                        SelectedResumeIds = rj.ApprovedResumes.Select(r => r.Id).ToHashSet(),
+                        Staff = rj.Staff,
+                        SelectedStaffIds = rj.Staff.Select(s => s.Id).ToHashSet(),
+                        HostId = null,
+                        SubmitText = "建立面試會議室並寄出通知"
+                        })
+        </div>
+                }
+    </div>
+
+    @* ═══════════ 已安排面試 ═══════════ *@
+    <div class="hr-pane" id="pane-scheduled">
+        @if (!notStarted.Any() && !inProgress.Any())
+        {
+            <div class="hr-empty">目前沒有已安排、尚未結束的面試</div>
+        }
+        @foreach (var rm in notStarted)
+        {
+            var host = rm.StaffInRoom.FirstOrDefault(e => e.Id == rm.HostEmployeeId);
+            <div class="hr-card">
+                <div class="hr-card-title">@(rm.Room.Job?.Title ?? "未指定職缺")</div>
+                <div class="hr-card-sub">
+                    面試時間：@(rm.Room.ScheduledAt?.ToString("yyyy-MM-dd HH:mm") ?? "未設定") ｜ 尚未開始
+                </div>
+                <div>
+                    <span class="hr-tag host">主持人：@(host?.Name ?? "未指定")</span>
+                    @foreach (var st in rm.StaffInRoom.Where(x => x.Id != rm.HostEmployeeId))
+                    {
+                        <span class="hr-tag">職員：@st.Name</span>
+                    }
+                </div>
+                <div style="margin-top:6px;">
+                    @foreach (var c in rm.Candidates)
+                    {
+                        <span class="hr-tag">求職者：@(c.Member?.Name ?? "未知")</span>
+                    }
+                </div>
+                @if (rm.StaffInRoom.Any(x => !rm.DeptStaff.Any(d => d.Id == x.Id)) || !rm.DeptStaff.Any(d => d.Id == rm.HostEmployeeId))
+                {
+                    <div style="margin-top:6px;color:#c0392b;font-size:13px;">此場面試含有非職員（例如最高主管）。請展開下方修改，改選職員與主持人後儲存。</div>
+                }
+                <details class="hr-edit">
+                    <summary>修改時間／人員／主持人</summary>
+                    @await Html.PartialAsync("_HrMeetingForm", new HrMeetingFormVm
+                    {
+                        Uid = "u" + rm.Room.Id,
+                                Action = "HrUpdateMeeting",
+                                RoomId = rm.Room.Id,
+                                ScheduledAt = rm.Room.ScheduledAt ?? DateTime.Today.AddDays(1).AddHours(10),
+                                Resumes = rm.ApprovedResumes,
+                                SelectedResumeIds = rm.Candidates.Select(r => r.Id).ToHashSet(),
+                                Staff = rm.DeptStaff,
+                                SelectedStaffIds = rm.StaffInRoom.Where(s => rm.DeptStaff.Any(d => d.Id == s.Id)).Select(s => s.Id).ToHashSet(),
+                                HostId = rm.DeptStaff.Any(d => d.Id == rm.HostEmployeeId) ? rm.HostEmployeeId : null,
+                                SubmitText = "儲存修改並寄出通知"
+                                })
+            </details>
+        </div>
+                }
+        @foreach (var rm in inProgress)
+        {
+            <div class="hr-card">
+                <div class="hr-card-title">@(rm.Room.Job?.Title ?? "未指定職缺")</div>
+                <div class="hr-card-sub">面試時間：@(rm.Room.ScheduledAt?.ToString("yyyy-MM-dd HH:mm") ?? "未設定") ｜ <b>進行中</b>（會議開始後無法再修改）</div>
+            </div>
+        }
+    </div>
+
+    @* ═══════════ 面試結果與錄取通知 ═══════════ *@
+    <div class="hr-pane" id="pane-results">
+        <p class="text-muted" style="font-size:13px;">面試結束後，由主持人決定每位求職者的結果（職員評分只是參考），送出後你會收到 email。你確認後按「通知求職者」，系統才會更新求職者看到的結果並寄出 email。</p>
+        @if (!ended.Any())
+        {
+            <div class="hr-empty">目前沒有已結束的面試</div>
+        }
+        @foreach (var rm in ended)
+        {
+            var host = rm.StaffInRoom.FirstOrDefault(x => x.Id == rm.HostEmployeeId);
+            var submitted = rm.Room.ResultSubmittedAt != null;
+            var needNotify = submitted && rm.Candidates.Any(c =>
+            !string.IsNullOrEmpty(c.PendingAdmissionResult) && c.AdmissionResult != "錄取" && c.AdmissionResult != "未錄取");
+            <div class="hr-card">
+                <div class="hr-card-title">@(rm.Room.Job?.Title ?? "未指定職缺")</div>
+                <div class="hr-card-sub">
+                    面試時間：@(rm.Room.ScheduledAt?.ToString("yyyy-MM-dd HH:mm") ?? "") ｜ 主持人：@(host?.Name ?? "未指定") ｜
+                    @if (submitted)
+                    {
+                        <span>主持人已於 @rm.Room.ResultSubmittedAt!.Value.ToString("yyyy-MM-dd HH:mm") 送出錄取結果</span>
+                    }
+                    else
+                    {
+                        <span>主持人尚未送出錄取結果</span>
+                    }
+                </div>
+                @foreach (var c in rm.Candidates)
+                {
+                    var final = c.AdmissionResult == "錄取" || c.AdmissionResult == "未錄取";
+                    var evaluated = rm.EvalCountByResume.TryGetValue(c.Id, out var n) ? n : 0;
+                    <div class="hr-row">
+                        <div>
+                            <b>@(c.Member?.Name ?? "未知")</b>
+                            <span class="hr-tag">職員評分 @evaluated/@rm.StaffCount</span>
+                        </div>
+                        <div>
+                            @if (final)
+                            {
+                                <span style="color:@(c.AdmissionResult == "錄取" ? "#2e7d32" : "#c0392b");">已通知：@c.AdmissionResult</span>
+                            }
+                            else if (submitted && !string.IsNullOrEmpty(c.PendingAdmissionResult))
+                            {
+                                <span class="hr-tag">主持人決定：<b>@c.PendingAdmissionResult</b>（尚未通知求職者）</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">主持人尚未送出</span>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (needNotify)
+                {
+                    <div style="margin-top:12px;">
+                        <button type="button" class="hr-btn-small" onclick="notifyRoom(@rm.Room.Id)">通知求職者並寄出 email</button>
+                        <span id="note-@rm.Room.Id" style="font-size:12px;color:#c0392b;"></span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // 分頁切換（記住上次停留的分頁，送出表單後回來還在同一頁）
+        function showTab(tab) {
+            document.querySelectorAll('.hr-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            document.querySelectorAll('.hr-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + tab));
+            try { sessionStorage.setItem('hrInterviewTab', tab); } catch (e) { }
+        }
+        document.querySelectorAll('.hr-tab-btn').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+        try { var saved = sessionStorage.getItem('hrInterviewTab'); if (saved) showTab(saved); } catch (e) { }
+        @if (TempData["Success"] != null)
+        {
+            <text>showTab('scheduled');</text>
+        }
+
+        // 主持人單選鈕只有在該職員被勾選時才能選；取消勾選就清掉主持人
+        document.querySelectorAll('.hr-meeting-form').forEach(function (form) {
+            function sync() {
+                form.querySelectorAll('.hr-staff-row').forEach(function (row) {
+                    var cb = row.querySelector('.hr-staff-cb');
+                    var radio = row.querySelector('.hr-host-radio');
+                    radio.disabled = !cb.checked;
+                    if (!cb.checked) radio.checked = false;
+                });
+            }
+            form.addEventListener('change', sync);
+            sync();
+            form.addEventListener('submit', function (e) {
+                if (!form.querySelector('.hr-host-radio:checked')) {
+                    e.preventDefault();
+                    alert('請從勾選的職員中指定一位主持人');
+                    return;
+                }
+                if (!form.querySelector('input[name=resumeIds]:checked')) {
+                    e.preventDefault();
+                    alert('請至少選擇一位求職者');
+                }
+            });
+        });
+
+        async function notifyRoom(roomId) {
+            if (!confirm('確定要通知這場面試的求職者結果嗎？系統會更新求職者看到的結果並寄出 email。')) return;
+            var note = document.getElementById('note-' + roomId);
+            try {
+                var res = await fetch('/Interview/HrNotifyRoom', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'roomId=' + roomId
+                });
+                var data = await res.json();
+                if (data.success) { alert(data.message); location.reload(); }
+                else if (note) { note.textContent = data.message || '操作失敗'; }
+            } catch (err) {
+                if (note) note.textContent = '操作失敗，請稍後再試';
+            }
+        }
+    </script>
+}
