@@ -69,14 +69,14 @@
         <div class="alert-success">@TempData["Success"]</div>
     }
 
-    @* ── Grid 標頭 ── *@
+    @* ── Grid 標頭 (剛好 6 格) ── *@
     <div class="hrjob-cols hrjob-grid-head">
         <div>部門</div>
         <div>職缺名稱</div>
         <div>招募進度 (未處理 / 錄取 / 需求 / 總數)</div>
         <div class="text-center">狀態</div>
-        <div class="text-center">上架 / 下架日期</div>
-        <div class="text-center">操作</div>
+        <div>上架 / 下架日期</div>
+        <div class="text-right">操作</div>
     </div>
 
     @* ── 資料列 ── *@
@@ -85,14 +85,16 @@
         {
             @foreach (var job in Model)
             {
-                // 取得當前職缺的統計數據，若無則預設為 0
                 var stat = statsDict != null && statsDict.ContainsKey(job.Id)
                 ? statsDict[job.Id]
                 : new JobStatsViewModel { UnhandledCount = 0, HiredCount = 0, TotalCount = 0 };
 
-                // 🎯 動態判定刊登狀態：IsActive 為 false，或是今天日期已超過截止日期 -> 顯示「已下架」
                 bool isExpired = today > job.Deadline.Date;
                 bool isCurrentlyActive = job.IsActive && !isExpired;
+
+                string bgStyle = job.JobType == "fulltime" ? "background:#e8f4ff; color:#1a6fb5;" :
+                job.JobType == "parttime" ? "background:#fff3e0; color:#e07b3a;" :
+                "background:#e8f5e9; color:#2e7d32;";
 
                 <div class="hrjob-row hrjob-cols">
 
@@ -100,65 +102,51 @@
                     <div class="hrjob-dept-text">@job.Department</div>
 
                     @* 2. 職缺名稱與類型 *@
-                    @{
-                        string bgStyle = job.JobType == "fulltime" ? "background:#e8f4ff; color:#1a6fb5;" :
-                        job.JobType == "parttime" ? "background:#fff3e0; color:#e07b3a;" :
-                        "background:#e8f5e9; color:#2e7d32;";
-                    }
-
                     <div class="hrjob-title-cell">
                         <span class="job-fulltime" style="@bgStyle">
                             @(job.JobType == "fulltime" ? "全職" : job.JobType == "parttime" ? "兼職" : "實習")
                         </span>
-                        <span class="hrjob-title-text">@job.Title</span>
+                        <span class="hrjob-title-text" title="@job.Title">@job.Title</span>
                     </div>
 
-                    @* 4. 應徵四大項指標 *@
-                    <div class="hrjob-stats-cell">
-                        <a asp-controller="AdminApplication"
-                           asp-action="Index"
-                           asp-route-jobId="@job.Id"
-                           class="hrjob-stats-link"
-                           title="點擊管理此職缺履歷">
-
-                            <div class="stat-badge-grid">
-                                <div class="stat-item unhandled">
-                                    <span class="stat-label">未處理</span>
-                                    <span class="stat-v">@stat.UnhandledCount</span>
-                                </div>
-
-                                <div class="stat-item hired">
-                                    <span class="stat-label">已錄取</span>
-                                    <span class="stat-v">@stat.HiredCount</span>
-                                </div>
-
-                                <div class="stat-item needed">
-                                    <span class="stat-label">需求</span>
-                                    <span class="stat-v">@(string.IsNullOrEmpty(job.HeadCount) ? "0" : job.HeadCount)</span>
-                                </div>
-
-                                <div class="stat-item total">
-                                    <span class="stat-label">總履歷</span>
-                                    <span class="stat-v">@stat.TotalCount</span>
-                                </div>
+                    @* 3. 招募四大項指標 (直接作為 Grid 第 3 格子元素) *@
+                    <a asp-controller="AdminApplication"
+                       asp-action="Index"
+                       asp-route-jobId="@job.Id"
+                       class="hrjob-stats-link"
+                       title="點擊管理此職缺履歷">
+                        <div class="stat-badge-grid">
+                            <div class="stat-item unhandled">
+                                <span class="stat-label">未處理</span>
+                                <span class="stat-v">@stat.UnhandledCount</span>
                             </div>
-                        </a>
-                    </div>
+                            <div class="stat-item hired">
+                                <span class="stat-label">已錄取</span>
+                                <span class="stat-v">@stat.HiredCount</span>
+                            </div>
+                            <div class="stat-item needed">
+                                <span class="stat-label">需求</span>
+                                <span class="stat-v">@(string.IsNullOrEmpty(job.HeadCount) ? "0" : job.HeadCount)</span>
+                            </div>
+                            <div class="stat-item total">
+                                <span class="stat-label">總履歷</span>
+                                <span class="stat-v">@stat.TotalCount</span>
+                            </div>
+                        </div>
+                    </a>
 
-                    @* 5. 上下架狀態（🎯 根據今天日期與 Deadline 動態判斷） *@
+                    @* 4. 上下架狀態 *@
                     <div class="hrjob-status-cell">
                         <span class="btn-toggle @(isCurrentlyActive ? "active" : "inactive")" style="cursor: default;">
                             @(isCurrentlyActive ? "上架中" : "已下架")
                         </span>
                     </div>
 
-                    @* 6. 上架 / 截止日期 *@
-                    <div>
+                    @* 5. 上架 / 截止日期 *@
+                    <div class="hrjob-time-cell">
                         <div class="hrjob-time-item">
                             <span class="hrjob-time-label">上架：</span>
-                            <span class="hrjob-time-time-text">
-                                @job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")
-                            </span>
+                            <span class="hrjob-time-time-text">@job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")</span>
                         </div>
                         <div class="hrjob-time-item">
                             <span class="hrjob-time-label-deadline">截止：</span>
@@ -166,11 +154,11 @@
                         </div>
                     </div>
 
-                    @* 7. 操作按鈕 *@
+                    @* 6. 操作按鈕 *@
                     <div class="action-btns">
                         <a asp-action="Edit" asp-route-id="@job.Id" class="btn-edit">修改</a>
                         <form method="post" asp-action="Delete" asp-route-id="@job.Id"
-                              onsubmit="return confirm('確定刪除此職缺？')">
+                              onsubmit="return confirm('確定刪除此職缺？')" style="margin:0;">
                             @Html.AntiForgeryToken()
                             <button type="submit" class="btn-delete">刪除</button>
                         </form>
@@ -181,7 +169,7 @@
         }
         else
         {
-            <div style="padding: 40px; text-align:center; color:#888;">
+            <div style="padding: 40px; text-align:center; color:#888; background:#fff; border-radius:12px;">
                 目前沒有符合篩選條件的職缺
             </div>
         }
