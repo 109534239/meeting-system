@@ -39,8 +39,8 @@
 /* ── GRID 骨架 (Desktop: > 992px) ── */
 .hrjob-cols {
     display: grid;
-    /* 部門｜職缺名稱｜部門主管｜招募進度｜狀態｜上架/下架日期｜操作 */
-    grid-template-columns: 85px minmax(150px, 1.8fr) 100px 185px 80px 120px 115px;
+    /* 部門｜職缺名稱｜招募進度｜狀態｜上架/下架日期｜操作 */
+    grid-template-columns: 85px minmax(150px, 2fr) 185px 80px 120px 115px;
     align-items: center;
     gap: 12px;
 }

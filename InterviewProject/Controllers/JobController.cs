@@ -109,7 +109,6 @@ namespace InterviewProject.Controllers
             ViewBag.MemberId = userId ?? 0;
 
             var job = await _context.Jobs
-                .Include(x => x.Manager)
                 .Include(x => x.MajorRequirements)
                 .Include(x => x.LanguageRequirements)
                 .Include(x => x.SkillTags)

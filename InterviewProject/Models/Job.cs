@@ -24,11 +24,6 @@ namespace InterviewProject.Models
         public int SalaryMin { get; set; } = 0;
         public int SalaryMax { get; set; } = 0;
 
-        // 🎯 主管資訊：外鍵指向 Employees.Name（不是 Employees.Id）
-        //    對應設定寫在 AppDbContext.OnModelCreating 裡（用 HasPrincipalKey 指定參考 Name 欄位）
-        public string EmployeesName { get; set; } = "";
-        public virtual Employee? Manager { get; set; }
-
         // 截止日期
         public DateTime Deadline { get; set; } = DateTime.UtcNow.AddDays(30);
 

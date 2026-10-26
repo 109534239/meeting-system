@@ -31,7 +31,6 @@ namespace InterviewProject.Controllers
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
             var query = _db.Jobs
-                .Include(j => j.Manager)    // 🎯 部門主管 (原本的 ManagerName 改成關聯到 Employee)
                 .AsQueryable();
 
             // 部門：直接用資料庫裡實際存在的部門名稱做精確比對（下拉選單也是從同一份資料算出來的）
@@ -106,12 +105,6 @@ namespace InterviewProject.Controllers
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
-            // 🎯 給「部門主管」下拉選單用（只列出 Role 為 director 的員工）
-            ViewBag.Employees = await _db.Employees
-                .Where(e => e.Role == "director")
-                .OrderBy(e => e.Name)
-                .ToListAsync();
-
             return View("~/Views/Job_hr/Create.cshtml");
         }
 
@@ -136,10 +129,6 @@ namespace InterviewProject.Controllers
             if (missingFields.Count > 0)
             {
                 TempData["Error"] = "請完成以下必填欄位：" + string.Join("、", missingFields);
-                ViewBag.Employees = await _db.Employees
-                    .Where(e => e.Role == "director")
-                    .OrderBy(e => e.Name)
-                    .ToListAsync();
                 return View("~/Views/Job_hr/Create.cshtml");
             }
 
@@ -170,12 +159,6 @@ namespace InterviewProject.Controllers
                 .FirstOrDefaultAsync(j => j.Id == id);
 
             if (job == null) return NotFound();
-
-            // 🎯 給「部門主管」下拉選單用（只列出 Role 為 director 的員工）
-            ViewBag.Employees = await _db.Employees
-                .Where(e => e.Role == "director")
-                .OrderBy(e => e.Name)
-                .ToListAsync();
 
             return View("~/Views/Job_hr/Edit.cshtml", job);
         }
@@ -234,10 +217,6 @@ namespace InterviewProject.Controllers
             if (missingFields.Count > 0)
             {
                 TempData["Error"] = "請完成以下必填欄位：" + string.Join("、", missingFields);
-                ViewBag.Employees = await _db.Employees
-                    .Where(e => e.Role == "director")
-                    .OrderBy(e => e.Name)
-                    .ToListAsync();
 
                 // 把使用者這次輸入的內容帶回表單（除了子表，子表維持資料庫原本的內容）
                 existing.Title = job.Title;
@@ -255,7 +234,6 @@ namespace InterviewProject.Controllers
                 existing.OtherRequirements = job.OtherRequirements;
                 existing.SalaryMin = job.SalaryMin;
                 existing.SalaryMax = job.SalaryMax;
-                existing.EmployeesName = job.EmployeesName;
                 existing.Deadline = job.Deadline;
                 existing.IsActive = job.IsActive;
 
@@ -278,7 +256,6 @@ namespace InterviewProject.Controllers
             existing.SkillTags = job.SkillTags;
             existing.SalaryMin = job.SalaryMin;
             existing.SalaryMax = job.SalaryMax;
-            existing.EmployeesName = job.EmployeesName;   // 🎯 部門主管改成外鍵（指向 Employees.Name）
             existing.Deadline = job.Deadline;
             existing.IsActive = job.IsActive;
 
@@ -358,7 +335,6 @@ namespace InterviewProject.Controllers
             if (string.IsNullOrWhiteSpace(job.Department)) missing.Add("職缺類別（部門）");
             if (string.IsNullOrWhiteSpace(job.Location)) missing.Add("工作地點");
             if (string.IsNullOrWhiteSpace(job.Description)) missing.Add("職缺描述");
-            if (string.IsNullOrWhiteSpace(job.EmployeesName)) missing.Add("最高主管");
             if (job.Deadline == default) missing.Add("截止日期");
 
             return missing;

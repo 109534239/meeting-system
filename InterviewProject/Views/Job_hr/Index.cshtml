@@ -73,7 +73,6 @@
     <div class="hrjob-cols hrjob-grid-head">
         <div>部門</div>
         <div>職缺名稱</div>
-        <div>部門主管</div>
         <div>招募進度 (未處理 / 錄取 / 需求 / 總數)</div>
         <div class="text-center">狀態</div>
         <div class="text-center">上架 / 下架日期</div>
@@ -112,11 +111,6 @@
                             @(job.JobType == "fulltime" ? "全職" : job.JobType == "parttime" ? "兼職" : "實習")
                         </span>
                         <span class="hrjob-title-text">@job.Title</span>
-                    </div>
-
-                    @* 3. 主管 / 隸屬 *@
-                    <div>
-                        <div class="hrjob-manager-name">@(job.Manager?.Name ?? "未指定")</div>
                     </div>
 
                     @* 4. 應徵四大項指標 *@
@@ -163,7 +157,7 @@
                         <div class="hrjob-time-item">
                             <span class="hrjob-time-label">上架：</span>
                             <span class="hrjob-time-time-text">
-                            @job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")
+                                @job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")
                             </span>
                         </div>
                         <div class="hrjob-time-item">

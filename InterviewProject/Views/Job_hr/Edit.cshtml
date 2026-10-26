@@ -195,35 +195,6 @@
         </div>
 
         @* ═══════════════════════════════
-            主管資訊 (🎯 ManagerName 改為外鍵，從員工清單選擇)
-           ═══════════════════════════════ *@
-        <div class="form-section-title">主管資訊</div>
-
-        <div class="form-row">
-            <div class="form-group">
-                <label>最高主管<span class="text-danger">*</span></label>
-
-                @* 🎯 唯讀顯示用下拉：disabled，使用者無法手動變更，僅隨「職缺類別」自動帶入 *@
-                <select id="employees-name-display" class="form-control" disabled>
-                    <option value="">-- 請先選擇職缺類別 --</option>
-                    @foreach (var emp in (List<InterviewProject.Models.Employee>)ViewBag.Employees)
-                    {
-                        <option value="@emp.Name" data-department="@emp.Department" selected="@(Model.EmployeesName == emp.Name ? "selected" : null)">
-                            @emp.Name @(string.IsNullOrEmpty(emp.Department) ? "" : $"（{emp.Department}）")
-                        </option>
-                    }
-                </select>
-
-                @* 🎯 disabled 的欄位不會隨表單送出，實際送出的值改用 hidden input，預設帶入既有資料 *@
-                <input type="hidden" name="EmployeesName" id="employees-name-hidden" value="@Model.EmployeesName" />
-
-                <small class="text-muted" style="display:block; margin-top:6px;">
-                    依「職缺類別」自動帶入該部門最高主管，無法手動變更
-                </small>
-            </div>
-        </div>
-
-        @* ═══════════════════════════════
             工作內容 (必填)
            ═══════════════════════════════ *@
         <div class="form-section-title">工作內容</div>
@@ -459,33 +430,14 @@
             }
         }
 
-        // 🎯 職缺類別（部門）變更時，自動帶入該部門的最高主管
-        //    對應規則：employees-name-display 的每個 <option> 都帶有 data-department，
-        //    找出符合目前選擇部門的那一筆，同步設定顯示用 select 與實際送出用的 hidden input
+        // 職缺類別（部門）變更時，移除舊的錯誤標示，等下次送出時再重新驗證
         function onDepartmentChange() {
             const deptEl = document.getElementById('department-select');
-            const dept = deptEl.value;
-            const displaySelect = document.getElementById('employees-name-display');
-            const hiddenInput = document.getElementById('employees-name-hidden');
-
-            const match = Array.from(displaySelect.options)
-                .find(opt => opt.value !== '' && opt.dataset.department === dept);
-
-            if (match) {
-                displaySelect.value = match.value;
-                hiddenInput.value = match.value;
-            } else {
-                displaySelect.value = '';
-                hiddenInput.value = '';
-            }
-
-            // 使用者一旦重新選擇，先移除舊的錯誤標示，等下次送出時再重新驗證
-            [deptEl, displaySelect].forEach(el => {
-                el.classList.remove('field-error');
-                const group = el.closest('.form-group');
-                const msg = group && group.querySelector('.field-error-msg');
-                if (msg) msg.remove();
-            });
+            if (!deptEl) return;
+            deptEl.classList.remove('field-error');
+            const group = deptEl.closest('.form-group');
+            const msg = group && group.querySelector('.field-error-msg');
+            if (msg) msg.remove();
         }
 
          // 🎯 送出表單一律先攔截（fail-closed）：
@@ -571,11 +523,6 @@
 
             const deadline = document.getElementById('deadline-input');
             push(deadline, '截止日期', !deadline || !deadline.value);
-
-            // 最高主管是依「職缺類別」自動帶入的，若尚未帶出，等同職缺類別未選
-            const hiddenManager = document.getElementById('employees-name-hidden');
-            const managerDisplay = document.getElementById('employees-name-display');
-            push(managerDisplay, '最高主管（請先選擇職缺類別以自動帶入）', !hiddenManager || !hiddenManager.value);
 
             return errors;
         }

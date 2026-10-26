@@ -47,15 +47,6 @@
             modelBuilder.Entity<Employee>()
                 .HasIndex(e => e.Name)
                 .IsUnique();
-
-            // 🎯 Job.EmployeesName 外鍵指向 Employees.Name（不是 Employees.Id），
-            //    所以要用 HasPrincipalKey 明確指定參考的是 Name 欄位
-            modelBuilder.Entity<Job>()
-                .HasOne(j => j.Manager)
-                .WithMany()
-                .HasForeignKey(j => j.EmployeesName)
-                .HasPrincipalKey(e => e.Name)
-                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }
