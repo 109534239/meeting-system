@@ -274,7 +274,9 @@ namespace InterviewProject.Controllers
             {
                 var employee = await _db.Employees.FirstOrDefaultAsync(e => e.Account == cleanAccount);
 
-                if (employee != null && employee.PasswordHash == hashedPassword)
+                // 職員只有 hr / manager 兩種，其他角色（例如舊的最高主管帳號）不能登入
+                if (employee != null && employee.PasswordHash == hashedPassword
+                    && (employee.Role?.ToLower() == "hr" || employee.Role?.ToLower() == "manager"))
                 {
                     string cleanRole = employee.Role?.ToLower() ?? "";
 
@@ -282,16 +284,7 @@ namespace InterviewProject.Controllers
                     HttpContext.Session.SetString("MemberName", employee.Name ?? "");
                     HttpContext.Session.SetString("MemberRole", cleanRole);
 
-                    string targetUrl = Url.Action("Index", "Home") ?? "/";
-
-                    if (cleanRole == "hr" || cleanRole == "manager" || cleanRole == "director")
-                    {
-                        targetUrl = Url.Action("Dashboard", "AdminHome") ?? "/";
-                    }
-                    else if (cleanRole == "employee")
-                    {
-                        targetUrl = Url.Action("Index", "Home") ?? "/";
-                    }
+                    string targetUrl = Url.Action("Dashboard", "AdminHome") ?? "/";
 
                     return Json(new { success = true, redirectUrl = targetUrl });
                 }

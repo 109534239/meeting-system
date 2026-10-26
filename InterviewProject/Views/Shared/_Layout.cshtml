@@ -9,13 +9,11 @@
     var isLoggedIn = memberId.HasValue;
     var isHr = memberRole == "hr";
     var isManager = memberRole == "manager";
-    var isDirector = memberRole == "director";
-    var isApplicant = isLoggedIn && !isHr && !isManager && !isDirector;
+    var isApplicant = isLoggedIn && !isHr && !isManager;
 
-    var roleLabel = isDirector ? "最高主管"
-                  : isManager ? "主管"
-                  : isHr ? "人資"
-                  : "求職者";
+    var roleLabel = isManager ? "職員"
+                 : isHr ? "人資"
+                 : "求職者";
 }
 
 <!DOCTYPE html>
@@ -34,7 +32,7 @@
         <nav class="custom-navbar">
             <div class="nav-container">
                 <!-- LOGO 品牌區 -->
-                @if (isHr || isManager || isDirector)
+                @if (isHr || isManager)
                 {
                     <a class="nav-brand" asp-controller="Login" asp-action="LogoLogout" onclick="return confirm('點擊 LOGO 將會登出並返回前台訪客首頁，確定要離開目前後台嗎？');">
                         <div class="logo-circle"></div>
@@ -71,7 +69,7 @@
                             <a class="nav-btn @(controller == "AdminFAQ" && action != "Report" ? "active" : "")"
                                asp-controller="AdminFAQ" asp-action="Index">Q&A管理</a>
                         }
-                        @* 部門主管 *@
+                        @* 職員 *@
                         else if (isManager)
                         {
                             <a class="nav-btn @(controller == "AdminHome" && action == "Dashboard" ? "active" : "")"
@@ -146,7 +144,7 @@
                                     </div>
 
                                     @* 🔔 只有一般求職者 (非 HR/主管) 才顯示右上角鈴鐺通知 *@
-                                    @if (!isHr && !isManager && !isDirector)
+                                    @if (!isHr && !isManager)
                                     {
                                         <div class="nav-notification-badge-btn" onclick="toggleNotificationMenu(event)">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -168,7 +166,7 @@
 
                                     <!-- 下拉選單 (選單內容維持不變) -->
                                     <div class="dropdown-menu" id="dropdown-menu">
-                                        @if (isHr || isManager || isDirector)
+                                        @if (isHr || isManager)
                                         {
                                             <a asp-controller="Employee" asp-action="Profile" class="dropdown-item">個人資料</a>
                                             <a asp-controller="Login" asp-action="Logout" class="dropdown-item logout">登出</a>
