@@ -23,8 +23,7 @@
         <div class="profile-sidebar">
             <div class="sidebar-name">@Model.Name</div>
             <div class="sidebar-role">
-                @(Model.Role == "director" ? "部門最高主管"
-                                : Model.Role == "manager" ? "部門主管"
+                @(Model.Role == "manager" ? "職員"
                                 : "人資")
             </div>
             @* 🎯 比照 Resume.cshtml 的證件照框樣式：矩形、有邊框，取代原本圓形大頭貼 *@
@@ -49,7 +48,7 @@
                     儲存照片
                 </button>
             </div>
-            
+
         </div>
 
         @* ── 右側內容 ── *@
@@ -86,7 +85,7 @@
                     <div class="field-item">
                         <label class="field-label">系統權限</label>
                         <input type="text" class="field-input field-readonly"
-                            value="@(Model.Role == "director" ? "部門最高主管" : Model.Role == "manager" ? "部門主管" : "人資")" readonly />
+                               value="@(Model.Role == "manager" ? "職員" : "人資")" readonly />
                     </div>
                 </div>
             </div>
@@ -96,7 +95,7 @@
                 <div class="card-header">
                     <h2>修改密碼</h2>
                 </div>
-                
+
                 <form asp-controller="Employee" asp-action="ChangePassword" method="post">
                     <div class="fields-grid">
                         <div class="field-item field-item--full">
@@ -118,7 +117,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="card-actions">
                         <button type="submit" class="btn-save">儲存新密碼</button>
                     </div>

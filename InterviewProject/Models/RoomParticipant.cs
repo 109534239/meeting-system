@@ -40,7 +40,7 @@ namespace InterviewProject.Models
         [ForeignKey("ResumeId")]
         public virtual Resume? Resume { get; set; }
 
-        // 主管/最高主管/HR 用 EmployeeId
+        // 職員/HR 用 EmployeeId
         public int? EmployeeId { get; set; }
         [ForeignKey("EmployeeId")]
         public virtual Employee? Employee { get; set; }

@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace InterviewProject.Models
 {
-    // 主管/最高主管針對某位求職者這場面試的評分評語，一人一份（同一個人不能重複評同一位求職者）
+    // 職員針對某位求職者這場面試的評分評語，一人一份（同一個人不能重複評同一位求職者）
     [Table("InterviewEvaluations")]
     public class InterviewEvaluation
     {

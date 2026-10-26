@@ -21,7 +21,7 @@ namespace InterviewProject.Controllers
             var memberName = HttpContext.Session.GetString("MemberName") ?? "使用者";
 
             // 🎯 防踢與權限檢查
-            if (memberId == null || (role != "hr" && role != "manager" && role != "director"))
+            if (memberId == null || (role != "hr" && role != "manager"))
             {
                 return RedirectToAction("Index", "Login");
             }
@@ -34,7 +34,7 @@ namespace InterviewProject.Controllers
             }
 
             ViewData["EmployeeName"] = memberName;
-            ViewData["RoleLabel"] = role == "director" ? "部門最高主管" : role == "manager" ? "部門主管" : "人資系統管理員";
+            ViewData["RoleLabel"] = role == "manager" ? "職員" : "人資系統管理員";
 
             string? department = currentEmployee.Department;
 
@@ -50,7 +50,7 @@ namespace InterviewProject.Controllers
                 ViewData["ViewScope"] = "全公司 (All Departments)";
                 ViewData["DepartmentInfo"] = "所有部門數據總覽";
             }
-            else if (role == "manager" || role == "director")
+            else if (role == "manager")
             {
                 if (string.IsNullOrEmpty(department))
                 {
@@ -137,7 +137,7 @@ namespace InterviewProject.Controllers
                 .Where(i => i.Resume != null && i.Resume.Status != "暫存") // 👈 這裡也加入排除暫存
                 .AsQueryable();
 
-            if (role == "manager" || role == "director")
+            if (role == "manager")
             {
                 interviewQuery = interviewQuery.Where(i => i.Resume != null && i.Resume.Job != null && i.Resume.Job.Department == department);
             }

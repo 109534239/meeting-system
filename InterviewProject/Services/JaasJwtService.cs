@@ -49,8 +49,8 @@ namespace InterviewProject.Services
         /// </summary>
         /// <param name="roomCode">房間代碼（不含 AppID 前綴，跟 Room.JitsiRoomName 一致）</param>
         /// <param name="userId">目前這個人在我們系統裡的 Id（求職者用 Member.Id，員工用 Employee.Id，AI 面試官用固定字串）</param>
-        /// <param name="displayName">要顯示的名字，例如「最高主管：張小恩」</param>
-        /// <param name="isModerator">是不是主持人。只有「這場會議受邀的 director」才應該是 true</param>
+        /// <param name="displayName">要顯示的名字，例如「主持人：張小恩」</param>
+        /// <param name="isModerator">是不是主持人。只有「這場會議指定的主持人」才應該是 true</param>
         public string GenerateToken(string roomCode, string userId, string displayName, bool isModerator)
         {
             var signingCredentials = new SigningCredentials(

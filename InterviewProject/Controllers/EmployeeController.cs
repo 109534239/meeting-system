@@ -22,7 +22,7 @@ namespace InterviewProject.Controllers
                 return RedirectToAction("Index", "Login");
 
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
+            if (role != "hr" && role != "manager")
                 return RedirectToAction("Index", "Home");
 
             var employee = await _db.Employees.FindAsync(memberId);

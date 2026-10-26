@@ -26,7 +26,7 @@ namespace InterviewProject.Controllers
         private bool IsEmployee()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            return role == "hr" || role == "manager" || role == "director" || role == "employee";
+            return role == "hr" || role == "manager";
         }
 
         // 🎯 取得目前登入者角色
@@ -61,8 +61,8 @@ namespace InterviewProject.Controllers
                 return true;
             }
 
-            // Manager / Director 只能查看自己所屬部門的應徵情況
-            if (role == "manager" || role == "director" || role == "employee")
+            // 職員（manager） 只能查看自己所屬部門的應徵情況
+            if (role == "manager")
             {
                 var department = await GetCurrentEmployeeDepartment();
 
@@ -91,7 +91,7 @@ namespace InterviewProject.Controllers
 
             // 🎯 1. 撈出選單用的職缺清單 (依照角色權限過濾)
             var jobsQuery = _db.Jobs.AsQueryable();
-            if (role == "manager" || role == "director" || role == "employee")
+            if (role == "manager")
             {
                 if (string.IsNullOrEmpty(department)) return Forbid();
                 jobsQuery = jobsQuery.Where(j => j.Department == department);
@@ -115,7 +115,7 @@ namespace InterviewProject.Controllers
                 var job = await _db.Jobs.FindAsync(jobId.Value);
                 if (job == null) return NotFound();
 
-                // 🎯 Manager / Director 只能查看自己部門的職缺
+                // 🎯 職員（manager） 只能查看自己部門的職缺
                 if (!await CanAccessJob(job))
                 {
                     return Forbid();
@@ -125,7 +125,7 @@ namespace InterviewProject.Controllers
             }
             else
             {
-                // 🎯 如果沒有帶 jobId，HR 看全部；Manager / Director 看自己部門
+                // 🎯 如果沒有帶 jobId，HR 看全部；職員（manager） 看自己部門
                 ViewBag.JobTitle = role == "hr"
                     ? "全部應徵履歷"
                     : $"{department} 部門應徵履歷";
@@ -143,8 +143,8 @@ namespace InterviewProject.Controllers
                             Job = j
                         };
 
-            // 🎯 Manager / Director 只能看到自己所屬部門的履歷
-            if (role == "manager" || role == "director" || role == "employee")
+            // 🎯 職員（manager） 只能看到自己所屬部門的履歷
+            if (role == "manager")
             {
                 query = query.Where(x => x.Job.Department == department);
             }
@@ -242,7 +242,7 @@ namespace InterviewProject.Controllers
 
             if (resume == null) return NotFound();
 
-            // 🎯 Manager / Director 只能查看自己部門的履歷詳細資料
+            // 🎯 職員（manager） 只能查看自己部門的履歷詳細資料
             if (resume.Job != null && !await CanAccessJob(resume.Job))
             {
                 return Forbid();
@@ -313,7 +313,7 @@ namespace InterviewProject.Controllers
                     return Json(new { success = false, message = "找不到對應的履歷紀錄。" });
                 }
 
-                // 🎯 Manager / Director 只能更新自己部門的履歷狀態
+                // 🎯 職員（manager） 只能更新自己部門的履歷狀態
                 if (resume.Job != null && !await CanAccessJob(resume.Job))
                 {
                     return Json(new { success = false, message = "您沒有權限修改其他部門的履歷狀態。" });
