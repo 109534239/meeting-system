@@ -60,7 +60,7 @@ namespace InterviewProject.Controllers
                 resumeQuery = resumeQuery.Where(r => r.Job != null && r.Job.Department == department);
 
                 ViewData["ViewScope"] = $"僅限本部門 ({department})";
-                ViewData["DepartmentInfo"] = $"您目前正以主管身分審視【{department}】的內部招募數據";
+                ViewData["DepartmentInfo"] = $"您目前正以職員身分審視【{department}】的內部招募數據";
             }
 
             // 🎯 KPI 總數

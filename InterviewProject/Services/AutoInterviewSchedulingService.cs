@@ -6,7 +6,7 @@ namespace InterviewProject.Services
 {
     /// <summary>
     /// 職缺下架後，自動判斷該職缺的履歷是否都已審核完畢；
-    /// 若都有結果，自動建立面試房間，並邀請已通過的求職者、部門主管、最高主管、AI面試官。
+    /// 若都有結果，自動建立面試房間，並邀請已通過的求職者、職員、主持人、AI面試官。
     /// </summary>
     public class AutoInterviewSchedulingService
     {
@@ -38,7 +38,7 @@ namespace InterviewProject.Services
             return submitted.Any(r => r.Status == "已通過");
         }
 
-        /// <summary>這個職缺所屬部門的職員（預設邀請名單）。職員只有 manager，不含最高主管(director)。</summary>
+        /// <summary>這個職缺所屬部門的職員（預設邀請名單）。職員只有 manager，不含主持人(director)。</summary>
         public Task<List<Employee>> GetDeptStaffAsync(Job job)
         {
             return _db.Employees

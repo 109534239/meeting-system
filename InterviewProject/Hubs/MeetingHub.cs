@@ -34,7 +34,7 @@ namespace InterviewProject.Hubs
         public async Task NotifySpeechTurn(string roomCode, string speakerName, bool isQuestion, string role)
             => await Clients.Group(roomCode).SendAsync("SpeechTurnInfo", speakerName, isQuestion, role);
 
-        // 🎯 只有「這個房間受邀的最高主管」才能真的把會議狀態改成進行中
+        // 🎯 只有「這個房間受邀的主持人」才能真的把會議狀態改成進行中
         public async Task StartMeeting(string roomCode)
         {
             var room = await GetAuthorizedHostRoomAsync(roomCode);
@@ -230,7 +230,7 @@ namespace InterviewProject.Hubs
         public async Task BroadcastTranscript(string roomCode, string speaker, string text, string time)
             => await Clients.OthersInGroup(roomCode).SendAsync("TranscriptReceived", speaker, text, time);
 
-        // ── 內部小工具：確認呼叫者是不是「這個房間」受邀的最高主管，是的話回傳 Room，不是就回傳 null ──
+        // ── 內部小工具：確認呼叫者是不是「這個房間」受邀的主持人，是的話回傳 Room，不是就回傳 null ──
         private async Task<Room?> GetAuthorizedHostRoomAsync(string roomCode)
         {
             var httpContext = Context.GetHttpContext();
@@ -238,20 +238,20 @@ namespace InterviewProject.Hubs
 
             var sessionMemberId = httpContext.Session.GetInt32("MemberId");
             // 🎯 改版：主持人是HR替每場面試指定的職員，跟帳號角色無關，
-            //    所以不再檢查帳號角色是不是 director，只看下面「是不是這間房的主持人」
+            //    所以不檢查帳號角色，只看下面「是不是這間房的主持人」
             if (sessionMemberId == null) return null;
 
             var room = await _db.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return null;
 
             // 以 Rooms.HostEmployeeId 為準；舊資料退回看 RoomParticipants 的 Director 那一列
-            var isDirectorOfThisRoom = room.HostEmployeeId == sessionMemberId.Value
+            var isHostOfThisRoom = room.HostEmployeeId == sessionMemberId.Value
                 || await _db.RoomParticipants.AnyAsync(p =>
                 p.RoomId == room.Id
                 && p.Role == ParticipantRole.Director
                 && p.EmployeeId == sessionMemberId.Value);
 
-            return isDirectorOfThisRoom ? room : null;
+            return isHostOfThisRoom ? room : null;
         }
 
         // ── 內部小工具：把這個房間裡所有求職者的履歷，面試狀態一起推進 ──

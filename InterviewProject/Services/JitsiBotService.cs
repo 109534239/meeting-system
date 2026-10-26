@@ -319,7 +319,7 @@ namespace InterviewProject.Services
             console.log('[Recorder 音量診斷] audioCtx.state=' + audioCtx.state + '，混音圖目前峰值=' + peakDb + 'dB，已接上的原始音軌數=' + connectedTrackIds.size);
             // 🐛 這輪新增：逐條印出每一條已接上音軌「現在」的狀態——如果某條音軌的
             //    readyState 從 'live' 變成 'ended'，或 muted 從 false 變成 true，就是這條軌道
-            //    中途斷線/被靜音的直接證據；如果某個人（例如主管）從頭到尾都沒有出現在這份清單裡，
+            //    中途斷線/被靜音的直接證據；如果某個人（例如職員）從頭到尾都沒有出現在這份清單裡，
             //    代表他的音軌從來沒有被成功接上過，問題出在更前面的 connectJitsiTracks() 那一步。
             connectedTracksById.forEach(({ track, participantId, label }, trackId) => {
                 console.log('[Recorder 音量診斷] 軌道 participantId=' + participantId + '，label=' + label + '，readyState=' + track.readyState + '，muted=' + track.muted + '，enabled=' + track.enabled);
@@ -330,7 +330,7 @@ namespace InterviewProject.Services
     const connectedTrackIds = new Set(); // 🎯 記錄「已經透過任何管道接上的原始音軌 id」，避免同一個人的聲音被接兩次造成疊音
     // 🐛 這輪新增：上一輪加的「背景分頁節流」猜測（加那三個 Chromium 參數）沒有解決問題——
     //    這次用 ffmpeg 逐段量測新的錄影，還是幾乎全程靜音，只有零星兩小段（開頭 aa 自我介紹、
-    //    大約 1:30 附近）有真的聲音，中間主管問問題那幾分鐘完全沒錄到。這代表問題不是「分頁被
+    //    大約 1:30 附近）有真的聲音，中間職員問問題那幾分鐘完全沒錄到。這代表問題不是「分頁被
     //    整體降頻」（那樣應該是規律地變差，不會這樣忽有忽無、剛好只在特定人開口的瞬間有），
     //    比較像是「某些人的原始音軌，根本沒有持續被接進混音圖裡，或者接上了又斷開」。
     //    加一個 Map 記錄每一條已接上的軌道本身（不只是 id），下面的診斷 log 會逐條印出
@@ -521,8 +521,8 @@ namespace InterviewProject.Services
 
     // 🎯 盡力而為：從 Jitsi 的畫面找出每個 video 對應的參與者名字，畫在左下角當標籤。
     //    這輪修正的重點：上一輪只有「DOM 容器內找」+「DOM 全域用 id 找」+「靠順序用猜的」三層，
-    //    使用者這輪回報「其中一位主管的畫面被錯認成 AI 面試官」——很可能就是「靠順序猜」那層猜錯了
-    //    （AI 面試官剛好也叫王大明，跟其中一位人類主管同名，順序稍微對不齊就會猜到別人身上，
+    //    使用者這輪回報「其中一位職員的畫面被錯認成 AI 面試官」——很可能就是「靠順序猜」那層猜錯了
+    //    （AI 面試官剛好也叫王大明，跟其中一位人類職員同名，順序稍微對不齊就會猜到別人身上，
     //    而且猜錯成「AI 面試官」這種特定角色又特別容易造成混淆，比完全沒標籤更糟）。
     //    這輪把「靠順序猜」整個拿掉，改成最優先直接查 Jitsi 內部的參與者資料（window.APP 的 redux store），
     //    這是最權威的資料來源——不管這個 video 現在是不是主畫面、DOM 結構長怎樣，都查得到正確的名字，
@@ -598,7 +598,7 @@ namespace InterviewProject.Services
 
         // 🐛 這輪拿掉了原本的「第三層：用擷取到的 id 片段去整個文件範圍做子字串比對」——
         //    這個做法用的是 `[id*=""...""]`（包含比對，不是完全比對），如果擷取到的 id 片段剛好很短、
-        //    或者跟別人的 id 有重疊部分，就會誤配到別的參與者身上，這正是「有位主管的畫面被誤標成
+        //    或者跟別人的 id 有重疊部分，就會誤配到別的參與者身上，這正是「有位職員的畫面被誤標成
         //    AI 面試官」的根本原因（兩人剛好都叫王大明，一旦誤配到彼此的 id，名字就直接連過去了）。
         //    寧可查不到就留空，也不要用這種容易誤配的方式硬猜。
         return '';

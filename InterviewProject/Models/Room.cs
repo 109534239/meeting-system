@@ -10,7 +10,7 @@ namespace InterviewProject.Models
         public DateTime CreatedTime { get; set; } = DateTime.Now;
 
         // ✅ 新增：會議時間控制
-        // ScheduledAt：職缺自動排程時算出的「預計面試時間」（隔天），用來決定候選人/主管最早什麼時候能打開這個房間頁面
+        // ScheduledAt：職缺自動排程時算出的「預計面試時間」（隔天），用來決定候選人/職員最早什麼時候能打開這個房間頁面
         // StartAt：主持人「真的按下開始會議」的當下時間，在那之前是 null
         public DateTime? ScheduledAt { get; set; }
         public DateTime? StartAt { get; set; }          // 主持人實際按下開始會議的時間（null = 還沒開始）

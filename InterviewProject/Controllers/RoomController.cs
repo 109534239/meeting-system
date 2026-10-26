@@ -47,7 +47,7 @@ namespace InterviewProject.Controllers
         private bool IsEmployee()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            return role == "hr" || role == "manager" || role == "director";
+            return role == "hr" || role == "manager";
         }
 
         // 🎯 修正：將同步改成非同步，提升高並發時的效能
@@ -252,13 +252,13 @@ namespace InterviewProject.Controllers
 
                 // 🎯 候審室機制（原始需求 6）：只要會議「已經開始」，非主持人每一次「重新需要授權」的進場都要候審——
                 //    包含這場會議第一次打開連結、以及中途退出（LeftAt 較新）之後想再進來。
-                //    但「剛被最高主管同意、Lobby 頁面自動重新整理進來」這次不能再擋一次，
+                //    但「剛被主持人同意、Lobby 頁面自動重新整理進來」這次不能再擋一次，
                 //    不然核准後永遠卡在候審室，變成無限迴圈——用「原本」的 JoinedAt 跟 LeftAt 誰比較新來分辨：
                 //      JoinedAt 比較新（或還沒 LeftAt）＝ 目前處於「已核准、正要進場」的狀態，放行
                 //      LeftAt 比較新（或從沒被核准過）＝ 需要重新候審
                 //    唯一不受影響的情況：會議開始「當下」本來就在等待畫面、跟主持人同步進場的人——
                 //    那批人的 Join() 是在 MeetingStatus 還是 NotStarted 的時候就執行過了，不會走到這裡。
-                //    🎯 最高主管本人一律排除在候審機制之外——他是核准別人的人，不能把自己也卡住（不然沒人能核准他）
+                //    🎯 主持人本人一律排除在候審機制之外——他是核准別人的人，不能把自己也卡住（不然沒人能核准他）
                 var currentlyAuthorized = originalJoinedAt.HasValue
                     && (!originalLeftAt.HasValue || originalJoinedAt > originalLeftAt);
 
@@ -306,7 +306,7 @@ namespace InterviewProject.Controllers
             return Json(new { status = participant.Status });
         }
 
-        // 🎯 候審室機制：最高主管專用，列出這場會議目前候審中（Pending）的人，主持人畫面靠這個每隔幾秒刷新名單
+        // 🎯 候審室機制：主持人專用，列出這場會議目前候審中（Pending）的人，主持人畫面靠這個每隔幾秒刷新名單
         [HttpGet]
         public async Task<IActionResult> GetPendingParticipants(string code)
         {
@@ -337,7 +337,7 @@ namespace InterviewProject.Controllers
             return Json(result);
         }
 
-        // 🎯 候審室機制：最高主管按下「同意」或「拒絕」
+        // 🎯 候審室機制：主持人按下「同意」或「拒絕」
         [HttpPost]
         public async Task<IActionResult> AdmitParticipant(int participantId, bool approve)
         {
@@ -348,9 +348,9 @@ namespace InterviewProject.Controllers
             var participant = await _context.RoomParticipants.FirstOrDefaultAsync(p => p.Id == participantId);
             if (participant == null) return Json(new { success = false, message = "找不到這位候審中的人" });
 
-            // 🎯 一定要確認這個最高主管真的是「這位候審者所在房間」受邀的主持人，不能跨房間操作別人的候審名單
-            var isDirectorOfThisRoom = await IsRoomHostAsync(participant.RoomId, sessionMemberId.Value);
-            if (!isDirectorOfThisRoom)
+            // 🎯 一定要確認這個主持人真的是「這位候審者所在房間」受邀的主持人，不能跨房間操作別人的候審名單
+            var isHostOfThisRoom = await IsRoomHostAsync(participant.RoomId, sessionMemberId.Value);
+            if (!isHostOfThisRoom)
                 return Json(new { success = false, message = "你不是這場面試的主持人" });
 
             participant.Status = approve ? ParticipantStatus.Admitted : ParticipantStatus.Denied;
@@ -471,7 +471,7 @@ namespace InterviewProject.Controllers
             public string Time { get; set; } = "";
         }
 
-        // 🎯 每個人（不管求職者/主管/主持人）自己講的話，直接送這裡，不透過任何人轉傳
+        // 🎯 每個人（不管求職者/職員/主持人）自己講的話，直接送這裡，不透過任何人轉傳
         [HttpPost]
         public async Task<IActionResult> SubmitTranscriptChunk([FromQuery] string roomCode, [FromBody] List<TranscriptChunkDto>? lines)
         {
@@ -556,7 +556,7 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> SubmitAudioTranscript([FromQuery] string roomCode, [FromQuery] string speakerName, IFormFile? audio)
         {
             // 🐛 這輪新增：印出伺服器實際收到的 roomCode / speakerName / 音檔大小。
-            //    這輪出現「大家的話全部被貼上『最高主管』的標籤」這個症狀，需要先確認問題出在
+            //    這輪出現「大家的話全部被貼上『主持人』的標籤」這個症狀，需要先確認問題出在
             //    「每個人送出去的 speakerName 參數本身就已經是錯的」還是「名字是對的，但音檔內容
             //    混到別人的聲音」——這行 log 能直接看到伺服器這邊實際收到的 speakerName 是什麼，
             //    拿去跟各自瀏覽器主控台那行 [submitMyAudioTranscript] 印出來的名字互相比對，
@@ -608,7 +608,7 @@ namespace InterviewProject.Controllers
         //    原本「冷場提問」偵測到要說話時，是在觸發的那個人自己的瀏覽器裡用 SpeechSynthesis 講給自己聽，
         //    不會真的傳到會議裡讓其他人聽到。現在改成呼叫這裡，轉發給 JitsiBotService 去驅動 AI 面試官
         //    這個「真正的 Jitsi 參與者」把話說出來（Gemini TTS 生語音 + Simli 對嘴型）。
-        //    這裡不驗證是誰呼叫的（求職者/主管都可能觸發冷場提問），只要帶對房間代碼就會嘗試觸發；
+        //    這裡不驗證是誰呼叫的（求職者/職員都可能觸發冷場提問），只要帶對房間代碼就會嘗試觸發；
         //    如果那個房間根本沒有 AI 面試官在線上（例如還沒設定 Simli），就安靜地不做事。
         //
         //    🐛 這輪再新增：AI 開始說話、講完了，都會透過 SignalR 廣播「AiSpeakingStateChanged」
@@ -750,7 +750,7 @@ namespace InterviewProject.Controllers
                         var roleLabel = p.Role switch
                         {
                             ParticipantRole.Director => "主持人",
-                            ParticipantRole.Manager => "主管",
+                            ParticipantRole.Manager => "職員",
                             ParticipantRole.Jobseeker => "求職者",
                             _ => null
                         };
@@ -808,7 +808,7 @@ namespace InterviewProject.Controllers
             }
             chunks = spamFilteredChunks;
 
-            // 🐛 這輪修正（回報：「最高主管還不如 TranscriptChunks 準確」）：
+            // 🐛 這輪修正（回報：「主持人還不如 TranscriptChunks 準確」）：
             //    主持人自己裝置錄音轉出來的內容，一直都比影片轉錄準（影片轉錄是從整場會議合成畫面
             //    去猜聲音內容，音質/畫質都打了折扣，難免比較容易聽錯）。原本兩邊內容不分青紅皂白
             //    全部混在一起，同一個人講的話可能兩邊各出現一次、內容還兜不起來，反而讓人搞不清楚
@@ -1091,11 +1091,11 @@ namespace InterviewProject.Controllers
         }
 
         // 🎯 檔案總管：列出 R2 上「逐字稿」「錄影錄音」「AI分析」三個前綴底下目前存了哪些檔案，並提供下載連結
-        //    只有 HR/主管/最高主管能看（求職者不用看到這個）
+        //    只有 HR/職員能看（求職者不用看到這個）
         public async Task<IActionResult> Files()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
+            if (role != "hr" && role != "manager")
                 return RedirectToAction("Index", "Login");
 
             if (!_storage.IsConfigured)
@@ -1123,7 +1123,7 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> DownloadFile(string folder, string fileName)
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
+            if (role != "hr" && role != "manager")
                 return RedirectToAction("Index", "Login");
 
             if (folder != "逐字稿" && folder != "錄影錄音" && folder != "AI分析") return BadRequest();
@@ -1143,7 +1143,7 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> ViewFile(string folder, string fileName)
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
+            if (role != "hr" && role != "manager")
                 return RedirectToAction("Index", "Login");
 
             if (folder != "逐字稿" && folder != "錄影錄音" && folder != "AI分析") return BadRequest();
@@ -1177,7 +1177,7 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> TranscriptVtt(int roomId)
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "hr" && role != "manager" && role != "director")
+            if (role != "hr" && role != "manager")
                 return RedirectToAction("Index", "Login");
 
             var room = await _context.Rooms.FirstOrDefaultAsync(r => r.Id == roomId);
@@ -1292,7 +1292,7 @@ namespace InterviewProject.Controllers
             return $"面試會議_{dateText}_{jobTitle}_{safeName}.{ext}";
         }
         //    求職者：session 存的是 Member.Id，要透過 Resume 反查
-        //    員工（manager / director / hr）：session 存的是 Employee.Id，直接比對
+        //    員工（manager / hr）：session 存的是 Employee.Id，直接比對
         private async Task<RoomParticipant?> FindParticipantAsync(Room room, int sessionMemberId, string role)
         {
             if (role == "jobseeker")

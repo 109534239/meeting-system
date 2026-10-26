@@ -7,19 +7,18 @@
     var memberName = Context.Session.GetString("MemberName") ?? "訪客";
     var memberRole = Context.Session.GetString("MemberRole")?.ToLower() ?? "";
     var sessionMemberId = Context.Session.GetInt32("MemberId") ?? 0;
-    var isStaff = memberRole == "hr" || memberRole == "manager" || memberRole == "director";
+    var isStaff = memberRole == "hr" || memberRole == "manager";
     // 🎯 改版：主持人是HR替「這一場面試」指定的職員，不再看帳號角色。
     //    RoomController.Join 已把這個人在這間房的參與者角色放進 ViewBag.ParticipantRole；
     //    只有在這間房沒有參與者名單（極舊資料）時，才退回舊的帳號角色判斷當保險。
     var participantRole = ViewBag.ParticipantRole as string;
     var isHost = participantRole != null
         ? participantRole == InterviewProject.Models.ParticipantRole.Director
-        : memberRole == "director";
-    // 🎯 標籤要跟 RoomController 產生逐字稿講者名單用的標籤一致（主持人／主管／人資）
+        : false;
+    // 🎯 標籤要跟 RoomController 產生逐字稿講者名單用的標籤一致（主持人／職員／人資）
     string staffLabel = isHost ? "主持人" : memberRole switch
     {
-        "director" => "主管",
-        "manager" => "主管",
+        "manager" => "職員",
         "hr" => "人資",
         _ => "員工"
     };
@@ -35,7 +34,7 @@
     var jitsiRoom = jaasTenantId + "/" + room.JitsiRoomName;
     var encodedName = Uri.EscapeDataString(displayName);
 
-    // 🎯 簽發這次進場要用的 JWT：只有 director 拿到 moderator=true
+    // 🎯 簽發這次進場要用的 JWT：只有這場的主持人拿到 moderator=true
     var jitsiJwt = JaasJwt.GenerateToken(room.JitsiRoomName, sessionMemberId.ToString(), displayName, isHost);
 }
 <!DOCTYPE html>
@@ -429,7 +428,7 @@
             justify-content: center;
             flex-wrap: wrap
         }
-        /* 主管下載畫面 */
+        /* 主持人下載畫面 */
         .ended-screen {
             position: fixed;
             inset: 0;
@@ -509,7 +508,7 @@
         </div>
     </div>
 
-    <div class="banner wait" id="banner">⏳ 等待主管開始會議...</div>
+    <div class="banner wait" id="banner">⏳ 等待主持人開始會議...</div>
 
     @if (isHost)
     {
@@ -530,7 +529,7 @@
         <div class="modal-box">
             <div class="m-icon">⏹</div>
             <h3>確認結束會議</h3>
-            <p>結束後，主管端將自動下載錄音與分析報告，所有人的分頁將自動關閉。</p>
+            <p>結束後，主持人端將自動下載錄音與分析報告，所有人的分頁將自動關閉。</p>
             <div class="m-acts">
                 <button class="btn btn-red" onclick="hostEndExecute()">確認結束</button>
                 <button class="btn btn-gray" onclick="document.getElementById('endModal').classList.remove('show')">取消</button>
@@ -543,14 +542,14 @@
         <div class="modal-box">
             <div class="m-icon">⏳</div>
             <h3>會議尚未開始</h3>
-            <p>請稍後再試，等待主管開始會議後即可進行。<br>頁面會自動偵測，無需重新整理。</p>
+            <p>請稍後再試，等待主持人開始會議後即可進行。<br>頁面會自動偵測，無需重新整理。</p>
             <div class="m-acts">
                 <button class="btn btn-gray" onclick="document.getElementById('notStartedModal').classList.remove('show')">我知道了</button>
             </div>
         </div>
     </div>
 
-    <!-- 主管端：下載畫面（求職者只看到空白後關閉） -->
+    <!-- 主持人端：下載畫面（求職者只看到空白後關閉） -->
     <div class="ended-screen" id="endedScreen">
         <div style="font-size:44px">✅</div>
         <h2 id="endTitle">面試已結束</h2>
@@ -568,7 +567,7 @@
         // ══════════════════════════════════
         const IS_STAFF   = @(isStaff ? "true" : "false");
         const IS_HOST    = @(isHost ? "true" : "false");
-        const MY_ROLE    = "@memberRole"; // 🐛 這輪新增：給冷場提問的「換人講話判斷」用，區分 director/manager/hr/jobseeker
+        const MY_ROLE    = "@memberRole"; // 🐛 這輪新增：給冷場提問的「換人講話判斷」用，區分 manager/hr/jobseeker
         const MY_NAME    = "@Html.Raw(displayName.Replace("\"", "\\\""))";
         const ROOM_CODE  = "@room.JitsiRoomName";
         const ALREADY_IN_PROGRESS = @(room.MeetingStatus == "InProgress" ? "true" : "false");
@@ -605,7 +604,7 @@
         //    跟 AiSpeakingStateChanged（AI 自己開講時）維護，只有主持人（IS_HOST）會真的拿它們
         //    來決定要不要觸發 AI，但每個人都會收廣播、更新這些狀態，避免主持人換人時掉資料。
         let lastSpeakerName = null;
-        let lastSpeakerRole = null;   // 'director' | 'manager' | 'hr' | 'jobseeker' | 'ai'
+        let lastSpeakerRole = null;   // 'manager' | 'hr' | 'jobseeker' | 'ai'
         let lastWasQuestion = false;
         let aiSpeakingRemote = false; // AI 現在是不是正在講話（全場共享的狀態，不是只有觸發者自己知道）
 
@@ -638,7 +637,7 @@
         //    但這個機制不可靠（長時間連線容易悄悄失效），改成每個人各自把自己聽到的內容直接送到伺服器，
         //    由伺服器合併，不再依賴任何人轉傳。詳見 submitMyTranscript() 函式。
 
-        // 🎯 最高主管改了面試時間，正在這個房間頁面等待的人（含主持人自己）立刻收到通知並更新畫面
+        // 🎯 主持人改了面試時間，正在這個房間頁面等待的人（含主持人自己）立刻收到通知並更新畫面
         hub.on("ScheduledAtChanged", (newTimeText) => {
             const el = document.getElementById('scheduledAtDisplay');
             if (el) el.textContent = '🕒 ' + newTimeText;
@@ -646,7 +645,7 @@
             alert('面試時間已更新為：' + newTimeText);
         });
 
-        // 冷場同步：主管廣播給所有人「有聲音了」
+        // 冷場同步：主持人廣播給所有人「有聲音了」
         hub.on("SpeechDetected", () => {
             lastSpeechMs = Date.now();
             silT = 0; setSilBar(0);
@@ -716,7 +715,7 @@
             } catch (e) { /* 輪詢失敗就等下一次，不用特別處理 */ }
         }, 4000);
 
-        // 🎯 候審室機制：最高主管每隔幾秒問一次「現在有誰在候審」，有的話就顯示同意/拒絕按鈕
+        // 🎯 候審室機制：主持人每隔幾秒問一次「現在有誰在候審」，有的話就顯示同意/拒絕按鈕
         if (IS_HOST) {
             async function pollPending() {
                 if (ended) return;
@@ -731,7 +730,7 @@
                         panel.style.display = 'block';
                         box.innerHTML = list.map(p => `
                             <div style="display:flex; align-items:center; gap:10px; padding:4px 0; font-size:13px;">
-                                <span>${p.name}（${p.role === 'Jobseeker' ? '求職者' : p.role === 'Manager' ? '部門主管' : p.role}）</span>
+                                <span>${p.name}（${p.role === 'Jobseeker' ? '求職者' : p.role === 'Manager' ? '職員' : p.role}）</span>
                                 <button onclick="admitParticipant(${p.id}, true)" style="background:#2c7a7b;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;">同意</button>
                                 <button onclick="admitParticipant(${p.id}, false)" style="background:#fff;color:#c0392b;border:1px solid #c0392b;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;">拒絕</button>
                             </div>
@@ -755,7 +754,7 @@
         }
 
         // ══════════════════════════════════
-        //  主管操作
+        //  主持人操作
         // ══════════════════════════════════
         async function hostStart() {
             try { await hub.invoke("StartMeeting", ROOM_CODE); }
@@ -803,7 +802,7 @@
                 // 這裡才是真正連線進 Jitsi 視訊會議的時機——大家（含主持人自己）
                 // 收到「會議開始」廣播的當下才一起連線，計時器才會是共同、從 0 起算的
                 // 非主持人延遲一點點再連線，讓主持人的連線先把會議室在 Jitsi 那邊真的建立起來，
-                // 不然求職者/主管的連線有時候會比主持人早一步，變成「conference not found」連不進去
+                // 不然求職者/職員的連線有時候會比主持人早一步，變成「conference not found」連不進去
                 try {
                     if (IS_HOST) {
                         initJitsi();
@@ -858,11 +857,11 @@
             b.textContent = '🔒 面試已結束';
 
             if (IS_HOST) {
-                // 🎯 只有主持人（最高主管）需要負責逐字稿/AI分析存檔——這件事整場面試只該做一次，
-                //    不能每個在場的主管都各自觸發一次（會變成大家搶著存、甚至重複呼叫 Gemini API）
+                // 🎯 只有主持人（主持人）需要負責逐字稿/AI分析存檔——這件事整場面試只該做一次，
+                //    不能每個在場的職員都各自觸發一次（會變成大家搶著存、甚至重複呼叫 Gemini API）
                 showEndedScreen();
             } else if (IS_STAFF) {
-                // 部門主管（不是主持人）：送出自己聽到的片段+音檔後，跟求職者一樣直接導回列表
+                // 職員（不是主持人）：送出自己聽到的片段+音檔後，跟求職者一樣直接導回列表
                 //    🎯 要等音檔真的送完（Gemini 轉錄需要幾秒到幾十秒），不能提早導頁把請求中斷掉
                 submitMyTranscript();
                 b.textContent = '🔒 面試已結束，正在送出逐字稿內容...';
@@ -879,10 +878,10 @@
 
         // ══════════════════════════════════
         //  麥克風（給語音辨識/冷場偵測用）
-        //  🎯 錄影不再由主管的瀏覽器螢幕分享負責——已經改成 AI 面試官在伺服器端用 Playwright
+        //  🎯 錄影不再由主持人的瀏覽器螢幕分享負責——已經改成 AI 面試官在伺服器端用 Playwright
         //     真的加入 Jitsi 會議室、直接錄下它自己看到的畫面（Jitsi 預設就是「目前誰在說話就放大顯示，
         //     其他人縮圖排在旁邊」的排版），不再受任何一位真人視窗縮放/被蓋住/切分頁影響，
-        //     主管也不用再被瀏覽器跳出來要求「選擇要分享的畫面」
+        //     主持人也不用再被瀏覽器跳出來要求「選擇要分享的畫面」
         // ══════════════════════════════════
         let myAudioRecorder = null;
         let myAudioChunks = [];
@@ -970,7 +969,7 @@
 
         // ══════════════════════════════════
         //  STT — 每個人偵測自己的聲音，廣播給全場
-        //  逐字稿在主管端整合（主管會看到所有人的聲音）
+        //  逐字稿在主持人端整合（主持人會看到所有人的聲音）
         // ══════════════════════════════════
         function initSTT() {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1062,13 +1061,13 @@
         //  冷場偵測（基於音量 + SignalR 同步）
         // ══════════════════════════════════
         // 🐛 這輪新增：不再用固定的 SIL_SEC，改成依「最近是誰講的、像不像問題」動態決定
-        //    要等多久才算冷場——主管/主持人剛問完問題時，多給求職者一些思考+開口的時間，
+        //    要等多久才算冷場——職員/主持人剛問完問題時，多給求職者一些思考+開口的時間，
         //    不要在單純「換人講話」的空檔就被誤判成冷場；求職者剛講完、可能還在組織下一句時，
         //    也多留一點餘裕，避免打斷正在思考的人。
         function getSilenceThresholdSec() {
             if (lastSpeakerRole === 'ai') return 26; // AI 剛問完，給正常一點的等待
             if (lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker') {
-                return 40; // 主管/主持人/HR 剛問完問題，等求職者回答，多給充裕的思考時間
+                return 40; // 職員/主持人/HR 剛問完問題，等求職者回答，多給充裕的思考時間
             }
             if (lastSpeakerRole === 'jobseeker') {
                 return 30; // 求職者剛講完（可能還在想下一句），多留一點喘息空間
@@ -1169,7 +1168,7 @@
         let fqIdx = 0;
         function getFQ() { return FQ[fqIdx++ % FQ.length]; }
 
-        // 🐛 這輪新增：只有主持人（最高主管）的瀏覽器真的觸發 AI 講話——原本每個人各自倒數、
+        // 🐛 這輪新增：只有主持人（主持人）的瀏覽器真的觸發 AI 講話——原本每個人各自倒數、
         //    各自觸發，多人同時倒數到同一時間點時會一起打去伺服器，AI 可能被要求同時講兩句話疊在一起。
         //    改成只有一個權威來源做這個決定；其他人的瀏覽器還是繼續跑倒數計時（給自己畫面上的
         //    冷場偵測進度條用），但不會真的呼叫伺服器。
@@ -1194,7 +1193,7 @@
 
                 setSt('th','💭 思考中...');
 
-                // 🐛 這輪新增：區分「主管/主持人剛問完問題、求職者還沒開始回答」跟「真的沒人在講話」
+                // 🐛 這輪新增：區分「職員/主持人剛問完問題、求職者還沒開始回答」跟「真的沒人在講話」
                 //    這兩種情況要生成不一樣語氣的話——前者要溫和鼓勵、不施加壓力，不要聽起來像在催促；
                 //    後者才是真的要拋出新問題或打破冷場。
                 const waitingForAnswer = lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker' && lastSpeakerRole !== 'ai';
@@ -1240,9 +1239,9 @@
         }
 
         // ══════════════════════════════════
-        //  主管端：下載畫面
+        //  主持人端：下載畫面
         // ══════════════════════════════════
-        // 🎯 把自己（這個瀏覽器）目前累積的逐字稿片段送到伺服器，不管求職者/主管/主持人，
+        // 🎯 把自己（這個瀏覽器）目前累積的逐字稿片段送到伺服器，不管求職者/職員/主持人，
         //    離開視訊或會議結束時都要呼叫一次，伺服器那邊會依收到時間把大家的片段合併成完整逐字稿
         //    用 sendBeacon（跟 markLeftBeacon 同一套手法），確保就算馬上要跳轉頁面也送得出去
         function submitMyTranscript() {
@@ -1390,7 +1389,7 @@
 
             document.getElementById('endSubtitle').textContent = '所有檔案已儲存，正在返回面試管理列表...';
 
-            // 🎯 不用再讓主管自己按「返回面試管理」，存檔一完成就直接導回列表
+            // 🎯 不用再讓主持人自己按「返回面試管理」，存檔一完成就直接導回列表
             setTimeout(() => { window.location.href = '/Interview/Index'; }, 1200);
         }
 
@@ -1535,7 +1534,7 @@
             });
 
             // 🎯 使用者自己按「掛斷」離開視訊（不是主持人結束會議），只影響自己，不影響會議本身
-            //    求職者離開後導回應徵管理頁面；主管/主持人離開後導回面試管理列表（面試排程分頁）
+            //    求職者離開後導回應徵管理頁面；職員/主持人離開後導回面試管理列表（面試排程分頁）
             jitsiApi.addEventListener('readyToClose', () => {
                 if (ended) return; // 如果是走「結束會議」流程，交給 showEndedScreen() 最後自己導頁，這裡不用重複處理
                 submitMyTranscript(); // 🎯 中途自己離開也要送出目前為止聽到的內容，不然這段話會整個消失
@@ -1621,7 +1620,7 @@
             if (ALREADY_IN_PROGRESS) {
                 onMeetingStart();
             } else if (!IS_HOST) {
-                // 求職者/主管：等待主持人開始，800ms 沒收到通知就顯示提示
+                // 求職者/職員：等待主持人開始，800ms 沒收到通知就顯示提示
                 setTimeout(()=>{
                     if (!started)
                         document.getElementById('notStartedModal').classList.add('show');

@@ -3,7 +3,7 @@
 @{
     ViewData["Title"] = "面試管理";
     string role = ViewBag.CurrentRole as string ?? "";
-    bool canJoin = role == "manager" || role == "director";
+    bool canJoin = role == "manager";
     int myEmployeeId = ViewBag.CurrentEmployeeId is int i ? i : 0;
     var myEvaluations = ViewBag.MyEvaluations as Dictionary<int, InterviewProject.Models.InterviewEvaluation>
                          ?? new Dictionary<int, InterviewProject.Models.InterviewEvaluation>();
@@ -688,7 +688,7 @@
                                             foreach (var me in managerEvalsForThisResume)
                                             {
                                                 <div class="manager-eval-item">
-                                                    <span class="manager-eval-name">@(me.EvaluatorEmployee?.Name ?? "未知主管")</span>
+                                                    <span class="manager-eval-name">@(me.EvaluatorEmployee?.Name ?? "未知職員")</span>
                                                     <span class="manager-eval-score">@me.Score 分</span>
                                                     <span class="manager-eval-comment">@(string.IsNullOrWhiteSpace(me.Comment) ? "（無評語）" : me.Comment)</span>
                                                 </div>

@@ -42,13 +42,13 @@ namespace InterviewProject.Controllers
         private bool IsEmployee()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            return role == "hr" || role == "manager" || role == "director";
+            return role == "hr" || role == "manager";
         }
 
         private int GetEmployeeId() => HttpContext.Session.GetInt32("MemberId") ?? 0;
         private int GetMemberId() => HttpContext.Session.GetInt32("MemberId") ?? 0;
 
-        // ── 主管/最高主管專用：面試房間列表（新版，資料來自 Rooms + RoomParticipants） ──
+        // ── 職員專用：面試房間列表（新版，資料來自 Rooms + RoomParticipants） ──
         //    🎯 HR 不參與會議，不開放這個頁面（即使直接打網址也一樣擋）
         public async Task<IActionResult> Index()
         {
@@ -59,7 +59,7 @@ namespace InterviewProject.Controllers
             // 🎯 改版：HR 有自己的面試管理頁（安排面試、修改時間人員主持人、通知錄取結果）
             if (role == "hr") return await HrIndexAsync();
 
-            if (role != "manager" && role != "director")
+            if (role != "manager")
             {
                 TempData["Error"] = "此頁面僅供職員使用";
                 return RedirectToAction("Dashboard", "AdminHome");
@@ -74,7 +74,7 @@ namespace InterviewProject.Controllers
                     .ThenInclude(p => p.Resume)
                         .ThenInclude(res => res!.Member)
                 .Where(r => r.JobsId != null)
-                // 主管/最高主管：只看自己被邀請（RoomParticipants.EmployeeId）的房間
+                // 職員：只看自己被邀請（RoomParticipants.EmployeeId）的房間
                 .Where(r => r.Participants.Any(p => p.EmployeeId == empId));
 
             var rooms = await query
@@ -91,7 +91,7 @@ namespace InterviewProject.Controllers
             var myEvaluations = allEvaluations.Where(e => e.EvaluatorEmployeeId == empId).ToList();
             ViewBag.MyEvaluations = myEvaluations.ToDictionary(e => e.ResumeId, e => e);
 
-            // 🎯 最高主管要能看到「部門主管」的評分紀錄作為參考，同時也用來判斷「主管是否已評分」
+            // 🎯 主持人要能看到「職員」的評分紀錄作為參考，同時也用來判斷「職員是否已評分」
             // 🎯 改版：主持人也是職員，所以「其他職員的評分」改成看評分者在「該場面試」的參與者角色是 Manager
             //    （不是主持人），而不是看帳號角色
             var participantRoleLookup = rooms
@@ -144,14 +144,14 @@ namespace InterviewProject.Controllers
             return View("~/Views/Interview/Index.cshtml", rooms);
         }
 
-        // 🎯 主管/最高主管針對某位求職者送出這場面試的評分評語
+        // 🎯 職員針對某位求職者送出這場面試的評分評語
         [HttpPost]
         public async Task<IActionResult> SubmitEvaluation(int roomId, int resumeId, int score, string? comment)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
-            if (role != "manager" && role != "director")
-                return Json(new { success = false, message = "只有主管/最高主管能評分" });
+            if (role != "manager")
+                return Json(new { success = false, message = "只有職員能評分" });
 
             if (score < 1 || score > 5)
                 return Json(new { success = false, message = "請選擇分數（1~5分）" });
@@ -162,11 +162,11 @@ namespace InterviewProject.Controllers
 
             int empId = GetEmployeeId();
 
-            // 一定要是這場面試受邀的主管/最高主管才能評
+            // 一定要是這場面試受邀的職員才能評
             var isInvited = await _db.RoomParticipants.AnyAsync(p =>
                 p.RoomId == roomId && p.EmployeeId == empId
                 && (p.Role == ParticipantRole.Manager || p.Role == ParticipantRole.Director));
-            if (!isInvited) return Json(new { success = false, message = "你不是這場面試受邀的主管" });
+            if (!isInvited) return Json(new { success = false, message = "你不是這場面試受邀的職員" });
 
             var existing = await _db.InterviewEvaluations.FirstOrDefaultAsync(e =>
                 e.RoomId == roomId && e.ResumeId == resumeId && e.EvaluatorEmployeeId == empId);
@@ -193,7 +193,7 @@ namespace InterviewProject.Controllers
             return Json(new { success = true });
         }
 
-        // 🎯 只有最高主管能定案錄取/未錄取，且這場面試「所有」受邀的部門主管都要先評完分
+        // 🎯 只有主持人能定案錄取/未錄取，且這場面試「所有」受邀的職員都要先評完分
         [HttpPost]
         public async Task<IActionResult> SetAdmission(int roomId, int resumeId, string result)
         {
@@ -279,8 +279,8 @@ namespace InterviewProject.Controllers
             if (room == null)
                 return Json(new { success = false, message = "找不到這個房間" });
 
-            var isDirectorOfThisRoom = await IsRoomHostAsync(roomId, empId);
-            if (!isDirectorOfThisRoom)
+            var isHostOfThisRoom = await IsRoomHostAsync(roomId, empId);
+            if (!isHostOfThisRoom)
                 return Json(new { success = false, message = "你不是這場面試的主持人" });
 
             if (room.MeetingStatus != "NotStarted")
@@ -534,7 +534,7 @@ namespace InterviewProject.Controllers
             });
         }
 
-        // ── HR/主管：新增排程 GET ──
+        // ── HR/職員：新增排程 GET ──
         [HttpGet]
         public async Task<IActionResult> Create(int? resumeId)
         {
@@ -577,7 +577,7 @@ namespace InterviewProject.Controllers
             return View("~/Views/Interview/Create.cshtml");
         }
 
-        // ── HR/主管：新增排程 POST ──
+        // ── HR/職員：新增排程 POST ──
         [HttpPost]
         public async Task<IActionResult> Create(List<int> resumeIds, int? roomId)
         {
@@ -639,7 +639,7 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Index");
         }
 
-        // ── HR/主管：編輯排程 GET ──
+        // ── HR/職員：編輯排程 GET ──
         [HttpGet]
         public async Task<IActionResult> Edit(int id)
         {
@@ -659,7 +659,7 @@ namespace InterviewProject.Controllers
             return View("~/Views/Interview/Edit.cshtml", schedule);
         }
 
-        // ── HR/主管：編輯排程 POST ──
+        // ── HR/職員：編輯排程 POST ──
         [HttpPost]
         public async Task<IActionResult> Edit(int id, int? roomId, string? resultNote, int? resultScore, string? resumeStatus)
         {
@@ -686,7 +686,7 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Index");
         }
 
-        // ── HR/主管：取消排程 ──
+        // ── HR/職員：取消排程 ──
         [HttpPost]
         public async Task<IActionResult> Cancel(int id)
         {
@@ -708,7 +708,7 @@ namespace InterviewProject.Controllers
             return RedirectToAction("Index");
         }
 
-        // ── HR/主管：標記完成 ──
+        // ── HR/職員：標記完成 ──
         [HttpPost]
         public async Task<IActionResult> Complete(int id, string? resultNote, int resultScore, string nextStatus = "面試結束")
         {
