@@ -35,13 +35,10 @@ namespace InterviewProject.Controllers
             _hub = hub;
         }
 
-        // 🎯 改版：主持人是HR替每場面試指定的職員（RoomParticipants.Role==Director），跟帳號角色無關
+        // 🎯 主持人是HR替每場面試指定的職員，只看 Rooms.HostEmployeeId，跟帳號角色無關
         private async Task<bool> IsRoomHostAsync(int roomId, int employeeId)
         {
-            // 以 Rooms.HostEmployeeId 為準；舊資料（沒有這個欄位值）退回看 RoomParticipants 的 Director 那一列
-            return await _context.Rooms.AnyAsync(r => r.Id == roomId && r.HostEmployeeId == employeeId)
-                || await _context.RoomParticipants.AnyAsync(p =>
-                    p.RoomId == roomId && p.Role == ParticipantRole.Director && p.EmployeeId == employeeId);
+            return await _context.Rooms.AnyAsync(r => r.Id == roomId && r.HostEmployeeId == employeeId);
         }
 
         private bool IsEmployee()
@@ -262,7 +259,8 @@ namespace InterviewProject.Controllers
                 var currentlyAuthorized = originalJoinedAt.HasValue
                     && (!originalLeftAt.HasValue || originalJoinedAt > originalLeftAt);
 
-                if (room.MeetingStatus == "InProgress" && participant.Role != ParticipantRole.Director && !currentlyAuthorized)
+                var isHostParticipant = room.HostEmployeeId != null && participant.EmployeeId == room.HostEmployeeId;
+                if (room.MeetingStatus == "InProgress" && !isHostParticipant && !currentlyAuthorized)
                 {
                     // 🐛 修正：這個分支下面的 SaveChangesAsync 只能存 Status=Pending，
                     //    絕對不能連 JoinedAt 都一起存進去——不然候審者的 JoinedAt 會被污染成「有值」，
@@ -282,6 +280,7 @@ namespace InterviewProject.Controllers
                 participant.JoinedAt = DateTime.Now;
 
                 ViewBag.ParticipantRole = participant.Role;
+                ViewBag.IsHost = isHostParticipant;
             }
 
             ViewBag.Room = room;
@@ -749,8 +748,7 @@ namespace InterviewProject.Controllers
                         if (string.IsNullOrEmpty(personName)) return null;
                         var roleLabel = p.Role switch
                         {
-                            ParticipantRole.Director => "主持人",
-                            ParticipantRole.Manager => "職員",
+                            ParticipantRole.Manager => (room.HostEmployeeId != null && p.EmployeeId == room.HostEmployeeId) ? "主持人" : "職員",
                             ParticipantRole.Jobseeker => "求職者",
                             _ => null
                         };

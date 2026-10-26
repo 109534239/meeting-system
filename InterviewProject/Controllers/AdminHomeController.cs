@@ -130,24 +130,6 @@ namespace InterviewProject.Controllers
 
             ViewData["AverageAiScore"] = Math.Round(averageAiScore, 1);
 
-            // 🎯 平均面試分數 (關聯的 Resume 也必須排除暫存)
-            var interviewQuery = _db.InterviewSchedules
-                .Include(i => i.Resume)
-                .ThenInclude(r => r.Job)
-                .Where(i => i.Resume != null && i.Resume.Status != "暫存") // 👈 這裡也加入排除暫存
-                .AsQueryable();
-
-            if (role == "manager")
-            {
-                interviewQuery = interviewQuery.Where(i => i.Resume != null && i.Resume.Job != null && i.Resume.Job.Department == department);
-            }
-
-            double averageInterviewScore = await interviewQuery
-                .Where(i => i.ResultScore != null)
-                .AverageAsync(i => (double?)i.ResultScore) ?? 0;
-
-            ViewData["AverageInterviewScore"] = Math.Round(averageInterviewScore, 1);
-
             // 🎯 最新 5 筆履歷
             var latestResumes = await resumeQuery
                 .Include(r => r.Member)

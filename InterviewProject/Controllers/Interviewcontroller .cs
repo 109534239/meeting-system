@@ -30,13 +30,10 @@ namespace InterviewProject.Controllers
             _email = email;
         }
 
-        // 🎯 改版：「主持人」是每場面試由HR指定的（RoomParticipants.Role==Director），跟帳號角色無關
+        // 🎯 「主持人」是每場面試由HR指定的，只看 Rooms.HostEmployeeId，跟帳號角色無關
         private async Task<bool> IsRoomHostAsync(int roomId, int empId)
         {
-            // 以 Rooms.HostEmployeeId 為準；舊資料（沒有這個欄位值）退回看 RoomParticipants 的 Director 那一列
-            return await _db.Rooms.AnyAsync(r => r.Id == roomId && r.HostEmployeeId == empId)
-                || await _db.RoomParticipants.AnyAsync(p =>
-                    p.RoomId == roomId && p.Role == ParticipantRole.Director && p.EmployeeId == empId);
+            return await _db.Rooms.AnyAsync(r => r.Id == roomId && r.HostEmployeeId == empId);
         }
 
         private bool IsEmployee()
@@ -112,9 +109,7 @@ namespace InterviewProject.Controllers
 
             // 🎯 改版：哪些房間「我」是主持人（每場各自指定）
             ViewBag.HostRoomIds = rooms
-                .Where(r => r.HostEmployeeId == empId
-                            || (r.Participants != null
-                                && r.Participants.Any(p => p.Role == ParticipantRole.Director && p.EmployeeId == empId)))
+                .Where(r => r.HostEmployeeId == empId)
                 .Select(r => r.Id)
                 .ToHashSet();
 
@@ -165,7 +160,7 @@ namespace InterviewProject.Controllers
             // 一定要是這場面試受邀的職員才能評
             var isInvited = await _db.RoomParticipants.AnyAsync(p =>
                 p.RoomId == roomId && p.EmployeeId == empId
-                && (p.Role == ParticipantRole.Manager || p.Role == ParticipantRole.Director));
+                && p.Role == ParticipantRole.Manager);
             if (!isInvited) return Json(new { success = false, message = "你不是這場面試受邀的職員" });
 
             var existing = await _db.InterviewEvaluations.FirstOrDefaultAsync(e =>
@@ -347,10 +342,11 @@ namespace InterviewProject.Controllers
                     Candidates = room.Participants.Where(p => p.Role == ParticipantRole.Jobseeker && p.Resume != null)
                         .Select(p => p.Resume!).ToList(),
                     StaffInRoom = room.Participants
-                        .Where(p => (p.Role == ParticipantRole.Manager || p.Role == ParticipantRole.Director) && p.Employee != null)
+                        .Where(p => p.Role == ParticipantRole.Manager && p.Employee != null)
                         .Select(p => p.Employee!).ToList(),
-                    HostEmployeeId = room.HostEmployeeId ?? room.Participants.FirstOrDefault(p => p.Role == ParticipantRole.Director)?.EmployeeId,
-                    StaffCount = room.Participants.Count(p => p.Role == ParticipantRole.Manager)
+                    HostEmployeeId = room.HostEmployeeId,
+                    // 職員評分進度不含主持人（主持人是決定結果的人）
+                    StaffCount = room.Participants.Count(p => p.Role == ParticipantRole.Manager && p.EmployeeId != room.HostEmployeeId)
                 };
 
                 if (room.MeetingStatus == "NotStarted" && room.Job != null)
@@ -362,7 +358,7 @@ namespace InterviewProject.Controllers
 
                 if (room.MeetingStatus == "Ended")
                 {
-                    var managerIds = room.Participants.Where(p => p.Role == ParticipantRole.Manager && p.EmployeeId != null)
+                    var managerIds = room.Participants.Where(p => p.Role == ParticipantRole.Manager && p.EmployeeId != null && p.EmployeeId != room.HostEmployeeId)
                         .Select(p => p.EmployeeId!.Value).ToHashSet();
                     roomVm.EvalCountByResume = evals.Where(e => e.RoomId == room.Id && managerIds.Contains(e.EvaluatorEmployeeId))
                         .GroupBy(e => e.ResumeId).ToDictionary(g => g.Key, g => g.Select(e => e.EvaluatorEmployeeId).Distinct().Count());
@@ -531,242 +527,6 @@ namespace InterviewProject.Controllers
                 success = true,
                 message = failed == 0 ? $"已通知 {toNotify.Count} 位求職者，並寄出 email"
                                       : $"已通知 {toNotify.Count} 位求職者（其中 {failed} 封 email 寄送失敗，請確認信箱）"
-            });
-        }
-
-        // ── HR/職員：新增排程 GET ──
-        [HttpGet]
-        public async Task<IActionResult> Create(int? resumeId)
-        {
-            if (!IsEmployee()) return RedirectToAction("Index", "Login");
-
-            ViewBag.Rooms = await _db.Rooms
-                .Where(r => r.IsActive)
-                .OrderByDescending(r => r.CreatedTime)
-                .ToListAsync();
-
-            if (resumeId.HasValue)
-            {
-                var resume = await _db.Resumes
-                    .Include(r => r.Job)
-                    .FirstOrDefaultAsync(r => r.Id == resumeId);
-
-                if (resume != null)
-                {
-                    var member = await _db.Members.FindAsync(resume.MembersId);
-                    ViewBag.PrefilledResumeId = resume.Id;
-                    ViewBag.PrefilledMember = member;
-                    ViewBag.PrefilledJob = resume.Job?.Title;
-                }
-            }
-
-            var pendingResumes = await _db.Resumes
-                .Include(r => r.Job)
-                .Where(r => r.Status == "待審核" || r.Status == "通過" || r.Status == "已安排面試")
-                .OrderByDescending(r => r.ResumeTime)
-                .ToListAsync();
-
-            var memberIds = pendingResumes.Select(r => r.MembersId).Distinct().ToList();
-            var members = await _db.Members
-                .Where(m => memberIds.Contains(m.Id))
-                .ToDictionaryAsync(m => m.Id, m => m.Name);
-
-            ViewBag.PendingResumes = pendingResumes;
-            ViewBag.MemberNames = members;
-
-            return View("~/Views/Interview/Create.cshtml");
-        }
-
-        // ── HR/職員：新增排程 POST ──
-        [HttpPost]
-        public async Task<IActionResult> Create(List<int> resumeIds, int? roomId)
-        {
-            if (!IsEmployee()) return RedirectToAction("Index", "Login");
-
-            if (resumeIds == null || !resumeIds.Any())
-            {
-                TempData["Error"] = "請至少選擇一位求職者";
-                return RedirectToAction("Create");
-            }
-
-            int targetRoomId;
-            if (roomId == null)
-            {
-                var newRoom = new Room
-                {
-                    RoomName = $"面試-{DateTime.Now:yyyyMMdd-HHmm}",
-                    CreatedTime = DateTime.Now,
-                    JitsiRoomName = Guid.NewGuid().ToString("N")[..10],
-                    StartAt = DateTime.Now.AddDays(1),
-                    EndAt = DateTime.Now.AddDays(1).AddHours(1),
-                    IsActive = true
-                };
-                _db.Rooms.Add(newRoom);
-                await _db.SaveChangesAsync();
-                targetRoomId = newRoom.Id;
-            }
-            else
-            {
-                targetRoomId = roomId.Value;
-            }
-
-            int empId = GetEmployeeId();
-            int addedCount = 0;
-
-            foreach (var rid in resumeIds.Distinct())
-            {
-                var resume = await _db.Resumes.FindAsync(rid);
-                if (resume == null) continue;
-
-                // 🎯 修正關鍵：建立排程物件時，移除已不存在的欄位，僅傳入核心資料
-                var schedule = new InterviewSchedule
-                {
-                    ResumeId = resume.Id,
-                    ScheduledByEmployeeId = empId,
-                    RoomId = targetRoomId,
-                    CreatedAt = DateTime.Now
-                };
-
-                // 將狀態更動直接寫在 Resume 表的 Status 上
-                resume.Status = "已安排面試";
-
-                _db.InterviewSchedules.Add(schedule);
-                addedCount++;
-            }
-
-            await _db.SaveChangesAsync();
-            TempData["Success"] = $"已成功排程 {addedCount} 位求職者！";
-            return RedirectToAction("Index");
-        }
-
-        // ── HR/職員：編輯排程 GET ──
-        [HttpGet]
-        public async Task<IActionResult> Edit(int id)
-        {
-            if (!IsEmployee()) return RedirectToAction("Index", "Login");
-
-            var schedule = await _db.InterviewSchedules
-                .Include(s => s.Room)
-                .Include(s => s.Resume)
-                    .ThenInclude(r => r.Member)
-                .Include(s => s.Resume)
-                    .ThenInclude(r => r.Job)
-                .FirstOrDefaultAsync(s => s.Id == id);
-
-            if (schedule == null) return NotFound();
-
-            ViewBag.Rooms = await _db.Rooms.OrderByDescending(r => r.CreatedTime).ToListAsync();
-            return View("~/Views/Interview/Edit.cshtml", schedule);
-        }
-
-        // ── HR/職員：編輯排程 POST ──
-        [HttpPost]
-        public async Task<IActionResult> Edit(int id, int? roomId, string? resultNote, int? resultScore, string? resumeStatus)
-        {
-            if (!IsEmployee()) return RedirectToAction("Index", "Login");
-
-            var existing = await _db.InterviewSchedules
-                .Include(s => s.Resume)
-                .FirstOrDefaultAsync(s => s.Id == id);
-
-            if (existing == null) return NotFound();
-
-            existing.ResultNote = resultNote;
-            existing.ResultScore = resultScore;
-
-            if (roomId.HasValue) existing.RoomId = roomId;
-
-            if (existing.Resume != null && !string.IsNullOrEmpty(resumeStatus))
-            {
-                existing.Resume.Status = resumeStatus;
-            }
-
-            await _db.SaveChangesAsync();
-            TempData["Success"] = "排程已更新";
-            return RedirectToAction("Index");
-        }
-
-        // ── HR/職員：取消排程 ──
-        [HttpPost]
-        public async Task<IActionResult> Cancel(int id)
-        {
-            if (!IsEmployee()) return RedirectToAction("Index", "Login");
-
-            var s = await _db.InterviewSchedules
-                .Include(x => x.Resume)
-                .FirstOrDefaultAsync(x => x.Id == id);
-
-            if (s == null) return NotFound();
-
-            if (s.Resume != null)
-            {
-                s.Resume.Status = "不通過";
-            }
-
-            await _db.SaveChangesAsync();
-            TempData["Success"] = "面試排程已取消，求職者狀態更新為不通過";
-            return RedirectToAction("Index");
-        }
-
-        // ── HR/職員：標記完成 ──
-        [HttpPost]
-        public async Task<IActionResult> Complete(int id, string? resultNote, int resultScore, string nextStatus = "面試結束")
-        {
-            if (!IsEmployee()) return RedirectToAction("Index", "Login");
-
-            var s = await _db.InterviewSchedules
-                .Include(x => x.Resume)
-                .FirstOrDefaultAsync(x => x.Id == id);
-
-            if (s == null) return NotFound();
-
-            s.ResultNote = resultNote;
-            s.ResultScore = resultScore;
-
-            if (s.Resume != null)
-            {
-                s.Resume.Status = nextStatus;
-            }
-
-            await _db.SaveChangesAsync();
-            TempData["Success"] = "面試已標記為完成，分數與評語已儲存";
-            return RedirectToAction("Index");
-        }
-
-        // ── 求職者：我的面試通知 ──
-        public async Task<IActionResult> MyInterviews()
-        {
-            int memberId = GetMemberId();
-            if (memberId == 0) return RedirectToAction("Index", "Login");
-
-            // 🎯 修正關鍵：全面補齊關聯鏈，特別是 Resume -> Member 絕對不能漏
-            var schedules = await _db.InterviewSchedules
-                .Include(s => s.Room)
-                .Include(s => s.ScheduledByEmployee)
-                .Include(s => s.Resume)
-                    .ThenInclude(r => r.Job)
-                .Include(s => s.Resume)
-                    .ThenInclude(r => r.Member) // 🎯 核心補強：把 Resume 表裡的 Member 物件一併載入！
-                .Where(s => s.Resume != null && s.Resume.MembersId == memberId)
-                .OrderByDescending(s => s.Room != null ? s.Room.StartAt : DateTime.MinValue)
-                .ToListAsync();
-
-            return View("~/Views/Interview/MyInterviews.cshtml", schedules);
-        }
-
-        // ── AJAX：依 resumeId 取得求職者資訊 ──
-        [HttpGet]
-        public async Task<IActionResult> GetResumeInfo(int resumeId)
-        {
-            var resume = await _db.Resumes.Include(r => r.Job).FirstOrDefaultAsync(r => r.Id == resumeId);
-            if (resume == null) return Json(new { success = false });
-
-            var member = await _db.Members.FindAsync(resume.MembersId);
-            return Json(new
-            {
-                success = true,
-                memberName = member?.Name ?? "未知",
-                jobTitle = resume.Job?.Title ?? "未知"
             });
         }
     }

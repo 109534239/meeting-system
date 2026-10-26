@@ -244,12 +244,8 @@ namespace InterviewProject.Hubs
             var room = await _db.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return null;
 
-            // 以 Rooms.HostEmployeeId 為準；舊資料退回看 RoomParticipants 的 Director 那一列
-            var isHostOfThisRoom = room.HostEmployeeId == sessionMemberId.Value
-                || await _db.RoomParticipants.AnyAsync(p =>
-                p.RoomId == room.Id
-                && p.Role == ParticipantRole.Director
-                && p.EmployeeId == sessionMemberId.Value);
+            // 只看 Rooms.HostEmployeeId
+            var isHostOfThisRoom = room.HostEmployeeId == sessionMemberId.Value;
 
             return isHostOfThisRoom ? room : null;
         }

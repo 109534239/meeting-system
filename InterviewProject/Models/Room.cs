@@ -29,7 +29,7 @@ namespace InterviewProject.Models
         public string MeetingStatus { get; set; } = "NotStarted";
 
         // 🎯 這場面試的主持人（HR 建立會議室時從該部門職員中指定一位，面試開始前可改）。
-        //    關聯到 Employees 表；RoomParticipants 裡 Role=Director 那一列會同步維持一致（會議程式讀的是那一列）。
+        //    關聯到 Employees 表；會議程式只看這個欄位判斷主持人。
         public int? HostEmployeeId { get; set; }
 
         // 主持人在面試後「送出錄取結果」並通知HR的時間（null = 還沒送出）

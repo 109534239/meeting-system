@@ -17,7 +17,6 @@ namespace InterviewProject.Models
     {
         public const string Jobseeker = "Jobseeker";
         public const string Manager = "Manager";     // 職員
-        public const string Director = "Director";   // 主持人（HR 從職員中指定）
         public const string AI = "AI";                // AI 面試官
     }
 

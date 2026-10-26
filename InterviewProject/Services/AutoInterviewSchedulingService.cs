@@ -113,7 +113,7 @@ namespace InterviewProject.Services
                 _db.RoomParticipants.Add(new RoomParticipant
                 {
                     RoomId = room.Id,
-                    Role = st.Id == hostEmployeeId ? ParticipantRole.Director : ParticipantRole.Manager,
+                    Role = ParticipantRole.Manager,
                     EmployeeId = st.Id,
                     Status = ParticipantStatus.Invited
                 });
@@ -158,7 +158,7 @@ namespace InterviewProject.Services
             var err = await ValidateAsync(job, resumeIds, staffIds, hostEmployeeId);
             if (err != null) return Fail(err);
 
-            var oldHostId = room.HostEmployeeId ?? room.Participants.FirstOrDefault(p => p.Role == ParticipantRole.Director)?.EmployeeId;
+            var oldHostId = room.HostEmployeeId;
             var result = new MeetingSaveResult
             {
                 Success = true,
@@ -190,7 +190,7 @@ namespace InterviewProject.Services
 
             // ── 職員 ──
             var staffRows = room.Participants
-                .Where(p => (p.Role == ParticipantRole.Manager || p.Role == ParticipantRole.Director) && p.EmployeeId != null)
+                .Where(p => p.Role == ParticipantRole.Manager && p.EmployeeId != null)
                 .ToList();
             var existingStaffIds = staffRows.Select(p => p.EmployeeId!.Value).ToList();
 
@@ -198,17 +198,13 @@ namespace InterviewProject.Services
             foreach (var row in staffRows.Where(p => removedStaffIds.Contains(p.EmployeeId!.Value)))
                 _db.RoomParticipants.Remove(row);
 
-            // 留下來的人：主持人只會有一位，其餘一律是 Manager
-            foreach (var row in staffRows.Where(p => staffIds.Contains(p.EmployeeId!.Value)))
-                row.Role = row.EmployeeId == hostEmployeeId ? ParticipantRole.Director : ParticipantRole.Manager;
-
             var addedStaffIds = staffIds.Except(existingStaffIds).ToList();
             foreach (var sid in addedStaffIds)
             {
                 _db.RoomParticipants.Add(new RoomParticipant
                 {
                     RoomId = room.Id,
-                    Role = sid == hostEmployeeId ? ParticipantRole.Director : ParticipantRole.Manager,
+                    Role = ParticipantRole.Manager,
                     EmployeeId = sid,
                     Status = ParticipantStatus.Invited
                 });

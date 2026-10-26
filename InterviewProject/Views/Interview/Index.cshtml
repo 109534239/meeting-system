@@ -650,10 +650,11 @@
                             var resume = c.Resume;
                             var name = resume?.Member?.Name ?? "未知";
                             var hasMyEval = resume != null && myEvaluations.TryGetValue(resume.Id, out var myEval);
-                            var managerEvalsForThisResume = (resume != null && managerEvaluationsByResume.TryGetValue(resume.Id, out var mevals))
-                            ? mevals : new List<InterviewProject.Models.InterviewEvaluation>();
+                            var managerEvalsForThisResume = ((resume != null && managerEvaluationsByResume.TryGetValue(resume.Id, out var mevals))
+                            ? mevals : new List<InterviewProject.Models.InterviewEvaluation>())
+                            .Where(me0 => me0.EvaluatorEmployeeId != room.HostEmployeeId).ToList();
                             var roomManagerIds = room.Participants?
-                            .Where(p => p.Role == InterviewProject.Models.ParticipantRole.Manager && p.EmployeeId.HasValue)
+                            .Where(p => p.Role == InterviewProject.Models.ParticipantRole.Manager && p.EmployeeId.HasValue && p.EmployeeId != room.HostEmployeeId)
                             .Select(p => p.EmployeeId!.Value).Distinct().ToList() ?? new List<int>();
                             var evaluatedManagerIdsForResume = managerEvalsForThisResume.Select(e => e.EvaluatorEmployeeId).Distinct().ToList();
                             var allManagersEvaluated = !roomManagerIds.Any() || roomManagerIds.All(id => evaluatedManagerIdsForResume.Contains(id));
