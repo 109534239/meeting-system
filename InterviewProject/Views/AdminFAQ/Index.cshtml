@@ -15,12 +15,11 @@
     int visitorPendingCount = ViewBag.VisitorPendingCount ?? 0;
     int jobseekerPendingCount = ViewBag.JobseekerPendingCount ?? 0;
 
-    var departmentOptions = ViewBag.DepartmentOptions as List<string> ?? new List<string>();
+    var staffOptions = ViewBag.StaffOptions as List<Employee> ?? new List<Employee>();
 
     string role = ViewBag.MemberRole ?? "";
     bool isHr = role == "hr";
-    bool isDirector = role == "director";
-    string myDepartment = ViewBag.MyDepartment ?? "";
+    bool isManager = role == "manager";
 }
 
 @{
@@ -45,20 +44,20 @@
             margin-bottom: 14px;
         }
 
-        .report-filter-bar label {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 14px;
-            color: #555;
-        }
+            .report-filter-bar label {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 14px;
+                color: #555;
+            }
 
-        .report-filter-bar select {
-            padding: 6px 10px;
-            border-radius: 6px;
-            border: 1px solid #d0d0d0;
-            font-size: 14px;
-        }
+            .report-filter-bar select {
+                padding: 6px 10px;
+                border-radius: 6px;
+                border: 1px solid #d0d0d0;
+                font-size: 14px;
+            }
     </style>
 }
 
@@ -79,10 +78,10 @@
         </div>
     }
 
-    @if (isDirector)
+    @if (isManager)
     {
         <div class="alert-success" style="background:#eef2ff;color:#3730a3;">
-            目前僅顯示分派給「@(string.IsNullOrWhiteSpace(myDepartment) ? "尚未設定部門" : myDepartment)」的 Q&amp;A 回報
+            目前僅顯示人資指派給您的 Q&amp;A 回報
         </div>
     }
 
@@ -267,16 +266,16 @@
                                 回覆
                             </a>
 
-                            @* 🎯 部門最高主管：只會看到自己部門的回報，不需要再指派部門，直接回覆即可 *@
-                            @if (!isDirector)
+                            @* 🎯 職員：只會看到指派給自己的回報，不能指派，直接回覆即可 *@
+                            @if (!isManager)
                             {
-                                <select name="department"
+                                <select name="employeeId"
                                         class="dept-select"
-                                        onchange="assignDepartment(@item.Id, this)">
-                                    <option value="" selected="@(string.IsNullOrWhiteSpace(item.Department) || item.Department == "人力資源")">選擇部門</option>
-                                    @foreach (var dept in departmentOptions)
+                                        onchange="assignStaff(@item.Id, this)">
+                                    <option value="" selected="@(!staffOptions.Any(x => x.Id == item.AssignedEmployeeId))">選擇職員</option>
+                                    @foreach (var st in staffOptions)
                                     {
-                                        <option value="@dept" selected="@(item.Department == dept)">@dept</option>
+                                        <option value="@st.Id" selected="@(item.AssignedEmployeeId == st.Id)">@st.Name（@st.Department）</option>
                                     }
                                 </select>
                             }
@@ -368,16 +367,16 @@
                                 回覆
                             </a>
 
-                            @* 🎯 部門最高主管：只會看到自己部門的回報，不需要再指派部門，直接回覆即可 *@
-                            @if (!isDirector)
+                            @* 🎯 職員：只會看到指派給自己的回報，不能指派，直接回覆即可 *@
+                            @if (!isManager)
                             {
-                                <select name="department"
+                                <select name="employeeId"
                                         class="dept-select"
-                                        onchange="assignDepartment(@item.Id, this)">
-                                    <option value="" selected="@(string.IsNullOrWhiteSpace(item.Department) || item.Department == "人力資源")">選擇部門</option>
-                                    @foreach (var dept in departmentOptions)
+                                        onchange="assignStaff(@item.Id, this)">
+                                    <option value="" selected="@(!staffOptions.Any(x => x.Id == item.AssignedEmployeeId))">選擇職員</option>
+                                    @foreach (var st in staffOptions)
                                     {
-                                        <option value="@dept" selected="@(item.Department == dept)">@dept</option>
+                                        <option value="@st.Id" selected="@(item.AssignedEmployeeId == st.Id)">@st.Name（@st.Department）</option>
                                     }
                                 </select>
                             }
@@ -443,22 +442,25 @@
             btn.className = 'btn-toggle ' + (data.isActive ? 'active' : 'inactive');
         }
 
-        async function assignDepartment(id, selectEl) {
-            const department = selectEl.value;
-            const previousValue = selectEl.dataset.prevValue || department;
+        async function assignStaff(id, selectEl) {
+            const employeeId = selectEl.value;
 
-            const res = await fetch('/AdminFAQ/AssignDepartment/' + id, {
+            const res = await fetch('/AdminFAQ/AssignStaff/' + id, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'department=' + encodeURIComponent(department)
+                body: 'employeeId=' + encodeURIComponent(employeeId)
             });
 
             const data = await res.json();
 
             if (!data.success) {
                 alert(data.message);
-                selectEl.value = previousValue;
+                window.location.reload();
                 return;
+            }
+
+            if (data.emailFailed) {
+                alert('已指派，但 email 通知沒有寄出（該職員的信箱可能不存在）。');
             }
 
             window.location.reload();

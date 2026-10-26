@@ -28,7 +28,13 @@ namespace InterviewProject.Models
         public string? ReplyContent { get; set; }
 
         public string? Department { get; set; }
-        
+
+        // 🎯 HR 指派的處理職員（Employees.Id，一律是 manager）。null = 還沒指派，由 HR 自己處理。
+        //    Department 會同步存這位職員的部門，方便辨識。
+        public int? AssignedEmployeeId { get; set; }
+        [System.ComponentModel.DataAnnotations.Schema.ForeignKey("AssignedEmployeeId")]
+        public virtual Employee? AssignedEmployee { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         public DateTime? RepliedAt { get; set; }
