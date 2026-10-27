@@ -109,23 +109,33 @@ namespace InterviewProject.Controllers
 
             ViewBag.JobList = jobList;
 
-            // 🎯 2. 設定頁面標題
+            // 🎯 2. 設定頁面標題與職缺 AI 評分權限
+            ViewBag.CanStartAiScoring = false;
+            ViewBag.IsJobActive = true;
+
             if (jobId.HasValue)
             {
                 var job = await _db.Jobs.FindAsync(jobId.Value);
-                if (job == null) return NotFound();
 
-                // 🎯 職員（manager） 只能查看自己部門的職缺
+                if (job == null)
+                {
+                    return NotFound();
+                }
+
                 if (!await CanAccessJob(job))
                 {
                     return Forbid();
                 }
 
                 ViewBag.JobTitle = job.Title;
+                ViewBag.IsJobActive = job.IsActive;
+
+                // 僅 HR 可在職缺下架後啟動 AI 批次評分
+                ViewBag.CanStartAiScoring =
+                    role == "hr" && !job.IsActive;
             }
             else
             {
-                // 🎯 如果沒有帶 jobId，HR 看全部；職員（manager） 看自己部門
                 ViewBag.JobTitle = role == "hr"
                     ? "全部應徵履歷"
                     : $"{department} 部門應徵履歷";
@@ -168,6 +178,11 @@ namespace InterviewProject.Controllers
             ViewBag.MemberNames = rawList.ToDictionary(x => x.Resume.Id, x => x.Member.Name);
             ViewBag.MemberPhones = rawList.ToDictionary(x => x.Resume.Id, x => x.Member.Phone);
             ViewBag.JobTitles = rawList.ToDictionary(x => x.Resume.Id, x => x.Job.Title);
+            // 🎯 記錄每筆履歷所屬職缺的上下架狀態
+            ViewBag.JobActiveStatuses = rawList.ToDictionary(
+                x => x.Resume.Id,
+                x => x.Job.IsActive
+            );
 
             // 🎯 7. 組成主模型 ResumesList
             var resumesList = rawList.Select(x => new InterviewProject.Models.Resume
@@ -212,13 +227,22 @@ namespace InterviewProject.Controllers
             }
 
             // 🎯 9. AI 評分與評語字典組裝
+            // 尚未評分的履歷不加入分數字典，避免顯示為 0 分
             var aiScores = new Dictionary<int, int>();
             var aiComments = new Dictionary<int, string>();
 
             foreach (var r in resumesList)
             {
-                aiScores[r.Id] = r.AiScore ?? 0;
-                aiComments[r.Id] = !string.IsNullOrEmpty(r.AiComment) ? r.AiComment : "暫無初審評語。";
+                // 只有實際完成 AI 評分的履歷才加入分數
+                if (r.AiScore.HasValue)
+                {
+                    aiScores[r.Id] = r.AiScore.Value;
+                }
+
+                // AI 評語
+                aiComments[r.Id] = !string.IsNullOrWhiteSpace(r.AiComment)
+                    ? r.AiComment
+                    : "尚未進行 AI 履歷評分。";
             }
 
             ViewBag.AiScores = aiScores;
@@ -319,6 +343,26 @@ namespace InterviewProject.Controllers
                     return Json(new { success = false, message = "您沒有權限修改其他部門的履歷狀態。" });
                 }
 
+                // 🎯 職缺尚未下架，不允許修改履歷審核狀態
+                if (resume.Job == null || resume.Job.IsActive)
+                {
+                    return Json(new
+                    {
+                        success = false,
+                        message = "職缺尚未下架，無法進行履歷審核。"
+                    });
+                }
+
+                // 🎯 履歷尚未完成 AI 評分，不允許修改審核狀態
+                if (!resume.AiScore.HasValue || string.IsNullOrWhiteSpace(resume.AiComment))
+                {
+                    return Json(new
+                    {
+                        success = false,
+                        message = "此履歷尚未完成 AI 評分，無法修改審核狀態。"
+                    });
+                }
+
                 // 修改狀態並更新資料庫
                 resume.Status = model.Status;
 
@@ -332,7 +376,7 @@ namespace InterviewProject.Controllers
                 _db.Entry(resume).State = EntityState.Modified;
                 await _db.SaveChangesAsync();
 
-                // 🎯 Step B：這筆履歷審完了，順便檢查這個職缺是否全部審核完畢、可以自動安排面試
+                // 🎯 Step B：這筆履}歷審完了，順便檢查這個職缺是否全部審核完畢、可以自動安排面試
                 await _scheduler.TryAutoScheduleAsync(resume.JobsId);
 
                 // 👈 建議在 JSON 回傳當前最新的 InterviewStatus，方便前端更新 UI

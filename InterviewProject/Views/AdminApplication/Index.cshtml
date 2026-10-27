@@ -8,6 +8,7 @@
     var memberNames = ViewBag.MemberNames as Dictionary<int, string>;
     var memberPhones = ViewBag.MemberPhones as Dictionary<int, string>;
     var jobTitles = ViewBag.JobTitles as Dictionary<int, string>;
+    var jobActiveStatuses = ViewBag.JobActiveStatuses as Dictionary<int, bool> ?? new Dictionary<int, bool>();
 }
 
 @section Styles {
@@ -57,6 +58,43 @@
         </div>
     </div>
 
+    @* ── AI 履歷批次評分操作區 ── *@
+    @if (ViewBag.JobId != null)
+    {
+        <div class="hrapp-ai-toolbar">
+            <div class="hrapp-ai-info">
+                <h3>AI 履歷評估</h3>
+
+                @if (ViewBag.IsJobActive == true)
+                {
+                    <p>職缺目前仍在招募中，請於職缺下架後進行 AI 履歷評分。</p>
+                }
+                else
+                {
+                    <p>職缺已下架，可針對此職缺的所有應徵履歷進行 AI 評估。</p>
+                }
+            </div>
+
+            @if (ViewBag.CanStartAiScoring == true)
+            {
+                <button type="button"
+                        id="btnBatchAiScore"
+                        class="btn btn-primary"
+                        disabled>
+                    履歷 AI 評分（功能建置中）
+                </button>
+            }
+            else
+            {
+                <button type="button"
+                        class="btn btn-secondary"
+                        disabled>
+                    暫不開放 AI 評分
+                </button>
+            }
+        </div>
+    }
+
     @* ── 履歷列表 Grid 標頭 (手機版會自動隱藏) ── *@
     <div class="hrapp-cols hrapp-grid-head">
         <div>應徵時間</div>
@@ -87,8 +125,19 @@
                 : item.Status == "已通過" ? "status-passed"
                 : "status-failed";
 
-                int score = aiScores != null && aiScores.ContainsKey(item.Id) ? aiScores[item.Id] : 0;
+                // 🎯 取得 AI 評分
+                int? score = aiScores != null && aiScores.TryGetValue(item.Id, out int value) ? value : null;
+
+                bool hasAiScore = score.HasValue;
+
                 string comment = aiComments != null && aiComments.ContainsKey(item.Id) ? aiComments[item.Id] : "暫無評語";
+
+                // 🎯 取得該筆履歷所屬職缺的上下架狀態
+                // 若找不到職缺狀態，預設為招募中，避免錯誤開放審核
+                bool isJobActive = jobActiveStatuses.TryGetValue(item.Id, out bool active) ? active : true;
+
+                // 🎯 必須「職缺已下架」且「AI 已完成評分與評語」才允許審核
+                bool canReview = !isJobActive && hasAiScore && !string.IsNullOrWhiteSpace(item.AiComment);
                 string memberName = memberNames != null && memberNames.ContainsKey(item.Id) ? memberNames[item.Id] : "";
                 string memberPhone = memberPhones != null && memberPhones.ContainsKey(item.Id) ? memberPhones[item.Id] : "";
                 string jobTitle = jobTitles != null && jobTitles.ContainsKey(item.Id) ? jobTitles[item.Id] : "未指定職缺";
@@ -148,30 +197,53 @@
                         </div>
                     </div>
 
-                    @* 7. 目前狀態 (移除 text-center 避免干擾左側標籤) *@
+                    @* 7. 目前狀態：職缺下架且 AI 評分完成後才開放審核 *@
                     <div class="status-cell" data-label="審核狀態">
+
                         <select class="status-select @(item.Status == "待審核" ? "select-wait" : item.Status == "已通過" ? "select-pass" : "select-fail")"
                                 data-resume-id="@item.Id"
+                                disabled="@(!canReview)"
+                                title="@(isJobActive ? "職缺尚未下架，暫不開放履歷審核" : !canReview ? "請先完成 AI 履歷評分" : "可修改履歷審核狀態")"
                                 onclick="event.stopPropagation();">
-                            <option value="待審核" selected="@(item.Status == "待審核")">待審核</option>
-                            <option value="已通過" selected="@(item.Status == "已通過")">已通過</option>
-                            <option value="未通過" selected="@(item.Status == "未通過")">未通過</option>
+
+                            <option value="待審核" selected="@(item.Status == "待審核")">
+                                待審核
+                            </option>
+
+                            <option value="已通過" selected="@(item.Status == "已通過")">
+                                已通過
+                            </option>
+
+                            <option value="未通過" selected="@(item.Status == "未通過")">
+                                未通過
+                            </option>
+
                         </select>
+
                     </div>
 
-                    @* 8. AI 評分 (移除 text-center) *@
+                    @* 8. AI 評分 *@
                     <div class="ai-score-cell" data-label="AI 評估">
                         <div class="ai-score-box">
-                            <span class="ai-num @(score >= 80 ? "high" : score >= 60 ? "mid" : "low")">
-                                @score<span class="ai-pt">分</span>
-                            </span>
-                            <button type="button" class="btn-ai-view open-ai-modal"
-                                    data-name="@memberName"
-                                    data-score="@score"
-                                    data-comment="@comment"
-                                    onclick="event.stopPropagation();">
-                                查看評語
-                            </button>
+                            @if (hasAiScore)
+                            {
+                                <span class="ai-num @(score >= 80 ? "high" : score >= 60 ? "mid" : "low")">
+                                    @score<span class="ai-pt">分</span>
+                                </span>
+
+                                <button type="button"
+                                        class="btn-ai-view open-ai-modal"
+                                        data-name="@memberName"
+                                        data-score="@score"
+                                        data-comment="@comment"
+                                        onclick="event.stopPropagation();">
+                                    查看評語
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="ai-not-scored">尚未評分</span>
+                            }
                         </div>
                     </div>
 
@@ -236,7 +308,7 @@
                     modalName.textContent = name + " 的評估報告";
                     modalScore.textContent = score;
                     modalScore.className = "score-v " + (score >= 80 ? "high" : score >= 60 ? "mid" : "low");
-                    modalComment.innerHTML = comment.replace(/\n/g, "<br />");
+                    modalComment.textContent = comment;
                     modal.classList.add("show");
                 });
             });

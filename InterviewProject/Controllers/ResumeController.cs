@@ -608,6 +608,8 @@ namespace InterviewProject.Controllers
             }
 
 
+            // 🎯 履歷儲存成功後，直接返回結果
+            // AI 評分改由 HR 在職缺下架後手動啟動
             if (isDraft)
             {
                 TempData["AlertTitle"] = "暫存成功！";
@@ -615,98 +617,8 @@ namespace InterviewProject.Controllers
             }
             else
             {
-                // 正式送出履歷後，才進行 AI 評分
-                try
-                {
-                    // 重新從資料庫讀取完整履歷
-                    // 確保 AI 能取得剛剛儲存的子資料表
-                    var savedResume = await _db.Resumes
-                        .Include(r => r.Job)
-                            .ThenInclude(j => j.SkillTags)
-                        .Include(r => r.Job)
-                            .ThenInclude(j => j.MajorRequirements)
-                        .Include(r => r.Job)
-                            .ThenInclude(j => j.LanguageRequirements)
-                        .Include(r => r.Educations)
-                        .Include(r => r.WorkExperiences)
-                        .Include(r => r.Portfolios)
-                        .FirstOrDefaultAsync(r =>
-                            r.MembersId == userId &&
-                            r.JobsId == model.JobsId);
-
-                    if (savedResume != null)
-                    {
-                        // 從子資料表取得 AI 評分所需資訊
-                        var langs = await _db.LanguageProficiency
-                            .Where(x => x.ResumeId == savedResume.Id)
-                            .ToListAsync();
-
-                        var certificates = await _db.Certificates
-                            .Where(x => x.ResumeId == savedResume.Id)
-                            .ToListAsync();
-
-                        var specialties = await _db.Specialties
-                            .Where(x => x.ResumeId == savedResume.Id)
-                            .ToListAsync();
-
-                        var computerSkills = await _db.ComputerSkills
-                            .Where(x => x.ResumeId == savedResume.Id)
-                            .ToListAsync();
-
-                        var licenses = await _db.DriverLicense
-                            .Where(x => x.ResumeId == savedResume.Id)
-                            .ToListAsync();
-
-                        savedResume.LanguageSkills =
-                            FormatLanguageString(langs);
-
-                        savedResume.Certificates =
-                            FormatCertificatesString(certificates);
-
-                        savedResume.Specialty =
-                            FormatSpecialtyString(specialties);
-
-                        savedResume.ComputerSkills =
-                            FormatComputerSkillString(computerSkills);
-
-                        savedResume.DriverLicense =
-                            FormatDriverLicenseString(licenses);
-
-                        // 呼叫 Gemini AI 評分
-                        var aiResult =
-                            await GetGeminiReviewAsync(savedResume);
-
-                        if (aiResult.IsSuccess)
-                        {
-                            // 儲存 AI 評分結果
-                            savedResume.AiScore = aiResult.Score;
-                            savedResume.AiComment = aiResult.Comment;
-
-                            await _db.SaveChangesAsync();
-                        }
-                        else
-                        {
-                            // AI 失敗不影響履歷已成功送出的結果
-                            _db.Entry(savedResume).State =
-                                EntityState.Detached;
-
-                            TempData["ApiError"] =
-                                "履歷已成功送出，但 AI 評分失敗：" +
-                                aiResult.Message;
-                        }
-                    }
-                    else
-                    {
-                        TempData["ApiError"] =
-                            "履歷已送出，但無法讀取資料進行 AI 評分。";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    TempData["ApiError"] =
-                        "履歷已成功送出，但 AI 評分發生錯誤：" +
-                        ex.Message;
-                }
+                TempData["AlertTitle"] = "應徵成功！";
+                TempData["ShowSuccessAlert"] = "履歷已成功送出，請耐心等候審核結果。";
             }
 
             return RedirectToAction(
