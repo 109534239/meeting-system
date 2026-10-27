@@ -94,7 +94,8 @@ namespace InterviewProject.Controllers
                 await _db.SaveChangesAsync();
                 await SendEmailAsync(email, code);
 
-                return Json(new { success = true });
+                // 前端提示視窗要顯示「請於幾點幾分之前輸入完畢」，信件內容寫的是 10 分鐘
+                return Json(new { success = true, expiryTime = DateTime.Now.AddMinutes(10).ToString("HH:mm") });
             }
             catch (Exception ex)
             {
