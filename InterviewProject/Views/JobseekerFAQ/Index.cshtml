@@ -11,86 +11,184 @@
     <link rel="stylesheet" href="~/css/JobseekerFAQ.css" asp-append-version="true" />
 }
 
-<!-- PAGE HEADER -->
-<div class="page-header">
-    <div class="page-header-inner">
-        <h1>我的 Q&amp;A</h1>
-        <p>My Questions &amp; Answers</p>
+<div class="page-wrapper">
+
+    <!-- PAGE HEADER -->
+    <div class="page-header">
+        <div class="page-header-inner">
+            <h1>我的 Q&amp;A</h1>
+            <p>My Questions &amp; Answers</p>
+        </div>
     </div>
-</div>
 
-<div class="faq-manage-wrap">
+    <!-- SEARCH BAR (更新為：狀態、時間排序、關鍵字) -->
+    <div class="search-bar">
+        <div class="search-inner">
 
-    @if (TempData["Success"] != null)
-    {
-        <div class="alert-success">
-            @TempData["Success"]
+            @* 1. 處理狀態 *@
+            <div class="search-field">
+                <label for="sel-status"><i class="fa-solid fa-list-check"></i> 處理狀態</label>
+                <select id="sel-status" onchange="applyFilter()">
+                    <option value="">全部狀態</option>
+                    <option value="待處理">待處理</option>
+                    <option value="已回覆">已回覆</option>
+                </select>
+            </div>
+
+            @* 2. 時間排序 *@
+            <div class="search-field">
+                <label for="sel-sort"><i class="fa-solid fa-arrow-down-wide-short"></i> 時間排序</label>
+                <select id="sel-sort" onchange="applyFilter()">
+                    <option value="desc">由新到舊 (最新優先)</option>
+                    <option value="asc">由舊到新 (最舊優先)</option>
+                </select>
+            </div>
+
+            @* 3. 關鍵字搜尋 *@
+            <div class="search-field keyword">
+                <label for="kw-input"><i class="fa-solid fa-font"></i> 關鍵字搜尋</label>
+                <input type="text" id="kw-input" placeholder="搜尋主旨或類別" onkeyup="if(event.key === 'Enter') applyFilter()" />
+            </div>
+
+            @* 4. 按鈕區域 *@
+            <div class="filter-actions">
+                <button class="search-btn" onclick="applyFilter()"><i class="fa-solid fa-magnifying-glass"></i> 搜尋</button>
+                <button class="reset-btn" onclick="resetFilter()"><i class="fa-solid fa-rotate-left"></i> 重置</button>
+            </div>
         </div>
-    }
+    </div>
 
-    @* 🎯 不分「FAQ管理／訪客回覆／求職者回覆」分頁，
-       只有一個列表，待處理與已回覆的 Q&A 都顯示在同一頁 *@
-    <div class="faq-table">
+    <div class="faq-manage-wrap">
 
-        <div class="faq-table-head report-head">
-            <div>時間</div>
-            <div>類別</div>
-            <div>主旨</div>
-            <div>狀態</div>
-            <div>操作</div>
-        </div>
-
-        @if (Model != null && Model.Any())
+        @if (TempData["Success"] != null)
         {
-            foreach (var item in Model)
-            {
-                <div class="faq-row report-row">
-
-                    <div>
-                        @item.CreatedAt.ToString("yyyy/MM/dd HH:mm")
-                    </div>
-
-                    <div>
-                        @item.Category
-                    </div>
-
-                    <div class="faq-title">
-                        @item.Subject
-                    </div>
-
-                    <div>
-                        <span class="btn-toggle @(item.Status == "已回覆" ? "active" : "inactive")">
-                            @item.Status
-                        </span>
-                    </div>
-
-                    <div class="faq-actions">
-                        <button type="button"
-                                class="btn-edit"
-                                onclick="openDetail(@item.Id)">
-                            查看
-                        </button>
-                    </div>
-
-                </div>
-            }
-        }
-        else
-        {
-            <div class="faq-empty">
-                您目前沒有任何 Q&amp;A 紀錄
+            <div class="alert-success">
+                @TempData["Success"]
             </div>
         }
 
-    </div>
+        <div class="faq-table" id="faq-table-body">
 
+            <div class="faq-table-head report-head">
+                <div>時間</div>
+                <div>類別</div>
+                <div>主旨</div>
+                <div>狀態</div>
+                <div>操作</div>
+            </div>
+
+            @if (Model != null && Model.Any())
+            {
+                foreach (var item in Model)
+                {
+                    <div class="faq-row report-row"
+                         data-time="@item.CreatedAt.ToString("yyyy/MM/dd HH:mm:ss")"
+                         data-status="@item.Status"
+                         data-category="@item.Category"
+                         data-subject="@item.Subject">
+
+                        <div>
+                            @item.CreatedAt.ToString("yyyy/MM/dd HH:mm")
+                        </div>
+
+                        <div>
+                            @item.Category
+                        </div>
+
+                        <div class="faq-title">
+                            @item.Subject
+                        </div>
+
+                        <div>
+                            <span class="btn-toggle @(item.Status == "已回覆" ? "active" : "inactive")">
+                                @item.Status
+                            </span>
+                        </div>
+
+                        <div class="faq-actions">
+                            <button type="button"
+                                    class="btn-edit"
+                                    onclick="openDetail(@item.Id)">
+                                查看
+                            </button>
+                        </div>
+
+                    </div>
+                }
+            }
+
+            @* 查無資料時顯示的區塊 *@
+            <div class="faq-empty" id="faq-empty-msg" style="@(Model != null && Model.Any() ? "display:none;" : "")">
+                您目前沒有符合條件的 Q&amp;A 紀錄
+            </div>
+
+        </div>
+
+    </div>
 </div>
 
 @section Scripts {
     <script>
         function openDetail(id) {
-            // 用 window.open 開新分頁，讓詳細頁裡的「關閉」按鈕可以正常關閉這個分頁
             window.open('@Url.Action("Detail", "JobseekerFAQ")/' + id, '_blank');
         }
+
+        // 🎯 前端篩選與排序邏輯
+        function applyFilter() {
+            const statusFilter = document.getElementById('sel-status').value.trim();
+            const sortOrder = document.getElementById('sel-sort').value;
+            const keyword = document.getElementById('kw-input').value.trim().toLowerCase();
+
+            const rows = Array.from(document.querySelectorAll('.faq-row.report-row'));
+            const emptyMsg = document.getElementById('faq-empty-msg');
+            let visibleCount = 0;
+
+            // 1. 進行狀態與關鍵字過濾
+            rows.forEach(row => {
+                const status = row.getAttribute('data-status') || '';
+                const category = (row.getAttribute('data-category') || '').toLowerCase();
+                const subject = (row.getAttribute('data-subject') || '').toLowerCase();
+
+                const matchStatus = !statusFilter || status === statusFilter;
+                const matchKeyword = !keyword || category.includes(keyword) || subject.includes(keyword);
+
+                if (matchStatus && matchKeyword) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            // 2. 進行時間排序
+            rows.sort((a, b) => {
+                const timeA = new Date(a.getAttribute('data-time')).getTime();
+                const timeB = new Date(b.getAttribute('data-time')).getTime();
+
+                return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+            });
+
+            // 3. 重新附掛排序後的 DOM 元素
+            const container = document.getElementById('faq-table-body');
+            rows.forEach(row => container.appendChild(row));
+
+            // 4. 控制「無資料」提示顯示
+            if (emptyMsg) {
+                emptyMsg.style.display = visibleCount === 0 ? 'block' : 'none';
+            }
+        }
+
+        // 🎯 重置篩選條件
+        function resetFilter() {
+            document.getElementById('sel-status').value = '';
+            document.getElementById('sel-sort').value = 'desc';
+            document.getElementById('kw-input').value = '';
+            applyFilter();
+        }
+
+        // 頁面初次載入時自動執行一次排序（預設最新到最舊）
+        document.addEventListener('DOMContentLoaded', function() {
+            applyFilter();
+        });
     </script>
 }
