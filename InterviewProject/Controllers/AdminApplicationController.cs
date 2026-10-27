@@ -16,11 +16,16 @@ namespace InterviewProject.Controllers
     {
         private readonly AppDbContext _db;
         private readonly AutoInterviewSchedulingService _scheduler;
+        private readonly ResumeAiScoringService _aiScoringService;
 
-        public AdminApplicationController(AppDbContext db, AutoInterviewSchedulingService scheduler)
+        public AdminApplicationController(
+            AppDbContext db,
+            AutoInterviewSchedulingService scheduler,
+            ResumeAiScoringService aiScoringService)
         {
             _db = db;
             _scheduler = scheduler;
+            _aiScoringService = aiScoringService;
         }
 
         private bool IsEmployee()
@@ -300,6 +305,278 @@ namespace InterviewProject.Controllers
             ViewBag.IsReadOnly = true;
             return View("~/Views/Resume/Resume.cshtml", resume);
         }
+
+        // GET: AdminApplication/GetPendingAiScoring?jobId=31
+        [HttpGet]
+        public async Task<IActionResult> GetPendingAiScoring(int jobId)
+        {
+            // 僅 HR 可以啟動 AI 評分
+            if (GetCurrentRole() != "hr")
+            {
+                return StatusCode(403, new
+                {
+                    success = false,
+                    message = "只有人資可以啟動 AI 履歷評分。"
+                });
+            }
+
+            var job = await _db.Jobs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(j => j.Id == jobId);
+
+            if (job == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    message = "找不到職缺。"
+                });
+            }
+
+            if (job.IsActive)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "職缺尚未下架，無法啟動 AI 評分。"
+                });
+            }
+
+            // 取得已正式提交、尚未完成 AI 評分的履歷
+            var resumeIds = await _db.Resumes
+                .AsNoTracking()
+                .Where(r =>
+                    r.JobsId == jobId &&
+                    r.Status != "暫存" &&
+                    r.Status == "待審核" &&
+                    (!r.AiScore.HasValue ||
+                     string.IsNullOrEmpty(r.AiComment)))
+                .OrderBy(r => r.Id)
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            return Json(new
+            {
+                success = true,
+                jobId,
+                total = resumeIds.Count,
+                resumeIds
+            });
+        }
+
+        // GET: AdminApplication/GetRescoreCandidates
+        [HttpGet]
+        public async Task<IActionResult> GetRescoreCandidates(int jobId)
+        {
+            if (GetCurrentRole() != "hr")
+            {
+                return StatusCode(403, new
+                {
+                    success = false,
+                    message = "只有人資可以執行重新評分。"
+                });
+            }
+
+            var job = await _db.Jobs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(j => j.Id == jobId);
+
+            if (job == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    message = "找不到指定職缺。"
+                });
+            }
+
+            if (job.IsActive)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "職缺尚未下架，無法重新評分。"
+                });
+            }
+
+            var resumeIds = await _db.Resumes
+                .AsNoTracking()
+                .Where(r =>
+                    r.JobsId == jobId &&
+                    r.Status == "待審核" &&
+                    r.AiScore.HasValue &&
+                    r.AiComment != null &&
+                    r.AiComment != "")
+                .OrderBy(r => r.Id)
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            return Json(new
+            {
+                success = true,
+                jobId,
+                total = resumeIds.Count,
+                resumeIds
+            });
+        }
+
+        // POST: AdminApplication/ScoreResume
+
+        // POST: AdminApplication/ScoreResume
+        // 首次 AI 評分：僅處理尚未完成評分的履歷
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ScoreResume(int resumeId, int jobId)
+        {
+            if (GetCurrentRole() != "hr")
+            {
+                return StatusCode(403, new
+                {
+                    success = false,
+                    message = "只有人資可以執行 AI 履歷評分。"
+                });
+            }
+
+            var resume = await _db.Resumes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r =>
+                    r.Id == resumeId &&
+                    r.JobsId == jobId);
+
+            if (resume == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    message = "找不到此職缺的應徵履歷。"
+                });
+            }
+
+            if (resume.Status != "待審核")
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "只有待審核履歷可以進行 AI 評分。"
+                });
+            }
+
+            var jobIsActive = await _db.Jobs
+                .AsNoTracking()
+                .Where(j => j.Id == jobId)
+                .Select(j => (bool?)j.IsActive)
+                .FirstOrDefaultAsync();
+
+            if (jobIsActive != false)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "職缺必須下架後才能進行 AI 評分。"
+                });
+            }
+
+            if (resume.AiScore.HasValue &&
+                !string.IsNullOrWhiteSpace(resume.AiComment))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "此履歷已完成 AI 評分，請使用重新 AI 評分功能。"
+                });
+            }
+
+            var result = await _aiScoringService.ScoreResumeAsync(resumeId);
+
+            return Json(new
+            {
+                success = result.IsSuccess,
+                message = result.Message,
+                resumeId,
+                score = result.IsSuccess ? result.Score : (int?)null,
+                comment = result.IsSuccess ? result.Comment : null
+            });
+        }
+
+        // POST: AdminApplication/RescoreResume
+        // 重新 AI 評分：覆蓋原有分數與評語
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> RescoreResume(int resumeId, int jobId)
+        {
+            if (GetCurrentRole() != "hr")
+            {
+                return StatusCode(403, new
+                {
+                    success = false,
+                    message = "只有人資可以重新進行 AI 履歷評分。"
+                });
+            }
+
+            var resume = await _db.Resumes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r =>
+                    r.Id == resumeId &&
+                    r.JobsId == jobId);
+
+            if (resume == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    message = "找不到此職缺的應徵履歷。"
+                });
+            }
+
+            if (resume.Status != "待審核")
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "只有待審核履歷可以重新評分。"
+                });
+            }
+
+            if (!resume.AiScore.HasValue ||
+                string.IsNullOrWhiteSpace(resume.AiComment))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "此履歷尚未完成首次 AI 評分。"
+                });
+            }
+
+            var jobIsActive = await _db.Jobs
+                .AsNoTracking()
+                .Where(j => j.Id == jobId)
+                .Select(j => (bool?)j.IsActive)
+                .FirstOrDefaultAsync();
+
+            if (jobIsActive != false)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "職缺必須下架後才能重新評分。"
+                });
+            }
+
+            var result = await _aiScoringService.ScoreResumeAsync(
+                resumeId,
+                forceRescore: true
+            );
+
+            return Json(new
+            {
+                success = result.IsSuccess,
+                message = result.Message,
+                resumeId,
+                score = result.IsSuccess ? result.Score : (int?)null,
+                comment = result.IsSuccess ? result.Comment : null
+            });
+        }
+
 
         // 3. 🎯 新增：接收前端 AJAX 變更選單狀態，並儲存回資料庫
         // POST: AdminApplication/UpdateStatus

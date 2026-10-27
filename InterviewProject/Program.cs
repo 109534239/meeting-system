@@ -68,6 +68,9 @@ builder.Services.AddSingleton<R2StorageService>();
 // 🚀 共用的 Gemini API 呼叫服務（ClaudeProxyController 跟 RoomController 都會用到）
 builder.Services.AddScoped<GeminiService>();
 
+// HR 手動啟動履歷 AI 評分服務
+builder.Services.AddScoped<ResumeAiScoringService>();
+
 //註冊 SignalR 服務
 builder.Services.AddSignalR();
 

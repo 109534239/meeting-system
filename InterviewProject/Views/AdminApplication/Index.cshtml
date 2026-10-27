@@ -71,29 +71,62 @@
                 }
                 else
                 {
-                    <p>職缺已下架，可針對此職缺的所有應徵履歷進行 AI 評估。</p>
+                    <p>職缺已下架，可針對此職缺的應徵履歷進行 AI 評估。</p>
                 }
             </div>
 
-            @if (ViewBag.CanStartAiScoring == true)
-            {
-                <button type="button"
-                        id="btnBatchAiScore"
-                        class="btn btn-primary"
-                        disabled>
-                    履歷 AI 評分（功能建置中）
-                </button>
-            }
-            else
-            {
-                <button type="button"
-                        class="btn btn-secondary"
-                        disabled>
-                    暫不開放 AI 評分
-                </button>
-            }
+            <div class="hrapp-ai-actions">
+                @if (ViewBag.CanStartAiScoring == true)
+                {
+                    <button type="button"
+                            id="btnBatchAiScore"
+                            class="hrapp-ai-btn hrapp-ai-btn-primary">
+                        履歷 AI 評分
+                    </button>
+
+                    <button type="button"
+                            id="btnBatchAiRescore"
+                            class="hrapp-ai-btn hrapp-ai-btn-secondary">
+                        重新 AI 評分
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            class="hrapp-ai-btn hrapp-ai-btn-primary"
+                            disabled>
+                        暫不開放 AI 評分
+                    </button>
+                }
+            </div>
         </div>
     }
+
+    @* ── AI 評分進度顯示 ── *@
+    <div id="aiScoringProgress"
+         style="display:none; margin:16px 0; padding:18px 20px;
+        background:#f8fafc; border:1px solid #e2e8f0;
+        border-radius:10px;">
+
+        <div style="display:flex; justify-content:space-between;
+            align-items:center; margin-bottom:10px;">
+            <strong>AI 履歷評分進度</strong>
+            <span id="aiProgressText">準備中...</span>
+        </div>
+
+        <div style="width:100%; height:10px; background:#e2e8f0;
+            border-radius:6px; overflow:hidden;">
+            <div id="aiProgressBar"
+                 style="width:0%; height:100%; background:#2563eb;
+                transition:width .3s;">
+            </div>
+        </div>
+
+        <p id="aiProgressMessage"
+           style="margin:12px 0 0; font-size:14px; color:#475569;">
+            正在準備 AI 評分...
+        </p>
+    </div>
 
     @* ── 履歷列表 Grid 標頭 (手機版會自動隱藏) ── *@
     <div class="hrapp-cols hrapp-grid-head">
@@ -128,7 +161,7 @@
                 // 🎯 取得 AI 評分
                 int? score = aiScores != null && aiScores.TryGetValue(item.Id, out int value) ? value : null;
 
-                bool hasAiScore = score.HasValue;
+                bool hasAiScore = score.HasValue && !string.IsNullOrWhiteSpace(item.AiComment);
 
                 string comment = aiComments != null && aiComments.ContainsKey(item.Id) ? aiComments[item.Id] : "暫無評語";
 
@@ -289,6 +322,8 @@
 </div>
 
 @section Scripts {
+    @Html.AntiForgeryToken()
+
     <script>
         document.addEventListener("DOMContentLoaded", function () {
             // 1. AI 評語彈跳視窗
@@ -382,6 +417,320 @@
                     window.location.href = targetUrl;
                 });
             }
+
+            
+            // 4. HR 手動啟動 AI 履歷批次評分
+            const btnBatchAiScore = document.getElementById("btnBatchAiScore");
+            const aiProgress = document.getElementById("aiScoringProgress");
+            const aiProgressText = document.getElementById("aiProgressText");
+            const aiProgressBar = document.getElementById("aiProgressBar");
+            const aiProgressMessage = document.getElementById("aiProgressMessage");
+
+            if (btnBatchAiScore) {
+                btnBatchAiScore.addEventListener("click", async function () {
+
+                    const jobId = document.getElementById("jobFilterSelect")?.value;
+
+                    if (!jobId) {
+                        alert("請先選擇要進行 AI 評分的職缺。");
+                        return;
+                    }
+
+                    if (!confirm("確定要開始此職缺的 AI 履歷評分嗎？\n評分過程可能需要數分鐘，請勿關閉頁面。")) {
+                        return;
+                    }
+
+                    btnBatchAiScore.disabled = true;
+                    btnBatchAiScore.textContent = "AI 評分進行中...";
+
+                    aiProgress.style.display = "block";
+                    aiProgressText.textContent = "準備中...";
+                    aiProgressBar.style.width = "0%";
+                    aiProgressMessage.textContent = "正在取得尚未評分的履歷...";
+
+                    let successCount = 0;
+                    let failedCount = 0;
+                    let total = 0;
+                    const failedMessages = [];
+
+                    try {
+                        // 取得此職缺尚未評分的履歷
+                        const pendingUrl =
+                            '@Url.Action("GetPendingAiScoring", "AdminApplication")'
+                            + '?jobId=' + encodeURIComponent(jobId);
+
+                        const pendingResponse = await fetch(pendingUrl);
+
+                        const pendingData = await pendingResponse.json();
+
+                        if (!pendingResponse.ok || !pendingData.success) {
+                            throw new Error(pendingData.message || "無法取得待評分履歷。");
+                        }
+
+                        const resumeIds = pendingData.resumeIds || [];
+                        total = resumeIds.length;
+
+                        if (total === 0) {
+                            aiProgressText.textContent = "0 / 0";
+                            aiProgressBar.style.width = "100%";
+                            aiProgressMessage.textContent = "目前沒有需要進行 AI 評分的履歷。";
+                            return;
+                        }
+
+                        // 取得 ASP.NET Core 防偽權杖
+                        const token = document.querySelector(
+                            'input[name="__RequestVerificationToken"]'
+                        )?.value;
+
+                        if (!token) {
+                            throw new Error("找不到防偽權杖，請重新整理頁面。");
+                        }
+
+                        // 逐筆執行 AI 評分
+                        for (let i = 0; i < total; i++) {
+
+                            const resumeId = resumeIds[i];
+
+                            aiProgressText.textContent = `${i + 1} / ${total}`;
+                            aiProgressMessage.textContent =
+                                `正在評估第 ${i + 1} 份履歷，共 ${total} 份...`;
+
+                            try {
+                                const formData = new URLSearchParams();
+                                formData.append("resumeId", resumeId);
+                                formData.append("jobId", jobId);
+                                formData.append("__RequestVerificationToken", token);
+
+                                const response = await fetch(
+                                    '@Url.Action("ScoreResume", "AdminApplication")',
+                                    {
+                                        method: "POST",
+                                        headers: {
+                                            "Content-Type": "application/x-www-form-urlencoded"
+                                        },
+                                        body: formData.toString()
+                                    }
+                                );
+
+                                const result = await response.json();
+
+                                if (!response.ok || !result.success) {
+                                    failedCount++;
+                                    failedMessages.push(
+                                        `履歷 ${resumeId}：${result.message || "評分失敗"}`
+                                    );
+                                } else {
+                                    successCount++;
+                                }
+
+                            } catch (error) {
+                                failedCount++;
+                                failedMessages.push(
+                                    `履歷 ${resumeId}：${error.message}`
+                                );
+                                console.error("AI 評分失敗：", error);
+                            }
+
+                            // 更新進度
+                            const completed = i + 1;
+                            const percentage = Math.round(completed / total * 100);
+
+                            aiProgressBar.style.width = `${percentage}%`;
+                            aiProgressText.textContent = `${completed} / ${total}`;
+                            aiProgressMessage.textContent =
+                                `已完成 ${completed} 份，成功 ${successCount} 份，失敗 ${failedCount} 份。`;
+                        }
+
+                        if (failedCount === 0) {
+                            aiProgressMessage.textContent =
+                                `AI 評分完成！共成功評估 ${successCount} 份履歷。`;
+
+                            alert(`AI 評分完成！\n成功：${successCount} 份\n失敗：0 份`);
+                        } else {
+                            aiProgressMessage.textContent =
+                                `AI 評分結束。成功 ${successCount} 份，失敗 ${failedCount} 份。`;
+
+                            alert(
+                                `AI 評分結束！\n成功：${successCount} 份\n失敗：${failedCount} 份\n\n`
+                                + failedMessages.slice(0, 5).join("\n")
+                                + (failedMessages.length > 5 ? "\n其他失敗原因請查看主控台。" : "")
+                            );
+
+                            console.warn("AI 評分失敗清單：", failedMessages);
+                        }
+
+                        // 重新載入頁面，顯示最新 AI 分數及評語
+                        window.location.reload();
+
+                    } catch (error) {
+                        console.error("批次 AI 評分錯誤：", error);
+
+                        aiProgressMessage.textContent =
+                            "AI 評分無法啟動：" + error.message;
+
+                        alert("AI 評分無法啟動：" + error.message);
+
+                    } finally {
+                        btnBatchAiScore.disabled = false;
+                        btnBatchAiScore.textContent = "履歷 AI 評分";
+                    }
+                });
+            }
+
+            
+            // 5. 批次重新 AI 評分
+            const btnBatchAiRescore = document.getElementById("btnBatchAiRescore");
+
+            if (btnBatchAiRescore) {
+                btnBatchAiRescore.addEventListener("click", async function () {
+                    const jobId = document.getElementById("jobFilterSelect")?.value;
+
+                    if (!jobId) {
+                        alert("請先選擇職缺。");
+                        return;
+                    }
+
+                    if (!confirm(
+                        "確定要重新評分此職缺所有已完成 AI 評分、且仍待審核的履歷嗎？\n\n" +
+                        "重新評分成功後，將覆蓋原本的 AI 分數與評語。"
+                    )) {
+                        return;
+                    }
+
+                    const token = document.querySelector(
+                        'input[name="__RequestVerificationToken"]'
+                    )?.value;
+
+                    if (!token) {
+                        alert("找不到防偽權杖，請重新整理頁面。");
+                        return;
+                    }
+
+                    const firstScoreButton = document.getElementById("btnBatchAiScore");
+
+                    btnBatchAiRescore.disabled = true;
+                    if (firstScoreButton) firstScoreButton.disabled = true;
+                    btnBatchAiRescore.textContent = "重新評分中...";
+
+                    const progress = document.getElementById("aiScoringProgress");
+                    const progressText = document.getElementById("aiProgressText");
+                    const progressBar = document.getElementById("aiProgressBar");
+                    const progressMessage = document.getElementById("aiProgressMessage");
+
+                    if (progress) progress.style.display = "block";
+                    if (progressText) progressText.textContent = "準備中...";
+                    if (progressBar) progressBar.style.width = "0%";
+                    if (progressMessage) {
+                        progressMessage.textContent = "正在取得已評分的履歷...";
+                    }
+
+                    try {
+                        const url =
+                            '@Url.Action("GetRescoreCandidates", "AdminApplication")'
+                            + '?jobId=' + encodeURIComponent(jobId);
+
+                        const response = await fetch(url);
+                        const data = await response.json();
+
+                        if (!response.ok || !data.success) {
+                            throw new Error(data.message || "無法取得重新評分清單。");
+                        }
+
+                        const resumeIds = data.resumeIds || [];
+                        const total = resumeIds.length;
+
+                        if (total === 0) {
+                            if (progressText) progressText.textContent = "0 / 0";
+                            if (progressMessage) {
+                                progressMessage.textContent = "目前沒有需要重新評分的履歷。";
+                            }
+                            return;
+                        }
+
+                        let successCount = 0;
+                        let failedCount = 0;
+                        const errors = [];
+
+                        for (let i = 0; i < total; i++) {
+                            const resumeId = resumeIds[i];
+
+                            if (progressMessage) {
+                                progressMessage.textContent =
+                                    `正在重新評估第 ${i + 1} / ${total} 份履歷...`;
+                            }
+
+                            try {
+                                const formData = new URLSearchParams();
+                                formData.append("resumeId", resumeId);
+                                formData.append("jobId", jobId);
+                                formData.append("__RequestVerificationToken", token);
+
+                                const scoreResponse = await fetch(
+                                    '@Url.Action("RescoreResume", "AdminApplication")',
+                                    {
+                                        method: "POST",
+                                        headers: {
+                                            "Content-Type": "application/x-www-form-urlencoded"
+                                        },
+                                        body: formData.toString()
+                                    }
+                                );
+
+                                const result = await scoreResponse.json();
+
+                                if (!scoreResponse.ok || !result.success) {
+                                    throw new Error(result.message || "重新評分失敗");
+                                }
+
+                                successCount++;
+
+                            } catch (error) {
+                                failedCount++;
+                                errors.push(`履歷 ${resumeId}：${error.message}`);
+                                console.error("重新評分失敗：", error);
+                            }
+
+                            const completed = i + 1;
+
+                            if (progressBar) {
+                                progressBar.style.width =
+                                    `${Math.round(completed / total * 100)}%`;
+                            }
+
+                            if (progressText) {
+                                progressText.textContent = `${completed} / ${total}`;
+                            }
+
+                            if (progressMessage) {
+                                progressMessage.textContent =
+                                    `成功 ${successCount} 份，失敗 ${failedCount} 份。`;
+                            }
+                        }
+
+                        if (errors.length > 0) {
+                            console.warn("重新評分失敗清單：", errors);
+                        }
+
+                        alert(
+                            `重新 AI 評分完成！\n成功：${successCount} 份\n失敗：${failedCount} 份` +
+                            (errors.length ? "\n\n" + errors.slice(0, 5).join("\n") : "")
+                        );
+
+                        window.location.reload();
+
+                    } catch (error) {
+                        console.error(error);
+                        alert("重新評分無法啟動：" + error.message);
+
+                    } finally {
+                        btnBatchAiRescore.disabled = false;
+                        if (firstScoreButton) firstScoreButton.disabled = false;
+                        btnBatchAiRescore.textContent = "重新 AI 評分";
+                    }
+                });
+            }
+
+
         });
     </script>
 }

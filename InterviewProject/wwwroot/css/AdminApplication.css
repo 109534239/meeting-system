@@ -427,8 +427,10 @@
     }
 
 .comment-text-content {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     font-size: 13.5px;
-    line-height: 1.6;
+    line-height: 1.8;
     color: #444;
 }
 
@@ -611,38 +613,70 @@
         color: #6b7280;
     }
 
-/* AI 評分操作按鈕 */
-#btnBatchAiScore {
+
+
+/* ==========================================================
+   AI 履歷評分操作按鈕
+   ========================================================== */
+
+.hrapp-ai-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+/* 兩個按鈕共用樣式 */
+.hrapp-ai-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 150px;
+    height: 42px;
     padding: 10px 20px;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 8px;
     font-size: 14px;
     font-weight: 600;
-    border-radius: 8px;
+    line-height: 1.4;
     white-space: nowrap;
-    flex-shrink: 0;
+    cursor: pointer;
     transition: all 0.2s ease;
 }
 
-    #btnBatchAiScore:not(:disabled):hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-    }
-
-    #btnBatchAiScore:disabled {
-        opacity: 0.55;
-        cursor: not-allowed;
-    }
-
-/* 尚未進行 AI 評分 */
-.ai-not-scored {
-    font-size: 13px;
-    color: #9ca3af;
-    font-weight: 500;
+/* 履歷 AI 評分按鈕 */
+.hrapp-ai-btn-primary {
+    background-color: #206c8b;
+    border-color: #206c8b;
+    color: #ffffff;
 }
 
-/* 保留 AI 評語的原始換行 */
-.comment-text-content {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
+    .hrapp-ai-btn-primary:not(:disabled):hover {
+        background-color: #164d64;
+        border-color: #164d64;
+        color: #ffffff;
+    }
+
+/* 重新 AI 評分按鈕 */
+.hrapp-ai-btn-secondary {
+    background-color: #ffffff;
+    border-color: #206c8b;
+    color: #206c8b;
+}
+
+    .hrapp-ai-btn-secondary:not(:disabled):hover {
+        background-color: #e1f5fe;
+        border-color: #206c8b;
+        color: #206c8b;
+    }
+
+/* 禁用狀態 */
+.hrapp-ai-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 
 /* ==========================================================
@@ -657,8 +691,24 @@
         gap: 16px;
     }
 
-    #btnBatchAiScore {
+    .hrapp-ai-actions {
         width: 100%;
-        text-align: center;
+        flex-wrap: wrap;
+    }
+
+    .hrapp-ai-btn {
+        flex: 1 1 150px;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 420px) {
+    .hrapp-ai-actions {
+        flex-direction: column;
+    }
+
+    .hrapp-ai-btn {
+        flex: none;
+        width: 100%;
     }
 }
