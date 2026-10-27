@@ -1,3 +1,8 @@
+/* ── 全域盒模型 ── */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
 /* ── PAGE HEADER ── */
 .page-header {
     background: var(--white, #ffffff);
@@ -62,6 +67,8 @@
     display: flex;
     justify-content: flex-end;
     margin-bottom: 16px;
+    position: relative;
+    z-index: 5;
 }
 
 .btn-add {
@@ -76,25 +83,18 @@
     font-size: 14px;
     font-weight: 700;
     text-decoration: none;
-    transition: background 0.2s;
+    transition: background 0.2s, transform 0.15s;
     white-space: nowrap;
+    position: relative;
+    z-index: 6;
+    pointer-events: auto;
 }
 
     .btn-add:hover {
         background: var(--primary-dark, #164b61);
         color: #ffffff;
+        transform: translateY(-1px);
     }
-
-/* ── 部門分組標題 ── */
-.dept-group-header {
-    padding: 10px 24px;
-    background: #f4f7f9;
-    font-size: 12.5px;
-    font-weight: 700;
-    color: var(--primary, #206c8b);
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid #eef2f5;
-}
 
 /* ── 表格 (Desktop: > 992px) ── */
 .announce-table {
@@ -104,29 +104,49 @@
     overflow: hidden;
 }
 
+/* 🎯 關鍵修復：嚴格依照 HTML 順序分配足夠寬度
+   1. 類別: 85px
+   2. 標題: 1fr (彈性伸展)
+   3. 上架/下架日期: 225px (足夠容納完整雙日期區間，不再重疊)
+   4. 狀態: 85px (置中對齊)
+   5. 操作: 120px (靠右對齊)
+*/
 .announce-table-head {
     display: grid;
-    /* 預設公告管理：類別｜公告標題｜狀態｜發布時間｜操作 */
-    grid-template-columns: 90px minmax(180px, 1fr) 100px 110px 130px;
+    grid-template-columns: 85px minmax(180px, 1fr) 225px 85px 120px;
     padding: 14px 24px;
     font-size: 13.5px;
     font-weight: 700;
     color: var(--text-muted, #666);
     background: #f4f7f9;
     border-bottom: 1.5px solid #e8e8e8;
-    gap: 12px;
+    gap: 16px;
     align-items: center;
 }
 
+    /* 標頭對齊修正 */
+    .announce-table-head > div:nth-child(3) {
+        text-align: left;
+    }
+
+    .announce-table-head > div:nth-child(4) {
+        text-align: center;
+    }
+
+    .announce-table-head > div:nth-child(5) {
+        text-align: right;
+        padding-right: 6px;
+    }
+
 .announce-row {
     display: grid;
-    grid-template-columns: 90px minmax(180px, 1fr) 100px 110px 130px;
+    grid-template-columns: 85px minmax(180px, 1fr) 225px 85px 120px;
     padding: 16px 24px;
     font-size: 14px;
     color: var(--text-main, #333);
     border-bottom: 1px solid #f0f0f0;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
     transition: background 0.15s;
     box-sizing: border-box;
 }
@@ -139,28 +159,34 @@
         background: #f8fbfc;
     }
 
-    /* 主管管理專用 4 欄比例 (Desktop) */
-    .announce-table-head.manager-grid,
-    .announce-row.manager-grid {
-        grid-template-columns: 140px minmax(180px, 1fr) 120px 130px;
-    }
-
-.manager-name {
-    font-weight: 600;
-    color: var(--text-main, #333);
-}
-
-.manager-account {
-    color: #71838c;
-    word-break: break-all;
-}
-
+/* ── 欄位內容樣式 ── */
 .announce-row-title {
     font-weight: 600;
     color: var(--text-main, #333);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.announce-date-range {
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+}
+
+.time-text {
+    font-family: Consolas, 'Segoe UI', Tahoma, sans-serif;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+/* 狀態欄位置中 */
+.announce-row > div:nth-child(4) {
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .announce-empty {
@@ -223,39 +249,42 @@
     color: #b06000;
 }
 
-.time-text {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    color: #64748b;
-    font-size: 13.5px;
-    font-weight: 500;
-    white-space: nowrap;
-}
-
 /* ── 操作按鈕 ── */
 .announce-actions {
     display: flex;
     align-items: center;
     gap: 8px;
     justify-content: flex-end;
+    position: relative;
+    z-index: 5;
 }
 
     .announce-actions form {
         margin: 0;
     }
 
-.btn-edit {
+.btn-edit,
+.btn-delete {
     padding: 6px 14px;
     border-radius: 6px;
-    background: var(--primary-light, #e8f4ff);
-    color: var(--primary, #206c8b);
     font-size: 13px;
     font-weight: 600;
     text-decoration: none;
+    cursor: pointer;
     transition: background 0.2s;
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+    z-index: 6;
+    pointer-events: auto;
+}
+
+.btn-edit {
+    background: var(--primary-light, #e8f4ff);
+    color: var(--primary, #206c8b);
+    border: none;
 }
 
     .btn-edit:hover {
@@ -264,20 +293,9 @@
     }
 
 .btn-delete {
-    padding: 6px 14px;
-    border-radius: 6px;
     background: #fff0f0;
     color: #c94040;
     border: none;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: inherit;
-    transition: background 0.2s;
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
 }
 
     .btn-delete:hover {
@@ -285,7 +303,9 @@
         color: #ffffff;
     }
 
-/* ── 新增／編輯表單 ── */
+/* ══════════════════════════════════
+   表單頁（Create / Edit）
+   ══════════════════════════════════ */
 .announce-form-wrap {
     max-width: 760px;
     margin: 32px auto 48px;
@@ -397,10 +417,10 @@
     }
 
 /* ══════════════════════════════════════════════════
-   RWD 響應式斷點設定
+   🎯 RWD 響應式斷點設定 (支援平板、手機)
    ══════════════════════════════════════════════════ */
 
-/* 平板尺寸 (992px 以下) - 轉為卡片式 */
+/* 平板尺寸 (992px 以下) - 轉為卡片化佈局 */
 @media (max-width: 992px) {
     .page-header-inner,
     .announce-manage-wrap,
@@ -427,36 +447,11 @@
         display: none !important;
     }
 
-    /* ── 公告一般卡片 ── */
+    /* 轉為卡片佈局，避免小螢幕橫向擠壓 */
     .announce-row {
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        background: #ffffff;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-        padding: 18px 20px;
-        gap: 10px;
-        border: 1px solid #e8eef2;
-    }
-
-        .announce-row:hover {
-            background: #ffffff;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.09);
-        }
-
-    .announce-row-title {
-        font-size: 16px;
-        white-space: normal;
-        word-break: break-word;
-    }
-
-    /* ── 主管管理專屬卡片：姓名與部門平行置頂 ── */
-    .announce-row.manager-grid {
         display: grid;
         grid-template-columns: 1fr auto;
-        align-items: center;
-        gap: 6px 12px;
+        gap: 10px 14px;
         background: #ffffff;
         border-radius: 12px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -464,57 +459,46 @@
         border: 1px solid #e8eef2;
     }
 
-        /* 1. 姓名：左上方 (第 1 行第 1 欄) */
-        .announce-row.manager-grid .manager-name {
-            grid-row: 1;
-            grid-column: 1;
-            font-size: 16px;
-            font-weight: 700;
-            color: #253d47;
+        /* 1. 類別標籤：左上方 */
+        .announce-row > div:nth-child(1) {
+            grid-column: 1 / 2;
+            align-self: center;
         }
 
-        /* 2. 部門：右上方 (第 1 行第 2 欄，與姓名同高平行) */
-        .announce-row.manager-grid .manager-dept {
-            grid-row: 1;
-            grid-column: 2;
-            justify-self: end;
+        /* 2. 狀態標籤：右上方 */
+        .announce-row > div:nth-child(4) {
+            grid-column: 2 / 3;
+            grid-row: 1 / 2;
+            justify-content: flex-end;
         }
 
-        /* 3. 帳號：下方全寬 (第 2 行) */
-        .announce-row.manager-grid .manager-account {
-            grid-row: 2;
-            grid-column: 1 / -1;
-            font-size: 13.5px;
-            color: #71838c;
-            word-break: break-all;
-            margin-top: 2px;
-        }
+    /* 3. 標題：佔整行 */
+    .announce-row-title {
+        grid-column: 1 / -1;
+        font-size: 16.5px;
+        white-space: normal;
+        word-break: break-word;
+        margin: 2px 0;
+    }
 
-        /* 4. 操作按鈕：底層滿版雙欄 (第 3 行) */
-        .announce-row.manager-grid .announce-actions {
-            grid-row: 3;
-            grid-column: 1 / -1;
-            width: 100%;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            padding-top: 12px;
-            border-top: 1px dashed #edf2f5;
-            margin-top: 6px;
-        }
+    /* 4. 日期區間：佔整行，以虛線分開 */
+    .announce-date-range {
+        grid-column: 1 / -1;
+        padding: 8px 0;
+        border-top: 1px dashed #edf2f5;
+    }
 
-        /* 操作按鈕滿版雙欄置底 */
-        .announce-actions,
-        .announce-row.manager-grid .announce-actions {
-            grid-column: 1 / -1;
-            width: 100%;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            padding-top: 12px;
-            border-top: 1px dashed #edf2f5;
-            margin-top: 4px;
-        }
+    /* 5. 操作按鈕：底層平分整行 */
+    .announce-actions {
+        grid-column: 1 / -1;
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding-top: 10px;
+        border-top: 1px dashed #edf2f5;
+        margin-top: 2px;
+    }
 
     .btn-edit,
     .btn-delete {
@@ -545,6 +529,7 @@
     .btn-save {
         width: 100%;
         text-align: center;
+        height: 42px;
     }
 }
 

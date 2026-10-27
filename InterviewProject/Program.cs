@@ -7,7 +7,41 @@ using Microsoft.Extensions.Options;
 // 🌟 關鍵修正：解決 PostgreSQL timestamp with time zone (timestamptz) 的 Local / UTC 衝突問題
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
-var builder = WebApplication.CreateBuilder(args);
+// 🚀 本機開發保險機制：
+//    Visual Studio 若是用「資料夾檢視」開啟專案（沒有讀 launchSettings.json），會直接執行 bin\Debug\net8.0 裡的 exe，
+//    導致環境變成 Production、埠號變 5000、找不到 wwwroot（CSS 沒載入）、也不會自動開瀏覽器。
+//    這裡偵測「沒有設定環境變數、而且是從原始碼資料夾底下的 bin 執行」時，自動套用開發設定並開啟瀏覽器。
+//    Render / Docker 上找不到 InterviewProject.csproj，不會觸發這段，行為完全不變。
+string? localProjectDir = null;
+for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+{
+    if (File.Exists(Path.Combine(dir.FullName, "InterviewProject.csproj")))
+    {
+        localProjectDir = dir.FullName;
+        break;
+    }
+}
+//    判斷條件：有找到專案資料夾，而且沒有透過 launchSettings.json（會帶 ASPNETCORE_URLS）或 --urls 指定網址。
+var hasUrlsConfigured = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))
+    || args.Any(a => a.StartsWith("--urls", StringComparison.OrdinalIgnoreCase));
+var isLocalFallbackRun = localProjectDir != null && !hasUrlsConfigured;
+var hasEnvironmentConfigured = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"))
+    || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"));
+
+var builder = isLocalFallbackRun
+    ? WebApplication.CreateBuilder(new WebApplicationOptions
+    {
+        Args = args,
+        EnvironmentName = hasEnvironmentConfigured ? null : Environments.Development,
+        ContentRootPath = localProjectDir
+    })
+    : WebApplication.CreateBuilder(args);
+
+const string LocalFallbackUrl = "http://localhost:5216";
+if (isLocalFallbackRun)
+{
+    builder.WebHost.UseUrls(LocalFallbackUrl);
+}
 
 // Add services to the container.   MVC
 builder.Services.AddControllersWithViews();
@@ -93,6 +127,24 @@ lifetime.ApplicationStopping.Register(() =>
         Console.WriteLine($"[Program] 關閉伺服器時清理 AI 面試官分身失敗：{ex.Message}");
     }
 });
+
+// 🚀 本機保險機制：伺服器啟動完成後自動開啟瀏覽器（只在上面偵測到「資料夾檢視」直接執行 exe 時才會開，
+//    正常用 launchSettings.json 的 http / https 啟動時由 Visual Studio 自己開，不會重複開）
+if (isLocalFallbackRun)
+{
+    lifetime.ApplicationStarted.Register(() =>
+    {
+        try
+        {
+            var url = app.Urls.FirstOrDefault()?.Replace("0.0.0.0", "localhost").Replace("[::]", "localhost") ?? LocalFallbackUrl;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Program] 自動開啟瀏覽器失敗：{ex.Message}（請手動開啟 {LocalFallbackUrl}）");
+        }
+    });
+}
 
 // 🚀 雲端專用：讓 Render 啟動時自動下載 Playwright 瀏覽器核心（解決無核心卡死問題）
 if (!app.Environment.IsDevelopment())

@@ -103,10 +103,20 @@
     margin-bottom: 20px;
     border-bottom: 2px solid #e0e0e0;
     padding-bottom: 1px;
-    overflow-x: auto;
+    overflow-x: auto; /* 保持可彈性滾動 */
     white-space: nowrap;
     -webkit-overflow-scrolling: touch;
+    /* 🎯 消除滾動條：隱藏 Firefox、IE/Edge 與 Chrome/Safari 的滾動條 */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE / Edge */
 }
+
+    /* 🎯 消除 Chrome, Safari, Opera 的橫向滾動條 */
+    .faq-tabs::-webkit-scrollbar {
+        display: none;
+        width: 0;
+        height: 0;
+    }
 
 .faq-tab {
     padding: 10px 20px;
