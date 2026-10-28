@@ -499,7 +499,7 @@ function populateCertNameOptions() {
     });
 }
 
-    // 🎯 上傳履歷檔並解析填入（全面修復版：修正學歷/經歷未帶入、自傳被截斷、切換檔案殘留舊資料問題）
+      // 🎯 上傳履歷檔並解析填入（具備自動重試機制，專為企業級穩定度打造）
         function uploadAndApplyResume() {
             console.log("「套用」按鈕被點擊了！");
 
@@ -529,415 +529,435 @@ function populateCertNameOptions() {
                 document.head.appendChild(script);
             }
 
-            fetch('@Url.Action("ParseResumeFile", "Resume")', {
-                method: 'POST',
-                body: formData
-            })
-            .then(async res => {
-                const text = await res.text();
-                try {
-                    return JSON.parse(text);
-                } catch (e) {
-                    throw new Error("伺服器處理異常（回傳非 JSON 格式）");
-                }
-            })
-            .then(data => {
-                if (!data.success) throw new Error(data.message || '套用失敗');
-                const d = data.data;
+            // 內部執行的非同步請求與自動重試函式
+            const attemptParse = (retriesLeft) => {
+                fetch('@Url.Action("ParseResumeFile", "Resume")', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(async res => {
+                    const text = await res.text();
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error("伺服器處理異常（回傳非 JSON 格式）");
+                    }
+                })
+                .then(data => {
+                    if (!data.success) throw new Error(data.message || '套用失敗');
+
+                    // 🎯 成功取得資料，開始填入欄位
+                    const d = data.data;
                     console.log("套用成功，準備填入欄位：", d);
 
-                // 2. 填入基礎資料與自傳
-                try {
-                    const phoneVal = d.phone || d.Phone;
-                    const phoneEl = document.getElementById('Phone1');
-                    if (phoneEl) phoneEl.value = phoneVal || '';
+                    // 2. 填入基礎資料與自傳
+                    try {
+                        const phoneVal = d.phone || d.Phone;
+                        const phoneEl = document.getElementById('Phone1');
+                        if (phoneEl) phoneEl.value = phoneVal || '';
 
-                    const addrVal = d.address || d.Address;
-                    const addrEl = document.getElementById('ContactAddress');
-                    if (addrEl) addrEl.value = addrVal || '';
+                        const addrVal = d.address || d.Address;
+                        const addrEl = document.getElementById('ContactAddress');
+                        if (addrEl) addrEl.value = addrVal || '';
 
-                    // 自傳填入
-                    let autoVal = d.autobiography || d.Autobiography || '';
-                    autoVal = autoVal.replace(/^自傳[:：\s]*/, '').trim();
-                    const autoEl = document.getElementById('Autobiography');
-                    if (autoEl) {
-                        autoEl.value = autoVal;
-                        if (typeof autoGrowTextarea === 'function') {
-                            autoGrowTextarea(autoEl);
-                        } else {
-                            autoEl.style.height = 'auto';
-                            autoEl.style.height = autoEl.scrollHeight + 'px';
+                        let autoVal = d.autobiography || d.Autobiography || '';
+                        autoVal = autoVal.replace(/^自傳[:：\s]*/, '').trim();
+                        const autoEl = document.getElementById('Autobiography');
+                        if (autoEl) {
+                            autoEl.value = autoVal;
+                            if (typeof autoGrowTextarea === 'function') {
+                                autoGrowTextarea(autoEl);
+                            } else {
+                                autoEl.style.height = 'auto';
+                                autoEl.style.height = autoEl.scrollHeight + 'px';
+                            }
                         }
-                    }
 
-                    // 婚姻狀況與兵役狀況（若新檔沒有則取消選取）
-                    document.querySelectorAll('input[name="MaritalStatus"]').forEach(r => r.checked = false);
-                    const maritalVal = d.maritalStatus || d.MaritalStatus;
-                    if (maritalVal) {
-                        const mRadio = document.querySelector(`input[name="MaritalStatus"][value="${maritalVal}"]`);
-                        if (mRadio) mRadio.checked = true;
-                    }
-
-                    document.querySelectorAll('input[name="MilitaryService"]').forEach(r => r.checked = false);
-                    const milVal = d.militaryService || d.MilitaryService;
-                    if (milVal) {
-                        const milRadio = document.querySelector(`input[name="MilitaryService"][value="${milVal}"]`);
-                        if (milRadio) milRadio.checked = true;
-                    }
-                } catch (e) { console.error("基礎資料填入錯誤", e); }
-
-                // 3. 填入學歷（若無則清空）
-                try {
-                    const eduContainer = document.getElementById('education-list');
-                    if (eduContainer) {
-                        eduContainer.innerHTML = '';
-                        const eduList = d.educations || d.Educations;
-                        if (Array.isArray(eduList) && eduList.length > 0) {
-                            eduList.forEach(edu => {
-                                const eduLevel = edu.eduLevel || edu.EduLevel || '';
-                                const schoolName = edu.schoolName || edu.SchoolName || '';
-                                const major = edu.major || edu.Major || '';
-                                const eduStatus = edu.eduStatus || edu.EduStatus || '';
-                                let startDate = cleanDateString(edu.startDate || edu.StartDate || '');
-                                let endDate = cleanDateString(edu.endDate || edu.EndDate || '');
-
-                                const row = document.createElement('tr');
-                                row.className = 'dynamic-row-edu';
-                                row.innerHTML = `
-                                    <td>
-                                        <select name="EduLevelList" class="form-control" required>
-                                            <option value="" disabled ${!eduLevel ? 'selected' : ''}>請選擇</option>
-                                            <option value="博士" ${eduLevel === '博士' ? 'selected' : ''}>博士</option>
-                                            <option value="碩士" ${eduLevel === '碩士' ? 'selected' : ''}>碩士</option>
-                                            <option value="大學" ${eduLevel === '大學' ? 'selected' : ''}>大學</option>
-                                            <option value="專科" ${eduLevel === '專科' ? 'selected' : ''}>專科</option>
-                                            <option value="高職" ${eduLevel === '高職' ? 'selected' : ''}>高職</option>
-                                            <option value="高中" ${eduLevel === '高中' ? 'selected' : ''}>高中</option>
-                                            <option value="國中" ${eduLevel === '國中' ? 'selected' : ''}>國中</option>
-                                            <option value="國小" ${eduLevel === '國小' ? 'selected' : ''}>國小</option>
-                                        </select>
-                                    </td>
-                                    <td><div class="scroll-input-wrap"><input type="text" name="SchoolNameList" class="form-control" value="${schoolName}" placeholder="學校名稱" required oninput="autoSizeInput(this)" /></div></td>
-                                    <td><div class="scroll-input-wrap"><input type="text" name="MajorList" class="form-control" value="${major}" placeholder="科系所" required oninput="autoSizeInput(this)" /></div></td>
-                                    <td>
-                                        <select name="EduStatusList" class="form-control" required>
-                                            <option value="" disabled ${!eduStatus ? 'selected' : ''}>請選擇</option>
-                                            <option value="畢業" ${eduStatus === '畢業' ? 'selected' : ''}>畢業</option>
-                                            <option value="肄業" ${eduStatus === '肄業' ? 'selected' : ''}>肄業</option>
-                                            <option value="在學" ${eduStatus === '在學' ? 'selected' : ''}>在學</option>
-                                        </select>
-                                    </td>
-                                    <td>
-                                        <div class="ym-select-wrap">
-                                            <select class="form-control" data-part="year" required></select>
-                                            <select class="form-control" data-part="month" required></select>
-                                        </div>
-                                        <input type="hidden" name="StartDateList" value="${startDate}" />
-                                    </td>
-                                    <td>
-                                        <div class="ym-select-wrap">
-                                            <select class="form-control" data-part="year" required></select>
-                                            <select class="form-control" data-part="month" required></select>
-                                        </div>
-                                        <input type="hidden" name="EndDateList" value="${endDate}" />
-                                    </td>
-                                    <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeRow(this)">✕</button></td>
-                                `;
-                                eduContainer.appendChild(row);
-
-                                const ymWraps = row.querySelectorAll('.ym-select-wrap');
-                                const startHidden = row.querySelector('input[name="StartDateList"]');
-                                const endHidden = row.querySelector('input[name="EndDateList"]');
-                                if (ymWraps.length >= 2 && startHidden && endHidden) {
-                                    initYmRange(ymWraps[0], startHidden, ymWraps[1], endHidden);
-                                }
-                            });
+                        document.querySelectorAll('input[name="MaritalStatus"]').forEach(r => r.checked = false);
+                        const maritalVal = d.maritalStatus || d.MaritalStatus;
+                        if (maritalVal) {
+                            const mRadio = document.querySelector(`input[name="MaritalStatus"][value="${maritalVal}"]`);
+                            if (mRadio) mRadio.checked = true;
                         }
-                    }
-                } catch (e) { console.error("學歷填入錯誤", e); }
 
-                // 4. 填入工作經歷（若無則清空）
-                try {
-                    const workContainer = document.getElementById('work-list');
-                    if (workContainer) {
-                        workContainer.innerHTML = '';
-                        const workList = d.workExperiences || d.WorkExperiences;
-                        if (Array.isArray(workList) && workList.length > 0) {
-                            workList.forEach(work => {
-                                const companyName = work.companyName || work.CompanyName || '';
-                                const jobTitle = work.jobTitle || work.JobTitle || '';
-                                const jobDescription = work.jobDescription || work.JobDescription || '';
-                                let startDate = cleanDateString(work.startDate || work.StartDate || '');
-                                let endDate = cleanDateString(work.endDate || work.EndDate || '');
-
-                                const row = document.createElement('tr');
-                                row.className = 'dynamic-row-work';
-                                row.innerHTML = `
-                                    <td><textarea name="CompanyNameList" class="form-control work-company" placeholder="公司名稱" rows="1" oninput="autoGrowTextarea(this)">${companyName}</textarea></td>
-                                    <td><textarea name="JobTitleList" class="form-control work-title" placeholder="職位" rows="1" oninput="autoGrowTextarea(this)">${jobTitle}</textarea></td>
-                                    <td><textarea name="JobDescriptionList" class="form-control" placeholder="工作內容" rows="1" oninput="autoGrowTextarea(this)">${jobDescription}</textarea></td>
-                                    <td>
-                                        <div class="ym-select-wrap">
-                                            <select class="form-control" data-part="year"></select>
-                                            <select class="form-control" data-part="month"></select>
-                                        </div>
-                                        <input type="hidden" name="WorkStartDateList" value="${startDate}" />
-                                    </td>
-                                    <td>
-                                        <div class="ym-select-wrap">
-                                            <select class="form-control" data-part="year"></select>
-                                            <select class="form-control" data-part="month"></select>
-                                        </div>
-                                        <input type="hidden" name="WorkEndDateList" value="${endDate}" />
-                                    </td>
-                                    <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeWorkRow(this)">✕</button></td>
-                                `;
-                                workContainer.appendChild(row);
-
-                                const ymWraps = row.querySelectorAll('.ym-select-wrap');
-                                const startHidden = row.querySelector('input[name="WorkStartDateList"]');
-                                const endHidden = row.querySelector('input[name="WorkEndDateList"]');
-                                if (ymWraps.length >= 2 && startHidden && endHidden) {
-                                    initYmRange(ymWraps[0], startHidden, ymWraps[1], endHidden);
-                                }
-                            });
+                        document.querySelectorAll('input[name="MilitaryService"]').forEach(r => r.checked = false);
+                        const milVal = d.militaryService || d.MilitaryService;
+                        if (milVal) {
+                            const milRadio = document.querySelector(`input[name="MilitaryService"][value="${milVal}"]`);
+                            if (milRadio) milRadio.checked = true;
                         }
-                        if (typeof updateNoWorkExpHint === 'function') updateNoWorkExpHint();
-                    }
-                } catch (e) { console.error("工作經歷填入錯誤", e); }
+                    } catch (e) { console.error("基礎資料填入錯誤", e); }
 
-                // 5. 填入語文能力（若無則清空）
-                try {
-                    const langContainer = document.getElementById('language-list');
-                    if (langContainer) {
-                        langContainer.innerHTML = '';
-                        const langList = d.languages || d.Languages;
-                        if (Array.isArray(langList) && langList.length > 0) {
-                            langList.forEach(item => {
-                                let langName = item;
-                                let langDegree = '普通';
-                                const match = item.match(/(.+)\((.+)\)/);
-                                if (match) {
-                                    langName = match[1].trim();
-                                    langDegree = match[2].trim();
-                                } else if (item.includes('英文')) {
-                                    langName = '英語';
-                                    if (item.includes('略懂')) langDegree = '稍懂';
-                                    else if (item.includes('精通')) langDegree = '精通';
-                                }
+                    // 3. 填入學歷
+                    try {
+                        const eduContainer = document.getElementById('education-list');
+                        if (eduContainer) {
+                            eduContainer.innerHTML = '';
+                            const eduList = d.educations || d.Educations;
+                            if (Array.isArray(eduList) && eduList.length > 0) {
+                                eduList.forEach(edu => {
+                                    const eduLevel = edu.eduLevel || edu.EduLevel || '';
+                                    const schoolName = edu.schoolName || edu.SchoolName || '';
+                                    const major = edu.major || edu.Major || '';
+                                    const eduStatus = edu.eduStatus || edu.EduStatus || '';
+                                    let startDate = cleanDateString(edu.startDate || edu.StartDate || '');
+                                    let endDate = cleanDateString(edu.endDate || edu.EndDate || '');
 
-                                if (langName === '英文') langName = '英語';
-                                if (langName === '日文') langName = '日語';
-                                if (langName === '韓文') langName = '韓語';
+                                    const row = document.createElement('tr');
+                                    row.className = 'dynamic-row-edu';
+                                    row.innerHTML = `
+                                        <td>
+                                            <select name="EduLevelList" class="form-control" required>
+                                                <option value="" disabled ${!eduLevel ? 'selected' : ''}>請選擇</option>
+                                                <option value="博士" ${eduLevel === '博士' ? 'selected' : ''}>博士</option>
+                                                <option value="碩士" ${eduLevel === '碩士' ? 'selected' : ''}>碩士</option>
+                                                <option value="大學" ${eduLevel === '大學' ? 'selected' : ''}>大學</option>
+                                                <option value="專科" ${eduLevel === '專科' ? 'selected' : ''}>專科</option>
+                                                <option value="高職" ${eduLevel === '高職' ? 'selected' : ''}>高職</option>
+                                                <option value="高中" ${eduLevel === '高中' ? 'selected' : ''}>高中</option>
+                                                <option value="國中" ${eduLevel === '國中' ? 'selected' : ''}>國中</option>
+                                                <option value="國小" ${eduLevel === '國小' ? 'selected' : ''}>國小</option>
+                                            </select>
+                                        </td>
+                                        <td><div class="scroll-input-wrap"><input type="text" name="SchoolNameList" class="form-control" value="${schoolName}" placeholder="學校名稱" required oninput="autoSizeInput(this)" /></div></td>
+                                        <td><div class="scroll-input-wrap"><input type="text" name="MajorList" class="form-control" value="${major}" placeholder="科系所" required oninput="autoSizeInput(this)" /></div></td>
+                                        <td>
+                                            <select name="EduStatusList" class="form-control" required>
+                                                <option value="" disabled ${!eduStatus ? 'selected' : ''}>請選擇</option>
+                                                <option value="畢業" ${eduStatus === '畢業' ? 'selected' : ''}>畢業</option>
+                                                <option value="肄業" ${eduStatus === '肄業' ? 'selected' : ''}>肄業</option>
+                                                <option value="在學" ${eduStatus === '在學' ? 'selected' : ''}>在學</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <div class="ym-select-wrap">
+                                                <select class="form-control" data-part="year" required></select>
+                                                <select class="form-control" data-part="month" required></select>
+                                            </div>
+                                            <input type="hidden" name="StartDateList" value="${startDate}" />
+                                        </td>
+                                        <td>
+                                            <div class="ym-select-wrap">
+                                                <select class="form-control" data-part="year" required></select>
+                                                <select class="form-control" data-part="month" required></select>
+                                            </div>
+                                            <input type="hidden" name="EndDateList" value="${endDate}" />
+                                        </td>
+                                        <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeRow(this)">✕</button></td>
+                                    `;
+                                    eduContainer.appendChild(row);
 
-                                if (typeof addLanguageRow === 'function') addLanguageRow();
-                                const rows = langContainer.querySelectorAll('.dynamic-row-simple');
-                                const row = rows[rows.length - 1];
-                                if (!row) return;
+                                    const ymWraps = row.querySelectorAll('.ym-select-wrap');
+                                    const startHidden = row.querySelector('input[name="StartDateList"]');
+                                    const endHidden = row.querySelector('input[name="EndDateList"]');
+                                    if (ymWraps.length >= 2 && startHidden && endHidden) {
+                                        initYmRange(ymWraps[0], startHidden, ymWraps[1], endHidden);
+                                    }
+                                });
+                            }
+                        }
+                    } catch (e) { console.error("學歷填入錯誤", e); }
 
-                                const nameSelect = row.querySelector('.lang-name-select');
-                                const otherInput = row.querySelector('.lang-name-other');
-                                const lvSelect = row.querySelector('.lang-lv-select');
+                    // 4. 填入工作經歷
+                    try {
+                        const workContainer = document.getElementById('work-list');
+                        if (workContainer) {
+                            workContainer.innerHTML = '';
+                            const workList = d.workExperiences || d.WorkExperiences;
+                            if (Array.isArray(workList) && workList.length > 0) {
+                                workList.forEach(work => {
+                                    const companyName = work.companyName || work.CompanyName || '';
+                                    const jobTitle = work.jobTitle || work.JobTitle || '';
+                                    const jobDescription = work.jobDescription || work.JobDescription || '';
+                                    let startDate = cleanDateString(work.startDate || work.StartDate || '');
+                                    let endDate = cleanDateString(work.endDate || work.EndDate || '');
 
-                                if (nameSelect) {
-                                    const matched = Array.from(nameSelect.options).some(opt => opt.value === langName);
-                                    if (matched) {
-                                        nameSelect.value = langName;
-                                    } else {
-                                        nameSelect.value = '其他';
-                                        if (otherInput) {
-                                            otherInput.value = langName;
-                                            otherInput.style.display = '';
+                                    const row = document.createElement('tr');
+                                    row.className = 'dynamic-row-work';
+                                    row.innerHTML = `
+                                        <td><textarea name="CompanyNameList" class="form-control work-company" placeholder="公司名稱" rows="1" oninput="autoGrowTextarea(this)">${companyName}</textarea></td>
+                                        <td><textarea name="JobTitleList" class="form-control work-title" placeholder="職位" rows="1" oninput="autoGrowTextarea(this)">${jobTitle}</textarea></td>
+                                        <td><textarea name="JobDescriptionList" class="form-control" placeholder="工作內容" rows="1" oninput="autoGrowTextarea(this)">${jobDescription}</textarea></td>
+                                        <td>
+                                            <div class="ym-select-wrap">
+                                                <select class="form-control" data-part="year"></select>
+                                                <select class="form-control" data-part="month"></select>
+                                            </div>
+                                            <input type="hidden" name="WorkStartDateList" value="${startDate}" />
+                                        </td>
+                                        <td>
+                                            <div class="ym-select-wrap">
+                                                <select class="form-control" data-part="year"></select>
+                                                <select class="form-control" data-part="month"></select>
+                                            </div>
+                                            <input type="hidden" name="WorkEndDateList" value="${endDate}" />
+                                        </td>
+                                        <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeWorkRow(this)">✕</button></td>
+                                    `;
+                                    workContainer.appendChild(row);
+
+                                    const ymWraps = row.querySelectorAll('.ym-select-wrap');
+                                    const startHidden = row.querySelector('input[name="WorkStartDateList"]');
+                                    const endHidden = row.querySelector('input[name="WorkEndDateList"]');
+                                    if (ymWraps.length >= 2 && startHidden && endHidden) {
+                                        initYmRange(ymWraps[0], startHidden, ymWraps[1], endHidden);
+                                    }
+                                });
+                            }
+                            if (typeof updateNoWorkExpHint === 'function') updateNoWorkExpHint();
+                        }
+                    } catch (e) { console.error("工作經歷填入錯誤", e); }
+
+                    // 5. 填入語文能力
+                    try {
+                        const langContainer = document.getElementById('language-list');
+                        if (langContainer) {
+                            langContainer.innerHTML = '';
+                            const langList = d.languages || d.Languages;
+                            if (Array.isArray(langList) && langList.length > 0) {
+                                langList.forEach(item => {
+                                    let langName = item;
+                                    let langDegree = '普通';
+                                    const match = item.match(/(.+)\((.+)\)/);
+                                    if (match) {
+                                        langName = match[1].trim();
+                                        langDegree = match[2].trim();
+                                    } else if (item.includes('英文')) {
+                                        langName = '英語';
+                                        if (item.includes('略懂')) langDegree = '稍懂';
+                                        else if (item.includes('精通')) langDegree = '精通';
+                                    }
+
+                                    if (langName === '英文') langName = '英語';
+                                    if (langName === '日文') langName = '日語';
+                                    if (langName === '韓文') langName = '韓語';
+
+                                    if (typeof addLanguageRow === 'function') addLanguageRow();
+                                    const rows = langContainer.querySelectorAll('.dynamic-row-simple');
+                                    const row = rows[rows.length - 1];
+                                    if (!row) return;
+
+                                    const nameSelect = row.querySelector('.lang-name-select');
+                                    const otherInput = row.querySelector('.lang-name-other');
+                                    const lvSelect = row.querySelector('.lang-lv-select');
+
+                                    if (nameSelect) {
+                                        const matched = Array.from(nameSelect.options).some(opt => opt.value === langName);
+                                        if (matched) {
+                                            nameSelect.value = langName;
+                                        } else {
+                                            nameSelect.value = '其他';
+                                            if (otherInput) {
+                                                otherInput.value = langName;
+                                                otherInput.style.display = '';
+                                            }
                                         }
                                     }
+                                    if (lvSelect) {
+                                        const lvMatched = Array.from(lvSelect.options).some(opt => opt.value === langDegree);
+                                        if (lvMatched) lvSelect.value = langDegree;
+                                    }
+                                });
+                            }
+                            if (typeof updateNoLangHint === 'function') updateNoLangHint();
+                        }
+                    } catch (e) { console.error("語文能力填入錯誤", e); }
+
+                    // 6. 填入專長
+                    try {
+                        const specContainer = document.getElementById('specialty-list');
+                        if (specContainer) {
+                            specContainer.innerHTML = '';
+                            const specList = d.specialties || d.Specialties;
+                            if (Array.isArray(specList) && specList.length > 0) {
+                                specList.forEach(spec => {
+                                    const row = document.createElement('div');
+                                    row.className = 'dynamic-row-simple';
+                                    row.innerHTML = `
+                                        <textarea class="spec-input full-input" placeholder="專長" rows="1" oninput="autoGrowTextarea(this)">${spec}</textarea>
+                                        <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
+                                    `;
+                                    specContainer.appendChild(row);
+                                });
+                            }
+                            if (typeof updateNoSpecHint === 'function') updateNoSpecHint();
+                        }
+                    } catch (e) { console.error("專長填入錯誤", e); }
+
+                    // 7. 填入電腦能力
+                    try {
+                        const compContainer = document.getElementById('compskill-list');
+                        if (compContainer) {
+                            compContainer.innerHTML = '';
+                            const compList = d.computerSkills || d.ComputerSkills;
+                            if (Array.isArray(compList) && compList.length > 0) {
+                                compList.forEach(comp => {
+                                    const row = document.createElement('div');
+                                    row.className = 'dynamic-row-simple';
+                                    row.innerHTML = `
+                                        <textarea class="comp-input full-input" placeholder="電腦能力" rows="1" oninput="autoGrowTextarea(this)">${comp}</textarea>
+                                        <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
+                                    `;
+                                    compContainer.appendChild(row);
+                                });
+                            }
+                            if (typeof updateNoCompHint === 'function') updateNoCompHint();
+                        }
+                    } catch (e) { console.error("電腦能力填入錯誤", e); }
+
+                    // 8. 填入作品集
+                    try {
+                        const portfolioContainer = document.getElementById('portfolio-list');
+                        if (portfolioContainer) {
+                            portfolioContainer.innerHTML = '';
+                            const portfolioList = d.portfolios || d.Portfolios;
+                            if (Array.isArray(portfolioList) && portfolioList.length > 0) {
+                                portfolioList.forEach(pf => {
+                                    const title = pf.title || pf.Title || '';
+                                    const desc = pf.description || pf.Description || '';
+                                    const link = pf.link || pf.Link || '';
+
+                                    const row = document.createElement('tr');
+                                    row.className = 'dynamic-row-portfolio';
+                                    row.innerHTML = `
+                                        <td><textarea name="PortfolioTitleList" class="form-control" placeholder="作品名稱" rows="1" oninput="autoGrowTextarea(this)">${title}</textarea></td>
+                                        <td><textarea name="PortfolioDescList" class="form-control" placeholder="作品說明" rows="1" oninput="autoGrowTextarea(this)">${desc}</textarea></td>
+                                        <td><textarea name="PortfolioLinkList" class="form-control portfolio-link" placeholder="https://" rows="1" autocomplete="off" oninput="autoGrowTextarea(this)">${link}</textarea></td>
+                                        <td class="portfolio-file-cell">
+                                            <input type="hidden" name="PortfolioExistingFileList" class="portfolio-existing-file" value="" />
+                                            <div class="portfolio-existing-list"></div>
+                                            <label class="btn-upload-file no-print-in-readonly">
+                                                選擇檔案
+                                                <input type="file" name="PortfolioFileList" class="portfolio-file-input no-print-in-readonly" multiple onchange="handlePortfolioFileSelect(this)" />
+                                            </label>
+                                            <div class="portfolio-new-files"></div>
+                                        </td>
+                                        <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removePortfolioRow(this)">✕</button></td>
+                                    `;
+                                    portfolioContainer.appendChild(row);
+                                });
+                            }
+                            if (typeof updateNoPortfolioHint === 'function') updateNoPortfolioHint();
+                        }
+                    } catch (e) { console.error("作品集填入錯誤", e); }
+
+                    // 9. 填入證照
+                    try {
+                        const certContainer = document.getElementById('cert-list');
+                        if (certContainer) {
+                            certContainer.innerHTML = '';
+                            const certList = d.certificates || d.Certificates;
+                            if (Array.isArray(certList) && certList.length > 0) {
+                                certList.forEach(certStr => {
+                                    let certName = certStr;
+                                    let certLevel = '';
+                                    const match = certStr.match(/(.+)\((.+)\)/);
+                                    if (match) {
+                                        certName = match[1].trim();
+                                        certLevel = match[2].trim();
+                                    } else {
+                                        const levelMatch = certStr.match(/(.*)(甲級|乙級|丙級|單一級)$/);
+                                        if (levelMatch) {
+                                            certName = levelMatch[1].trim();
+                                            certLevel = levelMatch[2].trim();
+                                        }
+                                    }
+
+                                    const levelDatalistId = 'certLevelOptions_' + (typeof certLevelDatalistCounter !== 'undefined' ? certLevelDatalistCounter++ : 1);
+                                    const row = document.createElement('div');
+                                    row.className = 'cert-item dynamic-row-simple';
+                                    row.style.marginBottom = '8px';
+                                    row.innerHTML = `
+                                        <input type="text" class="cert-select" list="certNameOptions" value="${certName}" placeholder="輸入或選擇證照名稱" oninput="autoGrowInputWidth(this)" />
+                                        <span class="cert-level-wrap">
+                                            級別：<input type="text" class="cert-level-select" list="${levelDatalistId}" value="${certLevel}" placeholder="級別（無則留空）" />
+                                            <datalist id="${levelDatalistId}"></datalist>
+                                        </span>
+                                        <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
+                                    `;
+                                    certContainer.appendChild(row);
+                                    if (typeof updateCertLevelOptions === 'function') updateCertLevelOptions(row);
+                                });
+                            }
+                        }
+                    } catch (e) { console.error("證照填入錯誤", e); }
+
+                    // 10. 填入駕照
+                    try {
+                        document.querySelectorAll('.license-chk').forEach(chk => chk.checked = false);
+                        const licenseList = d.driverLicense || d.DriverLicense;
+                        if (Array.isArray(licenseList) && licenseList.length > 0) {
+                            licenseList.forEach(p => {
+                                let typeName = "";
+                                let subValues = [];
+
+                                if (p.includes('(')) {
+                                    typeName = p.split('(')[0].trim();
+                                    subValues = p.split('(')[1].replace(')', '').split('/');
+                                } else if (p.includes('小型車')) {
+                                    typeName = '普通';
+                                    subValues = ['小型車'];
+                                } else if (p.includes('機車')) {
+                                    typeName = '機車';
+                                    if (p.includes('普通重型')) subValues = ['普通重型'];
+                                    else if (p.includes('輕型')) subValues = ['輕型'];
+                                    else if (p.includes('大型重型')) subValues = ['大型重型'];
                                 }
-                                if (lvSelect) {
-                                    const lvMatched = Array.from(lvSelect.options).some(opt => opt.value === langDegree);
-                                    if (lvMatched) lvSelect.value = langDegree;
-                                }
-                            });
-                        }
-                        if (typeof updateNoLangHint === 'function') updateNoLangHint();
-                    }
-                } catch (e) { console.error("語文能力填入錯誤", e); }
 
-                // 6. 填入專長（若無則清空）
-                try {
-                    const specContainer = document.getElementById('specialty-list');
-                    if (specContainer) {
-                        specContainer.innerHTML = '';
-                        const specList = d.specialties || d.Specialties;
-                        if (Array.isArray(specList) && specList.length > 0) {
-                            specList.forEach(spec => {
-                                const row = document.createElement('div');
-                                row.className = 'dynamic-row-simple';
-                                row.innerHTML = `
-                                    <textarea class="spec-input full-input" placeholder="專長" rows="1" oninput="autoGrowTextarea(this)">${spec}</textarea>
-                                    <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
-                                `;
-                                specContainer.appendChild(row);
-                            });
-                        }
-                        if (typeof updateNoSpecHint === 'function') updateNoSpecHint();
-                    }
-                } catch (e) { console.error("專長填入錯誤", e); }
-
-                // 7. 填入電腦能力（若無則清空）
-                try {
-                    const compContainer = document.getElementById('compskill-list');
-                    if (compContainer) {
-                        compContainer.innerHTML = '';
-                        const compList = d.computerSkills || d.ComputerSkills;
-                        if (Array.isArray(compList) && compList.length > 0) {
-                            compList.forEach(comp => {
-                                const row = document.createElement('div');
-                                row.className = 'dynamic-row-simple';
-                                row.innerHTML = `
-                                    <textarea class="comp-input full-input" placeholder="電腦能力" rows="1" oninput="autoGrowTextarea(this)">${comp}</textarea>
-                                    <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
-                                `;
-                                compContainer.appendChild(row);
-                            });
-                        }
-                        if (typeof updateNoCompHint === 'function') updateNoCompHint();
-                    }
-                } catch (e) { console.error("電腦能力填入錯誤", e); }
-
-                // 8. 填入作品集（若無則清空）
-                try {
-                    const portfolioContainer = document.getElementById('portfolio-list');
-                    if (portfolioContainer) {
-                        portfolioContainer.innerHTML = '';
-                        const portfolioList = d.portfolios || d.Portfolios;
-                        if (Array.isArray(portfolioList) && portfolioList.length > 0) {
-                            portfolioList.forEach(pf => {
-                                const title = pf.title || pf.Title || '';
-                                const desc = pf.description || pf.Description || '';
-                                const link = pf.link || pf.Link || '';
-
-                                const row = document.createElement('tr');
-                                row.className = 'dynamic-row-portfolio';
-                                row.innerHTML = `
-                                    <td><textarea name="PortfolioTitleList" class="form-control" placeholder="作品名稱" rows="1" oninput="autoGrowTextarea(this)">${title}</textarea></td>
-                                    <td><textarea name="PortfolioDescList" class="form-control" placeholder="作品說明" rows="1" oninput="autoGrowTextarea(this)">${desc}</textarea></td>
-                                    <td><textarea name="PortfolioLinkList" class="form-control portfolio-link" placeholder="https://" rows="1" autocomplete="off" oninput="autoGrowTextarea(this)">${link}</textarea></td>
-                                    <td class="portfolio-file-cell">
-                                        <input type="hidden" name="PortfolioExistingFileList" class="portfolio-existing-file" value="" />
-                                        <div class="portfolio-existing-list"></div>
-                                        <label class="btn-upload-file no-print-in-readonly">
-                                            選擇檔案
-                                            <input type="file" name="PortfolioFileList" class="portfolio-file-input no-print-in-readonly" multiple onchange="handlePortfolioFileSelect(this)" />
-                                        </label>
-                                        <div class="portfolio-new-files"></div>
-                                    </td>
-                                    <td class="remove-cell"><button type="button" class="btn-remove-row no-print-in-readonly" onclick="removePortfolioRow(this)">✕</button></td>
-                                `;
-                                portfolioContainer.appendChild(row);
-                            });
-                        }
-                        if (typeof updateNoPortfolioHint === 'function') updateNoPortfolioHint();
-                    }
-                } catch (e) { console.error("作品集填入錯誤", e); }
-
-                // 9. 填入證照職類及級別（若無則清空）
-                try {
-                    const certContainer = document.getElementById('cert-list');
-                    if (certContainer) {
-                        certContainer.innerHTML = '';
-                        const certList = d.certificates || d.Certificates;
-                        if (Array.isArray(certList) && certList.length > 0) {
-                            certList.forEach(certStr => {
-                                let certName = certStr;
-                                let certLevel = '';
-                                const match = certStr.match(/(.+)\((.+)\)/);
-                                if (match) {
-                                    certName = match[1].trim();
-                                    certLevel = match[2].trim();
-                                } else {
-                                    const levelMatch = certStr.match(/(.*)(甲級|乙級|丙級|單一級)\$/);
-                                    if (levelMatch) {
-                                        certName = levelMatch[1].trim();
-                                        certLevel = levelMatch[2].trim();
+                                if (typeName) {
+                                    const row = document.querySelector(`.license-row[data-type="${typeName}"]`);
+                                    if (row) {
+                                        subValues.forEach(v => {
+                                            const chk = row.querySelector(`.license-chk[value="${v.trim()}"]`);
+                                            if (chk) chk.checked = true;
+                                        });
                                     }
                                 }
-
-                                const levelDatalistId = 'certLevelOptions_' + (typeof certLevelDatalistCounter !== 'undefined' ? certLevelDatalistCounter++ : 1);
-                                const row = document.createElement('div');
-                                row.className = 'cert-item dynamic-row-simple';
-                                row.style.marginBottom = '8px';
-                                row.innerHTML = `
-                                    <input type="text" class="cert-select" list="certNameOptions" value="${certName}" placeholder="輸入或選擇證照名稱" oninput="autoGrowInputWidth(this)" />
-                                    <span class="cert-level-wrap">
-                                        級別：<input type="text" class="cert-level-select" list="${levelDatalistId}" value="${certLevel}" placeholder="級別（無則留空）" />
-                                        <datalist id="${levelDatalistId}"></datalist>
-                                    </span>
-                                    <button type="button" class="btn-remove-row no-print-in-readonly" onclick="removeSimpleRow(this)">✕</button>
-                                `;
-                                certContainer.appendChild(row);
-                                if (typeof updateCertLevelOptions === 'function') updateCertLevelOptions(row);
                             });
                         }
-                    }
-                } catch (e) { console.error("證照填入錯誤", e); }
+                    } catch (e) { console.error("駕照填入錯誤", e); }
 
-                // 10. 填入駕照種類（先全部取消勾選，再依新檔勾選）
-                try {
-                    document.querySelectorAll('.license-chk').forEach(chk => chk.checked = false);
-                    const licenseList = d.driverLicense || d.DriverLicense;
-                    if (Array.isArray(licenseList) && licenseList.length > 0) {
-                        licenseList.forEach(p => {
-                            let typeName = "";
-                            let subValues = [];
+                    // 11. 成功提示
+                    setTimeout(() => {
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({
+                                title: '套用完成！',
+                                text: '已成功帶入履歷資料，請查看或修改相關內容。',
+                                icon: 'success',
+                                confirmButtonColor: '#206c8b',
+                                confirmButtonText: '確定'
+                            });
+                        } else {
+                            alert('套用完成！已成功帶入履歷資料，請查看或修改相關內容。');
+                        }
+                    }, 300);
+                })
+                .catch(err => {
+                    console.warn("解析過程遭遇短暫異常，剩餘重試次數：", retriesLeft, err);
 
-                            if (p.includes('(')) {
-                                typeName = p.split('(')[0].trim();
-                                subValues = p.split('(')[1].replace(')', '').split('/');
-                            } else if (p.includes('小型車')) {
-                                typeName = '普通';
-                                subValues = ['小型車'];
-                            } else if (p.includes('機車')) {
-                                typeName = '機車';
-                                if (p.includes('普通重型')) subValues = ['普通重型'];
-                                else if (p.includes('輕型')) subValues = ['輕型'];
-                                else if (p.includes('大型重型')) subValues = ['大型重型'];
-                            }
-
-                            if (typeName) {
-                                const row = document.querySelector(`.license-row[data-type="${typeName}"]`);
-                                if (row) {
-                                    subValues.forEach(v => {
-                                        const chk = row.querySelector(`.license-chk[value="${v.trim()}"]`);
-                                        if (chk) chk.checked = true;
-                                    });
-                                }
-                            }
-                        });
-                    }
-                } catch (e) { console.error("駕照填入錯誤", e); }
-
-                // 11. 成功提示
-                setTimeout(() => {
-                    if (typeof Swal !== 'undefined') {
-                        Swal.fire({
-                            title: '套用完成！',
-                            text: '已成功帶入履歷資料，請查看或修改相關內容。',
-                            icon: 'success',
-                            confirmButtonColor: '#206c8b',
-                            confirmButtonText: '確定'
-                        });
+                    // 💡 如果還有剩餘重試次數，則在背景默默自動重試一次，不跳出任何錯誤畫面給企業使用者看
+                    if (retriesLeft > 0) {
+                        setTimeout(() => {
+                            attemptParse(retriesLeft - 1);
+                        }, 1000); // 延遲 1 秒後自動重試
                     } else {
-                        alert('套用完成！已成功帶入履歷資料，請查看或修改相關內容。');
+                        // 🚨 超過重試次數才柔性提示，改成請使用者「再次點擊套用」而不是冷冰冰的錯誤訊息
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({
+                                icon: 'info',
+                                title: '網路連線較慢',
+                                text: '系統偵到回應較慢，請點擊「確定」後再次點擊一次套用按鈕即可。',
+                                confirmButtonColor: '#206c8b'
+                            });
+                        } else {
+                            alert('系統偵測到回應較慢，請再次點擊一次套用按鈕。');
+                        }
                     }
-                }, 300);
-            })
-            .catch(err => {
-                    console.error("套用過程發生錯誤：", err);
-                if (typeof Swal !== 'undefined') {
-                        Swal.fire({ icon: 'error', title: '套用失敗', text: err.message });
-                } else {
-                        alert('解套用失敗：' + err.message);
-                }
-            });
+                });
+            };
+
+            // 啟動第一次請求，預設允許自動背景重試 1 次
+            attemptParse(1);
         }
         // 💡 日期清理輔助函式：將各種日期格式（如 2025/9、2025.09）統一轉為 yyyy-MM 格式
     function cleanDateString(dateStr) {
