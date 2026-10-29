@@ -24,7 +24,8 @@ namespace InterviewProject.Services
         {
             if (input.Candidates.Count < 2)
             {
-                return "目前應徵者不足兩位，無法進行跨應徵者比較分析。";
+                throw new InvalidOperationException(
+                "目前應徵者不足兩位，無法產生跨應徵者比較分析報告。");
             }
 
             var apiKey = _config["Gemini:ApiKey"];

@@ -330,6 +330,7 @@
 </div>
 
 
+
 @* ── AI 應徵者比較分析報告 Modal ── *@
 <div id="aiReportModal"
      class="hrapp-report-overlay"
@@ -340,6 +341,7 @@
 
     <div class="hrapp-report-window">
 
+        @* 報告標題 *@
         <header class="hrapp-report-header">
             <div>
                 <h2 id="aiReportTitle">AI 應徵者比較分析報告</h2>
@@ -354,92 +356,26 @@
             </button>
         </header>
 
-        <nav class="hrapp-report-tabs"
-             aria-label="AI 分析報告分頁">
-
-            <button type="button"
-                    class="report-tab active"
-                    data-tab="ranking">
-                面試優先順序
-            </button>
-
-            <button type="button"
-                    class="report-tab"
-                    data-tab="comparison">
-                應徵者比較分析
-            </button>
-
-            <button type="button"
-                    class="report-tab"
-                    data-tab="comments">
-                個別履歷評估
-            </button>
-
-        </nav>
-
+        @* AI 比較分析內容 *@
         <main class="hrapp-report-content">
 
-            @* 第一頁：面試優先順序分析 *@
-            <section id="report-ranking"
+            <section id="report-comparison"
                      class="report-panel active">
 
-                <h5>應徵者面試優先順序分析</h5>
-
-                <p class="report-description">
-                    依據 AI 履歷匹配分數由高至低排序，
-                    比較各應徵者與職缺需求的匹配程度及分數差距。
-                    此順位僅供人資評估參考，不代表正式面試邀約決定。
-                </p>
-
-                <div id="rankingContent"></div>
-
-            </section>
-
-            @* 第二頁：跨應徵者比較 *@
-            <section id="report-comparison"
-                     class="report-panel">
-
-                <h5>應徵者能力與條件比較</h5>
-
-                <p class="report-description">
-                    依據職缺需求比較應徵者的專業能力、
-                    相關經驗與條件缺口，協助人資進行綜合評估。
-                </p>
-
+                @* Gemini AI 比較分析報告 *@
                 <div id="comparisonContent"></div>
-
-            </section>
-
-            @* 第三頁：個別履歷評估 *@
-            <section id="report-comments"
-                     class="report-panel">
-
-                <h5>個別應徵者履歷評估</h5>
-
-                <p class="report-description">
-                    檢視個別應徵者的 AI 評分結果與分析依據，
-                    作為後續履歷審查及面試確認的參考。
-                </p>
-
-                <label for="reportCandidateSelect">
-                    選擇應徵者
-                </label>
-
-                <select id="reportCandidateSelect"
-                        class="form-select">
-                </select>
-
-                <div id="candidateCommentContent"></div>
 
             </section>
 
         </main>
 
+        @* 報告底部 *@
         <footer class="hrapp-report-footer">
 
             <p>
-                AI 評估結果僅供輔助參考，
-                最終決策由人資負責。
+                AI 分析結果僅供輔助參考，
+                不代表最終錄取決策，
+                實際審查結果仍由人資綜合判斷。
             </p>
 
             <button type="button"
@@ -452,6 +388,7 @@
 
     </div>
 </div>
+
 
 
 @section Scripts {
@@ -552,232 +489,55 @@
             }
 
             
-            
-            // 4. AI 綜合分析報告 Modal
+            // 4. AI 應徵者比較分析報告 Modal（單一報告版本）
             const reportModal = document.getElementById("aiReportModal");
             const openReportBtn = document.getElementById("btnOpenAiReport");
             const closeReportBtn = document.getElementById("closeAiReport");
             const confirmCloseReport = document.getElementById("confirmCloseAiReport");
-
-            const rankingContent = document.getElementById("rankingContent");
             const comparisonContent = document.getElementById("comparisonContent");
-            const candidateSelect = document.getElementById("reportCandidateSelect");
-            const commentContent = document.getElementById("candidateCommentContent");
 
-            let reportCandidates = [];
-
-            function makeElement(tag, text, className) {
-                const element = document.createElement(tag);
-                element.textContent = text ?? "";
-                if (className) element.className = className;
-                return element;
-            }
-
-            function renderCandidateComment(candidate) {
-                commentContent.replaceChildren();
-
-                if (!candidate) {
-                    commentContent.appendChild(
-                        makeElement("p", "目前沒有應徵者資料。")
-                    );
-                    return;
-                }
-
-                const card = makeElement("div", "", "report-comment-card");
-                card.appendChild(
-                    makeElement("h4", candidate.memberName)
-                );
-                card.appendChild(
-                    makeElement(
-                        "strong",
-                        candidate.isScored
-                            ? `${candidate.aiScore} 分`
-                            : "尚未評分"
-                    )
-                );
-                card.appendChild(
-                    makeElement(
-                        "p",
-                        candidate.aiComment || "尚無 AI 評語。",
-                        "comment-text-content"
-                    )
-                );
-                commentContent.appendChild(card);
-            }
-
-            function renderRanking(candidates) {
-                rankingContent.replaceChildren();
-
-                if (!candidates.length) {
-                    rankingContent.appendChild(
-                        makeElement("p", "目前沒有應徵者資料。")
-                    );
-                    return;
-                }
-
-                // 只納入已完成 AI 評分的應徵者
-                const scoredCandidates = candidates
-                    .filter(c =>
-                        c.isScored &&
-                        c.aiScore !== null &&
-                        Number.isFinite(Number(c.aiScore))
-                    )
-                    .sort((a, b) =>
-                        Number(b.aiScore) - Number(a.aiScore)
-                    );
-
-                if (!scoredCandidates.length) {
-                    rankingContent.appendChild(
-                        makeElement("p", "目前尚無已完成 AI 評分的應徵者。")
-                    );
-                    return;
-                }
-
-                // 取得最高分數
-                const highestScore = Number(scoredCandidates[0].aiScore);
-
-                // 建立表格
-                const table = document.createElement("table");
-                table.className = "comparison-table";
-
-                const thead = document.createElement("thead");
-                const header = document.createElement("tr");
-
-                [
-                    "優先順位",
-                    "應徵者",
-                    "AI 匹配分數",
-                    "與最高分差距"
-                ].forEach(label => {
-                    header.appendChild(makeElement("th", label));
-                });
-
-                thead.appendChild(header);
-                table.appendChild(thead);
-
-                const tbody = document.createElement("tbody");
-
-                let previousScore = null;
-                let currentRank = 0;
-
-                scoredCandidates.forEach((candidate, index) => {
-                    const tr = document.createElement("tr");
-
-                    const score = Number(candidate.aiScore);
-                    const difference = highestScore - score;
-
-                    // 相同分數採相同順位，例如 1、2、2、4
-                    if (previousScore === null || score !== previousScore) {
-                        currentRank = index + 1;
-                    }
-
-                    previousScore = score;
-
-                    const rankText = candidate.rank != null
-                        ? `#${candidate.rank}`
-                        : `#${currentRank}`;
-                    const scoreText = `${score} 分`;
-                    const differenceText =
-                        difference === 0
-                            ? "0 分"
-                            : `${difference} 分`;
-
-                    [
-                        rankText,
-                        candidate.memberName,
-                        scoreText,
-                        differenceText
-                    ].forEach(value => {
-                        tr.appendChild(makeElement("td", value));
-                    });
-
-                    tbody.appendChild(tr);
-                });
-
-                table.appendChild(tbody);
-                rankingContent.appendChild(table);
-            }
-
+            // 顯示 AI 比較分析報告
             function renderComparison(data) {
+                if (!comparisonContent) return;
+
                 comparisonContent.replaceChildren();
 
-                // 必須由後端提供真正的跨應徵者分析文字
                 const report = data.comparisonReport;
 
-                if (!report) {
-                    comparisonContent.appendChild(
-                        makeElement(
-                            "p",
-                            "目前尚未產生跨應徵者比較分析報告。",
-                            "report-description"
-                        )
-                    );
+                if (!report || !report.trim()) {
+                    comparisonContent.textContent =
+                        "目前尚未產生 AI 應徵者比較分析報告。";
                     return;
                 }
 
-                comparisonContent.appendChild(
-                    makeElement("div", report, "report-comparison-text")
-                );
+                const reportElement = document.createElement("div");
+                reportElement.className = "report-comparison-text";
+                reportElement.textContent = report;
+
+                comparisonContent.appendChild(reportElement);
             }
 
-            function renderReport(data) {
-                reportCandidates = data.candidates || [];
-
-                renderRanking(reportCandidates);
-                renderComparison(data);
-
-                candidateSelect.replaceChildren();
-
-                reportCandidates.forEach(candidate => {
-                    const option = document.createElement("option");
-                    option.value = String(candidate.resumeId);
-                    option.textContent = candidate.isScored
-                        ? `${candidate.memberName}（${candidate.aiScore} 分）`
-                        : `${candidate.memberName}（尚未評分）`;
-                    candidateSelect.appendChild(option);
-                });
-
-                renderCandidateComment(reportCandidates[0]);
-            }
-
-            candidateSelect?.addEventListener("change", function () {
-                const candidate = reportCandidates.find(
-                    c => String(c.resumeId) === this.value
-                );
-                renderCandidateComment(candidate);
-            });
-
-            document.querySelectorAll(".report-tab").forEach(button => {
-                button.addEventListener("click", function () {
-                    document.querySelectorAll(".report-tab")
-                        .forEach(tab => tab.classList.remove("active"));
-
-                    document.querySelectorAll(".report-panel")
-                        .forEach(panel => panel.classList.remove("active"));
-
-                    this.classList.add("active");
-
-                    document.getElementById(
-                        `report-${this.dataset.tab}`
-                    ).classList.add("active");
-                });
-            });
-
+            // 關閉報告視窗
             function closeReport() {
+                if (!reportModal) return;
+
                 reportModal.classList.remove("show");
                 reportModal.setAttribute("aria-hidden", "true");
+
                 openReportBtn?.focus();
             }
 
+            // 開啟報告視窗並取得分析結果
             openReportBtn?.addEventListener("click", async function () {
+                if (!reportModal || !comparisonContent) return;
+
                 const jobId = this.dataset.jobId;
+                if (!jobId) return;
 
                 reportModal.classList.add("show");
                 reportModal.setAttribute("aria-hidden", "false");
 
-                rankingContent.textContent = "正在載入分析資料...";
-                comparisonContent.textContent = "";
-                commentContent.textContent = "";
+                comparisonContent.textContent = "正在載入 AI 應徵者比較分析報告...";
 
                 try {
                     const url =
@@ -785,35 +545,58 @@
                         + "?jobId=" + encodeURIComponent(jobId);
 
                     const response = await fetch(url);
-                    const data = await response.json();
 
-                    if (!response.ok || !data.success) {
-                        throw new Error(data.message || "載入失敗");
+                    if (!response.ok) {
+                        let message = "無法載入分析報告。";
+
+                        try {
+                            const errorData = await response.json();
+                            message = errorData.message || message;
+                        } catch {
+                            // 非 JSON 回應時使用預設訊息
+                        }
+
+                        throw new Error(message);
                     }
 
-                    renderReport(data);
+                    const data = await response.json();
+
+                    if (!data.success) {
+                        throw new Error(
+                            data.message || "AI 分析報告載入失敗。"
+                        );
+                    }
+
+                    renderComparison(data);
 
                 } catch (error) {
-                    rankingContent.textContent =
+                    console.error("AI Report Error:", error);
+
+                    comparisonContent.textContent =
                         "無法載入 AI 分析報告：" + error.message;
                 }
             });
 
+            // 關閉按鈕
             closeReportBtn?.addEventListener("click", closeReport);
             confirmCloseReport?.addEventListener("click", closeReport);
 
+            // 點擊視窗外側關閉
             reportModal?.addEventListener("click", function (event) {
-                if (event.target === reportModal) closeReport();
-            });
-
-            document.addEventListener("keydown", function (event) {
-                if (event.key === "Escape" &&
-                    reportModal?.classList.contains("show")) {
+                if (event.target === reportModal) {
                     closeReport();
                 }
             });
 
-
+            // 按 ESC 關閉
+            document.addEventListener("keydown", function (event) {
+                if (
+                    event.key === "Escape" &&
+                    reportModal?.classList.contains("show")
+                ) {
+                    closeReport();
+                }
+            });
 
         });
     </script>

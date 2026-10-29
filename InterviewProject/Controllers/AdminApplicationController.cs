@@ -293,18 +293,19 @@ namespace InterviewProject.Controllers
         }
 
 
+
         // GET: AdminApplication/GetAiAnalysisReport?jobId=5
-        // 提供 Index.cshtml 單一 Modal 使用
+        // 提供 AI 應徵者比較分析報告 Modal 使用
         [HttpGet]
         public async Task<IActionResult> GetAiAnalysisReport(int jobId)
         {
-            // 1. 僅允許 HR 查看綜合分析
+            // 1. 僅 HR 可以查看
             if (GetCurrentRole() != "hr")
             {
                 return StatusCode(403, new
                 {
                     success = false,
-                    message = "只有人資可以查看 AI 綜合分析報告。"
+                    message = "只有人資可以查看 AI 應徵者比較分析報告。"
                 });
             }
 
@@ -317,13 +318,9 @@ namespace InterviewProject.Controllers
                 });
             }
 
-            // 2. 確認職缺存在且已下架
+            // 2. 取得職缺與已儲存的報告
             var job = await _db.Jobs
                 .AsNoTracking()
-                .Include(j => j.SkillTags)
-                .Include(j => j.MajorRequirements)
-                .Include(j => j.LanguageRequirements)
-                .AsSplitQuery()
                 .FirstOrDefaultAsync(j => j.Id == jobId);
 
             if (job == null)
@@ -340,29 +337,23 @@ namespace InterviewProject.Controllers
                 return BadRequest(new
                 {
                     success = false,
-                    message = "職缺尚未下架，無法查看 AI 綜合分析報告。"
+                    message = "職缺尚未下架，無法查看 AI 比較分析報告。"
                 });
             }
 
-            // 3. 取得此職缺所有正式投遞的履歷
-            // 不受 Index.cshtml 的狀態篩選影響
-            var resumes = await (
-                from r in _db.Resumes.AsNoTracking()
-                join m in _db.Members.AsNoTracking()
-                    on r.MembersId equals m.Id
-                where r.JobsId == jobId
-                      && r.Status != "暫存"
-                select new
+            // 3. 統計所有正式投遞履歷的評分情況
+            var resumes = await _db.Resumes
+                .AsNoTracking()
+                .Where(r =>
+                    r.JobsId == jobId &&
+                    r.Status != "暫存")
+                .Select(r => new
                 {
-                    ResumeId = r.Id,
-                    MemberName = m.Name,
-                    Status = r.Status,
-                    AiScore = r.AiScore,
-                    AiComment = r.AiComment
-                }
-            ).ToListAsync();
+                    r.AiScore,
+                    r.AiComment
+                })
+                .ToListAsync();
 
-            // 4. 統計評分狀態
             int totalCount = resumes.Count;
 
             int scoredCount = resumes.Count(r =>
@@ -375,67 +366,17 @@ namespace InterviewProject.Controllers
                 totalCount > 0 &&
                 pendingCount == 0;
 
-            // 5. 已評分履歷依分數排序
-            // 尚未評分者放在最後
-            var orderedResumes = resumes
-                .OrderByDescending(r =>
-                    r.AiScore.HasValue &&
-                    !string.IsNullOrWhiteSpace(r.AiComment))
-                .ThenByDescending(r => r.AiScore)
-                .ThenBy(r => r.ResumeId)
-                .ToList();
+            // 4. 只讀取資料庫，不呼叫 Gemini
+            bool reportReady =
+                !string.IsNullOrWhiteSpace(job.AiComparisonReport);
 
-            // 6. 建立應徵者排名與個別評語資料
-            var candidates = new List<object>();
-
-            int position = 0;
-            int currentRank = 0;
-            int? previousScore = null;
-
-            foreach (var resume in orderedResumes)
-            {
-                bool isScored =
-                    resume.AiScore.HasValue &&
-                    !string.IsNullOrWhiteSpace(resume.AiComment);
-
-                int? rank = null;
-
-                // 全部完成評分後，才提供正式排名
-                if (allScored && isScored)
-                {
-                    position++;
-
-                    // 同分並列，例如 1、2、2、4
-                    if (previousScore != resume.AiScore)
-                    {
-                        currentRank = position;
-                    }
-
-                    rank = currentRank;
-                    previousScore = resume.AiScore;
-                }
-
-                candidates.Add(new
-                {
-                    resumeId = resume.ResumeId,
-                    memberName = resume.MemberName,
-                    status = resume.Status,
-                    aiScore = isScored
-                        ? resume.AiScore
-                        : (int?)null,
-                    aiComment = isScored
-                        ? resume.AiComment
-                        : "尚未完成 AI 履歷評分。",
-                    isScored,
-                    rank
-                });
-            }
-
-
-            // 7. 產生跨應徵者 AI 比較分析報告
             string comparisonReport;
 
-            if (totalCount == 0)
+            if (reportReady)
+            {
+                comparisonReport = job.AiComparisonReport!;
+            }
+            else if (totalCount == 0)
             {
                 comparisonReport =
                     "此職缺目前沒有正式投遞的應徵履歷。";
@@ -443,58 +384,23 @@ namespace InterviewProject.Controllers
             else if (!allScored)
             {
                 comparisonReport =
-                    "目前尚未完成所有應徵者的 AI 履歷評分，" +
-                    "暫時無法產生完整的比較分析報告。";
+                    $"目前已完成 {scoredCount}/{totalCount} 份履歷評分，" +
+                    $"尚有 {pendingCount} 份未完成。" +
+                    "系統將自動完成剩餘履歷的 AI 評分，請稍後再查看。";
+            }
+            else if (totalCount < 2)
+            {
+                comparisonReport =
+                    "目前正式應徵者不足兩位，無法進行跨應徵者比較分析。";
             }
             else
             {
-                var comparisonInput = new ApplicantComparisonInput
-                {
-                    JobTitle = job.Title,
-                    JobDescription = job.Description,
-                    JobRequirements = BuildComparisonJobRequirements(job),
-
-                    Candidates = orderedResumes
-                        .Select(r => new ApplicantComparisonCandidate
-                        {
-                            ResumeId = r.ResumeId,
-                            MemberName = r.MemberName,
-                            AiScore = r.AiScore!.Value,
-                            AiComment = r.AiComment ?? ""
-                        })
-                        .ToList()
-                };
-
-                try
-                {
-                    comparisonReport =
-                        await _comparisonService.GenerateComparisonAsync(
-                            comparisonInput
-                        );
-                }
-                catch (OperationCanceledException)
-                {
-                    comparisonReport =
-                        "AI 比較分析產生逾時，請稍後重新開啟報告。";
-                }
-                catch (HttpRequestException)
-                {
-                    comparisonReport =
-                        "AI 比較分析服務暫時無法使用，請稍後再試。";
-                }
-                catch (Exception ex)
-                {
-                    // 正式環境建議改用 ILogger 記錄
-                    Console.WriteLine(
-                        $"[Applicant Comparison Error] {ex}");
-
-                    comparisonReport =
-                        "AI 比較分析暫時無法產生，請稍後再試。";
-                }
+                comparisonReport =
+                    "所有履歷均已完成 AI 評分，" +
+                    "系統正在等待或執行比較分析，請稍後再查看。";
             }
 
-
-            // 8. 回傳給 Index.cshtml 的 Modal
+            // 5. 回傳報告與評分進度
             return Json(new
             {
                 success = true,
@@ -504,8 +410,8 @@ namespace InterviewProject.Controllers
                 scoredCount,
                 pendingCount,
                 allScored,
-                comparisonReport,
-                candidates
+                reportReady,
+                comparisonReport
             });
         }
 
@@ -1099,4 +1005,4 @@ namespace InterviewProject.Controllers
         public string Status { get; set; } = "";
     }
 
-    }
+}

@@ -30,6 +30,8 @@ namespace InterviewProject.Models
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        // ── AI 應徵者綜合比較分析 ──
+        public string? AiComparisonReport { get; set; }
 
         // 🎯 正規化後的一對多關聯
         public virtual ICollection<MajorRequired> MajorRequirements { get; set; } = new List<MajorRequired>();

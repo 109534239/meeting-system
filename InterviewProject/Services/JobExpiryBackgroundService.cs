@@ -1,5 +1,9 @@
 ﻿using InterviewProject.Data;
 using Microsoft.EntityFrameworkCore;
+using InterviewProject.Models;
+using Npgsql;
+using System.Data;
+
 
 namespace InterviewProject.Services
 {
@@ -41,6 +45,17 @@ namespace InterviewProject.Services
                 {
                     // 🎯 背景服務本身絕對不能因為單次掃描出錯就整個死掉，記錄下來、等下一輪繼續掃就好
                     Console.WriteLine($"[JobExpiryBackgroundService] 掃描過期職缺時發生例外：{ex.Message}");
+                }
+
+                try
+                {
+                    // 新增：處理已下架職缺的 AI 履歷評分與比較分析
+                    await ProcessPendingJobAiAnalysisAsync(stoppingToken);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(
+                        $"[JobExpiryBackgroundService] AI 分析流程失敗：{ex.Message}");
                 }
 
                 try
@@ -98,6 +113,363 @@ namespace InterviewProject.Services
                     Console.WriteLine($"[JobExpiryBackgroundService] 職缺「{job.Title}」（Id={job.Id}）自動排程面試失敗：{ex.Message}");
                 }
             }
+        }
+
+        private async Task ProcessPendingJobAiAnalysisAsync(CancellationToken stoppingToken)
+        {
+            using var scope = _scopeFactory.CreateScope();
+
+            var db = scope.ServiceProvider
+                .GetRequiredService<AppDbContext>();
+
+            var scoringService = scope.ServiceProvider
+                .GetRequiredService<ResumeAiScoringService>();
+
+            var comparisonService = scope.ServiceProvider
+            .GetRequiredService<ApplicantComparisonService>();
+
+            // 尋找已下架、尚未產生比較報告的職缺
+            var jobIds = await db.Jobs
+                .AsNoTracking()
+                .Where(j =>
+                    !j.IsActive &&
+                    (j.AiComparisonReport == null ||
+                     j.AiComparisonReport == ""))
+                .Select(j => j.Id)
+                .ToListAsync(stoppingToken);
+
+            foreach (var jobId in jobIds)
+            {
+                stoppingToken.ThrowIfCancellationRequested();
+
+                NpgsqlConnection? lockConnection = null;
+                bool lockAcquired = false;
+
+                try
+                {
+                    // 使用獨立連線持有 PostgreSQL 工作階段鎖
+                    lockConnection = new NpgsqlConnection(
+                        db.Database.GetConnectionString());
+
+                    await lockConnection.OpenAsync(stoppingToken);
+
+                    lockAcquired = await TryAcquireAiAnalysisLockAsync(
+                        lockConnection,
+                        jobId,
+                        stoppingToken);
+
+                    if (!lockAcquired)
+                    {
+                        Console.WriteLine(
+                            $"[AI 分析] JobId={jobId} 已有其他背景工作處理，跳過本輪。");
+
+                        continue;
+                    }
+
+                    // 取得鎖後再次確認職缺仍需要 AI 分析
+                    var needsAnalysis = await db.Jobs
+                        .AsNoTracking()
+                        .AnyAsync(j =>
+                            j.Id == jobId &&
+                            !j.IsActive &&
+                            (j.AiComparisonReport == null ||
+                             j.AiComparisonReport == ""),
+                            stoppingToken);
+
+                    if (!needsAnalysis)
+                        continue;
+
+                    // 只處理正式投遞的履歷
+                    var resumes = await db.Resumes
+                        .AsNoTracking()
+                        .Where(r =>
+                            r.JobsId == jobId &&
+                            r.Status != "暫存")
+                        .Select(r => new
+                        {
+                            r.Id,
+                            r.AiScore,
+                            r.AiComment
+                        })
+                        .ToListAsync(stoppingToken);
+
+                    // 只評分尚未完成的履歷
+                    var pendingIds = resumes
+                        .Where(r =>
+                            !r.AiScore.HasValue ||
+                            string.IsNullOrWhiteSpace(r.AiComment))
+                        .Select(r => r.Id)
+                        .ToList();
+
+                    bool allSucceeded = true;
+
+                    foreach (var resumeId in pendingIds)
+                    {
+                        stoppingToken.ThrowIfCancellationRequested();
+
+                        var result =
+                            await scoringService.ScoreResumeAsync(resumeId);
+
+                        if (!result.IsSuccess)
+                        {
+                            allSucceeded = false;
+
+                            Console.WriteLine(
+                                $"[AI 評分] ResumeId={resumeId} 失敗：{result.Message}");
+                        }
+                    }
+
+                    if (!allSucceeded)
+                        continue;
+
+                    // 重新查詢，確認每份履歷均已儲存評分結果
+                    var allScored = resumes.Count > 0 &&
+                    await db.Resumes
+                        .AsNoTracking()
+                        .Where(r =>
+                            r.JobsId == jobId &&
+                            r.Status != "暫存")
+                        .AllAsync(r =>
+                            r.AiScore.HasValue &&
+                            r.AiComment != null &&
+                            r.AiComment != "",
+                            stoppingToken);
+
+                    if (!allScored)
+                        continue;
+
+                    // 個別履歷已完成評分，但不足兩位不產生比較報告
+                    if (resumes.Count < 2)
+                        continue;
+
+                    // 重新取得職缺與完整需求資料
+                    var job = await db.Jobs
+                        .Include(j => j.SkillTags)
+                        .Include(j => j.MajorRequirements)
+                        .Include(j => j.LanguageRequirements)
+                        .AsSplitQuery()
+                        .FirstOrDefaultAsync(j => j.Id == jobId, stoppingToken);
+
+                    if (job == null || job.IsActive ||
+                        !string.IsNullOrWhiteSpace(job.AiComparisonReport))
+                    {
+                        continue;
+                    }
+
+                    // 重新讀取所有正式投遞履歷的評分結果
+                    var scoredResumes = await db.Resumes
+                        .AsNoTracking()
+                        .Where(r => r.JobsId == jobId && r.Status != "暫存")
+                        .OrderBy(r => r.Id)
+                        .Select(r => new
+                        {
+                            r.Id,
+                            r.AiScore,
+                            r.AiComment
+                        })
+                        .ToListAsync(stoppingToken);
+
+                    if (scoredResumes.Count < 2 ||
+                        scoredResumes.Any(r =>
+                            !r.AiScore.HasValue ||
+                            string.IsNullOrWhiteSpace(r.AiComment)))
+                    {
+                        continue;
+                    }
+
+                    // 建立比較分析輸入
+                    var input = new ApplicantComparisonInput
+                    {
+                        JobTitle = job.Title ?? "",
+                        JobDescription = job.Description ?? "",
+                        JobRequirements = BuildComparisonJobRequirements(job),
+
+                        Candidates = scoredResumes.Select(r =>
+                            new ApplicantComparisonCandidate
+                            {
+                                ResumeId = r.Id,
+                                MemberName = $"應徵者 {r.Id}",
+                                AiScore = r.AiScore!.Value,
+                                AiComment = r.AiComment!
+                            }).ToList()
+                    };
+
+                    // 呼叫 Gemini 產生比較報告，不重新評分
+                    var report = await comparisonService.GenerateComparisonAsync(input);
+
+                    if (string.IsNullOrWhiteSpace(report))
+                    {
+                        Console.WriteLine(
+                            $"[AI 比較分析] JobId={jobId} 回傳空白報告");
+                        continue;
+                    }
+
+                    // 儲存前再次確認職缺仍為下架狀態
+                    await db.Entry(job).ReloadAsync(stoppingToken);
+
+                    if (job.IsActive ||
+                        !string.IsNullOrWhiteSpace(job.AiComparisonReport))
+                    {
+                        continue;
+                    }
+
+                    // 重新讀取履歷評分，確認與送給 Gemini 的資料一致
+                    var latestResumes = await db.Resumes
+                        .AsNoTracking()
+                        .Where(r => r.JobsId == jobId && r.Status != "暫存")
+                        .OrderBy(r => r.Id)
+                        .Select(r => new
+                        {
+                            r.Id,
+                            r.AiScore,
+                            r.AiComment
+                        })
+                        .ToListAsync(stoppingToken);
+
+                    bool resumesUnchanged =
+                        latestResumes.Count == scoredResumes.Count &&
+                        latestResumes.Zip(scoredResumes, (latest, original) =>
+                            latest.Id == original.Id &&
+                            latest.AiScore == original.AiScore &&
+                            latest.AiComment == original.AiComment)
+                        .All(same => same);
+
+                    if (!resumesUnchanged)
+                    {
+                        Console.WriteLine(
+                            $"[AI 比較分析] JobId={jobId} 履歷資料已變動，取消儲存本次報告。");
+
+                        continue;
+                    }
+
+                    // 儲存比較分析報告
+                    job.AiComparisonReport = report;
+
+                    await db.SaveChangesAsync(stoppingToken);
+
+                    Console.WriteLine(
+                        $"[AI 比較分析] JobId={jobId} 比較報告已儲存");
+                }
+                catch (OperationCanceledException)
+                    when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(
+                        $"[AI 分析] JobId={jobId} 處理失敗：{ex.Message}");
+                }
+
+                finally
+                {
+                    if (lockConnection != null)
+                    {
+                        try
+                        {
+                            if (lockAcquired &&
+                                lockConnection.State == ConnectionState.Open)
+                            {
+                                await ReleaseAiAnalysisLockAsync(
+                                    lockConnection,
+                                    jobId);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(
+                                $"[AI 分析] JobId={jobId} 釋放資料庫鎖失敗：{ex.Message}");
+                        }
+                        finally
+                        {
+                            await lockConnection.DisposeAsync();
+                        }
+                    }
+                }
+            }
+        }
+
+        // 整理職缺條件，提供給 AI 應徵者比較分析使用
+        private static string BuildComparisonJobRequirements(Job job)
+        {
+            var parts = new List<string>();
+
+            // 工作經歷要求
+            if (!string.IsNullOrWhiteSpace(job.ExperienceRequired))
+                parts.Add("工作經歷要求：" + job.ExperienceRequired);
+
+            // 產業經歷要求
+            if (!string.IsNullOrWhiteSpace(job.IndustryExperience))
+                parts.Add("產業經歷要求：" + job.IndustryExperience);
+
+            // 學歷要求
+            if (!string.IsNullOrWhiteSpace(job.EducationRequired))
+                parts.Add("學歷要求：" + job.EducationRequired);
+
+            // 專業技能要求
+            if (job.SkillTags != null && job.SkillTags.Any())
+                parts.Add("技能要求：" +
+                    string.Join("、", job.SkillTags.Select(x => x.Tag)));
+
+            // 科系要求
+            if (job.MajorRequirements != null &&
+                job.MajorRequirements.Any())
+                parts.Add("科系要求：" +
+                    string.Join("、",
+                        job.MajorRequirements.Select(x => x.Major)));
+
+            // 語言能力要求
+            if (job.LanguageRequirements != null &&
+                job.LanguageRequirements.Any())
+                parts.Add("語言要求：" +
+                    string.Join("、",
+                        job.LanguageRequirements.Select(x =>
+                            $"{x.Language}（{x.Degree}）")));
+
+            // 專業證照要求
+            if (!string.IsNullOrWhiteSpace(job.CertRequired))
+                parts.Add("證照要求：" + job.CertRequired);
+
+            // 其他職缺條件
+            if (!string.IsNullOrWhiteSpace(job.OtherRequirements))
+                parts.Add("其他要求：" + job.OtherRequirements);
+
+            return parts.Count > 0
+                ? string.Join("\n", parts)
+                : "無";
+        }
+
+        // AI 分析專用鎖，避免同一職缺被多個背景服務同時處理
+        private static async Task<bool> TryAcquireAiAnalysisLockAsync(
+            NpgsqlConnection connection,
+            int jobId,
+            CancellationToken stoppingToken)
+        {
+            await using var command = new NpgsqlCommand(
+                "SELECT pg_try_advisory_lock(@namespace, @jobId)",
+                connection);
+
+            command.Parameters.AddWithValue("namespace", 20261029);
+            command.Parameters.AddWithValue("jobId", jobId);
+
+            var result = await command.ExecuteScalarAsync(stoppingToken);
+
+            return result is bool acquired && acquired;
+        }
+
+        // 釋放 AI 分析專用鎖
+        private static async Task ReleaseAiAnalysisLockAsync(
+            NpgsqlConnection connection,
+            int jobId)
+        {
+            await using var command = new NpgsqlCommand(
+                "SELECT pg_advisory_unlock(@namespace, @jobId)",
+                connection);
+
+            command.Parameters.AddWithValue("namespace", 20261029);
+            command.Parameters.AddWithValue("jobId", jobId);
+
+            await command.ExecuteScalarAsync();
         }
     }
 }
