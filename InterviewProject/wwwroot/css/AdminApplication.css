@@ -1036,3 +1036,199 @@
     line-height: 1.9;
     font-size: 15px;
 }
+
+
+/* AI 招募決策分析報告 */
+.hrapp-decision-window {
+    width: min(1100px, 95vw);
+    max-width: 1100px;
+}
+
+.hrapp-report-job-meta {
+    margin-top: 5px;
+    font-size: 13px;
+    opacity: 0.75;
+}
+
+.hrapp-decision-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 30px;
+}
+
+.hrapp-decision-stat {
+    padding: 22px 20px;
+    background: #f7f9fc;
+    border: 1px solid #e7ebf0;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+    .hrapp-decision-stat span {
+        font-size: 14px;
+        color: #64748b;
+        font-weight: 600;
+    }
+
+    .hrapp-decision-stat strong {
+        font-size: 32px;
+        line-height: 1.2;
+        font-weight: 700;
+        color: #24364b;
+    }
+
+    .hrapp-decision-stat small {
+        font-size: 12px;
+        color: #8491a3;
+    }
+
+.hrapp-decision-section {
+    padding: 25px 0;
+    border-top: 1px solid #e7ebf0;
+}
+
+    .hrapp-decision-section h3 {
+        margin: 0 0 18px;
+        color: #24364b;
+        font-size: 19px;
+        font-weight: 700;
+    }
+
+.hrapp-decision-text {
+    color: #455468;
+    font-size: 15px;
+    line-height: 1.95;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.hrapp-decision-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    margin-bottom: 18px;
+}
+
+.hrapp-decision-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 570px;
+    font-size: 14px;
+}
+
+    .hrapp-decision-table th {
+        background: #f4f6f9;
+        color: #536174;
+        text-align: left;
+        padding: 14px;
+        font-weight: 600;
+    }
+
+    .hrapp-decision-table td {
+        padding: 15px 14px;
+        border-bottom: 1px solid #edf0f3;
+        color: #344256;
+    }
+
+    .hrapp-decision-table tbody tr:hover {
+        background: #f8fafc;
+    }
+
+.hrapp-decision-toggle {
+    display: inline-block;
+    padding: 9px 15px;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    background: #fff;
+    color: #334155;
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: 20px;
+}
+
+    .hrapp-decision-toggle:hover {
+        background: #f1f5f9;
+    }
+
+.hrapp-decision-status {
+    padding: 20px;
+    text-align: center;
+    color: #64748b;
+    line-height: 1.8;
+}
+
+@media (max-width: 640px) {
+    .hrapp-decision-stats {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .hrapp-decision-stat {
+        padding: 16px;
+    }
+
+    .hrapp-decision-section {
+        padding: 20px 0;
+    }
+}
+
+/* 確保 hidden 屬性不被既有 CSS 覆蓋 */
+#aiReportModal [hidden] {
+    display: none !important;
+}
+
+
+/* 前五名關鍵技能比較 */
+.hrapp-top-five-comparison {
+    margin: 12px 0 24px;
+}
+
+.hrapp-top-five-list {
+    border: 1px solid #e7ebf0;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.hrapp-top-five-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding: 17px 20px;
+    border-bottom: 1px solid #edf0f3;
+}
+
+    .hrapp-top-five-row:last-child {
+        border-bottom: none;
+    }
+
+.hrapp-top-five-info {
+    min-width: 0;
+}
+
+    .hrapp-top-five-info strong {
+        font-size: 15px;
+        color: #26374a;
+    }
+
+    .hrapp-top-five-info p {
+        margin: 6px 0 0;
+        font-size: 13px;
+        line-height: 1.7;
+        color: #718096;
+    }
+
+.hrapp-top-five-score {
+    font-size: 19px;
+    color: #26374a;
+    white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .hrapp-top-five-row {
+        padding: 14px;
+        gap: 12px;
+    }
+}

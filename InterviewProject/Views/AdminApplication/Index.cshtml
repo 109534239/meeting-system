@@ -339,13 +339,14 @@
      aria-labelledby="aiReportTitle"
      aria-hidden="true">
 
-    <div class="hrapp-report-window">
+    <div class="hrapp-report-window hrapp-decision-window">
 
-        @* 報告標題 *@
         <header class="hrapp-report-header">
             <div>
                 <h2 id="aiReportTitle">AI 應徵者比較分析報告</h2>
-                <p>@ViewBag.JobTitle</p>
+                <p id="aiReportJobTitle"></p>
+                <p id="aiReportDepartment"
+                   class="hrapp-report-job-meta"></p>
             </div>
 
             <button type="button"
@@ -356,26 +357,139 @@
             </button>
         </header>
 
-        @* AI 比較分析內容 *@
         <main class="hrapp-report-content">
 
             <section id="report-comparison"
                      class="report-panel active">
 
-                @* Gemini AI 比較分析報告 *@
-                <div id="comparisonContent"></div>
+                <div id="comparisonContent">
 
+                    @* 三張統計卡片 *@
+                    <div id="aiDecisionStats"
+                         class="hrapp-decision-stats"
+                         hidden>
+
+                        <div class="hrapp-decision-stat">
+                            <span>應徵總人數</span>
+                            <strong id="aiDecisionTotal">—</strong>
+                            <small>份履歷</small>
+                        </div>
+
+                        <div class="hrapp-decision-stat">
+                            <span>需求人數</span>
+                            <strong id="aiDecisionRequired">—</strong>
+                            <small>招募需求</small>
+                        </div>
+
+                        <div class="hrapp-decision-stat">
+                            <span>優先審查人選</span>
+                            <strong id="aiDecisionPriority">—</strong>
+                            <small>依既有評分初步篩選</small>
+                        </div>
+                    </div>
+
+                    <div id="aiDecisionStatus"
+                         class="hrapp-decision-status">
+                        正在載入報告...
+                    </div>
+
+                    @* 一、整體招募分析 *@
+                    <section class="hrapp-decision-section"
+                             id="aiSection1"
+                             hidden>
+                        <h3>一、整體招募分析</h3>
+                        <div class="hrapp-decision-text"
+                             id="aiSection1Text"></div>
+                    </section>
+
+                    @* 二、應徵者排名與比較 *@
+                    <section class="hrapp-decision-section"
+                             id="aiSection2"
+                             hidden>
+                        <h3>二、應徵者排名與比較</h3>
+
+                        <div class="hrapp-decision-table-wrap">
+                            <table class="hrapp-decision-table">
+                                <thead>
+                                    <tr>
+                                        <th>排名</th>
+                                        <th>姓名</th>
+                                        <th>AI 分數</th>
+                                        <th>工作年資</th>
+                                        <th>建議</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="aiDecisionRanking"></tbody>
+                            </table>
+                        </div>
+
+                        <button type="button"
+                                id="aiToggleAllCandidates"
+                                class="hrapp-decision-toggle"
+                                hidden>
+                            查看所有應徵者
+                        </button>
+
+                        
+                        @* 前五名關鍵技能比較 *@
+                        <div id="aiTopFiveComparison"
+                             class="hrapp-top-five-comparison"
+                             hidden>
+
+                            <button type="button"
+                                    id="aiToggleTopFive"
+                                    class="hrapp-decision-toggle">
+                                收合比較資訊
+                            </button>
+
+                            <div id="aiTopFiveList"
+                                 class="hrapp-top-five-list">
+                            </div>
+
+                        </div>
+
+
+                        <div class="hrapp-decision-text"
+                             id="aiSection2Text"></div>
+                    </section>
+
+                    @* 三、關鍵候選人比較分析 *@
+                    <section class="hrapp-decision-section"
+                             id="aiSection3"
+                             hidden>
+                        <h3>三、關鍵候選人比較分析</h3>
+                        <div class="hrapp-decision-text"
+                             id="aiSection3Text"></div>
+                    </section>
+
+                    @* 四、整體人才優勢與能力缺口 *@
+                    <section class="hrapp-decision-section"
+                             id="aiSection4"
+                             hidden>
+                        <h3>四、整體人才優勢與能力缺口</h3>
+                        <div class="hrapp-decision-text"
+                             id="aiSection4Text"></div>
+                    </section>
+
+                    @* 五、綜合建議與後續行動 *@
+                    <section class="hrapp-decision-section"
+                             id="aiSection5"
+                             hidden>
+                        <h3>五、綜合建議與後續行動</h3>
+                        <div class="hrapp-decision-text"
+                             id="aiSection5Text"></div>
+                    </section>
+
+                </div>
             </section>
 
         </main>
 
-        @* 報告底部 *@
         <footer class="hrapp-report-footer">
-
             <p>
-                AI 分析結果僅供輔助參考，
-                不代表最終錄取決策，
-                實際審查結果仍由人資綜合判斷。
+                AI 分析結果僅供招募決策輔助參考，
+                不代表最終錄取決策。
+                實際審查結果仍由人資及用人主管決定。
             </p>
 
             <button type="button"
@@ -383,11 +497,11 @@
                     class="hrapp-ai-btn hrapp-ai-btn-primary">
                 關閉報告
             </button>
-
         </footer>
 
     </div>
 </div>
+
 
 
 
@@ -497,25 +611,249 @@
             const comparisonContent = document.getElementById("comparisonContent");
 
             // 顯示 AI 比較分析報告
+
+            // 顯示 AI 招募決策分析報告
             function renderComparison(data) {
-                if (!comparisonContent) return;
+                const status = document.getElementById("aiDecisionStatus");
+                const stats = document.getElementById("aiDecisionStats");
+                const rankingBody = document.getElementById("aiDecisionRanking");
+                const toggleButton =
+                    document.getElementById("aiToggleAllCandidates");
 
-                comparisonContent.replaceChildren();
+                const title =
+                    document.getElementById("aiReportJobTitle");
+                const department =
+                    document.getElementById("aiReportDepartment");
 
-                const report = data.comparisonReport;
+                
+                title.textContent = data.jobTitle || "未指定職缺";
 
-                if (!report || !report.trim()) {
-                    comparisonContent.textContent =
-                        "目前尚未產生 AI 應徵者比較分析報告。";
+                const jobTypeMap = {
+                    fulltime: "全職",
+                    parttime: "兼職",
+                    internship: "實習",
+                    "全職": "全職",
+                    "兼職": "兼職",
+                    "實習": "實習"
+                };
+
+                const jobType = jobTypeMap[data.jobType] ||
+                    data.jobType ||
+                    "";
+
+                department.textContent = [
+                    data.department,
+                    data.location,
+                    jobType
+                ].filter(Boolean).join("｜");
+
+
+                // 重設畫面，避免切換職缺後殘留舊資料
+                stats.hidden = true;
+                toggleButton.hidden = true;
+                rankingBody.replaceChildren();
+
+                for (let i = 1; i <= 5; i++) {
+                    document.getElementById(`aiSection${i}`).hidden = true;
+                    document.getElementById(`aiSection${i}Text`)
+                        .textContent = "";
+                }
+
+                if (!data.reportReady) {
+                    status.hidden = false;
+                    status.textContent =
+                        data.comparisonReport ||
+                        "AI 比較分析報告尚未完成。";
                     return;
                 }
 
-                const reportElement = document.createElement("div");
-                reportElement.className = "report-comparison-text";
-                reportElement.textContent = report;
+                status.hidden = true;
+                stats.hidden = false;
 
-                comparisonContent.appendChild(reportElement);
+                // 三張統計卡片：全部使用後端資料
+                document.getElementById("aiDecisionTotal")
+                    .textContent = data.total ?? "—";
+
+                const requiredElement =
+                    document.getElementById("aiDecisionRequired");
+
+                requiredElement.textContent =
+                    data.requiredCount == null
+                        ? "未設定"
+                        : data.requiredCount;
+
+                document.getElementById("aiDecisionPriority")
+                    .textContent = data.priorityCount ?? "—";
+
+                const candidates = Array.isArray(data.candidates)
+                    ? data.candidates
+                    : [];
+
+                // 排名表格，預設顯示前五位
+                function renderRanking(showAll) {
+                    rankingBody.replaceChildren();
+
+                    const visibleCandidates = showAll
+                        ? candidates
+                        : candidates.slice(0, 5);
+
+                    for (const candidate of visibleCandidates) {
+                        const tr = document.createElement("tr");
+
+                        const values = [
+                            candidate.rank,
+                            candidate.memberName,
+                            candidate.aiScore,
+                            candidate.workExperienceYears == null
+                                ? "未提供"
+                                : `${candidate.workExperienceYears} 年`,
+                            candidate.recommendation
+                        ];
+
+                        for (const value of values) {
+                            const td = document.createElement("td");
+                            td.textContent = value ?? "—";
+                            tr.appendChild(td);
+                        }
+
+                        rankingBody.appendChild(tr);
+                    }
+                }
+
+                renderRanking(false);
+
+                
+                // 前五名關鍵技能比較
+                const topFiveContainer =
+                    document.getElementById("aiTopFiveComparison");
+
+                const topFiveList =
+                    document.getElementById("aiTopFiveList");
+
+                const topFiveToggle =
+                    document.getElementById("aiToggleTopFive");
+
+                topFiveList.replaceChildren();
+
+                const topFive = candidates.slice(0, 5);
+
+                if (topFive.length > 0) {
+                    topFiveContainer.hidden = false;
+                    topFiveList.hidden = false;
+                    topFiveToggle.textContent = "收合比較資訊";
+
+                    topFive.forEach((candidate, index) => {
+                        const row = document.createElement("div");
+                        row.className = "hrapp-top-five-row";
+
+                        const info = document.createElement("div");
+                        info.className = "hrapp-top-five-info";
+
+                        const name = document.createElement("strong");
+                        name.textContent =
+                            `${index + 1}. ${candidate.memberName}`;
+
+                        const skills = document.createElement("p");
+
+                        skills.textContent =
+                            Array.isArray(candidate.keySkills) &&
+                                candidate.keySkills.length > 0
+                                ? candidate.keySkills.join("、")
+                                : "履歷未提供專長或電腦技能";
+
+                        const score = document.createElement("strong");
+                        score.className = "hrapp-top-five-score";
+                        score.textContent = `${candidate.aiScore} 分`;
+
+                        info.appendChild(name);
+                        info.appendChild(skills);
+
+                        row.appendChild(info);
+                        row.appendChild(score);
+
+                        topFiveList.appendChild(row);
+                    });
+
+                    topFiveToggle.onclick = function () {
+                        topFiveList.hidden = !topFiveList.hidden;
+
+                        this.textContent = topFiveList.hidden
+                            ? "展開比較資訊"
+                            : "收合比較資訊";
+                    };
+                } else {
+                    topFiveContainer.hidden = true;
+                }
+
+
+                // 超過五位才顯示展開按鈕
+                if (candidates.length > 5) {
+                    toggleButton.hidden = false;
+                    toggleButton.textContent = "查看所有應徵者";
+
+                    toggleButton.onclick = function () {
+                        const showAll =
+                            this.textContent === "查看所有應徵者";
+
+                        renderRanking(showAll);
+
+                        this.textContent = showAll
+                            ? "收合應徵者名單"
+                            : "查看所有應徵者";
+                    };
+                }
+
+                // 依五大段落標題切割 Gemini 文字
+                const report = data.comparisonReport || "";
+
+                const headings = [
+                    "一、整體招募分析",
+                    "二、應徵者排名與比較",
+                    "三、關鍵候選人比較分析",
+                    "四、整體人才優勢與能力缺口",
+                    "五、綜合建議與後續行動"
+                ];
+
+                // 支援標題前方可能出現的 Markdown # 或 **
+                const normalizedReport = report
+                    .replace(/\r\n/g, "\n")
+                    .replace(/^\s*#{1,6}\s*/gm, "")
+                    .replace(/\*\*/g, "");
+
+                const positions = headings.map(heading =>
+                    normalizedReport.indexOf(heading)
+                );
+
+                // 舊報告或非預期格式：完整保留原文，避免內容消失
+                if (positions.some(position => position < 0) ||
+                    positions.some((position, index) =>
+                        index > 0 && position <= positions[index - 1])) {
+
+                    document.getElementById("aiSection1").hidden = false;
+                    document.getElementById("aiSection1Text")
+                        .textContent = normalizedReport;
+
+                    return;
+                }
+
+                headings.forEach((heading, index) => {
+                    const start = positions[index] + heading.length;
+                    const end = index < headings.length - 1
+                        ? positions[index + 1]
+                        : normalizedReport.length;
+
+                    const sectionText = normalizedReport
+                        .slice(start, end)
+                        .trim();
+
+                    document.getElementById(`aiSection${index + 1}`)
+                        .hidden = false;
+
+                    document.getElementById(`aiSection${index + 1}Text`)
+                        .textContent = sectionText;
+                });
             }
+
 
             // 關閉報告視窗
             function closeReport() {
@@ -537,7 +875,9 @@
                 reportModal.classList.add("show");
                 reportModal.setAttribute("aria-hidden", "false");
 
-                comparisonContent.textContent = "正在載入 AI 應徵者比較分析報告...";
+                document.getElementById("aiDecisionStatus").hidden = false;
+                document.getElementById("aiDecisionStatus").textContent =
+                    "正在載入 AI 應徵者比較分析報告...";
 
                 try {
                     const url =
@@ -567,12 +907,21 @@
                         );
                     }
 
+                    document.getElementById("aiTopFiveComparison").hidden = true;
+
                     renderComparison(data);
 
                 } catch (error) {
                     console.error("AI Report Error:", error);
 
-                    comparisonContent.textContent =
+                    document.getElementById("aiDecisionStats").hidden = true;
+
+                    for (let i = 1; i <= 5; i++) {
+                        document.getElementById(`aiSection${i}`).hidden = true;
+                    }
+
+                    document.getElementById("aiDecisionStatus").hidden = false;
+                    document.getElementById("aiDecisionStatus").textContent =
                         "無法載入 AI 分析報告：" + error.message;
                 }
             });

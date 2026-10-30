@@ -193,13 +193,34 @@ namespace InterviewProject.Services
                         })
                         .ToListAsync(stoppingToken);
 
-                    // 只評分尚未完成的履歷
+
+                    // 僅處理完全沒有 AI 評分資料的履歷
                     var pendingIds = resumes
                         .Where(r =>
-                            !r.AiScore.HasValue ||
+                            !r.AiScore.HasValue &&
                             string.IsNullOrWhiteSpace(r.AiComment))
                         .Select(r => r.Id)
                         .ToList();
+
+
+                    // 檢查是否存在只有分數或只有評語的異常資料
+                    var incompleteResumes = resumes
+                        .Where(r =>
+                            r.AiScore.HasValue !=
+                            !string.IsNullOrWhiteSpace(r.AiComment))
+                        .Select(r => r.Id)
+                        .ToList();
+
+                    if (incompleteResumes.Count > 0)
+                    {
+                        Console.WriteLine(
+                            $"[AI 分析] JobId={jobId} 存在評分資料不完整的履歷：" +
+                            string.Join(", ", incompleteResumes));
+
+                        // 不重新生成、不覆蓋既有評分
+                        continue;
+                    }
+
 
                     bool allSucceeded = true;
 
@@ -256,7 +277,8 @@ namespace InterviewProject.Services
                         continue;
                     }
 
-                    // 重新讀取所有正式投遞履歷的評分結果
+
+                    // 重新讀取所有正式投遞履歷的評分結果與會員姓名
                     var scoredResumes = await db.Resumes
                         .AsNoTracking()
                         .Where(r => r.JobsId == jobId && r.Status != "暫存")
@@ -264,10 +286,14 @@ namespace InterviewProject.Services
                         .Select(r => new
                         {
                             r.Id,
+                            r.MembersId,
+                            MemberName = r.Member != null ? r.Member.Name : null,
                             r.AiScore,
                             r.AiComment
                         })
                         .ToListAsync(stoppingToken);
+
+
 
                     if (scoredResumes.Count < 2 ||
                         scoredResumes.Any(r =>
@@ -277,6 +303,17 @@ namespace InterviewProject.Services
                         continue;
                     }
 
+                    // 確保所有正式應徵者都能取得真實姓名
+                    if (scoredResumes.Any(r =>
+                        string.IsNullOrWhiteSpace(r.MemberName)))
+                    {
+                        Console.WriteLine(
+                            $"[AI 比較分析] JobId={jobId} 存在無法取得會員姓名的履歷，暫停產生報告。");
+
+                        continue;
+                    }
+
+
                     // 建立比較分析輸入
                     var input = new ApplicantComparisonInput
                     {
@@ -284,14 +321,16 @@ namespace InterviewProject.Services
                         JobDescription = job.Description ?? "",
                         JobRequirements = BuildComparisonJobRequirements(job),
 
+
                         Candidates = scoredResumes.Select(r =>
                             new ApplicantComparisonCandidate
                             {
                                 ResumeId = r.Id,
-                                MemberName = $"應徵者 {r.Id}",
+                                MemberName = r.MemberName!.Trim(),
                                 AiScore = r.AiScore!.Value,
                                 AiComment = r.AiComment!
                             }).ToList()
+
                     };
 
                     // 呼叫 Gemini 產生比較報告，不重新評分
@@ -342,10 +381,32 @@ namespace InterviewProject.Services
                         continue;
                     }
 
-                    // 儲存比較分析報告
-                    job.AiComparisonReport = report;
 
-                    await db.SaveChangesAsync(stoppingToken);
+                    // 僅允許尚未產生比較報告的職缺寫入結果
+                    int updatedRows = await db.Jobs
+                        .Where(j =>
+                            j.Id == jobId &&
+                            !j.IsActive &&
+                            (j.AiComparisonReport == null ||
+                             j.AiComparisonReport == ""))
+                        .ExecuteUpdateAsync(
+                            setters => setters
+                                .SetProperty(
+                                    j => j.AiComparisonReport,
+                                    report),
+                            stoppingToken);
+
+                    if (updatedRows == 0)
+                    {
+                        Console.WriteLine(
+                            $"[AI 比較分析] JobId={jobId} 已有報告或職缺狀態變更，取消寫入。");
+
+                        continue;
+                    }
+
+                    Console.WriteLine(
+                        $"[AI 比較分析] JobId={jobId} 比較報告已首次儲存。");
+
 
                     Console.WriteLine(
                         $"[AI 比較分析] JobId={jobId} 比較報告已儲存");

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using InterviewProject.Data;
 using InterviewProject.Models;
 using InterviewProject.Services;
@@ -299,7 +300,7 @@ namespace InterviewProject.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAiAnalysisReport(int jobId)
         {
-            // 1. 僅 HR 可以查看
+            // 僅 HR 可以查看
             if (GetCurrentRole() != "hr")
             {
                 return StatusCode(403, new
@@ -318,7 +319,7 @@ namespace InterviewProject.Controllers
                 });
             }
 
-            // 2. 取得職缺與已儲存的報告
+            // 只讀取職缺，不觸發 AI
             var job = await _db.Jobs
                 .AsNoTracking()
                 .FirstOrDefaultAsync(j => j.Id == jobId);
@@ -341,7 +342,7 @@ namespace InterviewProject.Controllers
                 });
             }
 
-            // 3. 統計所有正式投遞履歷的評分情況
+            // 讀取所有正式投遞履歷，與目前審核狀態篩選無關
             var resumes = await _db.Resumes
                 .AsNoTracking()
                 .Where(r =>
@@ -349,6 +350,12 @@ namespace InterviewProject.Controllers
                     r.Status != "暫存")
                 .Select(r => new
                 {
+                    r.Id,
+                    r.MembersId,
+                    MemberName = r.Member != null
+                        ? r.Member.Name
+                        : null,
+                    r.WorkExperienceYears,
                     r.AiScore,
                     r.AiComment
                 })
@@ -366,16 +373,84 @@ namespace InterviewProject.Controllers
                 totalCount > 0 &&
                 pendingCount == 0;
 
-            // 4. 只讀取資料庫，不呼叫 Gemini
             bool reportReady =
                 !string.IsNullOrWhiteSpace(job.AiComparisonReport);
 
             string comparisonReport;
 
+            // 儲存的 AI 推薦資料，以 ResumeId 對應
+            var recommendationLookup =
+                new Dictionary<int, ApplicantRecommendation>();
+
+            bool hasAiRecommendations = false;
+
             if (reportReady)
             {
-                comparisonReport = job.AiComparisonReport!;
+                string savedReport = job.AiComparisonReport!;
+
+                try
+                {
+                    // 新版：JSON 格式，包含推薦名單與五大段落
+                    var parsed = JsonSerializer.Deserialize<ApplicantComparisonResult>(
+                        savedReport,
+                        new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+
+
+                    if (parsed != null &&
+                        parsed.Version == 2 &&
+                        !string.IsNullOrWhiteSpace(parsed.Report) &&
+                        parsed.Recommendations != null)
+                    {
+                        comparisonReport = parsed.Report;
+
+                        // 驗證推薦名單與目前已評分履歷是否一致
+                        var expectedIds = resumes
+                            .Where(r =>
+                                r.AiScore.HasValue &&
+                                !string.IsNullOrWhiteSpace(r.AiComment))
+                            .Select(r => r.Id)
+                            .OrderBy(id => id)
+                            .ToList();
+
+                        var actualIds = parsed.Recommendations
+                            .Select(r => r.ResumeId)
+                            .OrderBy(id => id)
+                            .ToList();
+
+                        bool validRecommendations =
+                            expectedIds.SequenceEqual(actualIds) &&
+                            parsed.Recommendations.All(r =>
+                                (r.Recommendation == "優先面試" ||
+                                 r.Recommendation == "進一步審查") &&
+                                !string.IsNullOrWhiteSpace(r.Reason) &&
+                                !string.IsNullOrWhiteSpace(r.InterviewFocus));
+
+                        if (validRecommendations)
+                        {
+                            recommendationLookup = parsed.Recommendations
+                                .ToDictionary(r => r.ResumeId);
+
+                            hasAiRecommendations = true;
+                        }
+                    }
+                    else
+                    {
+                        // 非預期格式，保留原始內容
+                        comparisonReport = savedReport;
+                    }
+
+                }
+                catch (JsonException)
+                {
+                    // 舊版：純文字五大段落
+                    // 不重新呼叫 Gemini、不覆蓋資料庫
+                    comparisonReport = savedReport;
+                }
             }
+
             else if (totalCount == 0)
             {
                 comparisonReport =
@@ -400,18 +475,148 @@ namespace InterviewProject.Controllers
                     "系統正在等待或執行比較分析，請稍後再查看。";
             }
 
-            // 5. 回傳報告與評分進度
+            // 只使用已完成評分的資料建立排名
+            var rankedSource = resumes
+                .Where(r =>
+                    r.AiScore.HasValue &&
+                    !string.IsNullOrWhiteSpace(r.AiComment))
+                .OrderByDescending(r => r.AiScore!.Value)
+                .ThenBy(r => r.Id)
+                .ToList();
+
+
+            // 取得排名前五位的履歷 ID
+            var scoredResumeIds = rankedSource
+                .Select(r => r.Id)
+                .ToList();
+
+            // 從實際履歷資料取得專長
+            var topSpecialties = await _db.Specialties
+                .AsNoTracking()
+                .Where(s => scoredResumeIds.Contains(s.ResumeId))
+                .OrderBy(s => s.SortOrder)
+                .Select(s => new
+                {
+                    s.ResumeId,
+                    Skill = s.Specialty
+                })
+                .ToListAsync();
+
+            // 從實際履歷資料取得電腦技能
+            var topComputerSkills = await _db.ComputerSkills
+                .AsNoTracking()
+                .Where(s => scoredResumeIds.Contains(s.ResumeId))
+                .Select(s => new
+                {
+                    s.ResumeId,
+                    Skill = s.ComputerSkill
+                })
+                .ToListAsync();
+
+            // 整理成履歷 ID 對應的技能清單
+            var skillLookup = topSpecialties
+                .Concat(topComputerSkills)
+                .Where(x => !string.IsNullOrWhiteSpace(x.Skill))
+                .GroupBy(x => x.ResumeId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(x => x.Skill.Trim())
+                          .Distinct(StringComparer.OrdinalIgnoreCase)
+                          .Take(3)
+                          .ToList()
+                );
+
+            // 第二層：統計 AI 比較分析建議優先面試的人數
+            // 沒有新版推薦資料時，不以分數推測推薦結果
+            int priorityCount = hasAiRecommendations
+                ? rankedSource.Count(r =>
+                    recommendationLookup.TryGetValue(r.Id, out var rec) &&
+                    rec.Recommendation == "優先面試")
+                : 0;
+
+
+            // 同分採相同名次，例如 1、2、2、4
+            int previousScore = -1;
+            int previousRank = 0;
+
+
+            var rankedCandidates = rankedSource
+                .Select((r, index) =>
+                {
+                    int score = r.AiScore!.Value;
+
+                    // 第一層：由資料庫既有分數決定排名
+                    int rank = score == previousScore
+                        ? previousRank
+                        : index + 1;
+
+                    previousScore = score;
+                    previousRank = rank;
+
+                    // 第二層：讀取已儲存的 AI 比較推薦
+                    recommendationLookup.TryGetValue(
+                        r.Id, out var aiRecommendation);
+
+                    return new
+                    {
+                        resumeId = r.Id,
+                        memberId = r.MembersId,
+
+                        memberName = string.IsNullOrWhiteSpace(r.MemberName)
+                            ? "姓名資料待確認"
+                            : r.MemberName.Trim(),
+
+                        rank,
+                        aiScore = score,
+                        workExperienceYears = r.WorkExperienceYears,
+
+                        // 新版 AI 推薦，不使用固定分數門檻
+                        recommendation = aiRecommendation?.Recommendation
+                            ?? "尚無 AI 比較建議",
+
+                        recommendationReason = aiRecommendation?.Reason
+                            ?? "",
+
+                        interviewFocus = aiRecommendation?.InterviewFocus
+                            ?? "",
+
+                        keySkills = skillLookup.TryGetValue(
+                            r.Id, out var skills)
+                                ? skills
+                                : new List<string>()
+                    };
+                })
+                .ToList();
+
+
             return Json(new
             {
                 success = true,
                 jobId,
                 jobTitle = job.Title,
+                department = job.Department,
+                location = job.Location,
+                jobType = job.JobType,
+
+                // HeadCount 是 string，保留原始內容供前端顯示
+                // 例如 "2"、"3"、"不限"、"若干"
+                requiredCount = string.IsNullOrWhiteSpace(job.HeadCount)
+                    ? (string?)null
+                    : job.HeadCount.Trim(),
+
+
                 total = totalCount,
                 scoredCount,
                 pendingCount,
                 allScored,
                 reportReady,
-                comparisonReport
+                comparisonReport,
+
+                hasAiRecommendations,
+                priorityCount,
+
+                // 供前端顯示前五名及展開完整排名
+                candidates = rankedCandidates
             });
         }
 
@@ -568,8 +773,8 @@ namespace InterviewProject.Controllers
                     r.JobsId == jobId &&
                     r.Status != "暫存" &&
                     r.Status == "待審核" &&
-                    (!r.AiScore.HasValue ||
-                     string.IsNullOrEmpty(r.AiComment)))
+                    r.AiScore == null &&
+                    (r.AiComment == null || r.AiComment == ""))
                 .OrderBy(r => r.Id)
                 .Select(r => r.Id)
                 .ToListAsync();
@@ -582,64 +787,6 @@ namespace InterviewProject.Controllers
                 resumeIds
             });
         }
-
-        // GET: AdminApplication/GetRescoreCandidates
-        [HttpGet]
-        public async Task<IActionResult> GetRescoreCandidates(int jobId)
-        {
-            if (GetCurrentRole() != "hr")
-            {
-                return StatusCode(403, new
-                {
-                    success = false,
-                    message = "只有人資可以執行重新評分。"
-                });
-            }
-
-            var job = await _db.Jobs
-                .AsNoTracking()
-                .FirstOrDefaultAsync(j => j.Id == jobId);
-
-            if (job == null)
-            {
-                return NotFound(new
-                {
-                    success = false,
-                    message = "找不到指定職缺。"
-                });
-            }
-
-            if (job.IsActive)
-            {
-                return BadRequest(new
-                {
-                    success = false,
-                    message = "職缺尚未下架，無法重新評分。"
-                });
-            }
-
-            var resumeIds = await _db.Resumes
-                .AsNoTracking()
-                .Where(r =>
-                    r.JobsId == jobId &&
-                    r.Status == "待審核" &&
-                    r.AiScore.HasValue &&
-                    r.AiComment != null &&
-                    r.AiComment != "")
-                .OrderBy(r => r.Id)
-                .Select(r => r.Id)
-                .ToListAsync();
-
-            return Json(new
-            {
-                success = true,
-                jobId,
-                total = resumeIds.Count,
-                resumeIds
-            });
-        }
-
-        // POST: AdminApplication/ScoreResume
 
         // POST: AdminApplication/ScoreResume
         // 首次 AI 評分：僅處理尚未完成評分的履歷
@@ -695,96 +842,19 @@ namespace InterviewProject.Controllers
                 });
             }
 
-            if (resume.AiScore.HasValue &&
+
+            if (resume.AiScore.HasValue ||
                 !string.IsNullOrWhiteSpace(resume.AiComment))
             {
                 return BadRequest(new
                 {
                     success = false,
-                    message = "此履歷已完成 AI 評分，請使用重新 AI 評分功能。"
+                    message = "此履歷已有 AI 評分資料，不允許重新產生或覆蓋。"
                 });
             }
+
 
             var result = await _aiScoringService.ScoreResumeAsync(resumeId);
-
-            return Json(new
-            {
-                success = result.IsSuccess,
-                message = result.Message,
-                resumeId,
-                score = result.IsSuccess ? result.Score : (int?)null,
-                comment = result.IsSuccess ? result.Comment : null
-            });
-        }
-
-        // POST: AdminApplication/RescoreResume
-        // 重新 AI 評分：覆蓋原有分數與評語
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> RescoreResume(int resumeId, int jobId)
-        {
-            if (GetCurrentRole() != "hr")
-            {
-                return StatusCode(403, new
-                {
-                    success = false,
-                    message = "只有人資可以重新進行 AI 履歷評分。"
-                });
-            }
-
-            var resume = await _db.Resumes
-                .AsNoTracking()
-                .FirstOrDefaultAsync(r =>
-                    r.Id == resumeId &&
-                    r.JobsId == jobId);
-
-            if (resume == null)
-            {
-                return NotFound(new
-                {
-                    success = false,
-                    message = "找不到此職缺的應徵履歷。"
-                });
-            }
-
-            if (resume.Status != "待審核")
-            {
-                return BadRequest(new
-                {
-                    success = false,
-                    message = "只有待審核履歷可以重新評分。"
-                });
-            }
-
-            if (!resume.AiScore.HasValue ||
-                string.IsNullOrWhiteSpace(resume.AiComment))
-            {
-                return BadRequest(new
-                {
-                    success = false,
-                    message = "此履歷尚未完成首次 AI 評分。"
-                });
-            }
-
-            var jobIsActive = await _db.Jobs
-                .AsNoTracking()
-                .Where(j => j.Id == jobId)
-                .Select(j => (bool?)j.IsActive)
-                .FirstOrDefaultAsync();
-
-            if (jobIsActive != false)
-            {
-                return BadRequest(new
-                {
-                    success = false,
-                    message = "職缺必須下架後才能重新評分。"
-                });
-            }
-
-            var result = await _aiScoringService.ScoreResumeAsync(
-                resumeId,
-                forceRescore: true
-            );
 
             return Json(new
             {
@@ -1004,5 +1074,4 @@ namespace InterviewProject.Controllers
         public int Id { get; set; }
         public string Status { get; set; } = "";
     }
-
 }

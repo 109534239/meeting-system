@@ -103,7 +103,7 @@ namespace InterviewProject.Services
 
         // 單筆履歷 AI 評分入口
         public async Task<(bool IsSuccess, string Message, int Score, string Comment)>
-        ScoreResumeAsync(int resumeId, bool forceRescore = false)
+        ScoreResumeAsync(int resumeId)
         {
             var resume = await LoadResumeForScoringAsync(resumeId);
 
@@ -119,16 +119,32 @@ namespace InterviewProject.Services
             if (resume.Job.IsActive)
                 return (false, "職缺尚未下架，不可進行 AI 評分", 0, "");
 
-            // 已完成評分的履歷不重複呼叫 Gemini
-            if (!forceRescore && resume.AiScore.HasValue && !string.IsNullOrWhiteSpace(resume.AiComment))
+
+            // 每份履歷只允許成功產生一次 AI 評分
+            if (resume.AiScore.HasValue ||
+                !string.IsNullOrWhiteSpace(resume.AiComment))
             {
+                // 已有完整評分結果：直接讀取資料庫
+                if (resume.AiScore.HasValue &&
+                    !string.IsNullOrWhiteSpace(resume.AiComment))
+                {
+                    return (
+                        true,
+                        "此履歷已完成 AI 評分，直接使用已儲存結果。",
+                        resume.AiScore.Value,
+                        resume.AiComment
+                    );
+                }
+
+                // 僅有部分結果：禁止直接覆蓋
                 return (
-                    true,
-                    "此履歷已完成 AI 評分。",
-                    resume.AiScore.Value,
-                    resume.AiComment
+                    false,
+                    "此履歷已有部分 AI 評分資料，請由管理員檢查資料完整性。",
+                    0,
+                    ""
                 );
             }
+
 
             // 呼叫 Gemini 評分
             var result = await GetGeminiReviewAsync(resume);
@@ -156,13 +172,51 @@ namespace InterviewProject.Services
             if (resume.Job == null || resume.Job.IsActive)
                 return (false, "職缺狀態已變更，無法儲存 AI 評分", 0, "");
 
-            // 儲存評分結果
-            resume.AiScore = result.Score;
-            resume.AiComment = result.Comment;
 
-            await _db.SaveChangesAsync();
+            // 僅允許第一次成功的 AI 評分寫入資料庫
+            int updatedRows = await _db.Resumes
+                .Where(r =>
+                    r.Id == resumeId &&
+                    r.AiScore == null &&
+                    (r.AiComment == null || r.AiComment == ""))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(r => r.AiScore, result.Score)
+                    .SetProperty(r => r.AiComment, result.Comment));
+
+            // 已有其他請求先完成儲存，不允許覆蓋
+            if (updatedRows == 0)
+            {
+                var saved = await _db.Resumes
+                    .AsNoTracking()
+                    .Where(r => r.Id == resumeId)
+                    .Select(r => new
+                    {
+                        r.AiScore,
+                        r.AiComment
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (saved?.AiScore != null &&
+                    !string.IsNullOrWhiteSpace(saved.AiComment))
+                {
+                    return (
+                        true,
+                        "此履歷已有 AI 評分結果，已保留第一次成功儲存的結果。",
+                        saved.AiScore.Value,
+                        saved.AiComment
+                    );
+                }
+
+                return (
+                    false,
+                    "AI 評分結果未儲存，請檢查履歷資料狀態。",
+                    0,
+                    ""
+                );
+            }
 
             return result;
+
         }
 
         // 下一步：搬入原本的 Gemini 評分方法
