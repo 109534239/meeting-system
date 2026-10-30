@@ -1,4 +1,3 @@
-using System.Text.Json;
 using InterviewProject.Data;
 using InterviewProject.Models;
 using InterviewProject.Services;
@@ -10,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Text.Json;
 
 namespace InterviewProject.Controllers
 {
@@ -32,6 +32,9 @@ namespace InterviewProject.Controllers
             _comparisonService = comparisonService;
         }
 
+        // =====================================================================
+        // 使用者角色與職缺存取權限
+        // =====================================================================
         private bool IsEmployee()
         {
             var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
@@ -86,8 +89,11 @@ namespace InterviewProject.Controllers
             return false;
         }
 
-        // 1. 職缺的應徵履歷名單列表頁
+        // 職缺的應徵履歷名單列表頁
         // GET: AdminApplication/Index?jobId=5&statusFilter=全部
+        // =====================================================================
+        // 應徵履歷列表與 AI 評分統計
+        // =====================================================================
         public async Task<IActionResult> Index(int? jobId, string statusFilter = "全部")
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
@@ -98,7 +104,7 @@ namespace InterviewProject.Controllers
             ViewBag.JobId = jobId;
             ViewBag.CurrentFilter = statusFilter;
 
-            // 🎯 1. 撈出選單用的職缺清單 (依照角色權限過濾)
+            // 撈出選單用的職缺清單 (依照角色權限過濾)
             var jobsQuery = _db.Jobs.AsQueryable();
             if (role == "manager")
             {
@@ -118,7 +124,7 @@ namespace InterviewProject.Controllers
 
             ViewBag.JobList = jobList;
 
-            // 🎯 2. 設定頁面標題與職缺 AI 評分權限
+            // 設定頁面標題與職缺 AI 評分權限
             ViewBag.CanStartAiScoring = false;
             ViewBag.IsJobActive = true;
 
@@ -183,7 +189,7 @@ namespace InterviewProject.Controllers
                     : $"{department} 部門應徵履歷";
             }
 
-            // 🎯 3. 最上游 LINQ：排除 Status == "暫存" 的履歷
+            // 最上游 LINQ：排除 Status == "暫存" 的履歷
             var query = from r in _db.Resumes
                         join m in _db.Members on r.MembersId equals m.Id
                         join j in _db.Jobs on r.JobsId equals j.Id
@@ -195,13 +201,13 @@ namespace InterviewProject.Controllers
                             Job = j
                         };
 
-            // 🎯 職員（manager） 只能看到自己所屬部門的履歷
+            // 職員（manager） 只能看到自己所屬部門的履歷
             if (role == "manager")
             {
                 query = query.Where(x => x.Job.Department == department);
             }
 
-            // 🎯 4. 狀態篩選 (未處理 / 已處理)
+            // 狀態篩選 (未處理 / 已處理)
             if (statusFilter == "未處理")
             {
                 query = query.Where(x => x.Resume.Status == "待審核");
@@ -211,22 +217,22 @@ namespace InterviewProject.Controllers
                 query = query.Where(x => x.Resume.Status != "待審核");
             }
 
-            // 🎯 5. 一次性查出所需完整資料列（避免多餘的資料庫來回查詢）
+            // 一次性查出所需完整資料列（避免多餘的資料庫來回查詢）
             var rawList = await query
                 .OrderByDescending(x => x.Resume.ResumeTime)
                 .ToListAsync();
 
-            // 🎯 6. 記憶體中整理字典 (效能最佳，只需 1 次 SQL 查詢)
+            // 記憶體中整理字典 (效能最佳，只需 1 次 SQL 查詢)
             ViewBag.MemberNames = rawList.ToDictionary(x => x.Resume.Id, x => x.Member.Name);
             ViewBag.MemberPhones = rawList.ToDictionary(x => x.Resume.Id, x => x.Member.Phone);
             ViewBag.JobTitles = rawList.ToDictionary(x => x.Resume.Id, x => x.Job.Title);
-            // 🎯 記錄每筆履歷所屬職缺的上下架狀態
+            // 記錄每筆履歷所屬職缺的上下架狀態
             ViewBag.JobActiveStatuses = rawList.ToDictionary(
                 x => x.Resume.Id,
                 x => x.Job.IsActive
             );
 
-            // 🎯 7. 組成主模型 ResumesList
+            // 組成主模型 ResumesList
             var resumesList = rawList.Select(x => new InterviewProject.Models.Resume
             {
                 Id = x.Resume.Id,
@@ -238,7 +244,7 @@ namespace InterviewProject.Controllers
                 AiComment = x.Resume.AiComment
             }).ToList();
 
-            // 🎯 8. 學歷、工作經歷子表查出並掛回 Resume 物件
+            // 學歷、工作經歷子表查出並掛回 Resume 物件
             var resumeIds = resumesList.Select(r => r.Id).ToList();
 
             if (resumeIds.Any())
@@ -268,7 +274,7 @@ namespace InterviewProject.Controllers
                 }
             }
 
-            // 🎯 9. AI 評分與評語字典組裝
+            // AI 評分與評語字典組裝
             // 尚未評分的履歷不加入分數字典，避免顯示為 0 分
             var aiScores = new Dictionary<int, int>();
             var aiComments = new Dictionary<int, string>();
@@ -297,6 +303,9 @@ namespace InterviewProject.Controllers
 
         // GET: AdminApplication/GetAiAnalysisReport?jobId=5
         // 提供 AI 應徵者比較分析報告 Modal 使用
+        // =====================================================================
+        // AI 跨應徵者比較分析報告（唯讀）
+        // =====================================================================
         [HttpGet]
         public async Task<IActionResult> GetAiAnalysisReport(int jobId)
         {
@@ -621,22 +630,25 @@ namespace InterviewProject.Controllers
         }
 
 
-        // 2. HR 點擊整列或「審查履歷」按鈕進入細節頁面
+        // HR 點擊整列或「審查履歷」按鈕進入細節頁面
         // GET: AdminApplication/Details/5
+        // =====================================================================
+        // 應徵履歷詳細資料
+        // =====================================================================
         public async Task<IActionResult> Details(int id)
         {
             if (!IsEmployee()) return RedirectToAction("Index", "Login");
 
             var resume = await _db.Resumes
                 .Include(r => r.Job)
-                 .Include(r => r.Educations) // 🎯 讀取詳細內容時要一併帶出學歷子表，不然唯讀畫面學歷區塊會是空的
-                 .Include(r => r.WorkExperiences) // 🎯 同樣要帶出工作經歷子表
-                 .Include(r => r.Portfolios) // 🎯 修正：補上作品集子表的 Include，不然唯讀畫面作品集區塊會是空的
+                 .Include(r => r.Educations) // 讀取詳細內容時要一併帶出學歷子表，不然唯讀畫面學歷區塊會是空的
+                 .Include(r => r.WorkExperiences) // 同樣要帶出工作經歷子表
+                 .Include(r => r.Portfolios) // 修正：補上作品集子表的 Include，不然唯讀畫面作品集區塊會是空的
                 .FirstOrDefaultAsync(r => r.Id == id);
 
             if (resume == null) return NotFound();
 
-            // 🎯 職員（manager） 只能查看自己部門的履歷詳細資料
+            // 職員（manager） 只能查看自己部門的履歷詳細資料
             if (resume.Job != null && !await CanAccessJob(resume.Job))
             {
                 return Forbid();
@@ -663,7 +675,7 @@ namespace InterviewProject.Controllers
                 ViewBag.UserBirthday = member.Birthday.ToString("yyyy/MM/dd");
                 ViewBag.UserAddress = member.Address;
                 ViewBag.UserEmail = member.Email;
-                ViewBag.UserPhone = member.Phone; // 🎯 新增：跟 ResumeController 的 PopulateViewBagData 一致
+                ViewBag.UserPhone = member.Phone; // 新增：跟 ResumeController 的 PopulateViewBagData 一致
                 ViewBag.UserPhotoBase64 = member.ProfileImagePath;
             }
 
@@ -672,6 +684,9 @@ namespace InterviewProject.Controllers
         }
 
         // GET: AdminApplication/GetAiScoringCandidates?jobId=5
+        // =====================================================================
+        // AI 履歷評分：候選清單、待評分清單、首次評分
+        // =====================================================================
         [HttpGet]
         public async Task<IActionResult> GetAiScoringCandidates(int jobId)
         {
@@ -867,8 +882,11 @@ namespace InterviewProject.Controllers
         }
 
 
-        // 3. 🎯 新增：接收前端 AJAX 變更選單狀態，並儲存回資料庫
+        // 新增：接收前端 AJAX 變更選單狀態，並儲存回資料庫
         // POST: AdminApplication/UpdateStatus
+        // =====================================================================
+        // 履歷審核狀態更新（保留既有面試排程呼叫）
+        // =====================================================================
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> UpdateStatus([FromBody] StatusUpdateModel model)
@@ -904,13 +922,13 @@ namespace InterviewProject.Controllers
                     return Json(new { success = false, message = "找不到對應的履歷紀錄。" });
                 }
 
-                // 🎯 職員（manager） 只能更新自己部門的履歷狀態
+                // 職員（manager） 只能更新自己部門的履歷狀態
                 if (resume.Job != null && !await CanAccessJob(resume.Job))
                 {
                     return Json(new { success = false, message = "您沒有權限修改其他部門的履歷狀態。" });
                 }
 
-                // 🎯 職缺尚未下架，不允許修改履歷審核狀態
+                // 職缺尚未下架，不允許修改履歷審核狀態
                 if (resume.Job == null || resume.Job.IsActive)
                 {
                     return Json(new
@@ -920,7 +938,7 @@ namespace InterviewProject.Controllers
                     });
                 }
 
-                // 🎯 履歷尚未完成 AI 評分，不允許修改審核狀態
+                // 履歷尚未完成 AI 評分，不允許修改審核狀態
                 if (!resume.AiScore.HasValue || string.IsNullOrWhiteSpace(resume.AiComment))
                 {
                     return Json(new
@@ -933,17 +951,17 @@ namespace InterviewProject.Controllers
                 // 修改狀態並更新資料庫
                 resume.Status = model.Status;
 
-                // 🎯 履歷審核就被刷掉的人，直接視為「未錄取」，並將面試狀態清空
+                // 履歷審核就被刷掉的人，直接視為「未錄取」，並將面試狀態清空
                 if (resume.Status == "未通過")
                 {
                     resume.AdmissionResult = AdmissionResultValues.Rejected;
-                    resume.InterviewStatus = null; // 👈 新增：清空面試狀態
+                    resume.InterviewStatus = null; // 新增：清空面試狀態
                 }
 
                 _db.Entry(resume).State = EntityState.Modified;
                 await _db.SaveChangesAsync();
 
-                // 🎯 Step B：這筆履}歷審完了，順便檢查這個職缺是否全部審核完畢、可以自動安排面試
+                // 🎯 Step B：這筆履歷審完了，順便檢查這個職缺是否全部審核完畢、可以自動安排面試
                 await _scheduler.TryAutoScheduleAsync(resume.JobsId);
 
                 // 👈 建議在 JSON 回傳當前最新的 InterviewStatus，方便前端更新 UI
@@ -961,6 +979,9 @@ namespace InterviewProject.Controllers
         }
 
         // ─── 字串格式轉換家族方法 ───
+        // =====================================================================
+        // 履歷欄位格式轉換
+        // =====================================================================
         private string FormatLanguageString(List<LanguageProficiency> langs)
         {
             if (langs == null || !langs.Any()) return "";
@@ -1008,6 +1029,9 @@ namespace InterviewProject.Controllers
             return string.Join(", ", certStrings);
         }
 
+        // =====================================================================
+        // 職缺條件文字組裝
+        // =====================================================================
         private static string BuildComparisonJobRequirements(Job job)
         {
             var parts = new List<string>();
@@ -1068,7 +1092,10 @@ namespace InterviewProject.Controllers
         }
     }
 
-    // 🎯 專門用來安全對接 JSON Body 參數的資料模型DTO 
+    // 專門用來安全對接 JSON Body 參數的資料模型DTO
+    // =====================================================================
+    // 履歷審核狀態更新 DTO
+    // ===================================================================== 
     public class StatusUpdateModel
     {
         public int Id { get; set; }
