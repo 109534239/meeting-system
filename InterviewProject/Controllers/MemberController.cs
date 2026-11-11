@@ -210,7 +210,7 @@ namespace InterviewProject.Controllers
         {
             var id = HttpContext.Session.GetInt32("MemberId");
             if (id == null) return RedirectToAction("Index", "Login");
-            
+
             var member = await _db.Members.FindAsync(id);
             if (member == null) return RedirectToAction("Index", "Login");
 
@@ -388,7 +388,7 @@ namespace InterviewProject.Controllers
                  .FirstOrDefaultAsync(r => r.Id == id && r.MembersId == userId);
 
             if (resume == null) return NotFound();
-                        
+
             resume.LanguageSkills = await GetFormattedLanguageSkills(resume.Id);
             resume.ComputerSkills = await GetFormattedComputerSkills(resume.Id);
 
@@ -860,68 +860,85 @@ namespace InterviewProject.Controllers
         [HttpGet]
         public async Task<IActionResult> GetLatestStatusNotifications()
         {
-            // 1. 取得目前登入者的 MemberId
             var currentMemberId = GetCurrentUserId();
-
             if (currentMemberId == 0)
-            {
                 return Json(new { success = false, message = "未登入" });
-            }
 
-            // 2. 撈取該會員最新的 4 筆履歷狀態變更紀錄（多撈 1 筆用來判斷是否有更多）
-            var rawResumes = await _db.Resumes
+            var items = new List<(DateTime time, string title, string message, string url)>();
+
+            // 1. 履歷狀態 / 面試狀態（每份履歷一則）
+            var resumes = await _db.Resumes
                 .Where(r => r.MembersId == currentMemberId && r.Status != "暫存")
                 .OrderByDescending(r => r.ResumeTime)
-                .Take(4)
+                .Take(10)
                 .Select(r => new
                 {
-                    JobId = r.Job,
-                    JobTitle = r.Job != null ? r.Job.Title : "該職缺",
-                    Status = r.Status,
-                    InterviewStatus = r.InterviewStatus,
-                    AdmissionResult = r.AdmissionResult,
-                    ResumeTime = r.ResumeTime
+                    Title = r.Job != null ? r.Job.Title : "該職缺",
+                    r.Status,
+                    r.InterviewStatus,
+                    r.ResumeTime
                 })
                 .ToListAsync();
-
-            // 判斷是否超過 3 筆
-            bool hasMore = rawResumes.Count > 3;
-
-            // 只取前 3 筆做顯示
-            var notifications = rawResumes.Take(3).Select(r =>
+            foreach (var r in resumes)
             {
-                string message = "";
-                string finalAdmission = r.AdmissionResult;
+                string msg = !string.IsNullOrEmpty(r.InterviewStatus) ? $"面試狀態：{r.InterviewStatus}"
+                           : !string.IsNullOrEmpty(r.Status) ? $"履歷狀態：{r.Status}" : "狀態已更新";
+                items.Add((r.ResumeTime, r.Title, msg, "/Member/Application"));
+            }
 
-                if (r.InterviewStatus == "面試結束" && string.IsNullOrEmpty(finalAdmission))
-                {
-                    finalAdmission = "等待結果中";
-                }
+            // 2. Q&A 已回覆
+            var faqs = await _db.FAQReports
+                .Where(f => f.Role == "求職者" && f.MemberId == currentMemberId && f.RepliedAt != null)
+                .OrderByDescending(f => f.RepliedAt)
+                .Take(5)
+                .Select(f => new { f.Id, f.Subject, f.RepliedAt })
+                .ToListAsync();
+            foreach (var f in faqs)
+                items.Add((f.RepliedAt!.Value, "Q&A", $"您的提問「{f.Subject}」已回覆", $"/JobseekerFAQ/Detail/{f.Id}"));
 
-                if (!string.IsNullOrEmpty(finalAdmission))
+            // 3. 面試會議 / 4. 錄取結果（透過會議參與紀錄對應到自己的履歷）
+            var parts = await _db.RoomParticipants
+                .Where(p => p.Role == ParticipantRole.Jobseeker && p.Resume != null && p.Resume.MembersId == currentMemberId && p.Room != null)
+                .Select(p => new
                 {
-                    message = $"錄取結果：{finalAdmission}";
-                }
-                else if (!string.IsNullOrEmpty(r.InterviewStatus))
+                    Title = p.Resume!.Job != null ? p.Resume.Job.Title : "該職缺",
+                    p.Resume.AdmissionResult,
+                    RoomCreated = p.Room!.CreatedTime,
+                    p.Room.ScheduledAt,
+                    p.Room.StartAt,
+                    p.Room.MeetingStatus,
+                    p.Room.IsActive,
+                    p.Room.ResultSubmittedAt,
+                    p.Room.JitsiRoomName
+                })
+                .ToListAsync();
+            foreach (var p in parts)
+            {
+                if (!string.IsNullOrEmpty(p.AdmissionResult))
                 {
-                    message = $"面試狀態：{r.InterviewStatus}";
+                    items.Add((p.ResultSubmittedAt ?? p.StartAt ?? p.ScheduledAt ?? p.RoomCreated, p.Title,
+                        $"錄取結果：{p.AdmissionResult}", "/Member/Application"));
                 }
-                else if (!string.IsNullOrEmpty(r.Status))
+                if (p.IsActive && p.MeetingStatus != "Ended")
                 {
-                    message = $"履歷狀態：{r.Status}";
+                    if (p.MeetingStatus == "InProgress")
+                        items.Add((p.StartAt ?? p.RoomCreated, p.Title, "面試會議進行中，點此進入",
+                            $"/Room/Join?code={Uri.EscapeDataString(p.JitsiRoomName)}"));
+                    else
+                        items.Add((p.RoomCreated, p.Title,
+                            p.ScheduledAt.HasValue ? $"已安排面試：{p.ScheduledAt:MM/dd HH:mm}" : "已安排面試會議",
+                            "/Member/Application"));
                 }
-                else
-                {
-                    message = "狀態已更新";
-                }
+            }
 
-                return new
-                {
-                    jobId = r.JobId,
-                    jobTitle = r.JobTitle,
-                    message = message,
-                    resumeTime = r.ResumeTime
-                };
+            var sorted = items.OrderByDescending(i => i.time).ToList();
+            bool hasMore = sorted.Count > 5;
+            var notifications = sorted.Take(5).Select(i => new
+            {
+                jobTitle = i.title,
+                message = i.message,
+                url = i.url,
+                resumeTime = i.time
             });
 
             return Json(new { success = true, data = notifications, hasMore = hasMore });

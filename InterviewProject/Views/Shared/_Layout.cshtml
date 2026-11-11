@@ -307,7 +307,7 @@
                         // 1. 渲染前 3 筆通知
                         let htmlContent = res.data.map(item => `
                             <li>
-                                <a href="/Member/Application" class="notification-item">
+                                <a href="${escapeHtml(item.url || '/Member/Application')}" class="notification-item">
                                     「<strong>${escapeHtml(item.jobTitle)}</strong>」${escapeHtml(item.message)}
                                 </a>
                             </li>
@@ -327,7 +327,7 @@
                         listEl.innerHTML = htmlContent;
                     } else {
                         if (badge) badge.style.display = 'none';
-                        listEl.innerHTML = '<li class="notification-empty">目前沒有新的狀態變更通知</li>';
+                        listEl.innerHTML = '<li class="notification-empty">目前沒有新的通知</li>';
                     }
                 })
                 .catch(err => {
