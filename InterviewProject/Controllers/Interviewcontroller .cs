@@ -188,6 +188,80 @@ namespace InterviewProject.Controllers
             return Json(new { success = true });
         }
 
+        // 🎯 改版：職員一次送出這場面試所有求職者的評分（全有或全無，任何一筆不合格就整批不存）
+        [HttpPost]
+        public async Task<IActionResult> SubmitEvaluations(int roomId, string? itemsJson)
+        {
+            try
+            {
+                return await SubmitEvaluationsCore(roomId, itemsJson);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SubmitEvaluations] 失敗：{ex}");
+                return Json(new { success = false, message = "伺服器處理失敗：" + (ex.InnerException?.Message ?? ex.Message) });
+            }
+        }
+
+        private async Task<IActionResult> SubmitEvaluationsCore(int roomId, string? itemsJson)
+        {
+            if (!IsEmployee()) return Json(new { success = false, message = "請先登入" });
+            var req = new EvalBatchRequest { RoomId = roomId };
+            if (!string.IsNullOrWhiteSpace(itemsJson))
+                req.Items = System.Text.Json.JsonSerializer.Deserialize<List<EvalBatchItem>>(itemsJson,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<EvalBatchItem>();
+            var role = HttpContext.Session.GetString("MemberRole")?.ToLower();
+            if (role != "manager")
+                return Json(new { success = false, message = "只有職員能評分" });
+            if (req?.Items == null || req.Items.Count == 0)
+                return Json(new { success = false, message = "沒有可送出的評分" });
+
+            int empId = GetEmployeeId();
+            var isInvited = await _db.RoomParticipants.AnyAsync(p =>
+                p.RoomId == req.RoomId && p.EmployeeId == empId && p.Role == ParticipantRole.Manager);
+            if (!isInvited) return Json(new { success = false, message = "你不是這場面試受邀的職員" });
+
+            var validResumeIds = await _db.RoomParticipants
+                .Where(p => p.RoomId == req.RoomId && p.Role == ParticipantRole.Jobseeker && p.ResumeId != null)
+                .Select(p => p.ResumeId!.Value).ToListAsync();
+
+            foreach (var it in req.Items)
+            {
+                if (!validResumeIds.Contains(it.ResumeId))
+                    return Json(new { success = false, message = "有求職者不在這場面試裡" });
+                if (it.Score < 1 || it.Score > 5)
+                    return Json(new { success = false, message = "請選擇分數（1~5分）" });
+                if (string.IsNullOrWhiteSpace(it.Comment))
+                    return Json(new { success = false, message = "評語為必填，請輸入評語" });
+            }
+
+            var existing = await _db.InterviewEvaluations
+                .Where(e => e.RoomId == req.RoomId && e.EvaluatorEmployeeId == empId).ToListAsync();
+            foreach (var it in req.Items)
+            {
+                var ev = existing.FirstOrDefault(e => e.ResumeId == it.ResumeId);
+                if (ev != null)
+                {
+                    ev.Score = it.Score;
+                    ev.Comment = it.Comment!.Trim();
+                    ev.CreatedAt = DateTime.Now;
+                }
+                else
+                {
+                    _db.InterviewEvaluations.Add(new InterviewEvaluation
+                    {
+                        RoomId = req.RoomId,
+                        ResumeId = it.ResumeId,
+                        EvaluatorEmployeeId = empId,
+                        Score = it.Score,
+                        Comment = it.Comment!.Trim()
+                    });
+                }
+            }
+            await _db.SaveChangesAsync();
+            return Json(new { success = true });
+        }
+
         // 🎯 只有主持人能定案錄取/未錄取，且這場面試「所有」受邀的職員都要先評完分
         [HttpPost]
         public async Task<IActionResult> SetAdmission(int roomId, int resumeId, string result)
@@ -224,9 +298,26 @@ namespace InterviewProject.Controllers
 
         // 主持人決定好這場面試每位求職者的結果後，按「送出並通知 HR」：寄 email 給 HR，HR 才能通知求職者
         [HttpPost]
-        public async Task<IActionResult> SubmitResults(int roomId)
+        public async Task<IActionResult> SubmitResults(int roomId, string? decisionsJson)
         {
-            if (!IsEmployee()) return RedirectToAction("Index", "Login");
+            try
+            {
+                return await SubmitResultsCore(roomId, decisionsJson);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SubmitResults] 失敗：{ex}");
+                return Json(new { success = false, message = "伺服器處理失敗：" + (ex.InnerException?.Message ?? ex.Message) });
+            }
+        }
+
+        private async Task<IActionResult> SubmitResultsCore(int roomId, string? decisionsJson)
+        {
+            if (!IsEmployee()) return Json(new { success = false, message = "請先登入" });
+            var req = new SubmitResultsRequest { RoomId = roomId };
+            if (!string.IsNullOrWhiteSpace(decisionsJson))
+                req.Decisions = System.Text.Json.JsonSerializer.Deserialize<List<AdmissionDecisionItem>>(decisionsJson,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             int empId = GetEmployeeId();
             if (!await IsRoomHostAsync(roomId, empId))
@@ -238,14 +329,32 @@ namespace InterviewProject.Controllers
             if (room.ResultSubmittedAt != null)
                 return Json(new { success = false, message = "已經送出給 HR 了" });
 
-            var resumes = await _db.RoomParticipants
-                .Where(p => p.RoomId == roomId && p.Role == ParticipantRole.Jobseeker && p.Resume != null)
-                .Select(p => p.Resume!)
+            // 🐛 修正：不能在 Select 之後才 Include（EF 會報錯），改成先取出履歷編號、再查履歷並 Include
+            var roomResumeIds = _db.RoomParticipants
+                .Where(p => p.RoomId == roomId && p.Role == ParticipantRole.Jobseeker && p.ResumeId != null)
+                .Select(p => p.ResumeId!.Value);
+            var resumes = await _db.Resumes
                 .Include(r => r.Member)
+                .Where(r => roomResumeIds.Contains(r.Id))
                 .ToListAsync();
+            // 🎯 改版：主持人在頁面上選好每位求職者的結果後一次送出（不再每選一位就送一次、重新整理一次）
+            foreach (var d in req.Decisions ?? new List<AdmissionDecisionItem>())
+            {
+                if (d.Result != AdmissionResultValues.Admitted && d.Result != AdmissionResultValues.Rejected)
+                    return Json(new { success = false, message = "結果只能是錄取或未錄取" });
+                var target = resumes.FirstOrDefault(r => r.Id == d.ResumeId);
+                if (target == null) return Json(new { success = false, message = "有求職者不在這場面試裡" });
+                target.PendingAdmissionResult = d.Result;
+            }
             if (resumes.Any(r => r.PendingAdmissionResult != AdmissionResultValues.Admitted
                               && r.PendingAdmissionResult != AdmissionResultValues.Rejected))
                 return Json(new { success = false, message = "還有求職者沒決定，請全部決定錄取或未錄取後再送出" });
+
+            // 🎯 錄取人數不可超過職缺的需求人數（Jobs.HeadCount；留空或「不限」就不限制）
+            var headLimit = HeadCountHelper.Parse(room.Job?.HeadCount);
+            var admittedCount = resumes.Count(r => r.PendingAdmissionResult == AdmissionResultValues.Admitted);
+            if (headLimit.HasValue && admittedCount > headLimit.Value)
+                return Json(new { success = false, message = $"錄取人數（{admittedCount} 人）超過此職缺的需求人數（{headLimit.Value} 人）" });
 
             room.ResultSubmittedAt = DateTime.Now;
             await _db.SaveChangesAsync();
@@ -257,7 +366,15 @@ namespace InterviewProject.Controllers
             var body = $"<h3>人資您好：</h3><p>「{jobTitle}」的面試已由主持人決定錄取結果：</p><ul>{lines}</ul>" +
                        "<p>請登入系統到「面試管理」確認後通知求職者。</p><br><p>此信件由系統自動寄出，請勿直接回覆。</p>";
             var hrs = await _db.Employees.Where(e => e.Role == "hr").ToListAsync();
-            await Task.WhenAll(hrs.Select(h => _email.SendAsync(EmployeeEmail(h), "面試錄取結果待通知", body)));
+            var hrEmails = hrs.Select(h => EmployeeEmail(h)).ToList();
+            // 🎯 寄信放到背景做，不讓主持人的畫面等 SMTP（寄信慢或逾時時，畫面會像「按了沒反應」）。
+            //    結果已存進資料庫、HR 頁面也看得到，寄信失敗只會記錄在伺服器 log。
+            var emailSvc = _email;
+            _ = Task.Run(async () =>
+            {
+                try { await Task.WhenAll(hrEmails.Select(e => emailSvc.SendAsync(e, "面試錄取結果待通知", body))); }
+                catch (Exception ex) { Console.WriteLine($"[SubmitResults] 背景寄信失敗：{ex.Message}"); }
+            });
 
             return Json(new { success = true, message = "已送出，並通知 HR" });
         }
@@ -495,10 +612,13 @@ namespace InterviewProject.Controllers
             if (room.ResultSubmittedAt == null)
                 return Json(new { success = false, message = "主持人還沒送出錄取結果" });
 
-            var resumes = await _db.RoomParticipants
-                .Where(p => p.RoomId == roomId && p.Role == ParticipantRole.Jobseeker && p.Resume != null)
-                .Select(p => p.Resume!)
+            // 🐛 修正：不能在 Select 之後才 Include（EF 會報錯），改成先取出履歷編號、再查履歷並 Include
+            var roomResumeIds = _db.RoomParticipants
+                .Where(p => p.RoomId == roomId && p.Role == ParticipantRole.Jobseeker && p.ResumeId != null)
+                .Select(p => p.ResumeId!.Value);
+            var resumes = await _db.Resumes
                 .Include(r => r.Member)
+                .Where(r => roomResumeIds.Contains(r.Id))
                 .ToListAsync();
 
             var toNotify = resumes.Where(r =>
@@ -528,6 +648,51 @@ namespace InterviewProject.Controllers
                 message = failed == 0 ? $"已通知 {toNotify.Count} 位求職者，並寄出 email"
                                       : $"已通知 {toNotify.Count} 位求職者（其中 {failed} 封 email 寄送失敗，請確認信箱）"
             });
+        }
+    }
+}
+
+namespace InterviewProject.Controllers
+{
+    public class EvalBatchRequest
+    {
+        public int RoomId { get; set; }
+        public List<EvalBatchItem> Items { get; set; } = new();
+    }
+
+    public class EvalBatchItem
+    {
+        public int ResumeId { get; set; }
+        public int Score { get; set; }
+        public string? Comment { get; set; }
+    }
+
+    public class SubmitResultsRequest
+    {
+        public int RoomId { get; set; }
+        public List<AdmissionDecisionItem>? Decisions { get; set; }
+    }
+
+    public class AdmissionDecisionItem
+    {
+        public int ResumeId { get; set; }
+        public string? Result { get; set; }
+    }
+}
+
+namespace InterviewProject.Models
+{
+    // 職缺「需求人數」(Jobs.HeadCount) 是自由文字（例：1人、2人、不限）。
+    // 解析出第一個數字當作上限；留空、「不限」或沒有數字就回傳 null（不限制）。
+    public static class HeadCountHelper
+    {
+        public static int? Parse(string? headCount)
+        {
+            if (string.IsNullOrWhiteSpace(headCount)) return null;
+            if (headCount.Contains("不限")) return null;
+            var m = System.Text.RegularExpressions.Regex.Match(headCount, @"\d+");
+            if (!m.Success) return null;
+            return int.TryParse(m.Value, out var n) && n > 0 ? n : (int?)null;
         }
     }
 }

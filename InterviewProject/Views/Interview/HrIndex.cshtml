@@ -149,6 +149,11 @@
             border-radius: 8px;
             margin: 12px 0;
             font-size: 14px;
+            /* 頁面重新整理後會停在原本的捲動位置，訊息固定在畫面上方才不會被錯過 */
+            position: sticky;
+            top: 8px;
+            z-index: 100;
+            box-shadow: 0 2px 8px rgba(0,0,0,.15);
         }
 
             .hr-msg.ok {
@@ -286,7 +291,8 @@
                         Uid = "f" + rm.Room.Id,
                                 Action = "HrUpdateMeeting",
                                 RoomId = rm.Room.Id,
-                                ScheduledAt = rm.Room.ScheduledAt ?? DateTime.Today.AddDays(1).AddHours(10),
+                                // 原本的時間已經過了就預設明天 10:00（否則儲存會被「面試時間只能選現在之後」擋下）
+                                ScheduledAt = (rm.Room.ScheduledAt.HasValue && rm.Room.ScheduledAt.Value > DateTime.Now) ? rm.Room.ScheduledAt.Value : DateTime.Today.AddDays(1).AddHours(10),
                                 Resumes = rm.ApprovedResumes,
                                 SelectedResumeIds = rm.Candidates.Select(r => r.Id).ToHashSet(),
                                 Staff = rm.DeptStaff,
@@ -426,10 +432,17 @@
         }
         document.querySelectorAll('.hr-tab-btn').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
         try { var saved = sessionStorage.getItem('hrInterviewTab'); if (saved) showTab(saved); } catch (e) { }
-        @if (TempData["Success"] != null)
-        {
-                <text>showTab('scheduled');</text>
-        }
+        // 🎯 送出表單／按按鈕後頁面重新整理，停留在原本的分頁與捲動位置
+        try {
+            var y = sessionStorage.getItem('hrInterviewScroll');
+            if (y !== null) {
+                sessionStorage.removeItem('hrInterviewScroll');
+                window.addEventListener('load', function () { window.scrollTo(0, parseInt(y) || 0); });
+            }
+        } catch (e) { }
+        document.addEventListener('submit', function () {
+            try { sessionStorage.setItem('hrInterviewScroll', String(window.scrollY)); } catch (e) { }
+        }, true);
 
         // 面試時間：選好「時間」（時／分）後自動關閉日期時間選擇視窗。
         // 只改日期時不關閉（因為通常接著還要選時間）；日期不變、時間有變就視為選完了。
@@ -473,6 +486,9 @@
         async function notifyRoom(roomId) {
             if (!confirm('確定要通知這場面試的求職者結果嗎？系統會更新求職者看到的結果並寄出 email。')) return;
             var note = document.getElementById('note-' + roomId);
+            var btn = document.querySelector('button[onclick="notifyRoom(' + roomId + ')"]');
+            if (btn) btn.disabled = true;
+            if (note) { note.style.color = '#555'; note.textContent = '處理中（正在寄 email），請稍候…'; }
             try {
                 var res = await fetch('/Interview/HrNotifyRoom', {
                     method: 'POST',
@@ -480,11 +496,12 @@
                     body: 'roomId=' + roomId
                 });
                 var data = await res.json();
-                if (data.success) { alert(data.message); location.reload(); }
-                else if (note) { note.textContent = data.message || '操作失敗'; }
+                if (data.success) { alert(data.message); try { sessionStorage.setItem('hrInterviewScroll', String(window.scrollY)); } catch (e) { } location.reload(); return; }
+                if (note) { note.style.color = '#c0392b'; note.textContent = data.message || '操作失敗'; }
             } catch (err) {
-                if (note) note.textContent = '操作失敗，請稍後再試';
+                if (note) { note.style.color = '#c0392b'; note.textContent = '操作失敗，請稍後再試'; }
             }
+            if (btn) btn.disabled = false;
         }
     </script>
 }

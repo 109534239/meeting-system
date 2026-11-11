@@ -26,6 +26,7 @@ namespace InterviewProject.Services
                 smtpClient.UseDefaultCredentials = false;
                 smtpClient.Credentials = new NetworkCredential(FromEmail, AppPassword);
                 smtpClient.EnableSsl = true;
+                smtpClient.Timeout = 20000; // 預設 100 秒太久，最多等 20 秒就放棄（只記錄、不影響主要動作）
                 smtpClient.DeliveryFormat = SmtpDeliveryFormat.International;
 
                 using var mail = new MailMessage();
