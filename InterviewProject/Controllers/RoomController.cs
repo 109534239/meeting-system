@@ -653,6 +653,7 @@ namespace InterviewProject.Controllers
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RoomCode)) return Ok(new { text = (string?)null });
             var code = req.RoomCode.Trim();
+            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。");
             if (_botService.IsSpeaking(code)) return Ok(new { text = (string?)null });
 
             var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(r => r.JitsiRoomName == code);
@@ -707,7 +708,15 @@ namespace InterviewProject.Controllers
             foreach (var l in lines) sbConvo.AppendLine($"{l.Name}：{Clip(l.Text, 200)}");
 
             // 對話內容太少（例如還沒人實質講話）就不要硬問
-            if (lines.Count(l => l.Role != "ai") == 0) return Ok(new { text = (string?)null });
+            if (lines.Count(l => l.Role != "ai") == 0)
+            {
+                Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到請求，但對話裡沒有任何人類發言（語音辨識沒有產生文字），所以不發言。目前收到 {lines.Count} 句，全是 AI。");
+                return Ok(new { text = (string?)null });
+            }
+
+            // 🎯 「要延伸的話題」＝最近一句非 AI 的發言。AI 的問題必須從這句延伸，不能另起爐灶跳到履歷別的地方。
+            var lastHuman = lines.LastOrDefault(l => l.Role != "ai");
+            var anchorText = lastHuman != null ? $"{lastHuman.Name}：{Clip(lastHuman.Text, 200)}" : "（無）";
 
             var names = string.Join("、", present.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrEmpty(n)));
             var jobText = sbJob.Length > 0 ? sbJob.ToString() : "（無）";
@@ -722,14 +731,17 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 【最近的對話】（由舊到新；「求職者-」「職員-」「主持人-」是身分前綴，AI 面試官是你自己）
 {sbConvo}
 最近一位發言者：{req.LastSpeakerName}（{req.LastSpeakerRole}）
+【必須延伸的話題＝最近一句人類發言】
+{anchorText}
 
 規則：
-1. 只在「能延伸剛剛對話的話題」或「針對某位求職者履歷中的具體內容（公司、專案、學校、作品）」時才發問，並盡量把問題連結到職缺要求。
+1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。
+   例：職員說「請先做自我介紹」，就只能順著自我介紹引導（如請對方提到某段相關經歷），不能直接問會議記錄之類的別的主題。
 2. 一次只問一個問題，口語自然，40 字以內。
 3. 可以指定一位求職者：句子以該求職者的姓名開頭（只用姓名，不要「求職者-」前綴）。有多位求職者時，依剛剛的話題與各自履歷，挑最適合的一位，不要每個人問一樣的問題，也不要連續只問同一個人。
 4. 只能引用被點名者本人的履歷或他自己說過的話，不要拿其他求職者的資料比較。
 5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（包含你自己問過的）、問履歷與對話都沒有依據的事。
-6. 如果職員剛問了問題、求職者還沒回答：除非你能補一個更具體、有幫助的承接問題，否則輸出 SKIP，不要搶在職員前面追問。
+6. 如果職員剛問了問題或提出要求、求職者還沒回答：只有在你能「就同一個問題」補上更具體的引導時才說；否則輸出 SKIP。絕對不能趁機換到另一個話題。
 7. 沒有真正值得問的內容時，只輸出 SKIP。
 只輸出要說的那一句話，或 SKIP，不加引號、前綴或說明。";
 

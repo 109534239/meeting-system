@@ -277,6 +277,32 @@ namespace InterviewProject.Services
 ";
 
         // 🎯 注入到頁面裡的錄影機腳本：Canvas 畫格 + Web Audio API 混音，錄成一份有畫面又有聲音的 webm
+        // 🎯 錄音沒聲音的修正：掃 DOM 的 <audio> 元素 / 讀 Jitsi 內部物件這兩條路，從 log 看都接到「靜音」。
+        //    改成在頁面一載入就攔截 RTCPeerConnection，把每一條收到的遠端音軌直接收進 window.__rtcAudioTracks，
+        //    錄影腳本再把這些原始音軌接進混音。
+        private const string RtcAudioHookScript = @"
+(function () {
+    try {
+        window.__rtcAudioTracks = [];
+        const Orig = window.RTCPeerConnection || window.webkitRTCPeerConnection;
+        if (!Orig) return;
+        const Wrapped = function (...args) {
+            const pc = new Orig(...args);
+            try {
+                pc.addEventListener('track', (e) => {
+                    try { if (e.track && e.track.kind === 'audio') window.__rtcAudioTracks.push(e.track); } catch (_) {}
+                });
+            } catch (_) {}
+            return pc;
+        };
+        Wrapped.prototype = Orig.prototype;
+        Object.setPrototypeOf(Wrapped, Orig);
+        window.RTCPeerConnection = Wrapped;
+        if (window.webkitRTCPeerConnection) window.webkitRTCPeerConnection = Wrapped;
+    } catch (_) {}
+})();
+";
+
         private const string RecorderInitScript = @"
 (function () {
     window.__recChunks = [];
@@ -417,6 +443,15 @@ namespace InterviewProject.Services
                 if (!track || connectedTrackIds.has(track.id)) return;
                 try {
                     const stream = new MediaStream([track]);
+                    // Chromium 已知問題：遠端 WebRTC 音軌如果只接 createMediaStreamSource、沒有同時掛在
+                    // 某個 <audio> 元素上，Web Audio 會一直收到純靜音。掛一個靜音的隱藏 <audio> 讓資料真的流動。
+                    try {
+                        const keep = new Audio();
+                        keep.muted = true;
+                        keep.srcObject = stream;
+                        keep.play().catch(() => {});
+                        (window.__keepAudioEls = window.__keepAudioEls || []).push(keep);
+                    } catch (e) {}
                     const src = audioCtx.createMediaStreamSource(stream);
                     src.connect(dest);
                     connectedTrackIds.add(track.id);
@@ -514,16 +549,40 @@ namespace InterviewProject.Services
         } catch (e) {}
     }
 
+    // 🎯 直接把攔截到的 WebRTC 遠端音軌接進混音（一定要排在 scanMedia 前面，才會先佔住這些音軌、避免重複接）
+    function connectRtcTracks() {
+        try {
+            (window.__rtcAudioTracks || []).forEach(track => {
+                if (!track || track.readyState === 'ended' || connectedTrackIds.has(track.id)) return;
+                try {
+                    const stream = new MediaStream([track]);
+                    try {
+                        const keep = new Audio();
+                        keep.muted = true;
+                        keep.srcObject = stream;
+                        keep.play().catch(() => {});
+                        (window.__keepAudioEls = window.__keepAudioEls || []).push(keep);
+                    } catch (e) {}
+                    audioCtx.createMediaStreamSource(stream).connect(dest);
+                    connectedTrackIds.add(track.id);
+                    connectedTracksById.set(track.id, { track, participantId: 'rtc', label: '(RTC 原始音軌)' });
+                    console.log('[Recorder 音量診斷] 以 RTC 攔截接上音軌 trackId=' + track.id + '，readyState=' + track.readyState + '，muted=' + track.muted);
+                } catch (e) {}
+            });
+        } catch (e) {}
+    }
+
+    connectRtcTracks();
     scanMedia();
     connectJitsiTracks();
     connectJitsiVideoTracks();
 
-    const observer = new MutationObserver(() => { scanMedia(); connectJitsiTracks(); connectJitsiVideoTracks(); });
+    const observer = new MutationObserver(() => { connectRtcTracks(); scanMedia(); connectJitsiTracks(); connectJitsiVideoTracks(); });
     observer.observe(document.body, { childList: true, subtree: true });
     window.__mediaObserver = observer;
     // 🎯 DOM 變動事件不一定會在「新的音軌/視訊軌道加入會議」的當下觸發（軌道可能是動態加進已存在的元素，不算 DOM 變動），
     //    保險起見每 2 秒也主動掃一次 Jitsi 內部的軌道清單，確保晚加入或晚開鏡頭/麥克風的人也不會被漏掉
-    window.__trackPollInterval = setInterval(() => { connectJitsiTracks(); connectJitsiVideoTracks(); }, 2000);
+    window.__trackPollInterval = setInterval(() => { connectRtcTracks(); connectJitsiTracks(); connectJitsiVideoTracks(); }, 2000);
 
     // 🎯 盡力而為：從 Jitsi 的畫面找出每個 video 對應的參與者名字，畫在左下角當標籤。
     //    這輪修正的重點：上一輪只有「DOM 容器內找」+「DOM 全域用 id 找」+「靠順序用猜的」三層，
@@ -1101,6 +1160,7 @@ namespace InterviewProject.Services
                 //    一個獨立的公開 bucket（裡面只放這種不含機密資料的靜態檔案，不是存放面試資料那個 bucket），
                 //    用固定的公開網址（Simli:BundleUrl），不管本機測試或部署到 Render 都是同一個網址，
                 //    也不會再踩到 Private Network Access 這個限制。
+                await page.AddInitScriptAsync(RtcAudioHookScript); // 一定要在導航前，才攔得到第一個 PeerConnection
                 var simliApiKey = _config["Simli:ApiKey"];
                 var simliFaceId = _config["Simli:FaceId"];
                 if (!string.IsNullOrEmpty(simliApiKey) && !string.IsNullOrEmpty(simliFaceId))
