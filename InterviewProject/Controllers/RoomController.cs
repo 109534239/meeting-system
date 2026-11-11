@@ -1035,6 +1035,34 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 merged.Add((c.ReceivedAt, $"[{c.ReceivedAt:tt h:mm:ss}] {c.Speaker}：{text}"));
             }
 
+            // 🎯 清掉不該出現的行：
+            //    1. 沒有內容的行（例如影片分析產生的「不明講者：」空行）
+            //    2. 回音：別人的麥克風會收到 AI 面試官從喇叭傳出的聲音，被當成那個人說的話。
+            //       如果某一行（非 AI）的內容，被「30 秒內的 AI 面試官發言」完整包含，就視為回音，丟掉。
+            {
+                var lineRx = new System.Text.RegularExpressions.Regex(@"^\[[^\]]+\]\s*([^：]+)：(.*)$");
+                string Norm(string s) => System.Text.RegularExpressions.Regex.Replace(s ?? "", @"[\s。，、！？…\.\,\!\?：:；;「」\""']", "");
+                var aiLines = new List<(DateTime time, string norm)>();
+                foreach (var (time, line) in merged)
+                {
+                    var mm = lineRx.Match(line);
+                    if (mm.Success && mm.Groups[1].Value.Trim() == "AI 面試官") aiLines.Add((time, Norm(mm.Groups[2].Value)));
+                }
+                var before = merged.Count;
+                merged = merged.Where(x =>
+                {
+                    var mm = lineRx.Match(x.line);
+                    if (!mm.Success) return true;
+                    var who = mm.Groups[1].Value.Trim();
+                    var norm = Norm(mm.Groups[2].Value);
+                    if (norm.Length == 0) return false;
+                    if (who == "AI 面試官") return true;
+                    if (norm.Length >= 2 && aiLines.Any(a => Math.Abs((a.time - x.time).TotalSeconds) <= 30 && a.norm.Contains(norm))) return false;
+                    return true;
+                }).ToList();
+                if (merged.Count != before) Console.WriteLine($"[SaveTranscript] roomCode={roomCode}：清掉 {before - merged.Count} 行空白/AI 回音。");
+            }
+
             if (merged.Count > 0)
             {
                 content = string.Join("\n", merged.OrderBy(x => x.time).Select(x => x.line));

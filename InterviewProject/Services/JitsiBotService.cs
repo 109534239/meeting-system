@@ -1430,7 +1430,26 @@ namespace InterviewProject.Services
                 {
                     await Task.Delay(1500); // 留一點緩衝，讓解除靜音、錄影機都先穩定下來
                     Console.WriteLine($"[JitsiBot] 房間 {roomCode} AI 面試官準備開口打招呼（一進會議室就講，方便單人測試時直接確認聲音有沒有通）。");
-                    await SpeakAsync(roomCode, "哈囉，大家好，我是今天的 AI 面試官，很高興加入這場面試，我們開始吧。");
+                    const string greeting = "哈囉，大家好，我是今天的 AI 面試官，很高興加入這場面試，我們開始吧。";
+                    // 🎯 開場白是 AI 面試官自己直接講的，不會經過主持人瀏覽器的「AI 說話」廣播，
+                    //    所以逐字稿原本完全沒有這句話。這裡在開口的同時直接存進逐字稿暫存。
+                    try
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        var db = scope.ServiceProvider.GetRequiredService<InterviewProject.Data.AppDbContext>();
+                        var nowAt = DateTime.Now;
+                        db.TranscriptChunks.Add(new InterviewProject.Models.TranscriptChunkRecord
+                        {
+                            RoomCode = roomCode,
+                            Speaker = "AI 面試官",
+                            Text = greeting,
+                            TimeLabel = nowAt.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW")),
+                            ReceivedAt = nowAt
+                        });
+                        await db.SaveChangesAsync();
+                    }
+                    catch (Exception ex) { Console.WriteLine($"[JitsiBot] 開場白寫入逐字稿失敗：{ex.Message}"); }
+                    await SpeakAsync(roomCode, greeting);
                 });
             }
             catch (Exception ex)
