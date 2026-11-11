@@ -290,6 +290,91 @@ namespace InterviewProject.Services
             }
         }
 
+        // 🎯 帶時間的語音轉文字：每一句話各佔一行，行首標示「這句話在這段音檔裡的第幾分幾秒開始」，
+        //    讓逐字稿/字幕能對上真正講話的時間（原本整段音檔只轉成一大坨文字、全部蓋同一個時間）。
+        //    回傳 (起點秒數, 內容) 清單；失敗或解析不出任何帶時間的行時回傳 null，呼叫端會退回舊做法。
+        public async Task<List<(double offsetSec, string text)>?> TranscribeAudioTimedAsync(byte[] audioBytes, string mimeType)
+        {
+            var apiKey = _config["Gemini:ApiKey"] ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
+            if (string.IsNullOrEmpty(apiKey) || audioBytes.Length == 0) return null;
+
+            await _transcribeConcurrencyLimiter.WaitAsync();
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                client.Timeout = TimeSpan.FromMinutes(3);
+                var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+                var body = new
+                {
+                    contents = new[]
+                    {
+                        new
+                        {
+                            parts = new object[]
+                            {
+                                new { text =
+                                    "請把這段音訊逐句轉成繁體中文文字稿。每一句話（一次連續的發言）單獨一行，格式固定為：\n" +
+                                    "[分:秒] 內容\n" +
+                                    "其中「分:秒」是這句話在這段音訊裡『開始講話』的時間（從音訊開頭起算，例如 [0:12]、[1:05]、[12:30]）。\n" +
+                                    "只輸出這些行，不要任何說明、標題或其他文字。\n" +
+                                    "音訊大部分時間可能是安靜、雜音、呼吸聲或背景音，這是正常的，請只轉寫真正聽得到的人聲。" +
+                                    "不要憑空腦補、不要重複輸出同一句話。如果整段都沒有人講話，只回覆「（無語音內容）」。" },
+                                new { inline_data = new { mime_type = mimeType, data = Convert.ToBase64String(audioBytes) } }
+                            }
+                        }
+                    },
+                    generationConfig = new { maxOutputTokens = 4000, temperature = 0.2 }
+                };
+                var json = JsonSerializer.Serialize(body);
+
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    try
+                    {
+                        var response = await client.PostAsync(url, new StringContent(json, Encoding.UTF8, "application/json"));
+                        var respBody = await response.Content.ReadAsStringAsync();
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            Console.WriteLine($"[GeminiService] TranscribeAudioTimedAsync 失敗：HTTP {(int)response.StatusCode}");
+                            if ((int)response.StatusCode == 429) { await Task.Delay((attempt + 1) * 3000); continue; }
+                            return null;
+                        }
+                        using var doc = JsonDocument.Parse(respBody);
+                        var raw = doc.RootElement.GetProperty("candidates")[0].GetProperty("content")
+                            .GetProperty("parts")[0].GetProperty("text").GetString() ?? "";
+                        Console.WriteLine($"[GeminiService] TranscribeAudioTimedAsync 原始回覆（前 200 字）：{raw.Substring(0, Math.Min(200, raw.Length))}");
+
+                        var result = new List<(double, string)>();
+                        string? prevText = null; int dup = 0;
+                        foreach (var line in raw.Replace("\r\n", "\n").Split('\n'))
+                        {
+                            var m = System.Text.RegularExpressions.Regex.Match(line.Trim(), @"^\[(?:(\d+):)?(\d{1,2}):(\d{2})\]\s*(.+)$");
+                            if (!m.Success) continue;
+                            int h = m.Groups[1].Success ? int.Parse(m.Groups[1].Value) : 0;
+                            // 只有「分:秒」兩段時，第一段是分鐘
+                            int a = int.Parse(m.Groups[2].Value), s = int.Parse(m.Groups[3].Value);
+                            double sec = m.Groups[1].Success ? h * 3600 + a * 60 + s : a * 60 + s;
+                            var text = m.Groups[4].Value.Trim();
+                            if (text.Length == 0 || text.Contains("無語音內容")) continue;
+                            if (prevText == text) { dup++; continue; }   // 連續一模一樣＝幻覺重複，不收
+                            prevText = text;
+                            result.Add((sec, text));
+                        }
+                        if (dup > 3 && dup >= (result.Count + dup) * 0.6) return new List<(double, string)>(); // 大半是重複幻覺
+                        return result.Count > 0 ? result : null;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[GeminiService] TranscribeAudioTimedAsync 例外：{ex.Message}");
+                        if (attempt >= 1) return null;
+                        await Task.Delay(2000);
+                    }
+                }
+                return null;
+            }
+            finally { _transcribeConcurrencyLimiter.Release(); }
+        }
+
         // 🎯 防呆：把「同一行重複很多次」這種明顯的幻覺輸出擋下來
         //    - 連續重複的行先收斂成一行（例如「沒有看到」x50 → 只留一次）
         //    - 收斂完之後，如果整段內容大部分（>60%）都是被收斂掉的重複行，代表這整段轉錄結果很可能不可信，

@@ -1308,6 +1308,7 @@ namespace InterviewProject.Services
                         Url = "https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.js"
                     });
                     await page.EvaluateAsync(RecorderInitScript);
+                    RecordingStartTimes[roomCode] = DateTime.Now; // 影片 0 秒對應的時間，字幕對齊用
                     Console.WriteLine($"[JitsiBot] 房間 {roomCode} 自訂錄影機（畫面+聲音）已啟動。");
                 }
                 catch (Exception ex)
@@ -1506,6 +1507,8 @@ namespace InterviewProject.Services
         //    同時觸發 AI 講話，導致疊在一起搶話。RoomController 在真的呼叫 SpeakAsync 之前
         //    會先檢查這個狀態，是 true 就直接略過這次觸發。
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _speakingRooms = new();
+
+        public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> RecordingStartTimes = new();
 
         public bool IsSpeaking(string roomCode)
             => !string.IsNullOrEmpty(roomCode) && _speakingRooms.TryGetValue(roomCode.Trim(), out var v) && v;

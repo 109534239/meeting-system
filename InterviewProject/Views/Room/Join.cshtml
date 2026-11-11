@@ -911,6 +911,7 @@
                     myAudioRecorder = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {});
                     myAudioRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) myAudioChunks.push(e.data); };
                     myAudioRecorder.start(1000);
+                    window.__myAudioStartMs = Date.now(); // 音檔從這一刻開始，送去轉文字時用來換算每句話的真實時間
                     console.log('[initAudio] 已開始錄製自己的麥克風音檔（' + MY_NAME + '）');
 
                     // 🐛 這輪新增：懷疑「Jitsi 加入會議後把麥克風獨佔權搶走」這個舊問題其實還沒真的解決，
@@ -968,7 +969,7 @@
                 console.log('[submitMyAudioTranscript] 準備送出音檔，大小=' + blob.size + ' bytes（' + MY_NAME + '）');
                 const fd = new FormData();
                 fd.append('audio', blob, 'audio.webm');
-                const url = '/Room/SubmitAudioTranscript?roomCode=' + encodeURIComponent(ROOM_CODE) + '&speakerName=' + encodeURIComponent(MY_NAME);
+                const url = '/Room/SubmitAudioTranscript?roomCode=' + encodeURIComponent(ROOM_CODE) + '&speakerName=' + encodeURIComponent(MY_NAME) + '&startedAtMs=' + (window.__myAudioStartMs || 0);
                 const r = await fetch(url, { method: 'POST', body: fd });
                 console.log('[submitMyAudioTranscript] 音檔已送出，伺服器回應狀態碼=' + r.status + '（' + MY_NAME + '）');
             } catch (e) {

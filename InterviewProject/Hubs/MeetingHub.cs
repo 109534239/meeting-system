@@ -200,6 +200,14 @@ namespace InterviewProject.Hubs
                     roomWithJob.RecordingFileName = fileName;
                     await db.SaveChangesAsync();
 
+                    // 🎯 存下「影片 0 秒＝幾點幾分」，播放時字幕才能對齊影片
+                    try
+                    {
+                        if (JitsiBotService.RecordingStartTimes.TryRemove(roomCode, out var recStartedAt))
+                            await storage.UploadTextAsync($"錄影錄音/{fileName}.start", recStartedAt.ToString("o"));
+                    }
+                    catch (Exception ex) { Console.WriteLine($"[MeetingHub] 存錄影開始時間失敗：{ex.Message}"); }
+
                     Console.WriteLine($"[MeetingHub] 房間 {roomCode} 的 AI 面試官錄影已上傳完成：{fileName}");
                 }
                 catch (Exception ex)

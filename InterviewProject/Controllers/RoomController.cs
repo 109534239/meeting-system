@@ -552,7 +552,7 @@ namespace InterviewProject.Controllers
         //    改成每個人自己把整場錄下來的麥克風音檔，直接送給 Gemini 做語音轉文字，結果併進同一個資料庫暫存表。
         [HttpPost]
         [RequestSizeLimit(25_000_000)]
-        public async Task<IActionResult> SubmitAudioTranscript([FromQuery] string roomCode, [FromQuery] string speakerName, IFormFile? audio)
+        public async Task<IActionResult> SubmitAudioTranscript([FromQuery] string roomCode, [FromQuery] string speakerName, IFormFile? audio, [FromQuery] long startedAtMs = 0)
         {
             // 🐛 這輪新增：印出伺服器實際收到的 roomCode / speakerName / 音檔大小。
             //    這輪出現「大家的話全部被貼上『主持人』的標籤」這個症狀，需要先確認問題出在
@@ -573,6 +573,40 @@ namespace InterviewProject.Controllers
             }
 
             var mimeType = string.IsNullOrEmpty(audio.ContentType) ? "audio/webm" : audio.ContentType;
+
+            // 🎯 優先用「帶時間」的轉錄：每句話各存一筆，ReceivedAt = 音檔開始錄的時間 + 這句話的起點秒數，
+            //    逐字稿和影片字幕才對得上真正講話的時間。失敗再退回下面舊的整段轉錄。
+            if (startedAtMs > 0)
+            {
+                var timed = await _gemini.TranscribeAudioTimedAsync(bytes, mimeType);
+                if (timed != null)
+                {
+                    if (timed.Count == 0)
+                    {
+                        Console.WriteLine($"[SubmitAudioTranscript] speakerName={speakerName} 帶時間轉錄判定無有效語音，不存入。");
+                        return Ok(new { success = true });
+                    }
+                    var start = DateTimeOffset.FromUnixTimeMilliseconds(startedAtMs).ToLocalTime().DateTime;
+                    var zh = new System.Globalization.CultureInfo("zh-TW");
+                    foreach (var (offsetSec, lineText) in timed)
+                    {
+                        var at = start.AddSeconds(offsetSec);
+                        _context.TranscriptChunks.Add(new TranscriptChunkRecord
+                        {
+                            RoomCode = roomCode,
+                            Speaker = speakerName,
+                            Text = lineText,
+                            TimeLabel = at.ToString("tt h:mm:ss", zh),
+                            ReceivedAt = at
+                        });
+                    }
+                    await _context.SaveChangesAsync();
+                    Console.WriteLine($"[SubmitAudioTranscript] speakerName={speakerName} 帶時間轉錄成功，共 {timed.Count} 句。");
+                    return Ok(new { success = true });
+                }
+                Console.WriteLine($"[SubmitAudioTranscript] speakerName={speakerName} 帶時間轉錄失敗，退回整段轉錄。");
+            }
+
             var text = await _gemini.TranscribeAudioAsync(bytes, mimeType);
 
             if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容"))
@@ -1301,7 +1335,23 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 
             var content = await _storage.DownloadTextAsync(key);
             var lines = content.Split('\n');
-            var vtt = BuildVttFromTranscript(lines);
+
+            // 🎯 影片的 0 秒 = AI 面試官開始錄影的那一刻（上傳錄影時順手存了一個 .start 檔）。
+            //    有這個時間才能讓字幕跟影片對齊；沒有（舊的場次）才退回「以第一句話當 0 秒」的估算。
+            TimeSpan? recStart = null;
+            if (!string.IsNullOrEmpty(room.RecordingFileName))
+            {
+                try
+                {
+                    var startKey = $"錄影錄音/{room.RecordingFileName}.start";
+                    if (await _storage.ExistsAsync(startKey)
+                        && DateTime.TryParse((await _storage.DownloadTextAsync(startKey)).Trim(), null,
+                               System.Globalization.DateTimeStyles.RoundtripKind, out var rs))
+                        recStart = rs.TimeOfDay;
+                }
+                catch { /* 讀不到就退回估算 */ }
+            }
+            var vtt = BuildVttFromTranscript(lines, recStart);
             return Content(vtt, "text/vtt", Encoding.UTF8);
         }
 
@@ -1315,7 +1365,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             new(@"^\[(上午|下午)\s*(\d{1,2}):(\d{2}):(\d{2})\]\s*(.+)$");
 
         // 逐字稿固定格式是「[上午/下午 H:MM:SS] 姓名：內容」，用第一句話的時間當基準點（t0 = 00:00.000）往後推算每句話的時間
-        private string BuildVttFromTranscript(string[] lines)
+        private string BuildVttFromTranscript(string[] lines, TimeSpan? recStart = null)
         {
             var sb = new StringBuilder();
             sb.AppendLine("WEBVTT");
@@ -1348,18 +1398,20 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 
             if (!cues.Any()) return sb.ToString();
 
-            var t0 = cues[0].time;
+            var t0 = recStart ?? cues[0].time;
+            // 跨過午夜時（例如 23:59 → 00:01）時間會倒退，補一天
+            TimeSpan Rel(TimeSpan x) { var d = x - t0; if (d < TimeSpan.FromHours(-12)) d += TimeSpan.FromHours(24); return d; }
             int index = 1;
             for (int i = 0; i < cues.Count; i++)
             {
-                var start = cues[i].time - t0;
+                var start = Rel(cues[i].time);
                 if (start < TimeSpan.Zero) start = TimeSpan.Zero;
 
-                // 每句字幕預設顯示 4 秒，但如果下一句提早出現就提早結束，避免字幕重疊
-                var end = start + TimeSpan.FromSeconds(4);
+                // 字幕顯示時間依字數決定（約 3~8 秒），如果下一句提早出現就提早結束，避免字幕重疊
+                var end = start + TimeSpan.FromSeconds(Math.Min(8, Math.Max(3, cues[i].text.Length * 0.3)));
                 if (i + 1 < cues.Count)
                 {
-                    var nextStart = cues[i + 1].time - t0;
+                    var nextStart = Rel(cues[i + 1].time);
                     if (nextStart < end && nextStart > start) end = nextStart;
                 }
                 if (end <= start) end = start + TimeSpan.FromSeconds(1);
