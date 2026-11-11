@@ -605,11 +605,11 @@
     color: #ffffff;
 }
 
-.hrapp-ai-btn-primary:not(:disabled):hover {
-    background-color: #164d64;
-    border-color: #164d64;
-    color: #ffffff;
-}
+    .hrapp-ai-btn-primary:not(:disabled):hover {
+        background-color: #164d64;
+        border-color: #164d64;
+        color: #ffffff;
+    }
 
 .hrapp-ai-btn:disabled {
     opacity: 0.55;
@@ -629,27 +629,27 @@
     min-width: 650px;
 }
 
-.comparison-table th,
-.comparison-table td {
-    padding: 16px 20px;
-    border-bottom: 1px solid #e5e7eb;
-    text-align: left;
-}
+    .comparison-table th,
+    .comparison-table td {
+        padding: 16px 20px;
+        border-bottom: 1px solid #e5e7eb;
+        text-align: left;
+    }
 
-.comparison-table th {
-    background: #f8fafc;
-    font-size: 14px;
-    color: #253047;
-}
+    .comparison-table th {
+        background: #f8fafc;
+        font-size: 14px;
+        color: #253047;
+    }
 
-.comparison-table td {
-    font-size: 14px;
-    color: #444;
-}
+    .comparison-table td {
+        font-size: 14px;
+        color: #444;
+    }
 
-.comparison-table tbody tr:hover {
-    background: #f8fafc;
-}
+    .comparison-table tbody tr:hover {
+        background: #f8fafc;
+    }
 
 #rankingContent {
     overflow-x: auto;
@@ -812,9 +812,9 @@
         gap: 10px;
     }
 
-        .hrapp-ai-dashboard-header h3 {
-            font-size: 18px;
-        }
+    .hrapp-ai-dashboard-header h3 {
+        font-size: 18px;
+    }
 
     .hrapp-ai-stats {
         gap: 10px;
@@ -1232,3 +1232,59 @@
         gap: 12px;
     }
 }
+
+/* ==========================================================
+   AI 智慧篩選：表頭排序按鈕
+   外觀與其他表頭文字一致，只多一個淡色排序箭頭
+   ========================================================== */
+
+.hrapp-grid-head button.hrapp-sort-btn {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 3px 6px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+    font-family: inherit;
+    font-size: 13px; /* 與 .hrapp-grid-head 相同 */
+    font-weight: 600; /* 與 .hrapp-grid-head 相同 */
+    line-height: 1.4;
+    color: inherit; /* 沿用表頭的 var(--text-muted) */
+    white-space: nowrap; /* 不換行 */
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+    .hrapp-grid-head button.hrapp-sort-btn:hover {
+        background-color: #edf4f7;
+        color: #206c8b;
+    }
+
+    .hrapp-grid-head button.hrapp-sort-btn:focus-visible {
+        outline: 2px solid rgba(32, 108, 139, 0.35);
+        outline-offset: 1px;
+    }
+
+    /* 排序中：主色文字 + 淡底，與「查看 AI 分析報告」按鈕同色系 */
+    .hrapp-grid-head button.hrapp-sort-btn.active {
+        background-color: #e6f0f4;
+        color: #206c8b;
+    }
+
+    .hrapp-grid-head button.hrapp-sort-btn .sort-icon {
+        font-size: 12px;
+        line-height: 1;
+        opacity: 0.45;
+        transition: opacity 0.15s ease;
+    }
+
+    .hrapp-grid-head button.hrapp-sort-btn:hover .sort-icon,
+    .hrapp-grid-head button.hrapp-sort-btn.active .sort-icon {
+        opacity: 1;
+    }

@@ -145,7 +145,15 @@
         <div>最高學歷 / 科系</div>
         <div>工作經驗</div>
         <div class="text-center">目前狀態</div>
-        <div class="text-center">AI 智慧篩選</div>
+        <div class="text-center">
+            <button type="button"
+                    id="btnSortAiScore"
+                    class="hrapp-sort-btn"
+                    data-sort="none"
+                    title="依 AI 分數排序">
+                AI 智慧篩選 <span class="sort-icon">⇅</span>
+            </button>
+        </div>
         <div class="text-center">操作</div>
     </div>
 
@@ -193,6 +201,7 @@
 
                 <div class="hrapp-row hrapp-cols @rowClass @statusClass"
                      data-row-id="@item.Id"
+                     data-score="@(hasAiScore ? score.Value.ToString() : "")"
                      onclick="location.href='@Url.Action("Details", "AdminApplication", new { id = item.Id })'">
 
                     @* 1. 應徵時間 *@
@@ -946,6 +955,58 @@
                     closeReport();
                 }
             });
+
+            // 5. AI 分數排序（高→低 → 低→高 → 原始順序）
+            const sortBtn = document.getElementById("btnSortAiScore");
+            const resumeList = document.querySelector(".hrapp-list");
+
+            if (sortBtn && resumeList) {
+                const rows = Array.from(resumeList.querySelectorAll(".hrapp-row"));
+
+                // 記住原本順序（後端依應徵時間排序）
+                rows.forEach((row, i) => row.dataset.originalIndex = i);
+
+                const states = ["none", "desc", "asc"];
+                const icons = { none: "⇅", desc: "↓", asc: "↑" };
+                const titles = {
+                    none: "依 AI 分數排序",
+                    desc: "目前：分數由高到低",
+                    asc: "目前：分數由低到高"
+                };
+
+                const getScore = row =>
+                    row.dataset.score ? Number(row.dataset.score) : null;
+
+                const byOriginal = (a, b) =>
+                    a.dataset.originalIndex - b.dataset.originalIndex;
+
+                sortBtn.addEventListener("click", function () {
+                    const next = states[(states.indexOf(this.dataset.sort) + 1) % states.length];
+
+                    this.dataset.sort = next;
+                    this.querySelector(".sort-icon").textContent = icons[next];
+                    this.title = titles[next];
+                    this.classList.toggle("active", next !== "none");
+
+                    const sorted = rows.slice().sort((a, b) => {
+                        if (next === "none") return byOriginal(a, b);
+
+                        const sa = getScore(a);
+                        const sb = getScore(b);
+
+                        // 尚未評分的永遠排最後
+                        if (sa === null && sb === null) return byOriginal(a, b);
+                        if (sa === null) return 1;
+                        if (sb === null) return -1;
+
+                        const diff = next === "desc" ? sb - sa : sa - sb;
+                        return diff !== 0 ? diff : byOriginal(a, b); // 同分維持原順序
+                    });
+
+                    // 移動既有節點，原本綁定的事件（查看評語、狀態下拉）都會保留
+                    resumeList.append(...sorted);
+                });
+            }
 
         });
     </script>
