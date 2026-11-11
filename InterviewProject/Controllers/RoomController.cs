@@ -752,6 +752,21 @@ namespace InterviewProject.Controllers
             var lastHuman = lines.LastOrDefault(l => l.Role != "ai");
             var anchorText = lastHuman != null ? $"{lastHuman.Name}：{Clip(lastHuman.Text, 200)}" : "（無）";
 
+            // 🎯 判斷現在是哪一種情境，直接告訴模型該怎麼做（不讓它自己亂選）
+            string scenario;
+            var lastIsJobseeker = lastHuman != null &&
+                (string.Equals(lastHuman.Role, "jobseeker", StringComparison.OrdinalIgnoreCase)
+                 || (lastHuman.Name ?? "").StartsWith("求職者"));
+            var lastLooksLikeAsk = req.LastWasQuestion || (lastHuman != null &&
+                System.Text.RegularExpressions.Regex.IsMatch(lastHuman.Text ?? "", @"[？?]|請|嗎|呢|什麼|如何|怎麼|為什麼|能否|可以"));
+            if (lastHuman == null) scenario = "（無）";
+            else if (!lastIsJobseeker && lastLooksLikeAsk)
+                scenario = "情境A：職員/主持人剛提出問題或要求，求職者還沒回答（或沒回答完）。請「就同一個問題」延伸引導：換個更具體的說法、縮小範圍、或指出可以從哪個面向開始談（可結合該求職者履歷中的具體經歷），幫求職者接得上；不可換成別的題目。";
+            else if (lastIsJobseeker)
+                scenario = "情境B：求職者剛回答完，職員/主持人還沒接著問。請針對他剛回答裡的具體內容追問一個細節（例如做法、成果、遇到的困難、數字），或視情況自然銜接履歷/職缺要求的下一題。";
+            else
+                scenario = "情境C：職員/主持人剛說了一段話（不是問題）。請順著他的話題，向適合的求職者提出一個延伸問題。";
+
             var names = string.Join("、", present.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrEmpty(n)));
             var jobText = sbJob.Length > 0 ? sbJob.ToString() : "（無）";
             var resumeText = sbResume.Length > 0 ? sbResume.ToString() : "（無履歷資料）";
@@ -767,6 +782,8 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 最近一位發言者：{req.LastSpeakerName}（{req.LastSpeakerRole}）
 【必須延伸的話題＝最近一句人類發言】
 {anchorText}
+【目前情境與做法】
+{scenario}
 
 規則：
 1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。
@@ -774,7 +791,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 2. 一次只問一個問題，口語自然，40 字以內。
 3. 可以指定一位求職者：句子以該求職者的姓名開頭（只用姓名，不要「求職者-」前綴）。有多位求職者時，依剛剛的話題與各自履歷，挑最適合的一位，不要每個人問一樣的問題，也不要連續只問同一個人。
 4. 只能引用被點名者本人的履歷或他自己說過的話，不要拿其他求職者的資料比較。
-5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（包含你自己問過的）、問履歷與對話都沒有依據的事。
+5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（情境A 例外：同一題可以換個說法再引導，但不能原句重複）、問履歷與對話都沒有依據的事。
 6. 如果職員剛問了問題或提出要求、求職者還沒回答：只有在你能「就同一個問題」補上更具體的引導時才說；否則輸出 SKIP。絕對不能趁機換到另一個話題。
 7. 沒有真正值得問的內容時，只輸出 SKIP。
 只輸出要說的那一句話，或 SKIP，不加引號、前綴或說明。";
@@ -1000,10 +1017,20 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 }
             }
 
-            foreach (var c in chunks)
+            // 🎯 同一個人的同一句話可能同時來自「瀏覽器即時辨識」和「整段音檔轉錄」兩個來源，
+            //    時間相近（20 秒內）且文字相同／包含關係的視為同一句，只留一筆，避免逐字稿重複。
+            var acceptedChunks = new List<(string speaker, string norm, DateTime time)>();
+            string NormText(string s) => System.Text.RegularExpressions.Regex.Replace(s ?? "", @"[\s。，、！？…\.\,\!\?：:；;「」\""']", "");
+            foreach (var c in chunks.OrderBy(x => x.ReceivedAt))
             {
                 // 🎯 被判定是雜訊洗版的人，這些原始片段就不要輸出了——影片轉錄那邊已經補上這個人的內容了
                 if (!speakersWithChunks.Contains(c.Speaker)) continue;
+                var nrm = NormText(c.Text);
+                if (nrm.Length >= 3 && acceptedChunks.Any(a => a.speaker == c.Speaker
+                        && Math.Abs((a.time - c.ReceivedAt).TotalSeconds) <= 20
+                        && (a.norm == nrm || (a.norm.Length >= 4 && nrm.Length >= 4 && (a.norm.Contains(nrm) || nrm.Contains(a.norm))))))
+                    continue;
+                acceptedChunks.Add((c.Speaker, nrm, c.ReceivedAt));
                 var text = c.Text.Replace("\r\n", " ").Replace("\n", " ").Trim();
                 merged.Add((c.ReceivedAt, $"[{c.ReceivedAt:tt h:mm:ss}] {c.Speaker}：{text}"));
             }
@@ -1493,6 +1520,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
         public string? RoomCode { get; set; }
         public string? LastSpeakerName { get; set; }
         public string? LastSpeakerRole { get; set; }
+        public bool LastWasQuestion { get; set; }
         public List<AiConvoLine>? Lines { get; set; }
     }
 

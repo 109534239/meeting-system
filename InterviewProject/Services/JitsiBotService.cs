@@ -83,6 +83,16 @@ namespace InterviewProject.Services
             const generateSimliSessionToken = mod.generateSimliSessionToken;
             if (!SimliClient || !generateSimliSessionToken) throw new Error('simli-client 模組載入了，但找不到需要的匯出（SimliClient / generateSimliSessionToken）');
 
+            // 🐛 這個腳本是在頁面「還沒建好 body」時就開始跑的（AddInitScript）。如果套件載入得很快（有快取時），
+            //    下面的 document.body.appendChild 會在 body 還是 null 時執行，直接噴
+            //    「Cannot read properties of null (reading 'appendChild')」、整個 Simli 初始化失敗——
+            //    AI 就沒臉沒聲音。先等 body 存在再繼續。
+            if (!document.body) {
+                await new Promise(r => {
+                    if (document.readyState !== 'loading') { r(); return; }
+                    document.addEventListener('DOMContentLoaded', () => r(), { once: true });
+                });
+            }
             const videoEl = document.createElement('video');
             videoEl.autoplay = true; videoEl.playsInline = true; videoEl.muted = true;
             videoEl.style.position = 'fixed'; videoEl.style.left = '-9999px'; videoEl.style.top = '-9999px';
