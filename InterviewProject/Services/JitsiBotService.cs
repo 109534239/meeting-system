@@ -67,6 +67,7 @@ namespace InterviewProject.Services
     window.__simliReady.catch(() => {});
 
     window.__simliClient = null;
+    window.__simliStatus = '初始化尚未開始';
     window.__simliSpeak = null;   // function(base64Pcm24k) -> 把音訊送進 Simli 講出來
 
     async function initSimli() {
@@ -75,6 +76,7 @@ namespace InterviewProject.Services
             //    simli-client 現在的正式版本是 3.0.2，內部改用 livekit-client 重寫，
             //    連建立連線的方式都完全不一樣（要先跟 Simli 換一個 session token，
             //    再用不同的建構子參數），這是照官方最新文件重新對過的版本。
+            window.__simliStatus = '正在載入 SDK 套件：' + window.__SIMLI_BUNDLE_URL__;
             const mod = await import(window.__SIMLI_BUNDLE_URL__);
             const SimliClient = mod.SimliClient;
             const LogLevel = mod.LogLevel;
@@ -90,6 +92,7 @@ namespace InterviewProject.Services
             document.body.appendChild(videoEl);
             document.body.appendChild(audioEl);
 
+            window.__simliStatus = '正在換取 session token（卡在這裡＝API Key/FaceId 有問題或 Simli 沒回應）';
             console.log('[Simli] 正在跟 Simli 換取 session token...');
             const tokenResp = await generateSimliSessionToken({
                 apiKey: window.__SIMLI_API_KEY__,
@@ -109,6 +112,7 @@ namespace InterviewProject.Services
             });
             const sessionToken = tokenResp && tokenResp.session_token;
             if (!sessionToken) throw new Error('拿不到 session_token，回應內容：' + JSON.stringify(tokenResp));
+            window.__simliStatus = '已取得 token，正在建立 WebRTC 連線（卡在這裡＝連線被擋或額度問題）';
             console.log('[Simli] 已取得 session token');
 
             // 用 livekit 傳輸模式（Simli 官方建議，對防火牆較嚴格的網路環境相容性比 p2p 模式好，
@@ -146,6 +150,7 @@ namespace InterviewProject.Services
 
             await client.start();
 
+            window.__simliStatus = '已連線';
             window.__simliSpeak = async function (base64Pcm24k) {
                 try {
                     const raw = atob(base64Pcm24k);
@@ -176,6 +181,7 @@ namespace InterviewProject.Services
                 } catch (e) { console.error('[Simli] speak 失敗：', e); }
             };
         } catch (e) {
+            window.__simliStatus = '初始化失敗：' + (e && e.message ? e.message : e);
             console.error('[Simli] 初始化失敗：', e);
             __simliReadyReject(e);
         }
@@ -1525,7 +1531,7 @@ namespace InterviewProject.Services
                 var base64Audio = Convert.ToBase64String(audioBytes);
                 var speakScript = "(async () => { if (window.__simliSpeak) { await window.__simliSpeak(" +
                                    JsonSerializer.Serialize(base64Audio) +
-                                   "); } else { console.error('[Simli] __simliSpeak 尚未就緒'); } })();";
+                                   "); } else { console.error('[Simli] __simliSpeak 尚未就緒，目前狀態：' + window.__simliStatus); } })();";
 
                 await instance.PageInstance.EvaluateAsync(speakScript);
                 Console.WriteLine($"[JitsiBot] 房間 {roomCode} 的 AI 面試官已送出語音：「{text}」");
