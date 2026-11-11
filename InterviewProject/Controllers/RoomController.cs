@@ -643,6 +643,107 @@ namespace InterviewProject.Controllers
             return Ok(new { success = true });
         }
 
+        // 🎯 AI 面試官「該不該說話、說什麼」的決定點。
+        //    依最近的對話（職員、求職者說了什麼）+ 職缺條件 + 在場求職者各自的履歷，產生「一句」延伸提問；
+        //    可以指定其中一位求職者（句子以姓名開頭），不同求職者問不同的問題。
+        //    沒有值得問的內容時回傳 text = null，前端就不讓 AI 開口（不說鼓勵、客套這類廢話）。
+        //    開場自我介紹不走這裡（寫在 JitsiBotService）。
+        [HttpPost]
+        public async Task<IActionResult> AiNextQuestion([FromBody] AiNextQuestionRequest req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.RoomCode)) return Ok(new { text = (string?)null });
+            var code = req.RoomCode.Trim();
+            if (_botService.IsSpeaking(code)) return Ok(new { text = (string?)null });
+
+            var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(r => r.JitsiRoomName == code);
+            if (room == null) return Ok(new { text = (string?)null });
+
+            Job? job = null;
+            if (room.JobsId.HasValue)
+                job = await _context.Jobs.AsNoTracking().Include(j => j.SkillTags).FirstOrDefaultAsync(j => j.Id == room.JobsId.Value);
+
+            var participants = await _context.RoomParticipants.AsNoTracking()
+                .Where(p => p.RoomId == room.Id && p.Role == ParticipantRole.Jobseeker && p.ResumeId != null)
+                .Include(p => p.Resume).ThenInclude(r => r!.Member)
+                .Include(p => p.Resume).ThenInclude(r => r!.Educations)
+                .Include(p => p.Resume).ThenInclude(r => r!.WorkExperiences)
+                .Include(p => p.Resume).ThenInclude(r => r!.Portfolios)
+                .ToListAsync();
+
+            // 優先只看「已進場、還沒離開」的求職者；都判斷不出來時退回全部受邀的求職者
+            var present = participants.Where(p => p.JoinedAt != null && p.LeftAt == null).ToList();
+            if (present.Count == 0) present = participants;
+
+            string Clip(string? s, int n) { s = (s ?? "").Replace("\r", " ").Replace("\n", " ").Trim(); return s.Length <= n ? s : s.Substring(0, n) + "…"; }
+
+            var sbResume = new StringBuilder();
+            foreach (var p in present)
+            {
+                var r = p.Resume; if (r == null) continue;
+                sbResume.AppendLine($"【{r.Member?.Name}】");
+                var edu = string.Join("；", r.Educations.OrderBy(e => e.SortOrder).Take(3).Select(e => $"{e.SchoolName} {e.Major}（{e.EduLevel}）"));
+                if (edu.Length > 0) sbResume.AppendLine("學歷：" + Clip(edu, 150));
+                var works = string.Join("；", r.WorkExperiences.OrderBy(w => w.SortOrder).Take(4).Select(w => $"{w.CompanyName} {w.JobTitle}：{Clip(w.JobDescription, 80)}"));
+                if (works.Length > 0) sbResume.AppendLine("經歷：" + Clip(works, 400));
+                var ports = string.Join("；", r.Portfolios.OrderBy(x => x.SortOrder).Take(3).Select(x => $"{x.Title}：{Clip(x.Description, 60)}"));
+                if (ports.Length > 0) sbResume.AppendLine("作品：" + Clip(ports, 250));
+                if (!string.IsNullOrWhiteSpace(r.Autobiography)) sbResume.AppendLine("自傳摘要：" + Clip(r.Autobiography, 250));
+                sbResume.AppendLine();
+            }
+
+            var sbJob = new StringBuilder();
+            if (job != null)
+            {
+                sbJob.AppendLine($"職稱：{job.Title}（{job.Department}）");
+                if (!string.IsNullOrWhiteSpace(job.Description)) sbJob.AppendLine("職缺說明：" + Clip(job.Description, 300));
+                if (!string.IsNullOrWhiteSpace(job.ExperienceRequired)) sbJob.AppendLine("經驗要求：" + Clip(job.ExperienceRequired, 100));
+                if (!string.IsNullOrWhiteSpace(job.OtherRequirements)) sbJob.AppendLine("其他要求：" + Clip(job.OtherRequirements, 200));
+                var tags = string.Join("、", job.SkillTags.Select(s => s.Tag).Take(12));
+                if (tags.Length > 0) sbJob.AppendLine("技能：" + tags);
+            }
+
+            var lines = (req.Lines ?? new List<AiConvoLine>()).TakeLast(12).ToList();
+            var sbConvo = new StringBuilder();
+            foreach (var l in lines) sbConvo.AppendLine($"{l.Name}：{Clip(l.Text, 200)}");
+
+            // 對話內容太少（例如還沒人實質講話）就不要硬問
+            if (lines.Count(l => l.Role != "ai") == 0) return Ok(new { text = (string?)null });
+
+            var names = string.Join("、", present.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrEmpty(n)));
+            var jobText = sbJob.Length > 0 ? sbJob.ToString() : "（無）";
+            var resumeText = sbResume.Length > 0 ? sbResume.ToString() : "（無履歷資料）";
+            var prompt =
+$@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起面試。現在對話安靜了一陣子，請判斷是否該開口。
+
+【職缺】
+{jobText}
+【在場求職者與履歷】（姓名：{names}）
+{resumeText}
+【最近的對話】（由舊到新；「求職者-」「職員-」「主持人-」是身分前綴，AI 面試官是你自己）
+{sbConvo}
+最近一位發言者：{req.LastSpeakerName}（{req.LastSpeakerRole}）
+
+規則：
+1. 只在「能延伸剛剛對話的話題」或「針對某位求職者履歷中的具體內容（公司、專案、學校、作品）」時才發問，並盡量把問題連結到職缺要求。
+2. 一次只問一個問題，口語自然，40 字以內。
+3. 可以指定一位求職者：句子以該求職者的姓名開頭（只用姓名，不要「求職者-」前綴）。有多位求職者時，依剛剛的話題與各自履歷，挑最適合的一位，不要每個人問一樣的問題，也不要連續只問同一個人。
+4. 只能引用被點名者本人的履歷或他自己說過的話，不要拿其他求職者的資料比較。
+5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（包含你自己問過的）、問履歷與對話都沒有依據的事。
+6. 如果職員剛問了問題、求職者還沒回答：除非你能補一個更具體、有幫助的承接問題，否則輸出 SKIP，不要搶在職員前面追問。
+7. 沒有真正值得問的內容時，只輸出 SKIP。
+只輸出要說的那一句話，或 SKIP，不加引號、前綴或說明。";
+
+            var raw = await _gemini.AskAsync(prompt, "你是台灣企業面試的 AI 面試官，說話自然、直接、精簡，像真人面試官。", 600);
+            var text = (raw ?? "").Trim().Trim('"', '「', '」', '“', '”').Trim();
+            if (text.Length < 4 || text.Length > 90 || text.StartsWith("SKIP", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 判斷不發言（回應：{(raw == null ? "null" : Clip(raw, 40))}）");
+                return Ok(new { text = (string?)null });
+            }
+            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生提問：「{text}」");
+            return Ok(new { text });
+        }
+
         private async Task SpeakAndBroadcastAsync(string roomCode, string text)
         {
             try
@@ -1322,5 +1423,19 @@ namespace InterviewProject.Controllers
                 endAt = room.EndAt?.ToString("yyyy-MM-ddTHH:mm:ss")
             });
         }
+    }
+    public class AiNextQuestionRequest
+    {
+        public string? RoomCode { get; set; }
+        public string? LastSpeakerName { get; set; }
+        public string? LastSpeakerRole { get; set; }
+        public List<AiConvoLine>? Lines { get; set; }
+    }
+
+    public class AiConvoLine
+    {
+        public string Name { get; set; } = "";
+        public string Role { get; set; } = "";
+        public string Text { get; set; } = "";
     }
 }

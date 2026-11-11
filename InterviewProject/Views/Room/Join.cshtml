@@ -583,6 +583,7 @@
         let lastSpeechMs = 0;
         let recentSpeech = [];
         let silInterval = null;
+        let voiceInterval = null;
         // 🐛 真正根因找到了：冷場迴圈每次跨過 threshold 呼叫 triggerAI() 之前，
         //    會先自己把 lastSpeechMs 重置成 Date.now()（原意是避免 800ms 迴圈在
         //    triggerAI() 還在跑的時候重複呼叫）。但 triggerAI() 內部又有一道
@@ -602,6 +603,15 @@
         let lastSpeakerName = null;
         let lastSpeakerRole = null;   // 'manager' | 'hr' | 'jobseeker' | 'ai'
         let lastWasQuestion = false;
+        // 🎯 最近的對話內容（職員、求職者、AI 各自說了什麼），給 AI 面試官「依話題延伸提問」用。
+        //    由 SpeechTurnInfo（每個人講完一句話時廣播）與 AI 自己說話時的廣播填入，每個人的瀏覽器都收得到，
+        //    但只有主持人的瀏覽器會真的拿來問 AI。
+        let convoLog = [];
+        function pushConvo(name, role, text) {
+            if (!text) return;
+            convoLog.push({ name: name || '', role: role || '', text: String(text).slice(0, 200) });
+            if (convoLog.length > 14) convoLog.shift();
+        }
         let aiSpeakingRemote = false; // AI 現在是不是正在講話（全場共享的狀態，不是只有觸發者自己知道）
 
         // 🎯 簡單的中文/英文問句判斷：結尾問號，或包含常見疑問詞。只是啟發式規則，
@@ -650,10 +660,11 @@
 
         // 🐛 這輪新增：收到別人剛講完一句話的輕量資訊（誰講的、像不像問題），
         //    更新「換人講話該不該算冷場」判斷用的共享狀態
-        hub.on("SpeechTurnInfo", (name, isQuestion, role) => {
+        hub.on("SpeechTurnInfo", (name, isQuestion, role, text) => {
             lastSpeakerName = name;
             lastWasQuestion = !!isQuestion;
             lastSpeakerRole = role;
+            pushConvo(name, role, text);
         });
 
         // 🐛 這輪新增：AI 面試官現在開始/結束講話的全場廣播（取代原本只有觸發者自己聽得到的
@@ -665,6 +676,7 @@
             if (aiSpeakingRemote) {
                 lastSpeakerRole = 'ai';
                 lastWasQuestion = looksLikeQuestion(text);
+                pushConvo('AI 面試官', 'ai', text);
                 lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
                 if (recognition) { try { recognition.stop(); } catch {} }
                 if (text) showMsg(text);
@@ -843,6 +855,7 @@
             isSp = false;
             if (recognition) { try { recognition.stop(); } catch {} }
             if (silInterval) clearInterval(silInterval);
+            if (voiceInterval) clearInterval(voiceInterval);
             if (window.__micDiagInterval) clearInterval(window.__micDiagInterval);
 
             setSt('wa', '✅ 面試結束');
@@ -1024,7 +1037,7 @@
 
                             // 🐛 這輪新增：順便廣播「是誰講的、像不像問題」這個輕量資訊，
                             //    給主持人那邊判斷「現在是不是在等別人回答，不算冷場」用
-                            try { hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE); } catch {}
+                            try { hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE, txt); } catch {}
 
                             // 🎯 只有真的判定成有意義內容的最終結果，才重置冷場計時器（見上方註解）
                             lastSpeechMs = Date.now();
@@ -1071,6 +1084,35 @@
             return SIL_SEC; // 預設值（例如會議剛開始、還沒人真的講過話）
         }
 
+        // 🎯 判斷「有人真的在講話」：只看人聲頻段（約 300~3400Hz）、跟隨環境底噪動態調整門檻，
+        //    而且要「持續」超過門檻約 2 秒才算——單次的椅子聲、打字聲、咳嗽、風扇聲都不會算。
+        //    （底噪估計：音量變小時很快跟著降，變大時只緩慢上升，所以長時間的穩定雜音會被視為底噪。）
+        function startVoiceDetect(an, ac) {
+            const freq = new Uint8Array(an.frequencyBinCount);
+            const binHz = ac.sampleRate / an.fftSize;
+            const lo = Math.max(1, Math.floor(300 / binHz));
+            const hi = Math.min(freq.length - 1, Math.ceil(3400 / binHz));
+            let floor = null, voiceMs = 0, lastBroadcast = 0;
+            voiceInterval = setInterval(() => {
+                if (!started || ended || isSp || aiSpeakingRemote) { voiceMs = 0; return; }
+                an.getByteFrequencyData(freq);
+                let s = 0; for (let i = lo; i <= hi; i++) s += freq[i];
+                const level = s / (hi - lo + 1);
+                if (floor === null) floor = level;
+                floor = level < floor ? floor * 0.8 + level * 0.2 : floor * 0.995 + level * 0.005;
+                const isVoice = level > 20 && level > Math.max(floor * 1.8, floor + 12);
+                if (isVoice) voiceMs += 250; else voiceMs = Math.max(0, voiceMs - 500);
+                if (voiceMs >= 2000) {
+                    lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
+                    setSt('li', '👂 聆聽中');
+                    if (Date.now() - lastBroadcast > 1500) {
+                        lastBroadcast = Date.now();
+                        try { hub.invoke("BroadcastSpeech", ROOM_CODE); } catch {}
+                    }
+                }
+            }, 250);
+        }
+
         function startSilenceDetect() {
             // 🐛 這輪新增：連續好幾輪回報 AI 完全不會講話，「思考中」這幾個字從來沒出現過，
             //    代表卡在 triggerAI() 前面某個關卡，但到底是哪一關，光用猜的已經猜了好幾輪都沒猜中。
@@ -1092,46 +1134,19 @@
                 const ac = new (window.AudioContext || window.webkitAudioContext)();
                 const an = ac.createAnalyser(); an.fftSize = 256;
                 ac.createMediaStreamSource(audioStream).connect(an);
-                const buf = new Uint8Array(an.frequencyBinCount);
 
+                // 🎯 改版：不再用「麥克風原始音量」直接重置冷場計時（雜音、打字聲、冷氣聲都會讓整段頻譜平均
+                //    超標，導致冷場判斷失靈）。這個 800ms 迴圈現在只負責「算沉默了幾秒、到門檻就觸發」；
+                //    「有沒有人真的在講話」改由 startVoiceDetect()（只看人聲頻段、扣除環境底噪、
+                //    要持續講話一段時間才算）與語音辨識的有效結果來決定。
+                startVoiceDetect(an, ac);
                 silInterval = setInterval(() => {
-                    // 🐛 這輪新增 aiSpeakingRemote 檢查：AI 正在講話時，全場一起暫停冷場計時，
-                    //    不然還沒收到廣播的瀏覽器可能在 AI 講話當下又觸發一次，疊在一起搶話
                     if (!started || ended || isSp || aiSpeakingRemote) { setSilBar(0); logLoopDiag(null, null); return; }
-                    an.getByteFrequencyData(buf);
-                    const avg = buf.reduce((a,b)=>a+b,0)/buf.length;
-                    // 🐛 這輪修正（回報：上一輪修完 STT 中間結果誤重置那個 bug 之後，secSince 確實有
-                    //    比較能往上爬了，但整場還是連一次 [JitsiBot] SpeakAsync／[RoomController] AiSpeak
-                    //    都查不到，代表還有更頻繁的重置來源）：根因在這裡——這個迴圈完全獨立於
-                    //    SpeechRecognition 之外，直接量測麥克風「原始音量」，`avg > 8`（滿分 255）
-                    //    這個門檻在安靜的錄音室可能沒問題，但在雜音比較明顯的麥克風環境下，
-                    //    幾乎任何一點環境音（打字聲、椅子聲、冷氣聲、呼吸聲）都會讓某一次 800ms
-                    //    取樣的平均值超過 8，馬上重置冷場計時器、還廣播給全場一起重置——等於
-                    //    只要麥克風不是絕對安靜，這個迴圈自己每 800ms 就有機會把計時器打掉一次，
-                    //    跟 STT 那邊修得再乾淨都沒用，因為根本繞過了 STT 那條路。
-                    //    改成要求「連續兩次（約 1.6 秒）都偵測到超過門檻」才真的算有人在講話、
-                    //    才重置計時器——單一次的瞬間雜音（例如椅子聲、打字聲）通常不會連續兩個
-                    //    取樣週期都超標，但真的有人開口講話一定會持續超標好幾個週期，這樣能過濾掉
-                    //    大部分瞬間雜音，又不影響真的偵測到有人講話的靈敏度。
-                    if (avg > 8) {
-                        window.__loudStreak = (window.__loudStreak || 0) + 1;
-                        if (window.__loudStreak >= 2) {
-                            lastSpeechMs = Date.now();
-                            silT = 0; setSilBar(0);
-                            setSt('li','👂 聆聽中');
-                            try { hub.invoke("BroadcastSpeech", ROOM_CODE); } catch {}
-                        }
-                    } else {
-                        window.__loudStreak = 0;
-                        const threshold = getSilenceThresholdSec();
-                        const secSince = (Date.now() - lastSpeechMs) / 1000;
-                        const pct = Math.min((secSince / threshold) * 100, 100);
-                        setSilBar(pct);
-                        logLoopDiag(secSince, threshold);
-                        // 🐛 修正：不再在這裡動 lastSpeechMs（原因見上方 coldCallBusy 宣告處的說明），
-                        //    改用 coldCallBusy 防止 triggerAI() 還在跑的時候被 800ms 迴圈重複呼叫。
-                        if (secSince >= threshold && !coldCallBusy) { coldCallBusy = true; triggerAI(); }
-                    }
+                    const threshold = getSilenceThresholdSec();
+                    const secSince = (Date.now() - lastSpeechMs) / 1000;
+                    setSilBar(Math.min((secSince / threshold) * 100, 100));
+                    logLoopDiag(secSince, threshold);
+                    if (secSince >= threshold && !coldCallBusy) { coldCallBusy = true; triggerAI(); }
                 }, 800);
             } else {
                 // 無麥克風 fallback
@@ -1149,20 +1164,6 @@
         // ══════════════════════════════════
         //  AI 面試官
         // ══════════════════════════════════
-        const FQ = [
-            "現在安靜了一下，請問有人想補充什麼嗎？",
-            "說到這裡，有沒有具體的例子可以分享？",
-            "好，我想多了解一下你的工作方式？",
-            "你認為自己最大的優點是什麼？",
-            "如果加入我們，你最想在哪個方面發揮？",
-            "你有帶領過團隊的經驗嗎？",
-            "遇到工作困難，你通常怎麼處理？",
-            "你對這份職位有什麼期待？",
-            "其他人有想補充的嗎？",
-            "有沒有想問我們的問題？"
-        ];
-        let fqIdx = 0;
-        function getFQ() { return FQ[fqIdx++ % FQ.length]; }
 
         // 🐛 這輪新增：只有主持人（主持人）的瀏覽器真的觸發 AI 講話——原本每個人各自倒數、
         //    各自觸發，多人同時倒數到同一時間點時會一起打去伺服器，AI 可能被要求同時講兩句話疊在一起。
@@ -1185,32 +1186,35 @@
                     console.log('[冷場診斷-triggerAI] 被呼叫但距離上次有聲音不到 3 秒，先跳過這次');
                     return;
                 }
-                console.log('[冷場診斷-triggerAI] 通過所有關卡，準備呼叫 /Claude/Ask 產生問句');
+                console.log('[冷場診斷-triggerAI] 通過所有關卡，準備請伺服器依對話與履歷決定提問');
 
                 setSt('th','💭 思考中...');
 
-                // 🐛 這輪新增：區分「職員/主持人剛問完問題、求職者還沒開始回答」跟「真的沒人在講話」
-                //    這兩種情況要生成不一樣語氣的話——前者要溫和鼓勵、不施加壓力，不要聽起來像在催促；
-                //    後者才是真的要拋出新問題或打破冷場。
-                const waitingForAnswer = lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker' && lastSpeakerRole !== 'ai';
-                const ctx = recentSpeech.slice(-3).map(s=>`${s.name}：${s.text}`).join('；') || "面試進行中";
-                const prompt = waitingForAnswer
-                    ? `你是AI面試官，協助主持「@room.RoomName」面試。剛剛${lastSpeakerName ? '（' + lastSpeakerName + '）' : ''}問了一個問題，求職者已經安靜了一段時間還沒開始回答。請用一句簡短、溫和、不給壓力的話鼓勵對方開始回答，或表示可以慢慢想，不超過25字，直接說，不加引號或前綴。`
-                    : `你是AI面試官，協助主持「@room.RoomName」面試。最近對話：${ctx}。現在出現冷場，一段時間沒人說話。請說一句自然的問題或打破冷場的話，不超過28字，直接說，不加引號或前綴。`;
-
+                // 🎯 改版：不再用固定題庫或「不用緊張」這類通用鼓勵。改由伺服器依「最近對話內容 + 職缺條件 +
+                //    在場求職者的履歷」決定要不要說、對誰說、說什麼；沒有值得問的就回傳空字串，AI 保持安靜。
+                setSt('th','💭 思考中...');
                 let q = null;
                 try {
-                    const r = await fetch('/Claude/Ask', {
-                        method:'POST', headers:{'Content-Type':'application/json'},
-                        // 🎯 這輪加強語氣要求：避免生成出來的句子太制式、太像機器人在照稿念，
-                        //    講話自然口語一點，TTS 唸出來才不會顯得生硬
-                        body: JSON.stringify({ prompt, system:"你是台灣企業面試主管，說話自然口語、溫暖不生硬，像真人在對話，避免制式或機械感的用詞。", maxTokens:80 })
+                    const r = await fetch('/Room/AiNextQuestion', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            roomCode: ROOM_CODE,
+                            lastSpeakerName: lastSpeakerName,
+                            lastSpeakerRole: lastSpeakerRole,
+                            lines: convoLog.slice(-12)
+                        })
                     });
-                    if (r.ok) { const d = await r.json(); if (d.text?.length > 3) q = d.text.trim(); }
-                    else { console.warn('[冷場診斷-triggerAI] /Claude/Ask 回應不是 200，status=' + r.status); }
-                } catch (e) { console.warn('[冷場診斷-triggerAI] /Claude/Ask 呼叫本身噴例外：' + e.message); }
+                    if (r.ok) { const d = await r.json(); if (d.text && d.text.length > 3) q = d.text.trim(); }
+                    else { console.warn('[冷場診斷-triggerAI] /Room/AiNextQuestion 回應不是 200，status=' + r.status); }
+                } catch (e) { console.warn('[冷場診斷-triggerAI] /Room/AiNextQuestion 呼叫噴例外：' + e.message); }
 
-                if (!q) q = waitingForAnswer ? "不用緊張，可以慢慢想沒關係。" : getFQ();
+                if (!q) {
+                    // 沒有值得問的內容：不說話，把計時重新起算，下次到門檻再評估一次
+                    console.log('[冷場診斷-triggerAI] 伺服器判斷目前沒有值得提問的內容，AI 保持安靜');
+                    lastSpeechMs = Date.now();
+                    setSt('li', '👂 聆聽中');
+                    return;
+                }
                 console.log('[冷場診斷-triggerAI] 準備呼叫 aiSpeak，內容：「' + q + '」');
                 aiSpeak(q);
             } finally {
@@ -1572,18 +1576,11 @@
             });
 
             // ✅ 監聽 Jitsi 的音訊事件，直接用來做冷場偵測（不需另外取麥克風）
-            jitsiApi.addEventListener('audioMuteStatusChanged', e => {
-                if (!e.muted) {
-                    lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
-                    try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
-                }
-            });
+            //    🎯 解除靜音、Jitsi 的「主要發言者」切換都不再重置冷場計時：
+            //    它們在有雜音時也會觸發，不代表有人真的在說話（見 startVoiceDetect）。
 
             // 監聽 Jitsi 的語音活動事件（誰在說話）
-            jitsiApi.addEventListener('dominantSpeakerChanged', e => {
-                lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
-                try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
-            });
+            // （dominantSpeakerChanged 不再重置冷場計時，原因同上）
 
             console.log('Jitsi External API 初始化成功');
         }
