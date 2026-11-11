@@ -7,6 +7,14 @@
     var inProgress = Model.Rooms.Where(r => r.Room.MeetingStatus == "InProgress").ToList();
     var ended = Model.Rooms.Where(r => r.Room.MeetingStatus == "Ended").ToList();
 
+    // 尚未開始、但主持人未指定或不是該職缺部門的職員（或房間裡有非職員，例如已刪除的最高主管）的會議：
+    // 沒有正確的主持人就無法開始會議，所以放回「等待安排面試」，讓 HR 重新指定後才算「已安排」
+    Func<HrRoomVm, bool> needsFix = rm =>
+        !rm.DeptStaff.Any(d => d.Id == rm.HostEmployeeId)
+        || rm.StaffInRoom.Any(x => !rm.DeptStaff.Any(d => d.Id == x.Id));
+    var needFix = notStarted.Where(rm => needsFix(rm)).ToList();
+    var scheduledOk = notStarted.Where(rm => !needsFix(rm)).ToList();
+
     // 主持人已送出、但 HR 還沒通知求職者的場次數（顯示在分頁上提醒）
     int pendingNotify = ended.Count(rm => rm.Room.ResultSubmittedAt != null && rm.Candidates.Any(c =>
         !string.IsNullOrEmpty(c.PendingAdmissionResult) && c.AdmissionResult != "錄取" && c.AdmissionResult != "未錄取"));
@@ -212,8 +220,8 @@
     }
 
     <div class="hr-tabs">
-        <button type="button" class="hr-tab-btn active" data-tab="waiting">等待安排面試 (@Model.ReadyJobs.Count)</button>
-        <button type="button" class="hr-tab-btn" data-tab="scheduled">已安排面試 (@(notStarted.Count + inProgress.Count))</button>
+        <button type="button" class="hr-tab-btn active" data-tab="waiting">等待安排面試 (@(Model.ReadyJobs.Count + needFix.Count))</button>
+        <button type="button" class="hr-tab-btn" data-tab="scheduled">已安排面試 (@(scheduledOk.Count + inProgress.Count))</button>
         <button type="button" class="hr-tab-btn" data-tab="results">
             面試結果與錄取通知
             @if (pendingNotify > 0)
@@ -226,7 +234,7 @@
     @* ═══════════ 等待安排面試 ═══════════ *@
     <div class="hr-pane active" id="pane-waiting">
         <p class="text-muted" style="font-size:13px;">職缺已下架、且所有送出的履歷都已審核完畢（至少一位通過）後，會出現在這裡，由你手動安排面試。預設邀請所有通過的求職者與該職缺部門的所有職員。</p>
-        @if (!Model.ReadyJobs.Any())
+        @if (!Model.ReadyJobs.Any() && !needFix.Any())
         {
             <div class="hr-empty">目前沒有等待安排面試的職缺</div>
         }
@@ -250,15 +258,54 @@
                         })
         </div>
                 }
+
+        @* 已建立、但沒有正確主持人（未指定／不是該部門職員／含非職員）的會議：在這裡重新指定後才算「已安排」 *@
+        @foreach (var rm in needFix)
+        {
+            <div class="hr-card">
+                <div class="hr-card-title">@(rm.Room.Job?.Title ?? "未指定職缺")</div>
+                <div class="hr-card-sub">部門：@(rm.Room.Job?.Department) ｜ 已建立會議室，但尚未指定正確的主持人</div>
+                <div>
+                    @foreach (var st in rm.StaffInRoom)
+                    {
+                        <span class="hr-tag @(st.Id == rm.HostEmployeeId ? "host" : "")">@(st.Id == rm.HostEmployeeId ? "主持人" : "職員")：@st.Name</span>
+                    }
+                </div>
+                <div style="margin-top:6px;">
+                    @foreach (var c in rm.Candidates)
+                    {
+                        <span class="hr-tag">求職者：@(c.Member?.Name ?? "未知")</span>
+                    }
+                </div>
+                <div style="margin-top:6px;color:#c0392b;font-size:13px;">
+                    @(rm.DeptStaff.Any(d => d.Id == rm.HostEmployeeId) ? "此場面試含有非職員（例如最高主管）。" : "此場面試尚未指定主持人，或主持人不是該職缺部門的職員。")請於下方重新選擇職員與主持人後儲存，儲存後才會移到「已安排面試」。
+                </div>
+                <div style="margin-top:8px;">
+                    @await Html.PartialAsync("_HrMeetingForm", new HrMeetingFormVm
+                    {
+                        Uid = "f" + rm.Room.Id,
+                                Action = "HrUpdateMeeting",
+                                RoomId = rm.Room.Id,
+                                ScheduledAt = rm.Room.ScheduledAt ?? DateTime.Today.AddDays(1).AddHours(10),
+                                Resumes = rm.ApprovedResumes,
+                                SelectedResumeIds = rm.Candidates.Select(r => r.Id).ToHashSet(),
+                                Staff = rm.DeptStaff,
+                                SelectedStaffIds = rm.StaffInRoom.Where(s => rm.DeptStaff.Any(d => d.Id == s.Id)).Select(s => s.Id).ToHashSet(),
+                                HostId = rm.DeptStaff.Any(d => d.Id == rm.HostEmployeeId) ? rm.HostEmployeeId : null,
+                                SubmitText = "儲存修改並寄出通知"
+                                })
+            </div>
+        </div>
+                }
     </div>
 
     @* ═══════════ 已安排面試 ═══════════ *@
     <div class="hr-pane" id="pane-scheduled">
-        @if (!notStarted.Any() && !inProgress.Any())
+        @if (!scheduledOk.Any() && !inProgress.Any())
         {
             <div class="hr-empty">目前沒有已安排、尚未結束的面試</div>
         }
-        @foreach (var rm in notStarted)
+        @foreach (var rm in scheduledOk)
         {
             var host = rm.StaffInRoom.FirstOrDefault(e => e.Id == rm.HostEmployeeId);
             <div class="hr-card">
@@ -279,10 +326,6 @@
                         <span class="hr-tag">求職者：@(c.Member?.Name ?? "未知")</span>
                     }
                 </div>
-                @if (rm.StaffInRoom.Any(x => !rm.DeptStaff.Any(d => d.Id == x.Id)) || !rm.DeptStaff.Any(d => d.Id == rm.HostEmployeeId))
-                {
-                    <div style="margin-top:6px;color:#c0392b;font-size:13px;">此場面試含有非職員（例如最高主管）。請展開下方修改，改選職員與主持人後儲存。</div>
-                }
                 <details class="hr-edit">
                     <summary>修改時間／人員／主持人</summary>
                     @await Html.PartialAsync("_HrMeetingForm", new HrMeetingFormVm
@@ -385,8 +428,22 @@
         try { var saved = sessionStorage.getItem('hrInterviewTab'); if (saved) showTab(saved); } catch (e) { }
         @if (TempData["Success"] != null)
         {
-            <text>showTab('scheduled');</text>
+                <text>showTab('scheduled');</text>
         }
+
+        // 面試時間：選好「時間」（時／分）後自動關閉日期時間選擇視窗。
+        // 只改日期時不關閉（因為通常接著還要選時間）；日期不變、時間有變就視為選完了。
+        document.querySelectorAll('input[type=datetime-local][name=scheduledAt]').forEach(function (inp) {
+            var prev = inp.value;
+            inp.addEventListener('focus', function () { prev = inp.value; });
+            inp.addEventListener('change', function () {
+                var cur = inp.value;
+                if (cur && prev && cur.slice(0, 10) === prev.slice(0, 10) && cur !== prev) {
+                    setTimeout(function () { inp.blur(); }, 0);
+                }
+                prev = cur;
+            });
+        });
 
         // 主持人單選鈕只有在該職員被勾選時才能選；取消勾選就清掉主持人
         document.querySelectorAll('.hr-meeting-form').forEach(function (form) {
