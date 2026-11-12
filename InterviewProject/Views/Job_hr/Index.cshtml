@@ -174,7 +174,7 @@
                 : new JobStatsViewModel { UnhandledCount = 0, HiredCount = 0, TotalCount = 0 };
 
                 // 🎯 動態判定刊登狀態：IsActive 為 false，或是今天日期已超過截止日期 -> 顯示「已下架」
-                bool isExpired = today > job.Deadline.Date;
+                bool isExpired = DateTime.Now > job.Deadline;
                 bool isCurrentlyActive = job.IsActive && !isExpired;
 
                 // 🎯 排序用：需求人數是文字（例如「2人」、「不限」），只取出數字；沒有數字的排最後
@@ -189,8 +189,8 @@
                      data-needed="@headCountSort"
                      data-total="@stat.TotalCount"
                      data-active="@(isCurrentlyActive ? 1 : 0)"
-                     data-created="@job.CreatedAt.ToLocalTime().ToString("yyyyMMdd")"
-                     data-deadline="@job.Deadline.ToLocalTime().ToString("yyyyMMdd")">
+                     data-created="@job.CreatedAt.ToString("yyyyMMdd")"
+                     data-deadline="@job.Deadline.ToString("yyyyMMddHHmm")">
 
                     @* 1. 部門 *@
                     <div class="hrjob-dept-text">@job.Department</div>
@@ -253,12 +253,12 @@
                         <div class="hrjob-time-item">
                             <span class="hrjob-time-label">上架：</span>
                             <span class="hrjob-time-time-text">
-                                @job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")
+                                @job.CreatedAt.ToString("yyyy/MM/dd")
                             </span>
                         </div>
                         <div class="hrjob-time-item">
                             <span class="hrjob-time-label-deadline">截止：</span>
-                            <span class="hrjob-time-time-text">@job.Deadline.ToLocalTime().ToString("yyyy/MM/dd")</span>
+                            <span class="hrjob-time-time-text">@job.Deadline.ToString("yyyy/MM/dd HH:mm")</span>
                         </div>
                     </div>
 

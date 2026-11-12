@@ -28,8 +28,9 @@ namespace InterviewProject.Controllers
             var now = DateTime.Now;
 
             // 基礎查詢：只抓取啟用中且未過期的職缺
+            // （截止時間含時分秒；舊資料若只有日期、時間為 00:00:00，視為當天 23:59:59 才截止）
             var baseQuery = _context.Jobs
-                .Where(x => x.IsActive && x.Deadline.AddDays(1) > now);
+                .Where(x => x.IsActive && (x.Deadline > now || (x.Deadline == x.Deadline.Date && x.Deadline.AddDays(1) > now)));
 
             // 💡 動態抓取資料庫中現有的下拉選單選項 (Distinct)
             ViewBag.Categories = await baseQuery

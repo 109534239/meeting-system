@@ -12,12 +12,19 @@
 
     <style>
         @@media (min-width: 993px) {
-            .hrjob-cols.staff-cols { grid-template-columns: 85px minmax(200px, 1fr) 85px 135px; }
+            .hrjob-cols.staff-cols {
+                grid-template-columns: 85px minmax(200px, 1fr) 85px 165px;
+            }
         }
+
         @@media (max-width: 992px) {
             .hrjob-row.hrjob-cols.staff-cols > div:nth-child(4) {
-                grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px 18px;
-                padding: 8px 0; border-top: 1px dashed #edf2f5;
+                grid-column: 1 / -1;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px 18px;
+                padding: 8px 0;
+                border-top: 1px dashed #edf2f5;
             }
         }
 
@@ -140,7 +147,7 @@
 
 <div class="hrjob-page">
 
-    
+
     @if (TempData["Success"] != null)
     {
         <div class="alert-success">@TempData["Success"]</div>
@@ -169,15 +176,15 @@
             @foreach (var job in Model)
             {
                 // 🎯 動態判定刊登狀態：IsActive 為 false，或是今天日期已超過截止日期 -> 顯示「已下架」
-                bool isExpired = today > job.Deadline.Date;
+                bool isExpired = DateTime.Now > job.Deadline;
                 bool isCurrentlyActive = job.IsActive && !isExpired;
 
                 <div class="hrjob-row hrjob-cols staff-cols" style="cursor:pointer;" data-href="@Url.Action("Index", "AdminApplication", new { jobId = job.Id })" title="點擊查看應徵名單"
                      data-dept="@job.Department"
                      data-title="@job.Title"
                      data-active="@(isCurrentlyActive ? 1 : 0)"
-                     data-created="@job.CreatedAt.ToLocalTime().ToString("yyyyMMdd")"
-                     data-deadline="@job.Deadline.ToLocalTime().ToString("yyyyMMdd")">
+                     data-created="@job.CreatedAt.ToString("yyyyMMdd")"
+                     data-deadline="@job.Deadline.ToString("yyyyMMddHHmm")">
 
                     @* 1. 部門 *@
                     <div class="hrjob-dept-text">@job.Department</div>
@@ -208,12 +215,12 @@
                         <div class="hrjob-time-item">
                             <span class="hrjob-time-label">上架：</span>
                             <span class="hrjob-time-time-text">
-                                @job.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")
+                                @job.CreatedAt.ToString("yyyy/MM/dd")
                             </span>
                         </div>
                         <div class="hrjob-time-item">
                             <span class="hrjob-time-label-deadline">截止：</span>
-                            <span class="hrjob-time-time-text">@job.Deadline.ToLocalTime().ToString("yyyy/MM/dd")</span>
+                            <span class="hrjob-time-time-text">@job.Deadline.ToString("yyyy/MM/dd HH:mm")</span>
                         </div>
                     </div>
 

@@ -679,15 +679,15 @@
 
                     <label>截止日期<span class="text-danger">*</span></label>
 
-                    <input type="date"
+                    <input type="datetime-local"
                            name="Deadline"
                            id="deadline-input"
                            class="form-control"
-                           min="@DateTime.Now.AddDays(1).ToString("yyyy-MM-dd")"
+                           min="@DateTime.Now.ToString("yyyy-MM-dd'T'HH:mm")"
                            required />
 
                     <small class="text-muted" style="display:block; margin-top:6px;">
-                        職缺上架中時，截止日期至少要晚於今天一天
+                        截止時間可設定到時、分，只要晚於目前時間即可
                     </small>
 
                 </div>

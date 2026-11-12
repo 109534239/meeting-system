@@ -50,8 +50,8 @@
 /* 🎯 6 個欄位完美分配：收攏職缺名稱寬度，徹底消除中間大片白色空白 */
 .hrjob-cols {
     display: grid;
-    /* 1.部門(85px) | 2.職缺名稱(280px) | 3.招募進度(1fr, 自然置中) | 4.狀態(85px) | 5.時間(135px) | 6.操作(115px) */
-    grid-template-columns: 85px minmax(200px, 300px) minmax(200px, 1fr) 85px 135px 115px;
+    /* 1.部門(85px) | 2.職缺名稱(280px) | 3.招募進度(1fr, 自然置中) | 4.狀態(85px) | 5.時間(165px) | 6.操作(115px) */
+    grid-template-columns: 85px minmax(200px, 300px) minmax(200px, 1fr) 85px 165px 115px;
     align-items: center;
     gap: 16px;
 }

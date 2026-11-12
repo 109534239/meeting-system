@@ -210,21 +210,21 @@ namespace InterviewProject.Controllers
             //    已下架的職缺，截止日期不應該還停留在未來，避免「已下架但還沒到截止日」的矛盾狀態。
             //    拉回的目標日期不能早於或等於上架日期（理論上走到這裡時已經不會是當天上架又下架的情況了）。
             //    重新勾選上架不會自動延長截止日期，那個需要人工決定新的日期。
-            else if (!job.IsActive && job.Deadline.Date > DateTime.Now.Date)
+            else if (!job.IsActive && job.Deadline > DateTime.Now)
             {
-                var target = DateTime.Now.Date;
-                if (target <= existing.CreatedAt.Date)
+                var target = DateTime.Now;
+                if (target <= existing.CreatedAt)
                 {
-                    target = existing.CreatedAt.Date.AddDays(1);
+                    target = existing.CreatedAt.AddSeconds(1);
                 }
                 job.Deadline = target;
             }
 
             // 🎯 不管上架或下架都要成立的鐵律：截止日期不能早於或等於上架日期（CreatedAt）
             //    這裡用 existing.CreatedAt，因為表單沒有送出 CreatedAt，job.CreatedAt 綁定出來的值不可信
-            if (job.Deadline.Date <= existing.CreatedAt.Date)
+            if (job.Deadline <= existing.CreatedAt)
             {
-                missingFields.Add("截止日期（不能早於或等於上架日期）");
+                missingFields.Add("截止日期（不能早於上架時間）");
             }
 
             // 🎯 後端防呆：即使前端驗證被繞過，必填欄位缺漏也只會友善地退回表單重填，
@@ -361,6 +361,7 @@ namespace InterviewProject.Controllers
             if (string.IsNullOrWhiteSpace(job.Location)) missing.Add("工作地點");
             if (string.IsNullOrWhiteSpace(job.Description)) missing.Add("職缺描述");
             if (job.Deadline == default) missing.Add("截止日期");
+            else if (job.IsActive && job.Deadline <= DateTime.Now) missing.Add("截止日期（上架中的職缺必須晚於目前時間）");
 
             return missing;
         }

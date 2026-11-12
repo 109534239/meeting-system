@@ -173,7 +173,7 @@
             基本資訊 (對應最新規格：全數必填)
            ═══════════════════════════════ *@
         <div class="hrjob-form">
-           <div class="form-section-title">基本資訊</div>
+            <div class="form-section-title">基本資訊</div>
 
             <div class="form-group">
                 <label>職缺名稱<span class="text-danger">*</span></label>
@@ -237,7 +237,7 @@
             薪資範圍 (必填)
            ═══════════════════════════════ *@
         <div class="hrjob-form">
-           <div class="form-section-title">薪資範圍</div>
+            <div class="form-section-title">薪資範圍</div>
 
             <div class="form-grid-2">
                 <div class="form-group">
@@ -255,7 +255,7 @@
             工作內容 (必填)
            ═══════════════════════════════ *@
         <div class="hrjob-form">
-           <div class="form-section-title">工作內容</div>
+            <div class="form-section-title">工作內容</div>
 
             <div class="form-group">
                 <label>職缺描述（工作內容）<span class="text-danger">*</span></label>
@@ -267,7 +267,7 @@
             條件要求 (全數選填)
            ═══════════════════════════════ *@
         <div class="hrjob-form">
-           <div class="form-section-title">條件要求</div>
+            <div class="form-section-title">條件要求</div>
 
             <div class="form-grid-2">
                 <div class="form-group">
@@ -376,7 +376,7 @@
             技能標籤
            ═══════════════════════════════ *@
         <div class="hrjob-form">
-           <div class="form-section-title">技能標籤</div>
+            <div class="form-section-title">技能標籤</div>
 
             <div class="form-group">
                 <label>技能標籤<span class="text-muted">(選填，一筆一個標籤，可新增多筆)</span></label>
@@ -474,14 +474,14 @@
             上架設定
            ═══════════════════════════════ *@
         <div class="hrjob-form">
-           <div class="form-section-title">上架設定</div>
+            <div class="form-section-title">上架設定</div>
 
             <div class="form-grid-2">
                 <div class="form-group">
                     <label>截止日期<span class="text-danger">*</span></label>
-                    <input type="date" name="Deadline" id="deadline-input" class="form-control" value="@Model.Deadline.ToLocalTime().ToString("yyyy-MM-dd")" min="@Model.CreatedAt.ToLocalTime().AddDays(1).ToString("yyyy-MM-dd")" required />
+                    <input type="datetime-local" name="Deadline" id="deadline-input" class="form-control" value="@Model.Deadline.ToString("yyyy-MM-dd'T'HH:mm")" min="@Model.CreatedAt.ToString("yyyy-MM-dd'T'HH:mm")" required />
                     <small class="text-muted" style="display:block; margin-top:6px;">
-                        截止日期不能早於或等於上架日期；職缺上架中時，還必須晚於今天
+                        截止時間不能早於上架時間；職缺上架中時，只要晚於目前時間即可（可設定到時、分）
                     </small>
                 </div>
             </div>
@@ -516,6 +516,12 @@
         //    避免存出「已下架，但截止日期還沒到」這種矛盾狀態
         //    （重新勾選不會自動改截止日期，因為要延長到哪一天需要人工判斷，不適合自動推算）
         // 🎯 取得本機時區的 yyyy-MM-dd 字串，跟 <input type="date"> 的格式一致，可以直接用字串比大小
+         function getLocalDateTimeString(date) {
+             return getLocalDateString(date) + 'T' +
+                 String(date.getHours()).padStart(2, '0') + ':' +
+                 String(date.getMinutes()).padStart(2, '0');
+         }
+
          function getLocalDateString(date) {
              return date.getFullYear() + '-' +
                  String(date.getMonth() + 1).padStart(2, '0') + '-' +
@@ -544,12 +550,7 @@
                 if (!deadlineInput.value) return;
 
                 // 下架：截止日期拉回今天即可，但同時不能早於或等於上架日期
-                let target = todayStr;
-                if (createdAtStr && target <= createdAtStr) {
-                    const d = new Date(createdAtStr + 'T00:00:00');
-                    d.setDate(d.getDate() + 1);
-                    target = getLocalDateString(d);
-                }
+                const target = getLocalDateTimeString(new Date());
                 if (deadlineInput.value > target) {
                     deadlineInput.value = target;
                 }
@@ -557,7 +558,7 @@
                 if (!deadlineInput.value) return;
 
                 // 重新上架：舊的截止日期可能已經過期，必須讓使用者重新選一個至少晚於今天的日期
-                if (deadlineInput.value <= todayStr) {
+                if (deadlineInput.value <= getLocalDateTimeString(new Date())) {
                     deadlineInput.value = '';
                 }
             }

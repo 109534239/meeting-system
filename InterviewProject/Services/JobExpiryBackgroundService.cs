@@ -12,7 +12,7 @@ namespace InterviewProject.Services
     //    去檢查「這個職缺的履歷是不是都審完了、可以自動排面試房間了」。
     //
     //    但求職者看到的「職缺已下架」其實是另一條完全獨立的邏輯：JobController 公開列表頁只是用
-    //    `Deadline.AddDays(1) > now` 把過期的職缺「過濾掉、不顯示」而已，並沒有真的去改 Jobs.IsActive。
+    //    `Deadline > now` 把過期的職缺「過濾掉、不顯示」而已，並沒有真的去改 Jobs.IsActive。
     //    這代表：只要沒有人手動去點「下架」，一個職缺就算截止日期早就過了、求職者也看不到它了，
     //    資料庫裡的 IsActive 欄位還是會一直停在 true，AutoInterviewSchedulingService 就永遠不會被觸發，
     //    履歷審核完、適性測驗也做完的求職者就會卡在「等待安排面試」，永遠等不到面試房間被建立。
@@ -35,6 +35,22 @@ namespace InterviewProject.Services
         {
             // 🎯 服務一啟動就先掃一次（不要傻等 5 分鐘），這樣部署上去之後，
             //    之前已經卡住的過期職缺會馬上被補救，不用等使用者剛好觸發某個手動操作
+            // 🎯 截止日期新增時分秒：舊資料只有日期（時間為 00:00:00），補上預設的 23:59:59，
+            //    讓它維持「截止日當天結束才下架」的原本行為。只動剛好是 00:00:00 的資料，可重複執行不會壞資料。
+            try
+            {
+                using var fixScope = _scopeFactory.CreateScope();
+                var fixDb = fixScope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var fixed_ = await fixDb.Database.ExecuteSqlRawAsync(
+                    "UPDATE \"Jobs\" SET \"Deadline\" = \"Deadline\" + interval '23 hours 59 minutes 59 seconds' WHERE \"Deadline\" = date_trunc('day', \"Deadline\")",
+                    stoppingToken);
+                if (fixed_ > 0) Console.WriteLine($"[JobExpiryBackgroundService] 已替 {fixed_} 筆舊職缺的截止日期補上預設時間 23:59:59");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[JobExpiryBackgroundService] 補截止時間失敗（不影響運作）：{ex.Message}");
+            }
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
@@ -81,7 +97,8 @@ namespace InterviewProject.Services
             //    避免這裡跟前台判斷「職缺是否還算上架中」的標準不一樣，造成「前台看得到但後台已經下架」
             //    這種另一種不一致的情況
             var expiredJobIds = await db.Jobs
-                .Where(j => j.IsActive && j.Deadline.AddDays(1) <= now)
+                .Where(j => j.IsActive && j.Deadline <= now
+                            && !(j.Deadline == j.Deadline.Date && j.Deadline.AddDays(1) > now))
                 .Select(j => j.Id)
                 .ToListAsync(stoppingToken);
 
