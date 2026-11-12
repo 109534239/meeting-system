@@ -1421,6 +1421,34 @@
         display: none;
     }
 
+/* 圖表移到報告視窗的「視覺化圖表」分頁：去掉原本在分析區塊下方用的上框線與間距 */
+.report-panel .hrapp-ai-charts {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+/* 報告視窗分頁列：固定在標題下方，避免被網站其他全域樣式蓋住而點不到 */
+#aiReportModal .hrapp-report-tabs {
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+    background: #ffffff;
+}
+
+#aiReportModal .report-tab {
+    position: relative;
+    pointer-events: auto;
+}
+
+#aiReportModal .report-panel {
+    display: none;
+}
+
+    #aiReportModal .report-panel.active {
+        display: block;
+    }
+
 @media (max-width: 900px) {
     .hrapp-ai-charts {
         grid-template-columns: 1fr;
