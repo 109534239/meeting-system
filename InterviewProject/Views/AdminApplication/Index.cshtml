@@ -40,14 +40,14 @@
                asp-route-jobId="@ViewBag.JobId"
                asp-route-statusFilter="未處理"
                class="tab-item @(currentFilter == "未處理" ? "active" : "")">
-                未處理 (待審核)
+                未處理
             </a>
 
             <a asp-action="Index"
                asp-route-jobId="@ViewBag.JobId"
                asp-route-statusFilter="已處理"
                class="tab-item @(currentFilter == "已處理" ? "active" : "")">
-                已處理 (已安排面試/錄取等)
+                已處理
             </a>
         </div>
 
@@ -74,13 +74,13 @@
         bool isJobActive = ViewBag.IsJobActive == true;
 
         bool isCompleted =
-            !isJobActive &&
-            totalCount > 0 &&
-            scoredCount == totalCount;
+        !isJobActive &&
+        totalCount > 0 &&
+        scoredCount == totalCount;
 
         int? highestScore = ViewBag.AiHighestScore as int?;
 
-        
+
         <section class="hrapp-ai-dashboard">
 
             <!-- 標題與評分狀態 -->
@@ -111,12 +111,12 @@
                         <div class="hrapp-ai-stat-value">
                             <strong>
                                 @(highestScore.HasValue
-                                    ? highestScore.Value.ToString()
-                                    : "—")
-                            </strong>
-                            <small>分</small>
-                        </div>
+                                                            ? highestScore.Value.ToString()
+                                                            : "—")
+                        </strong>
+                        <small>分</small>
                     </div>
+                </div>
 
                 </div>
 
@@ -136,7 +136,7 @@
 
         </section>
 
-    }
+        }
 
     <div class="hrapp-cols hrapp-grid-head">
         <div>
@@ -219,7 +219,7 @@
 
                 <div class="hrapp-row hrapp-cols @rowClass @statusClass"
                      data-row-id="@item.Id"
-                     data-score="@(hasAiScore ? score.Value.ToString() : "")"
+                     data-score="@(hasAiScore? score.Value.ToString() : "")"
                      data-time="@item.ResumeTime.ToString("yyyyMMddHHmmss")"
                      data-status="@item.Status"
                      onclick="location.href='@Url.Action("Details", "AdminApplication", new { id = item.Id })'">
@@ -480,7 +480,7 @@
                             查看所有應徵者
                         </button>
 
-                        
+
                         @* 前五名關鍵技能比較 *@
                         <div id="aiTopFiveComparison"
                              class="hrapp-top-five-comparison"
@@ -744,7 +744,7 @@
                 });
             }
 
-            
+
             // 4. AI 應徵者比較分析報告 Modal（單一報告版本）
             const reportModal = document.getElementById("aiReportModal");
             const openReportBtn = document.getElementById("btnOpenAiReport");
@@ -767,7 +767,7 @@
                 const department =
                     document.getElementById("aiReportDepartment");
 
-                
+
                 title.textContent = data.jobTitle || "未指定職缺";
 
                 const jobTypeMap = {
@@ -864,7 +864,7 @@
 
                 renderRanking(false);
 
-                
+
                 // 前五名關鍵技能比較
                 const topFiveContainer =
                     document.getElementById("aiTopFiveComparison");

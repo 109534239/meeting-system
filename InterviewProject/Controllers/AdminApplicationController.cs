@@ -101,6 +101,51 @@ namespace InterviewProject.Controllers
             return false;
         }
 
+        // =====================================================================
+        // 職員／HR 應徵管理入口：職缺列表（點職缺 → 該職缺的應徵名單）
+        // 職員只看得到自己部門的職缺
+        // =====================================================================
+        public async Task<IActionResult> Jobs(string? department, string? status, string? date, string? keyword)
+        {
+            if (!IsEmployee()) return RedirectToAction("Index", "Login");
+
+            var role = GetCurrentRole();
+            var myDept = await GetCurrentEmployeeDepartment();
+
+            var baseQuery = _db.Jobs.AsQueryable();
+            if (role == "manager")
+            {
+                if (string.IsNullOrEmpty(myDept)) return Forbid();
+                baseQuery = baseQuery.Where(j => j.Department == myDept);
+            }
+
+            var query = baseQuery;
+            if (!string.IsNullOrEmpty(department)) query = query.Where(j => j.Department == department);
+            if (status == "active") query = query.Where(j => j.IsActive);
+            else if (status == "inactive") query = query.Where(j => !j.IsActive);
+            if (!string.IsNullOrEmpty(date) && DateTime.TryParse(date, out var selectedDate))
+            {
+                var d = selectedDate.Date;
+                query = query.Where(j => j.CreatedAt.Date <= d && j.Deadline.Date >= d);
+            }
+            if (!string.IsNullOrEmpty(keyword)) query = query.Where(j => j.Title.Contains(keyword));
+
+            var jobs = await query.OrderBy(j => j.Deadline).ToListAsync();
+
+            ViewBag.DepartmentOptions = await baseQuery
+                .Where(j => !string.IsNullOrEmpty(j.Department))
+                .Select(j => j.Department)
+                .Distinct()
+                .OrderBy(d => d)
+                .ToListAsync();
+            ViewBag.SelectedDepartment = department;
+            ViewBag.SelectedStatus = status;
+            ViewBag.SelectedDate = date;
+            ViewBag.Keyword = keyword;
+
+            return View("~/Views/AdminApplication/Jobs.cshtml", jobs);
+        }
+
         // 職缺的應徵履歷名單列表頁
         // GET: AdminApplication/Index?jobId=5&statusFilter=全部
         // =====================================================================
@@ -224,9 +269,9 @@ namespace InterviewProject.Controllers
                 });
 
 
-                // 僅 HR 可在職缺下架後啟動 AI 批次評分
-                ViewBag.CanStartAiScoring =
-                    role == "hr" && !job.IsActive;
+                // HR 與職員（限自己部門，上面已檢查 CanAccessJob）都能在職缺下架後看到 AI 比較分析卡片
+                // 啟動 AI 批次評分仍只有 HR（對應的 API 都有各自的 HR 檢查）
+                ViewBag.CanStartAiScoring = !job.IsActive;
             }
             else
             {
@@ -355,13 +400,13 @@ namespace InterviewProject.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAiAnalysisReport(int jobId)
         {
-            // 僅 HR 可以查看
-            if (GetCurrentRole() != "hr")
+            // HR 與職員可以查看（職員僅限自己部門的職缺）
+            if (!IsEmployee())
             {
                 return StatusCode(403, new
                 {
                     success = false,
-                    message = "只有人資可以查看 AI 應徵者比較分析報告。"
+                    message = "沒有權限查看 AI 應徵者比較分析報告。"
                 });
             }
 
@@ -385,6 +430,15 @@ namespace InterviewProject.Controllers
                 {
                     success = false,
                     message = "找不到指定職缺。"
+                });
+            }
+
+            if (!await CanAccessJob(job))
+            {
+                return StatusCode(403, new
+                {
+                    success = false,
+                    message = "沒有權限查看此職缺的 AI 比較分析報告。"
                 });
             }
 
