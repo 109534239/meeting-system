@@ -995,6 +995,7 @@ namespace InterviewProject.Controllers
                 }
 
                 // 修改狀態並更新資料庫
+                var previousStatus = resume.Status;
                 resume.Status = model.Status;
 
                 // 履歷審核就被刷掉的人，直接視為「未錄取」，並將面試狀態清空
@@ -1003,12 +1004,27 @@ namespace InterviewProject.Controllers
                     resume.AdmissionResult = AdmissionResultValues.Rejected;
                     resume.InterviewStatus = null; // 新增：清空面試狀態
                 }
+                // 🎯 從「未通過」改回「待審核」或「已通過」時，
+                //    撤銷剛才因履歷未通過而自動設定的「未錄取」，避免求職者仍看到未錄取
+                else if (previousStatus == "未通過" &&
+                         resume.AdmissionResult == AdmissionResultValues.Rejected)
+                {
+                    resume.AdmissionResult = null;
+                }
 
                 _db.Entry(resume).State = EntityState.Modified;
                 await _db.SaveChangesAsync();
 
                 // 🎯 Step B：這筆履歷審完了，順便檢查這個職缺是否全部審核完畢、可以自動安排面試
-                await _scheduler.TryAutoScheduleAsync(resume.JobsId);
+                //    狀態已經存檔成功，就算自動排程出錯也不應該回報「狀態更新失敗」
+                try
+                {
+                    await _scheduler.TryAutoScheduleAsync(resume.JobsId);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[UpdateStatus] ResumeId={resume.Id} 自動安排面試檢查失敗：{ex.Message}");
+                }
 
                 // 👈 建議在 JSON 回傳當前最新的 InterviewStatus，方便前端更新 UI
                 return Json(new

@@ -660,12 +660,33 @@
                         }
                     }
 
+                    // 🎯 UpdateStatus 有 [ValidateAntiForgeryToken]，AJAX 必須在標頭帶上防偽權杖，
+                    //    否則伺服器會直接回 HTTP 400，狀態永遠存不進去
+                    const tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
+
                     fetch('@Url.Action("UpdateStatus", "AdminApplication")', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'RequestVerificationToken': tokenInput ? tokenInput.value : ''
+                        },
                         body: JSON.stringify({ id: parseInt(resumeId), status: newStatus })
                     })
-                    .then(response => response.json())
+                    .then(async response => {
+                        let data = null;
+
+                        try {
+                            data = await response.json();
+                        } catch {
+                            // 非 JSON 回應（例如 400 錯誤頁）時，交給下面統一處理
+                        }
+
+                        if (!response.ok || !data) {
+                            throw new Error((data && data.message) || `伺服器回應錯誤（HTTP ${response.status}）`);
+                        }
+
+                        return data;
+                    })
                     .then(data => {
                         if (!data.success) {
                             alert("狀態更新失敗：" + data.message);
@@ -674,7 +695,7 @@
                     })
                     .catch(error => {
                         console.error('Error:', error);
-                        alert("連線發生錯誤，無法成功儲存狀態。");
+                        alert("狀態更新失敗：" + error.message);
                         location.reload();
                     });
                 });
