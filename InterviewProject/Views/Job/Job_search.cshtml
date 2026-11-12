@@ -93,12 +93,12 @@
 
     <main class="main">
         <div class="job-table-head">
-            <div>職缺類型</div>
-            <div>職缺名稱</div>
-            <div>工作地點</div>
-            <div>經歷要求</div>
-            <div>學歷要求</div>
-            <div>截止日期</div>
+            <div><button type="button" class="job-sort-btn" data-sort-key="dept">職缺類型 <span class="sort-icon">⇅</span></button></div>
+            <div><button type="button" class="job-sort-btn" data-sort-key="title">職缺名稱 <span class="sort-icon">⇅</span></button></div>
+            <div><button type="button" class="job-sort-btn" data-sort-key="location">工作地點 <span class="sort-icon">⇅</span></button></div>
+            <div><button type="button" class="job-sort-btn" data-sort-key="exp">經歷要求 <span class="sort-icon">⇅</span></button></div>
+            <div><button type="button" class="job-sort-btn" data-sort-key="edu">學歷要求 <span class="sort-icon">⇅</span></button></div>
+            <div><button type="button" class="job-sort-btn" data-sort-key="deadline">截止日期 <span class="sort-icon">⇅</span></button></div>
             <div></div>
             <div></div>
         </div>
@@ -109,7 +109,25 @@
             {
                 foreach (var job in Model)
                 {
-                    <div class="job-row" data-job-id="@job.Id">
+                    @* 🎯 排序用的資料：學歷依等級轉成數字，截止日期轉成 yyyyMMdd *@
+                    int eduRank = job.EducationRequired switch
+                    {
+                        "highschool" => 1,
+                        "college" => 2,
+                        "bachelor" => 3,
+                        "master" => 4,
+                        "phd" => 5,
+                        _ => 0
+                    };
+
+                    <div class="job-row"
+                         data-job-id="@job.Id"
+                         data-dept="@job.Department"
+                         data-title="@job.Title"
+                         data-location="@job.Location"
+                         data-exp="@(job.ExperienceRequired ?? "")"
+                         data-edu="@eduRank"
+                         data-deadline="@job.Deadline.ToString("yyyyMMdd")">
 
                         @* 1. 職缺類型（部門） *@
                         <div class="job-type-text">@job.Department</div>
@@ -365,8 +383,98 @@
             window.location.href = '/Job/Job_search';
         }
 
+        // 表頭排序（職缺類型 / 職缺名稱 / 工作地點 / 經歷要求 / 學歷要求 / 截止日期）
+        // 每次只套用一種排序；點同一個欄位依序切換：預設方向 → 相反方向 → 恢復原始順序
+        function initSorting() {
+            const jobList = document.getElementById('job-list');
+            const sortButtons = Array.from(document.querySelectorAll('.job-sort-btn[data-sort-key]'));
+            if (!jobList || sortButtons.length === 0) return;
+
+            const rows = Array.from(jobList.querySelectorAll('.job-row'));
+            rows.forEach((row, i) => row.dataset.originalIndex = i);
+
+            const text = key => row => (row.dataset[key] || '').trim() || null;
+
+            // 經歷要求：取文字中的年數（例如「3年以上」→ 3），「不限」或空白視為 0
+            const expYears = row => {
+                const value = (row.dataset.exp || '').trim();
+                const match = value.match(/\d+(\.\d+)?/);
+                return match ? parseFloat(match[0]) : 0;
+            };
+
+            const sortConfigs = {
+                dept:     { type: 'text',   getValue: text('dept'),     first: 'asc', titles: { asc: '職缺類型 A → Z', desc: '職缺類型 Z → A' } },
+                title:    { type: 'text',   getValue: text('title'),    first: 'asc', titles: { asc: '職缺名稱 A → Z', desc: '職缺名稱 Z → A' } },
+                location: { type: 'text',   getValue: text('location'), first: 'asc', titles: { asc: '工作地點 A → Z', desc: '工作地點 Z → A' } },
+                exp:      { type: 'number', getValue: expYears,         first: 'asc', titles: { asc: '經歷要求由低到高', desc: '經歷要求由高到低' } },
+                edu:      { type: 'number', getValue: row => Number(row.dataset.edu || 0), first: 'asc', titles: { asc: '學歷要求由低到高', desc: '學歷要求由高到低' } },
+                deadline: { type: 'number', getValue: row => row.dataset.deadline ? Number(row.dataset.deadline) : null, first: 'asc', titles: { asc: '截止日期由近到遠', desc: '截止日期由遠到近' } }
+            };
+
+            const icons = { none: '⇅', asc: '↑', desc: '↓' };
+            const byOriginal = (a, b) => a.dataset.originalIndex - b.dataset.originalIndex;
+
+            function setButtonState(btn, state) {
+                const config = sortConfigs[btn.dataset.sortKey];
+                if (!config) return;
+
+                btn.dataset.sort = state;
+                btn.classList.toggle('active', state !== 'none');
+
+                const icon = btn.querySelector('.sort-icon');
+                if (icon) icon.textContent = icons[state];
+
+                btn.title = state === 'none' ? '點擊排序' : '目前：' + config.titles[state];
+            }
+
+            sortButtons.forEach(btn => {
+                const config = sortConfigs[btn.dataset.sortKey];
+                if (!config) return;
+
+                setButtonState(btn, 'none');
+
+                btn.addEventListener('click', function () {
+                    const current = this.dataset.sort || 'none';
+                    const opposite = config.first === 'asc' ? 'desc' : 'asc';
+                    const next = current === 'none'
+                        ? config.first
+                        : current === config.first ? opposite : 'none';
+
+                    sortButtons.forEach(other => {
+                        if (other !== this) setButtonState(other, 'none');
+                    });
+                    setButtonState(this, next);
+
+                    const sorted = rows.slice().sort((a, b) => {
+                        if (next === 'none') return byOriginal(a, b);
+
+                        const va = config.getValue(a);
+                        const vb = config.getValue(b);
+
+                        // 沒有資料的職缺永遠排最後
+                        if (va === null && vb === null) return byOriginal(a, b);
+                        if (va === null) return 1;
+                        if (vb === null) return -1;
+
+                        const diff = config.type === 'text'
+                            ? va.localeCompare(vb, 'zh-Hant-TW')
+                            : va - vb;
+
+                        const result = next === 'asc' ? diff : -diff;
+                        return result !== 0 ? result : byOriginal(a, b); // 相同時維持原順序
+                    });
+
+                    // 移動既有節點（收藏按鈕狀態會保留），再從第 1 頁重新分頁
+                    jobList.append(...sorted);
+                    currentPage = 1;
+                    renderPagination();
+                });
+            });
+        }
+
         window.addEventListener('load', function () {
             restoreFavorites();
+            initSorting();
             renderPagination();
         });
     </script>

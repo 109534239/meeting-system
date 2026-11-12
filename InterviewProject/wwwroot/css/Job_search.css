@@ -211,6 +211,57 @@
     align-items: center;
 }
 
+    /* ── 表頭排序按鈕 ── */
+    .job-table-head > div {
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    .job-table-head button.job-sort-btn {
+        all: unset;
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        margin-left: -6px; /* 抵銷內距，讓文字與下方資料對齊 */
+        padding: 3px 6px;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: #525252;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+        .job-table-head button.job-sort-btn:hover {
+            background-color: #edf4f7;
+            color: var(--primary, #206c8b);
+        }
+
+        .job-table-head button.job-sort-btn:focus-visible {
+            outline: 2px solid rgba(32, 108, 139, 0.35);
+            outline-offset: 1px;
+        }
+
+        .job-table-head button.job-sort-btn.active {
+            background-color: #e6f0f4;
+            color: var(--primary, #206c8b);
+        }
+
+        .job-table-head button.job-sort-btn .sort-icon {
+            font-size: 12px;
+            line-height: 1;
+            opacity: 0.45;
+            transition: opacity 0.15s ease;
+        }
+
+        .job-table-head button.job-sort-btn:hover .sort-icon,
+        .job-table-head button.job-sort-btn.active .sort-icon {
+            opacity: 1;
+        }
+
 /* ── JOB LIST & ROWS (Desktop: 992px 以上) ── */
 .job-list {
     display: flex;
