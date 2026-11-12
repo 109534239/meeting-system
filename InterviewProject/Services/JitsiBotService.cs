@@ -871,9 +871,29 @@ namespace InterviewProject.Services
                 if (cell.type === 'video') {
                     try { ctx.drawImage(cell.el, x, y, cellW, cellH); } catch (e) {}
                 } else {
-                    // 佔位格（沒開鏡頭的人）：純黑畫面，不顯示任何提示文字（名字標籤照樣會畫在下面）
+                    // 佔位格（沒開鏡頭的人）：純黑畫面，不顯示「未開啟鏡頭」之類的提示文字
                     ctx.fillStyle = '#000';
                     ctx.fillRect(x, y, cellW, cellH);
+                }
+
+                // 每一格畫一圈細框線：有人的格子（含沒開鏡頭的黑畫面）都有框，
+                // 人數是奇數時多出來的空位沒有框、也沒有名字，一眼就看得出「這格是某個人」還是「單純是空位」。
+                try {
+                    ctx.strokeStyle = '#444';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 1, y + 1, cellW - 2, cellH - 2);
+                } catch (e) {}
+
+                // 沒開鏡頭的人：名字置中、放大顯示在他自己的格子正中央，不再貼在格子底部（底部會像是在標示下方的空位）
+                if (cell.type !== 'video' && cell.label) {
+                    try {
+                        ctx.font = 'bold 26px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(cell.label, x + cellW / 2, y + cellH / 2);
+                        ctx.textAlign = 'left';
+                    } catch (e) {}
+                    return;
                 }
 
                 // 這樣錄下來的檔案才看得出來哪一格是誰（不然每格都只是一個畫面，看不出角色）。

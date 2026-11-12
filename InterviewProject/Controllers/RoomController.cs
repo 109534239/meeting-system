@@ -1065,7 +1065,18 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 
             if (merged.Count > 0)
             {
-                content = string.Join("\n", merged.OrderBy(x => x.time).Select(x => x.line));
+                // 🎯 嚴格依「逐字稿上顯示的時間」排序（時分秒），不依賴完整日期——
+                //    不同來源（瀏覽器即時辨識、整段音檔轉錄、AI 開場白）算出來的 DateTime 如果日期/時區有細微差異，
+                //    直接比 DateTime 會讓整批內容排到另一批的前面或後面（逐字稿就會一段一段亂跳）。
+                //    以會議第一句話前 1 分鐘當起點，跨過午夜也不會亂。
+                var firstTod = merged.Min(x => x.time.TimeOfDay) - TimeSpan.FromMinutes(1);
+                if (merged.Max(x => x.time.TimeOfDay) - merged.Min(x => x.time.TimeOfDay) > TimeSpan.FromHours(12))
+                    firstTod = TimeSpan.Zero; // 範圍跨午夜時，退回一般的時間順序
+                Func<DateTime, double> tKey = d => ((d.TimeOfDay - firstTod).TotalSeconds + 86400) % 86400;
+                content = string.Join("\n", merged
+                    .OrderBy(x => tKey(x.time))
+                    .ThenBy(x => x.time)
+                    .Select(x => x.line));
                 isEmpty = false;
             }
             else
