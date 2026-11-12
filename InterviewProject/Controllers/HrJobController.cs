@@ -126,6 +126,10 @@ namespace InterviewProject.Controllers
             // 🎯 後端防呆：即使前端驗證被繞過（JS 出錯、被停用、或有人直接打 API），
             //    必填欄位缺漏也只會友善地退回表單重填，不會讓資料庫噴出未處理例外
             var missingFields = GetMissingRequiredFields(job);
+
+            // 🎯 AI 評分比重：每項 0～100，六項合計必須剛好 100
+            missingFields.AddRange(GetScoreWeightErrors(job));
+
             if (missingFields.Count > 0)
             {
                 TempData["Error"] = "請完成以下必填欄位：" + string.Join("、", missingFields);
@@ -185,6 +189,17 @@ namespace InterviewProject.Controllers
 
             var missingFields = GetMissingRequiredFields(job);
 
+            // 🎯 AI 評分比重：只有表單真的有送出比重欄位時才檢查與更新。
+            //    若 Edit.cshtml 尚未加入比重欄位，模型繫結會帶入 Model 的預設值，
+            //    這裡不判斷的話會把資料庫原本的比重覆蓋成預設值。
+            var hasScoreWeightFields = Request.HasFormContentType &&
+                                       Request.Form.ContainsKey(nameof(Job.ScoreWeightSkill));
+
+            if (hasScoreWeightFields)
+            {
+                missingFields.AddRange(GetScoreWeightErrors(job));
+            }
+
             // 🎯 當天上架的職缺不能當天下架，要隔天才能操作：擋下這次操作，維持原本上架中的狀態
             if (wasActive && !job.IsActive && existing.CreatedAt.Date == DateTime.Now.Date)
             {
@@ -237,6 +252,11 @@ namespace InterviewProject.Controllers
                 existing.Deadline = job.Deadline;
                 existing.IsActive = job.IsActive;
 
+                if (hasScoreWeightFields)
+                {
+                    CopyScoreWeights(job, existing);
+                }
+
                 return View("~/Views/Job_hr/Edit.cshtml", existing);
             }
 
@@ -258,6 +278,11 @@ namespace InterviewProject.Controllers
             existing.SalaryMax = job.SalaryMax;
             existing.Deadline = job.Deadline;
             existing.IsActive = job.IsActive;
+
+            if (hasScoreWeightFields)
+            {
+                CopyScoreWeights(job, existing);
+            }
 
             // 使用 DateTime.Now 更新時間
             existing.UpdatedAt = DateTime.Now;
@@ -338,6 +363,48 @@ namespace InterviewProject.Controllers
             if (job.Deadline == default) missing.Add("截止日期");
 
             return missing;
+        }
+
+        // 🎯 AI 評分比重檢查（與前端 validateJobForm() 規則一致）
+        //    每一項必須介於 0～100 分，六項合計必須剛好 100 分
+        private List<string> GetScoreWeightErrors(Job job)
+        {
+            var errors = new List<string>();
+
+            var weights = new[]
+            {
+                job.ScoreWeightSkill,
+                job.ScoreWeightExperience,
+                job.ScoreWeightEducation,
+                job.ScoreWeightPortfolio,
+                job.ScoreWeightLanguageCert,
+                job.ScoreWeightOther
+            };
+
+            if (weights.Any(w => w < 0 || w > 100))
+            {
+                errors.Add("AI 評分比重（每一項需介於 0～100 分）");
+            }
+
+            var total = weights.Sum();
+
+            if (total != 100)
+            {
+                errors.Add($"AI 評分比重（六項合計需為 100 分，目前為 {total} 分）");
+            }
+
+            return errors;
+        }
+
+        // 🎯 複製六項 AI 評分比重（Edit 的兩個分支共用）
+        private static void CopyScoreWeights(Job from, Job to)
+        {
+            to.ScoreWeightSkill = from.ScoreWeightSkill;
+            to.ScoreWeightExperience = from.ScoreWeightExperience;
+            to.ScoreWeightEducation = from.ScoreWeightEducation;
+            to.ScoreWeightPortfolio = from.ScoreWeightPortfolio;
+            to.ScoreWeightLanguageCert = from.ScoreWeightLanguageCert;
+            to.ScoreWeightOther = from.ScoreWeightOther;
         }
 
         // 🎯 選填欄位留空時套用預設值，確保資料一致並避免因空值造成錯誤

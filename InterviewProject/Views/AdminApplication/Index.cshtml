@@ -133,22 +133,93 @@
 
             </div>
 
+            @* ── AI 分數視覺化圖表 ── *@
+            @if (ViewBag.HasAiChartData == true)
+            {
+                <div class="hrapp-ai-charts">
+
+                    @* 圖表資料（由 Controller 產生的 JSON） *@
+                    <script type="application/json" id="aiChartData">@Html.Raw((string)ViewBag.AiChartJson)</script>
+
+                    @* 1. 應徵者分數排名 *@
+                    <div class="hrapp-chart-card hrapp-chart-wide">
+                        <div class="hrapp-chart-head">
+                            <h4>應徵者分數排名</h4>
+                            <div class="hrapp-chart-legend">
+                                <span><i class="dot dot-high"></i>80 分以上</span>
+                                <span><i class="dot dot-mid"></i>60–79 分</span>
+                                <span><i class="dot dot-low"></i>未滿 60 分</span>
+                            </div>
+                        </div>
+                        <div class="hrapp-chart-canvas" id="aiRankingWrap">
+                            <canvas id="aiRankingChart" role="img" aria-label="應徵者 AI 分數排名長條圖"></canvas>
+                        </div>
+                        <p class="hrapp-chart-note" id="aiRankingNote">已完成評分 @scoredCount / @totalCount 人</p>
+                    </div>
+
+                    @* 2. 六項能力雷達圖 *@
+                    <div class="hrapp-chart-card" id="aiRadarCard">
+                        <div class="hrapp-chart-head">
+                            <h4>六項能力雷達圖</h4>
+                            <select id="aiRadarSelect" class="hrapp-chart-select" aria-label="選擇要查看的應徵者"></select>
+                        </div>
+                        <div class="hrapp-chart-canvas hrapp-chart-canvas-square">
+                            <canvas id="aiRadarChart" role="img" aria-label="應徵者六項能力雷達圖"></canvas>
+                        </div>
+                        <p class="hrapp-chart-note">以得分率（得分 ÷ 配分）呈現，灰色虛線為全體平均。</p>
+                    </div>
+
+                    @* 3. 各項目平均得分率 *@
+                    <div class="hrapp-chart-card" id="aiItemAvgCard">
+                        <div class="hrapp-chart-head">
+                            <h4>各項目平均得分率</h4>
+                        </div>
+                        <div class="hrapp-chart-canvas hrapp-chart-canvas-square">
+                            <canvas id="aiItemAvgChart" role="img" aria-label="各評分項目平均得分率長條圖"></canvas>
+                        </div>
+                        <p class="hrapp-chart-note" id="aiGapNote"></p>
+                    </div>
+
+                    <p class="hrapp-chart-empty" id="aiChartDetailEmpty" hidden>
+                        已評分的履歷缺少六項評分明細（可能是舊版評語），暫時無法顯示能力分析圖表。
+                    </p>
+
+                </div>
+            }
+
         </section>
 
     }
 
     <div class="hrapp-cols hrapp-grid-head">
-        <div>應徵時間</div>
+        <div>
+            <button type="button"
+                    class="hrapp-sort-btn"
+                    data-sort-key="time"
+                    data-sort="none"
+                    title="依應徵時間排序">
+                應徵時間 <span class="sort-icon">⇅</span>
+            </button>
+        </div>
         <div>應徵職缺</div>
         <div>應徵者姓名</div>
         <div>聯絡電話</div>
         <div>最高學歷 / 科系</div>
         <div>工作經驗</div>
-        <div class="text-center">目前狀態</div>
+        <div class="text-center">
+            <button type="button"
+                    class="hrapp-sort-btn"
+                    data-sort-key="status"
+                    data-sort="none"
+                    title="依審核狀態排序">
+                目前狀態 <span class="sort-icon">⇅</span>
+            </button>
+        </div>
         <div class="text-center">
             <button type="button"
                     id="btnSortAiScore"
                     class="hrapp-sort-btn"
+                    data-sort-key="score"
                     data-sort="none"
                     title="依 AI 分數排序">
                 AI 智慧篩選 <span class="sort-icon">⇅</span>
@@ -202,6 +273,8 @@
                 <div class="hrapp-row hrapp-cols @rowClass @statusClass"
                      data-row-id="@item.Id"
                      data-score="@(hasAiScore ? score.Value.ToString() : "")"
+                     data-time="@item.ResumeTime.ToString("yyyyMMddHHmmss")"
+                     data-status="@item.Status"
                      onclick="location.href='@Url.Action("Details", "AdminApplication", new { id = item.Id })'">
 
                     @* 1. 應徵時間 *@
@@ -517,6 +590,12 @@
 @section Scripts {
     @Html.AntiForgeryToken()
 
+    @* 🎯 有圖表資料時才載入 Chart.js *@
+    @if (ViewBag.HasAiChartData == true)
+    {
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    }
+
     <script>
         document.addEventListener("DOMContentLoaded", function () {
             // 1. AI 評語彈跳視窗
@@ -561,6 +640,8 @@
 
                     currentSelect.classList.remove("select-wait", "select-pass", "select-fail");
                     if (parentRow) {
+                        // 同步更新排序用的狀態值，下次依狀態排序時才會用到最新狀態
+                        parentRow.dataset.status = newStatus;
                         parentRow.classList.remove("row-unhandled", "row-handled", "status-pending", "status-passed", "status-failed");
                     }
 
@@ -956,56 +1037,371 @@
                 }
             });
 
-            // 5. AI 分數排序（高→低 → 低→高 → 原始順序）
-            const sortBtn = document.getElementById("btnSortAiScore");
+            // 5. 表頭排序（應徵時間 / 目前狀態 / AI 分數）
+            //    每次只套用一種排序；點同一個按鈕依序切換：預設方向 → 相反方向 → 恢復原始順序
+            const sortButtons = Array.from(document.querySelectorAll(".hrapp-sort-btn[data-sort-key]"));
             const resumeList = document.querySelector(".hrapp-list");
 
-            if (sortBtn && resumeList) {
+            if (sortButtons.length > 0 && resumeList) {
                 const rows = Array.from(resumeList.querySelectorAll(".hrapp-row"));
 
-                // 記住原本順序（後端依應徵時間排序）
+                // 記住原本順序（後端依應徵時間由新到舊排序）
                 rows.forEach((row, i) => row.dataset.originalIndex = i);
 
-                const states = ["none", "desc", "asc"];
-                const icons = { none: "⇅", desc: "↓", asc: "↑" };
-                const titles = {
-                    none: "依 AI 分數排序",
-                    desc: "目前：分數由高到低",
-                    asc: "目前：分數由低到高"
+                // 審核狀態的排序順序
+                const statusRank = { "待審核": 0, "已通過": 1, "未通過": 2 };
+
+                // 各欄位的取值方式、預設排序方向與提示文字
+                const sortConfigs = {
+                    time: {
+                        getValue: row => row.dataset.time ? Number(row.dataset.time) : null,
+                        first: "desc",
+                        idleTitle: "依應徵時間排序",
+                        titles: {
+                            desc: "目前：應徵時間由新到舊",
+                            asc: "目前：應徵時間由舊到新"
+                        }
+                    },
+                    status: {
+                        getValue: row => row.dataset.status in statusRank
+                            ? statusRank[row.dataset.status]
+                            : null,
+                        first: "asc",
+                        idleTitle: "依審核狀態排序",
+                        titles: {
+                            asc: "目前：待審核 → 已通過 → 未通過",
+                            desc: "目前：未通過 → 已通過 → 待審核"
+                        }
+                    },
+                    score: {
+                        getValue: row => row.dataset.score ? Number(row.dataset.score) : null,
+                        first: "desc",
+                        idleTitle: "依 AI 分數排序",
+                        titles: {
+                            desc: "目前：分數由高到低",
+                            asc: "目前：分數由低到高"
+                        }
+                    }
                 };
 
-                const getScore = row =>
-                    row.dataset.score ? Number(row.dataset.score) : null;
+                const icons = { none: "⇅", desc: "↓", asc: "↑" };
 
                 const byOriginal = (a, b) =>
                     a.dataset.originalIndex - b.dataset.originalIndex;
 
-                sortBtn.addEventListener("click", function () {
-                    const next = states[(states.indexOf(this.dataset.sort) + 1) % states.length];
+                function setButtonState(btn, state) {
+                    const config = sortConfigs[btn.dataset.sortKey];
+                    if (!config) return;
 
-                    this.dataset.sort = next;
-                    this.querySelector(".sort-icon").textContent = icons[next];
-                    this.title = titles[next];
-                    this.classList.toggle("active", next !== "none");
+                    btn.dataset.sort = state;
 
-                    const sorted = rows.slice().sort((a, b) => {
-                        if (next === "none") return byOriginal(a, b);
+                    const icon = btn.querySelector(".sort-icon");
+                    if (icon) icon.textContent = icons[state];
 
-                        const sa = getScore(a);
-                        const sb = getScore(b);
+                    btn.title = state === "none" ? config.idleTitle : config.titles[state];
+                    btn.classList.toggle("active", state !== "none");
+                }
 
-                        // 尚未評分的永遠排最後
-                        if (sa === null && sb === null) return byOriginal(a, b);
-                        if (sa === null) return 1;
-                        if (sb === null) return -1;
+                sortButtons.forEach(btn => {
+                    const config = sortConfigs[btn.dataset.sortKey];
+                    if (!config) return;
 
-                        const diff = next === "desc" ? sb - sa : sa - sb;
-                        return diff !== 0 ? diff : byOriginal(a, b); // 同分維持原順序
+                    setButtonState(btn, "none");
+
+                    btn.addEventListener("click", function () {
+                        const current = this.dataset.sort || "none";
+                        const opposite = config.first === "desc" ? "asc" : "desc";
+
+                        const next = current === "none"
+                            ? config.first
+                            : current === config.first ? opposite : "none";
+
+                        // 其他欄位的排序按鈕恢復成未排序狀態
+                        sortButtons.forEach(other => {
+                            if (other !== this) setButtonState(other, "none");
+                        });
+
+                        setButtonState(this, next);
+
+                        const sorted = rows.slice().sort((a, b) => {
+                            if (next === "none") return byOriginal(a, b);
+
+                            const va = config.getValue(a);
+                            const vb = config.getValue(b);
+
+                            // 沒有值的資料（例如尚未評分）永遠排最後
+                            if (va === null && vb === null) return byOriginal(a, b);
+                            if (va === null) return 1;
+                            if (vb === null) return -1;
+
+                            const diff = next === "desc" ? vb - va : va - vb;
+                            return diff !== 0 ? diff : byOriginal(a, b); // 相同時維持原順序
+                        });
+
+                        // 移動既有節點，原本綁定的事件（查看評語、狀態下拉）都會保留
+                        resumeList.append(...sorted);
                     });
-
-                    // 移動既有節點，原本綁定的事件（查看評語、狀態下拉）都會保留
-                    resumeList.append(...sorted);
                 });
+            }
+
+            // 6. AI 分數視覺化圖表（Chart.js）
+            const chartDataEl = document.getElementById("aiChartData");
+
+            if (chartDataEl && window.Chart) {
+                let chartData = {};
+
+                try {
+                    chartData = JSON.parse(chartDataEl.textContent || "{}");
+                } catch (err) {
+                    console.error("AI 圖表資料解析失敗：", err);
+                }
+
+                const chartCandidates = Array.isArray(chartData.candidates) ? chartData.candidates : [];
+                const itemCount = Array.isArray(chartData.items) ? chartData.items.length : 0;
+
+                // 圖表上使用的簡短項目名稱（順序與後端六項一致）
+                const shortItemNames = ["專業技能", "工作經驗", "學歷科系", "作品集成果", "語文證照", "其他條件"];
+
+                const COLOR_PRIMARY = "#206c8b";
+                const COLOR_TEXT = "#24354b";
+                const tierColor = s => s >= 80 ? "#2e7d32" : s >= 60 ? "#f57c00" : "#c62828";
+
+                Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+                Chart.defaults.color = "#64748b";
+
+                // 長條末端顯示數值的小外掛（橫向／直向長條圖共用）
+                const valueLabelPlugin = suffix => ({
+                    id: "valueLabel",
+                    afterDatasetsDraw(chart) {
+                        const ctx = chart.ctx;
+                        const horizontal = chart.options.indexAxis === "y";
+
+                        chart.getDatasetMeta(0).data.forEach((bar, i) => {
+                            const value = chart.data.datasets[0].data[i];
+
+                            ctx.save();
+                            ctx.fillStyle = COLOR_TEXT;
+                            ctx.font = "600 12px " + Chart.defaults.font.family;
+
+                            if (horizontal) {
+                                ctx.textAlign = "left";
+                                ctx.textBaseline = "middle";
+                                ctx.fillText(value + suffix, bar.x + 8, bar.y);
+                            } else {
+                                ctx.textAlign = "center";
+                                ctx.textBaseline = "bottom";
+                                ctx.fillText(value + suffix, bar.x, bar.y - 4);
+                            }
+
+                            ctx.restore();
+                        });
+                    }
+                });
+
+                // 6-1. 應徵者分數排名（橫向長條圖，最多顯示前 10 名）
+                const rankingCanvas = document.getElementById("aiRankingChart");
+
+                if (rankingCanvas && chartCandidates.length > 0) {
+                    const MAX_BARS = 10;
+                    const topCandidates = chartCandidates.slice(0, MAX_BARS);
+
+                    document.getElementById("aiRankingWrap").style.height =
+                        (topCandidates.length * 44 + 48) + "px";
+
+                    if (chartCandidates.length > MAX_BARS) {
+                        const rankingNote = document.getElementById("aiRankingNote");
+                        if (rankingNote) rankingNote.textContent += `，圖表僅顯示前 ${MAX_BARS} 名`;
+                    }
+
+                    new Chart(rankingCanvas, {
+                        type: "bar",
+                        data: {
+                            labels: topCandidates.map(c => c.name),
+                            datasets: [{
+                                data: topCandidates.map(c => c.total),
+                                backgroundColor: topCandidates.map(c => tierColor(c.total)),
+                                borderRadius: 6,
+                                barThickness: 22
+                            }]
+                        },
+                        options: {
+                            indexAxis: "y",
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            layout: { padding: { right: 48 } },
+                            scales: {
+                                x: { min: 0, max: 100, ticks: { stepSize: 20 }, grid: { color: "#edf0f3" } },
+                                y: { grid: { display: false }, ticks: { color: "#334155", font: { size: 13, weight: "600" } } }
+                            },
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: { callbacks: { label: ctx => ` AI 綜合評分：${ctx.parsed.x} 分` } }
+                            }
+                        },
+                        plugins: [valueLabelPlugin(" 分")]
+                    });
+                }
+
+                // 只有評語中解析得到完整六項明細的應徵者，才納入能力分析
+                const detailedCandidates = chartCandidates.filter(c =>
+                    Array.isArray(c.items) &&
+                    c.items.length === itemCount &&
+                    c.items.every(item => item && item.max >= 0));
+
+                const radarCard = document.getElementById("aiRadarCard");
+                const avgCard = document.getElementById("aiItemAvgCard");
+                const detailEmpty = document.getElementById("aiChartDetailEmpty");
+
+                if (itemCount === 0 || detailedCandidates.length === 0) {
+                    if (radarCard) radarCard.hidden = true;
+                    if (avgCard) avgCard.hidden = true;
+                    if (detailEmpty) detailEmpty.hidden = false;
+                } else {
+                    // 配分為 0 的項目代表本職缺不採計，不放進圖表
+                    const activeIdx = [];
+                    for (let i = 0; i < itemCount; i++) {
+                        if (detailedCandidates.some(c => c.items[i].max > 0)) activeIdx.push(i);
+                    }
+
+                    const rateOf = item => item && item.max > 0
+                        ? Math.round(item.score / item.max * 100)
+                        : 0;
+
+                    // 兩行標籤：項目名稱 + 配分
+                    const itemLabels = activeIdx.map(i =>
+                        [shortItemNames[i], `配分 ${detailedCandidates[0].items[i].max}`]);
+
+                    const averageRates = activeIdx.map(i =>
+                        Math.round(detailedCandidates.reduce((sum, c) => sum + rateOf(c.items[i]), 0)
+                            / detailedCandidates.length));
+
+                    // 6-2. 六項能力雷達圖（可切換應徵者，疊加全體平均）
+                    const radarCanvas = document.getElementById("aiRadarChart");
+                    const radarSelect = document.getElementById("aiRadarSelect");
+
+                    if (radarCanvas && radarSelect && activeIdx.length >= 3) {
+                        detailedCandidates.forEach((c, idx) => {
+                            radarSelect.add(new Option(`${c.name}（${c.total} 分）`, String(idx)));
+                        });
+
+                        let currentCandidate = detailedCandidates[0];
+
+                        const radarChart = new Chart(radarCanvas, {
+                            type: "radar",
+                            data: {
+                                labels: itemLabels,
+                                datasets: [
+                                    {
+                                        label: currentCandidate.name,
+                                        data: activeIdx.map(i => rateOf(currentCandidate.items[i])),
+                                        borderColor: COLOR_PRIMARY,
+                                        backgroundColor: "rgba(32, 108, 139, 0.18)",
+                                        pointBackgroundColor: COLOR_PRIMARY,
+                                        pointRadius: 3,
+                                        borderWidth: 2
+                                    },
+                                    {
+                                        label: "全體平均",
+                                        data: averageRates,
+                                        borderColor: "#94a3b8",
+                                        backgroundColor: "rgba(148, 163, 184, 0.06)",
+                                        borderDash: [5, 4],
+                                        pointRadius: 2,
+                                        borderWidth: 1.5
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    r: {
+                                        min: 0,
+                                        max: 100,
+                                        ticks: {
+                                            stepSize: 25,
+                                            backdropColor: "transparent",
+                                            font: { size: 10 },
+                                            callback: v => v + "%"
+                                        },
+                                        grid: { color: "#e2e8f0" },
+                                        angleLines: { color: "#e2e8f0" },
+                                        pointLabels: { color: "#334155", font: { size: 12 } }
+                                    }
+                                },
+                                plugins: {
+                                    legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 8 } },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: ctx => {
+                                                if (ctx.datasetIndex === 0) {
+                                                    const item = currentCandidate.items[activeIdx[ctx.dataIndex]];
+                                                    return ` ${currentCandidate.name}：${item.score}/${item.max} 分（${ctx.parsed.r}%）`;
+                                                }
+                                                return ` 全體平均：${ctx.parsed.r}%`;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        radarSelect.addEventListener("change", function () {
+                            currentCandidate = detailedCandidates[Number(this.value)] || detailedCandidates[0];
+                            radarChart.data.datasets[0].label = currentCandidate.name;
+                            radarChart.data.datasets[0].data = activeIdx.map(i => rateOf(currentCandidate.items[i]));
+                            radarChart.update();
+                        });
+                    } else if (radarCard) {
+                        // 採計項目少於三項時無法構成雷達圖
+                        radarCard.hidden = true;
+                    }
+
+                    // 6-3. 各項目平均得分率（得分率最低者標紅，提示整體能力缺口）
+                    const avgCanvas = document.getElementById("aiItemAvgChart");
+                    const gapNote = document.getElementById("aiGapNote");
+
+                    if (avgCanvas && activeIdx.length > 0) {
+                        const minRate = Math.min(...averageRates);
+                        const minPos = averageRates.indexOf(minRate);
+
+                        new Chart(avgCanvas, {
+                            type: "bar",
+                            data: {
+                                labels: itemLabels,
+                                datasets: [{
+                                    data: averageRates,
+                                    backgroundColor: averageRates.map((_, idx) =>
+                                        idx === minPos ? "#e57373" : "rgba(32, 108, 139, 0.8)"),
+                                    borderRadius: 6,
+                                    maxBarThickness: 38
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                layout: { padding: { top: 18 } },
+                                scales: {
+                                    y: { min: 0, max: 100, ticks: { stepSize: 25, callback: v => v + "%" }, grid: { color: "#edf0f3" } },
+                                    x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 } } }
+                                },
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { callbacks: { label: ctx => ` 平均得分率：${ctx.parsed.y}%` } }
+                                }
+                            },
+                            plugins: [valueLabelPlugin("%")]
+                        });
+
+                        if (gapNote) {
+                            gapNote.textContent = detailedCandidates.length >= 2
+                                ? `本批應徵者在「${shortItemNames[activeIdx[minPos]]}」的平均得分率最低（${minRate}%），建議列為面試重點確認項目。`
+                                : "目前只有 1 位應徵者有完整評分明細，平均值僅供參考。";
+                        }
+                    } else if (avgCard) {
+                        avgCard.hidden = true;
+                    }
+                }
             }
 
         });

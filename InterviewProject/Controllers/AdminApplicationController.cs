@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace InterviewProject.Controllers
 {
@@ -19,6 +20,17 @@ namespace InterviewProject.Controllers
         private readonly AutoInterviewSchedulingService _scheduler;
         private readonly ResumeAiScoringService _aiScoringService;
         private readonly ApplicantComparisonService _comparisonService;
+
+        // 🎯 AI 六項評分項目名稱（需與 ResumeAiScoringService 產生的評語明細一致）
+        private static readonly string[] AiScoreItemNames =
+        {
+            "專業技能匹配度",
+            "工作經驗匹配度",
+            "學歷與科系符合度",
+            "作品集與實務成果",
+            "語文與專業證照",
+            "其他職缺條件"
+        };
 
         public AdminApplicationController(
             AppDbContext db,
@@ -127,6 +139,7 @@ namespace InterviewProject.Controllers
             // 設定頁面標題與職缺 AI 評分權限
             ViewBag.CanStartAiScoring = false;
             ViewBag.IsJobActive = true;
+            ViewBag.HasAiChartData = false;
 
             if (jobId.HasValue)
             {
@@ -155,6 +168,10 @@ namespace InterviewProject.Controllers
                         r.Status != "暫存")
                     .Select(r => new
                     {
+                        r.Id,
+                        MemberName = r.Member != null
+                            ? r.Member.Name
+                            : null,
                         r.AiScore,
                         r.AiComment
                     })
@@ -176,6 +193,35 @@ namespace InterviewProject.Controllers
                 ViewBag.AiPendingCount =
                     (int)ViewBag.AiTotalCount -
                     (int)ViewBag.AiScoredCount;
+
+
+                // 🎯 AI 分數視覺化圖表資料
+                //    總分取自 AiScore；六項分數從評語開頭的「項目：得分/配分 分」明細解析
+                //    （該明細由 ResumeAiScoringService 固定格式產生，配分為評分當下的比重）
+                var chartCandidates = aiStatistics
+                    .Where(r =>
+                        r.AiScore.HasValue &&
+                        !string.IsNullOrWhiteSpace(r.AiComment))
+                    .OrderByDescending(r => r.AiScore!.Value)
+                    .ThenBy(r => r.Id)
+                    .Select(r => new
+                    {
+                        resumeId = r.Id,
+                        name = string.IsNullOrWhiteSpace(r.MemberName)
+                            ? "姓名資料待確認"
+                            : r.MemberName.Trim(),
+                        total = r.AiScore!.Value,
+                        items = ParseAiItemScores(r.AiComment!)
+                    })
+                    .ToList();
+
+                ViewBag.HasAiChartData = chartCandidates.Count > 0;
+
+                ViewBag.AiChartJson = JsonSerializer.Serialize(new
+                {
+                    items = AiScoreItemNames,
+                    candidates = chartCandidates
+                });
 
 
                 // 僅 HR 可在職缺下架後啟動 AI 批次評分
@@ -976,6 +1022,37 @@ namespace InterviewProject.Controllers
             {
                 return Json(new { success = false, message = "資料庫儲存失敗，錯誤原因：" + ex.Message });
             }
+        }
+
+        // =====================================================================
+        // AI 評語明細解析（供分數視覺化圖表使用）
+        // =====================================================================
+
+        // 🎯 從評語開頭的「一、專業技能匹配度：16/35 分」解析六項得分與配分
+        //    舊格式或找不到某一項時，該項回傳 null，前端會略過沒有完整明細的應徵者
+        private static List<object?> ParseAiItemScores(string comment)
+        {
+            var result = new List<object?>();
+
+            foreach (var itemName in AiScoreItemNames)
+            {
+                var match = Regex.Match(
+                    comment,
+                    Regex.Escape(itemName) + @"\s*[:：]\s*(\d+)\s*/\s*(\d+)");
+
+                if (match.Success &&
+                    int.TryParse(match.Groups[1].Value, out var score) &&
+                    int.TryParse(match.Groups[2].Value, out var max))
+                {
+                    result.Add(new { score, max });
+                }
+                else
+                {
+                    result.Add(null);
+                }
+            }
+
+            return result;
         }
 
         // ─── 字串格式轉換家族方法 ───

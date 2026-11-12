@@ -11,6 +11,79 @@
     <link rel="stylesheet" href="~/css/_Layout.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/HrJob.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/Job_search.css" asp-append-version="true" />
+
+    <style>
+        /* 🎯 表頭排序按鈕：外觀與表頭文字一致，只多一個淡色排序箭頭 */
+        .hrjob-grid-head button.hrjob-sort-btn {
+            all: unset;
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            padding: 2px 3px;
+            border-radius: 6px;
+            font: inherit;
+            color: inherit;
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+
+            .hrjob-grid-head button.hrjob-sort-btn:hover {
+                background-color: #edf4f7;
+                color: #206c8b;
+            }
+
+            .hrjob-grid-head button.hrjob-sort-btn:focus-visible {
+                outline: 2px solid rgba(32, 108, 139, 0.35);
+                outline-offset: 1px;
+            }
+
+            /* 排序中：主色文字 + 淡底 */
+            .hrjob-grid-head button.hrjob-sort-btn.active {
+                background-color: #e6f0f4;
+                color: #206c8b;
+            }
+
+            .hrjob-grid-head button.hrjob-sort-btn .sort-icon {
+                font-size: 11px;
+                line-height: 1;
+                opacity: 0.45;
+                transition: opacity 0.15s ease;
+            }
+
+            .hrjob-grid-head button.hrjob-sort-btn:hover .sort-icon,
+            .hrjob-grid-head button.hrjob-sort-btn.active .sort-icon {
+                opacity: 1;
+            }
+
+        /* 部門、職缺名稱：按鈕內距往左抵銷，讓文字和下方資料對齊 */
+        .hrjob-grid-head > div:nth-child(-n+2) > button.hrjob-sort-btn {
+            margin-left: -3px;
+        }
+
+        /* 表頭文字一律不換行 */
+        .hrjob-grid-head > div {
+            white-space: nowrap;
+        }
+
+        /* 招募進度、上架／下架日期：多個排序按鈕排成同一行 */
+        .hrjob-grid-head .hrjob-sort-group {
+            display: flex;
+            align-items: center;
+            flex-wrap: nowrap;
+        }
+
+            .hrjob-grid-head .hrjob-sort-group.text-center {
+                justify-content: center;
+            }
+
+        .hrjob-sort-sep {
+            margin: 0 1px;
+            opacity: 0.5;
+        }
+    </style>
 }
 
 <div class="page-header">
@@ -71,11 +144,21 @@
 
     @* ── Grid 標頭 ── *@
     <div class="hrjob-cols hrjob-grid-head">
-        <div>部門</div>
-        <div>職缺名稱</div>
-        <div>招募進度 (未處理 / 錄取 / 需求 / 總數)</div>
-        <div class="text-center">狀態</div>
-        <div class="text-center">上架 / 下架日期</div>
+        <div>
+            <button type="button" class="hrjob-sort-btn" data-sort-key="dept">部門 <span class="sort-icon">⇅</span></button>
+        </div>
+        <div>
+            <button type="button" class="hrjob-sort-btn" data-sort-key="title">職缺名稱 <span class="sort-icon">⇅</span></button>
+        </div>
+        <div class="hrjob-sort-group">
+            <span>招募進度：</span><button type="button" class="hrjob-sort-btn" data-sort-key="unhandled">未處理<span class="sort-icon">⇅</span></button><span class="hrjob-sort-sep">/</span><button type="button" class="hrjob-sort-btn" data-sort-key="hired">錄取<span class="sort-icon">⇅</span></button><span class="hrjob-sort-sep">/</span><button type="button" class="hrjob-sort-btn" data-sort-key="needed">需求<span class="sort-icon">⇅</span></button><span class="hrjob-sort-sep">/</span><button type="button" class="hrjob-sort-btn" data-sort-key="total">總數<span class="sort-icon">⇅</span></button>
+        </div>
+        <div class="text-center">
+            <button type="button" class="hrjob-sort-btn" data-sort-key="status">狀態 <span class="sort-icon">⇅</span></button>
+        </div>
+        <div class="text-center hrjob-sort-group">
+            <button type="button" class="hrjob-sort-btn" data-sort-key="created">上架<span class="sort-icon">⇅</span></button><span class="hrjob-sort-sep">/</span><button type="button" class="hrjob-sort-btn" data-sort-key="deadline">下架<span class="sort-icon">⇅</span></button><span>日期</span>
+        </div>
         <div class="text-center">操作</div>
     </div>
 
@@ -94,7 +177,20 @@
                 bool isExpired = today > job.Deadline.Date;
                 bool isCurrentlyActive = job.IsActive && !isExpired;
 
-                <div class="hrjob-row hrjob-cols">
+                // 🎯 排序用：需求人數是文字（例如「2人」、「不限」），只取出數字；沒有數字的排最後
+                var headCountMatch = System.Text.RegularExpressions.Regex.Match(job.HeadCount ?? "", "[0-9]+");
+                string headCountSort = headCountMatch.Success ? headCountMatch.Value : "";
+
+                <div class="hrjob-row hrjob-cols"
+                     data-dept="@job.Department"
+                     data-title="@job.Title"
+                     data-unhandled="@stat.UnhandledCount"
+                     data-hired="@stat.HiredCount"
+                     data-needed="@headCountSort"
+                     data-total="@stat.TotalCount"
+                     data-active="@(isCurrentlyActive ? 1 : 0)"
+                     data-created="@job.CreatedAt.ToLocalTime().ToString("yyyyMMdd")"
+                     data-deadline="@job.Deadline.ToLocalTime().ToString("yyyyMMdd")">
 
                     @* 1. 部門 *@
                     <div class="hrjob-dept-text">@job.Department</div>
@@ -284,7 +380,120 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
+        // ============================
+        // 表頭排序
+        // 每次只套用一種排序；點同一個按鈕依序切換：預設方向 → 相反方向 → 恢復原始順序
+        // ============================
+        function initSorting() {
+            const list = document.getElementById('hrjob-list');
+            const sortButtons = Array.from(document.querySelectorAll('.hrjob-sort-btn[data-sort-key]'));
+            const rows = Array.from(document.querySelectorAll('#hrjob-list .hrjob-row'));
+
+            if (!list || sortButtons.length === 0 || rows.length === 0) return;
+
+            // 記住原本順序（後端依截止日期由近到遠排序）
+            rows.forEach((row, i) => row.dataset.originalIndex = i);
+
+            const textValue = attr => row => {
+                const v = (row.dataset[attr] || '').trim();
+                return v === '' ? null : v;
+            };
+
+            const numberValue = attr => row => {
+                const v = row.dataset[attr];
+                return v === undefined || v === '' ? null : Number(v);
+            };
+
+            // 各欄位的取值方式、資料型態、預設排序方向與提示文字
+            const sortConfigs = {
+                dept:      { getValue: textValue('dept'),        type: 'text',   first: 'asc',  label: '部門' },
+                title:     { getValue: textValue('title'),       type: 'text',   first: 'asc',  label: '職缺名稱' },
+                unhandled: { getValue: numberValue('unhandled'), type: 'number', first: 'desc', label: '未處理數量' },
+                hired:     { getValue: numberValue('hired'),     type: 'number', first: 'desc', label: '錄取數量' },
+                needed:    { getValue: numberValue('needed'),    type: 'number', first: 'desc', label: '需求人數' },
+                total:     { getValue: numberValue('total'),     type: 'number', first: 'desc', label: '總履歷數' },
+                status:    { getValue: numberValue('active'),    type: 'number', first: 'desc', label: '上架狀態',
+                             titles: { desc: '目前：上架中在前', asc: '目前：已下架在前' } },
+                created:   { getValue: numberValue('created'),   type: 'number', first: 'desc', label: '上架日期',
+                             titles: { desc: '目前：上架日期由新到舊', asc: '目前：上架日期由舊到新' } },
+                deadline:  { getValue: numberValue('deadline'),  type: 'number', first: 'asc',  label: '下架日期',
+                             titles: { asc: '目前：下架日期由近到遠', desc: '目前：下架日期由遠到近' } }
+            };
+
+            const icons = { none: '⇅', desc: '↓', asc: '↑' };
+
+            const byOriginal = (a, b) => a.dataset.originalIndex - b.dataset.originalIndex;
+
+            function titleFor(config, state) {
+                if (state === 'none') return `依${config.label}排序`;
+                if (config.titles && config.titles[state]) return config.titles[state];
+                if (config.type === 'text') return `目前：${config.label}${state === 'asc' ? '遞增' : '遞減'}`;
+                return `目前：${config.label}${state === 'desc' ? '由多到少' : '由少到多'}`;
+            }
+
+            function setButtonState(btn, state) {
+                const config = sortConfigs[btn.dataset.sortKey];
+                if (!config) return;
+
+                btn.dataset.sort = state;
+
+                const icon = btn.querySelector('.sort-icon');
+                if (icon) icon.textContent = icons[state];
+
+                btn.title = titleFor(config, state);
+                btn.classList.toggle('active', state !== 'none');
+            }
+
+            sortButtons.forEach(btn => {
+                const config = sortConfigs[btn.dataset.sortKey];
+                if (!config) return;
+
+                setButtonState(btn, 'none');
+
+                btn.addEventListener('click', function () {
+                    const current = this.dataset.sort || 'none';
+                    const opposite = config.first === 'desc' ? 'asc' : 'desc';
+
+                    const next = current === 'none'
+                        ? config.first
+                        : current === config.first ? opposite : 'none';
+
+                    // 其他欄位的排序按鈕恢復成未排序狀態
+                    sortButtons.forEach(other => {
+                        if (other !== this) setButtonState(other, 'none');
+                    });
+
+                    setButtonState(this, next);
+
+                    const sorted = rows.slice().sort((a, b) => {
+                        if (next === 'none') return byOriginal(a, b);
+
+                        const va = config.getValue(a);
+                        const vb = config.getValue(b);
+
+                        // 沒有值的資料（例如需求人數「不限」）永遠排最後
+                        if (va === null && vb === null) return byOriginal(a, b);
+                        if (va === null) return 1;
+                        if (vb === null) return -1;
+
+                        const diff = config.type === 'text'
+                            ? va.localeCompare(vb, 'zh-Hant-TW')
+                            : va - vb;
+
+                        const result = next === 'desc' ? -diff : diff;
+                        return result !== 0 ? result : byOriginal(a, b); // 相同時維持原順序
+                    });
+
+                    // 依新順序重新排列，並回到第一頁重新分頁
+                    list.append(...sorted);
+                    currentPage = 1;
+                    renderPagination();
+                });
+            });
+        }
+
         window.addEventListener('load', function () {
+            initSorting();
             renderPagination();
         });
     </script>

@@ -116,6 +116,59 @@
                 display: block;
                 margin-bottom: 4px;
             }
+
+        /* 🎯 AI 履歷評分比重 */
+        .weight-hint {
+            margin: -4px 0 16px;
+            font-size: 13px;
+            line-height: 1.7;
+            color: #718096;
+        }
+
+        .weight-input-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+            .weight-input-wrap .form-control {
+                flex: 1;
+            }
+
+        .weight-unit {
+            flex-shrink: 0;
+            font-size: 14px;
+            color: #4a5568;
+        }
+
+        .weight-total {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 8px;
+            padding: 12px 16px;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+
+            .weight-total strong {
+                font-size: 18px;
+            }
+
+            .weight-total.is-valid {
+                background: #f0fff4;
+                border-color: #c6f6d5;
+                color: #276749;
+            }
+
+            .weight-total.is-invalid {
+                background: #fff5f5;
+                border-color: #feb2b2;
+                color: #c53030;
+            }
     </style>
 }
 
@@ -492,6 +545,123 @@
         </div>
 
         @* ═══════════════════════════════
+            AI 履歷評分比重 (必填，六項合計需為 100)
+           ═══════════════════════════════ *@
+        <div class="hrjob-form">
+
+            <div class="form-section-title">
+                AI 履歷評分比重
+            </div>
+
+            <p class="weight-hint">
+                設定 AI 評分履歷時六個項目的配分，六項合計必須剛好為 100 分。
+                已預先帶入系統建議值，可依職缺需求調整。
+            </p>
+
+            <div class="form-grid-2">
+
+                <div class="form-group">
+                    <label>專業技能匹配度<span class="text-danger">*</span></label>
+                    <div class="weight-input-wrap">
+                        <input type="number"
+                               name="ScoreWeightSkill"
+                               class="form-control weight-input"
+                               data-label="專業技能匹配度"
+                               min="0" max="100" step="1"
+                               value="30"
+                               required />
+                        <span class="weight-unit">分</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>工作經驗匹配度<span class="text-danger">*</span></label>
+                    <div class="weight-input-wrap">
+                        <input type="number"
+                               name="ScoreWeightExperience"
+                               class="form-control weight-input"
+                               data-label="工作經驗匹配度"
+                               min="0" max="100" step="1"
+                               value="25"
+                               required />
+                        <span class="weight-unit">分</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="form-grid-2">
+
+                <div class="form-group">
+                    <label>學歷與科系符合度<span class="text-danger">*</span></label>
+                    <div class="weight-input-wrap">
+                        <input type="number"
+                               name="ScoreWeightEducation"
+                               class="form-control weight-input"
+                               data-label="學歷與科系符合度"
+                               min="0" max="100" step="1"
+                               value="15"
+                               required />
+                        <span class="weight-unit">分</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>作品集與實務成果<span class="text-danger">*</span></label>
+                    <div class="weight-input-wrap">
+                        <input type="number"
+                               name="ScoreWeightPortfolio"
+                               class="form-control weight-input"
+                               data-label="作品集與實務成果"
+                               min="0" max="100" step="1"
+                               value="15"
+                               required />
+                        <span class="weight-unit">分</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="form-grid-2">
+
+                <div class="form-group">
+                    <label>語文與專業證照<span class="text-danger">*</span></label>
+                    <div class="weight-input-wrap">
+                        <input type="number"
+                               name="ScoreWeightLanguageCert"
+                               class="form-control weight-input"
+                               data-label="語文與專業證照"
+                               min="0" max="100" step="1"
+                               value="10"
+                               required />
+                        <span class="weight-unit">分</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>其他職缺條件<span class="text-danger">*</span></label>
+                    <div class="weight-input-wrap">
+                        <input type="number"
+                               name="ScoreWeightOther"
+                               class="form-control weight-input"
+                               data-label="其他職缺條件"
+                               min="0" max="100" step="1"
+                               value="5"
+                               required />
+                        <span class="weight-unit">分</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div id="weight-total" class="weight-total is-valid">
+                六項合計：<strong id="weight-total-value">100</strong> / 100 分
+                <span id="weight-total-msg">✓ 配分正確</span>
+            </div>
+
+        </div>
+
+        @* ═══════════════════════════════
             上架設定 (截止日期為必填)
             🎯 移除「立即上架此職缺」勾選框：新增的職缺一定是「現在」被建立的，
                不勾選也無法改變這個事實，只會讓「已下架但截止日期還在未來」這種矛盾狀態一開始就發生。
@@ -642,6 +812,35 @@
             const salaryMax = document.getElementById('salarymax-input');
             push(salaryMax, '最高月薪', !salaryMax || salaryMax.value.trim() === '');
 
+            // 🎯 AI 評分比重：每一項必須是 0～100 的整數，且六項合計剛好 100
+            const weightInputs = getWeightInputs();
+            let hasInvalidWeight = false;
+
+            weightInputs.forEach(el => {
+                const raw = el.value.trim();
+                const value = Number(raw);
+
+                if (raw === '' || !Number.isInteger(value) || value < 0 || value > 100) {
+                    errors.push({
+                        el,
+                        label: 'AI 評分比重：' + (el.dataset.label || ''),
+                        msg: '⚠ 請輸入 0～100 的整數'
+                    });
+                    hasInvalidWeight = true;
+                }
+            });
+
+            if (!hasInvalidWeight && weightInputs.length > 0) {
+                const total = updateWeightTotal();
+
+                if (total !== WEIGHT_TOTAL) {
+                    errors.push({
+                        el: document.getElementById('weight-total'),
+                        label: `AI 評分比重（六項合計需為 ${WEIGHT_TOTAL} 分，目前為 ${total} 分）`
+                    });
+                }
+            }
+
             const deadline = document.getElementById('deadline-input');
             push(deadline, '截止日期', !deadline || !deadline.value);
 
@@ -674,7 +873,7 @@
                 if (group && !group.querySelector('.field-error-msg')) {
                     const msg = document.createElement('div');
                     msg.className = 'field-error-msg';
-                    msg.textContent = '⚠ 此欄位為必填';
+                    msg.textContent = err.msg || '⚠ 此欄位為必填';
                     group.appendChild(msg);
                 }
             });
@@ -690,6 +889,55 @@
                 banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }
+
+        // 🎯 AI 評分比重：即時計算六項合計並顯示提示
+        const WEIGHT_TOTAL = 100;
+
+        function getWeightInputs() {
+            return Array.from(document.querySelectorAll('.weight-input'));
+        }
+
+        function updateWeightTotal() {
+            const total = getWeightInputs().reduce((sum, el) => {
+                const value = parseInt(el.value, 10);
+                return sum + (Number.isNaN(value) ? 0 : value);
+            }, 0);
+
+            const box = document.getElementById('weight-total');
+            const valueEl = document.getElementById('weight-total-value');
+            const msgEl = document.getElementById('weight-total-msg');
+
+            if (!box || !valueEl || !msgEl) return total;
+
+            const isValid = total === WEIGHT_TOTAL;
+
+            valueEl.textContent = total;
+            box.classList.toggle('is-valid', isValid);
+            box.classList.toggle('is-invalid', !isValid);
+
+            if (isValid) box.classList.remove('field-error');
+
+            msgEl.textContent = isValid
+                ? '✓ 配分正確'
+                : total < WEIGHT_TOTAL
+                    ? `還差 ${WEIGHT_TOTAL - total} 分`
+                    : `超出 ${total - WEIGHT_TOTAL} 分`;
+
+            return total;
+        }
+
+        getWeightInputs().forEach(el => {
+            el.addEventListener('input', function () {
+                this.classList.remove('field-error');
+                const group = this.closest('.form-group');
+                const msg = group && group.querySelector('.field-error-msg');
+                if (msg) msg.remove();
+
+                updateWeightTotal();
+            });
+        });
+
+        updateWeightTotal();
 
         function updateExperience() {
 

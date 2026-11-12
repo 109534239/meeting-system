@@ -33,6 +33,14 @@ namespace InterviewProject.Models
         // ── AI 應徵者綜合比較分析 ──
         public string? AiComparisonReport { get; set; }
 
+        // ── 🎯 AI 履歷評分比重（六項合計需為 100）──
+        public int ScoreWeightSkill { get; set; } = 30;         // 專業技能匹配度
+        public int ScoreWeightExperience { get; set; } = 25;    // 工作經驗匹配度
+        public int ScoreWeightEducation { get; set; } = 15;     // 學歷與科系符合度
+        public int ScoreWeightPortfolio { get; set; } = 15;     // 作品集與實務成果
+        public int ScoreWeightLanguageCert { get; set; } = 10;  // 語文與專業證照
+        public int ScoreWeightOther { get; set; } = 5;          // 其他職缺條件
+
         // 🎯 正規化後的一對多關聯
         public virtual ICollection<MajorRequired> MajorRequirements { get; set; } = new List<MajorRequired>();
         public virtual ICollection<LanguageRequired> LanguageRequirements { get; set; } = new List<LanguageRequired>();
