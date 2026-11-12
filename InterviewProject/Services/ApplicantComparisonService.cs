@@ -2,6 +2,7 @@
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace InterviewProject.Services
 {
@@ -16,6 +17,28 @@ namespace InterviewProject.Services
         {
             _config = config;
             _httpClientFactory = httpClientFactory;
+        }
+
+        // 移除 AI 輸出中夾帶的內部履歷編號，例如「姓名 (ResumeId: 231)」。
+        // 使用者介面不應出現這類內部識別碼；也供 AdminApplicationController 顯示舊報告時使用。
+        public static string StripInternalIds(string? text)
+        {
+            if (string.IsNullOrEmpty(text)) return text ?? "";
+
+            // 括號內的 ResumeId／履歷 ID（半形或全形括號），連同前面的空白一起移除
+            text = Regex.Replace(text,
+                @"\s*[（(]\s*Resume\s*Id\s*[:：=]?\s*\d+\s*[）)]", "",
+                RegexOptions.IgnoreCase);
+            text = Regex.Replace(text,
+                @"\s*[（(]\s*(?:履歷\s*)?ID\s*[:：=]\s*\d+\s*[）)]", "",
+                RegexOptions.IgnoreCase);
+
+            // 沒有括號的殘留寫法，例如「ResumeId: 231」
+            text = Regex.Replace(text,
+                @"\s*Resume\s*Id\s*[:：=]?\s*\d+", "",
+                RegexOptions.IgnoreCase);
+
+            return text;
         }
 
         public async Task<string> GenerateComparisonAsync(
@@ -156,6 +179,10 @@ namespace InterviewProject.Services
 
     4. 應徵者必須使用輸入資料提供的姓名識別。
        禁止使用 R229、R230、ResumeId 等履歷代號。
+       ResumeId 只能填在 JSON 的 recommendations 各項 resumeId 欄位。
+       report、reason、interviewFocus 的任何文字中，
+       都不得出現 ResumeId、履歷編號、ID 或括號內的數字代號，
+       例如「姓名 (ResumeId: 231)」是錯誤寫法，應只寫「姓名」。
        若姓名資訊不完整，不得自行編造姓名。
 
     5. 姓名僅用於識別應徵者，
@@ -359,7 +386,7 @@ namespace InterviewProject.Services
     - 不要輸出應徵者排名表格。
     - 不要輸出平均匹配分數。
     - 不要輸出應徵者比例分布條。
-    - 不要使用 R 編號或履歷 ID 作為稱呼。
+    - 不要使用 R 編號或履歷 ID 作為稱呼，報告文字中不得出現任何 ResumeId 或數字編號。
     - 不要逐一列出所有人的優缺點。
     - 避免大量重複個別 AI 評語。
     - 避免空泛、籠統、無證據的描述。
@@ -682,6 +709,14 @@ namespace InterviewProject.Services
                     throw new InvalidOperationException(
                         "Gemini 推薦理由或待確認事項不完整。");
                 }
+            }
+
+            // 移除報告文字中可能夾帶的內部履歷編號（ResumeId 只應存在於 recommendations 的 resumeId 欄位）
+            result.Report = StripInternalIds(result.Report);
+            foreach (var recommendation in result.Recommendations)
+            {
+                recommendation.Reason = StripInternalIds(recommendation.Reason);
+                recommendation.InterviewFocus = StripInternalIds(recommendation.InterviewFocus);
             }
 
             // 仍回傳 string，維持既有背景服務介面
