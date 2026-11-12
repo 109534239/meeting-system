@@ -212,7 +212,7 @@ namespace InterviewProject.Services
 
             if (timeChanged) room.ScheduledAt = scheduledAt;
             room.HostEmployeeId = hostEmployeeId;
-            await _db.SaveChangesAsync();
+            await SaveIgnoringStaleAsync();
 
             // ── 面試狀態重算 ──
             var currentResumes = await _db.Resumes.Include(r => r.Member).Where(r => resumeIds.Contains(r.Id)).ToListAsync();
@@ -226,7 +226,7 @@ namespace InterviewProject.Services
                 var hasTest = await _db.AptitudeTestResults.AnyAsync(t => t.ResumeId == r.Id);
                 r.InterviewStatus = hasTest ? InterviewStatusValues.WaitingSchedule : null;
             }
-            await _db.SaveChangesAsync();
+            await SaveIgnoringStaleAsync();
 
             result.Jobseekers = currentResumes;
             result.Staff = await _db.Employees.Where(e => staffIds.Contains(e.Id)).ToListAsync();
@@ -235,6 +235,30 @@ namespace InterviewProject.Services
             result.NewJobseekerIds = addedResumeIds;
             result.NewStaffIds = addedStaffIds;
             return result;
+        }
+
+        /// <summary>
+        /// 儲存時如果遇到「預期更新/刪除 1 筆、實際 0 筆」（DbUpdateConcurrencyException），
+        /// 代表那筆資料在我們讀出來之後已被別的請求刪掉或改掉（常見：連按兩次儲存、兩個分頁同時改）。
+        /// 要刪的反正已經不在了 → 直接當作刪完；其餘的以資料庫最新值為準，重試。最多重試 3 次。
+        /// </summary>
+        private async Task SaveIgnoringStaleAsync()
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                try { await _db.SaveChangesAsync(); return; }
+                catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException ex)
+                {
+                    Console.WriteLine($"[AutoInterviewScheduling] 儲存遇到並行衝突（第 {i + 1} 次），受影響 {ex.Entries.Count} 筆，自動重試。");
+                    foreach (var entry in ex.Entries)
+                    {
+                        var dbValues = await entry.GetDatabaseValuesAsync();
+                        if (dbValues == null) entry.State = Microsoft.EntityFrameworkCore.EntityState.Detached; // 資料已不存在
+                        else entry.OriginalValues.SetValues(dbValues);                                       // 以最新版本為基準再存
+                    }
+                }
+            }
+            await _db.SaveChangesAsync();
         }
 
         private async Task<string?> ValidateAsync(Job job, List<int> resumeIds, List<int> staffIds, int hostEmployeeId)
