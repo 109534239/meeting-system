@@ -1434,24 +1434,29 @@ namespace InterviewProject.Services
                     Console.WriteLine($"[JitsiBot] 房間 {roomCode} AI 面試官準備開口打招呼（一進會議室就講，方便單人測試時直接確認聲音有沒有通）。");
                     const string greeting = "哈囉，大家好，我是今天的 AI 面試官，很高興加入這場面試，我們開始吧。";
                     // 🎯 開場白是 AI 面試官自己直接講的，不會經過主持人瀏覽器的「AI 說話」廣播，
-                    //    所以逐字稿原本完全沒有這句話。這裡在開口的同時直接存進逐字稿暫存。
-                    try
+                    //    所以要自己把這句話存進逐字稿暫存。⚠️ 一定要「真的講出去了」才存——
+                    //    之前是先存再講，結果語音失敗時逐字稿還是有這句話，造成「沒聲音但逐字稿有」。
+                    var greetStartedAt = DateTime.Now;
+                    var spoke = await SpeakAsync(roomCode, greeting);
+                    if (spoke)
                     {
-                        using var scope = _scopeFactory.CreateScope();
-                        var db = scope.ServiceProvider.GetRequiredService<InterviewProject.Data.AppDbContext>();
-                        var nowAt = DateTime.Now;
-                        db.TranscriptChunks.Add(new InterviewProject.Models.TranscriptChunkRecord
+                        try
                         {
-                            RoomCode = roomCode,
-                            Speaker = "AI 面試官",
-                            Text = greeting,
-                            TimeLabel = nowAt.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW")),
-                            ReceivedAt = nowAt
-                        });
-                        await db.SaveChangesAsync();
+                            using var scope = _scopeFactory.CreateScope();
+                            var db = scope.ServiceProvider.GetRequiredService<InterviewProject.Data.AppDbContext>();
+                            db.TranscriptChunks.Add(new InterviewProject.Models.TranscriptChunkRecord
+                            {
+                                RoomCode = roomCode,
+                                Speaker = "AI 面試官",
+                                Text = greeting,
+                                TimeLabel = greetStartedAt.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW")),
+                                ReceivedAt = greetStartedAt
+                            });
+                            await db.SaveChangesAsync();
+                        }
+                        catch (Exception ex) { Console.WriteLine($"[JitsiBot] 開場白寫入逐字稿失敗：“{ex.Message}”"); }
                     }
-                    catch (Exception ex) { Console.WriteLine($"[JitsiBot] 開場白寫入逐字稿失敗：{ex.Message}"); }
-                    await SpeakAsync(roomCode, greeting);
+                    else Console.WriteLine($"[JitsiBot] 房間 {roomCode} 開場白沒有成功講出去，不寫入逐字稿。");
                 });
             }
             catch (Exception ex)
@@ -1582,9 +1587,9 @@ namespace InterviewProject.Services
             Console.WriteLine($"[JitsiBot] CloseAllBotsAsync：已嘗試關閉 {instances.Count} 個還在運作的 AI 面試官分身。");
         }
 
-        public async Task SpeakAsync(string roomCode, string text)
+        public async Task<bool> SpeakAsync(string roomCode, string text)
         {
-            if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text)) return;
+            if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text)) return false;
             roomCode = roomCode.Trim();
 
             // 🐛 這輪新增：防搶話保險——雖然 RoomController 那邊已經先擋過一次，這裡在真正
@@ -1592,7 +1597,7 @@ namespace InterviewProject.Services
             if (_speakingRooms.GetOrAdd(roomCode, false))
             {
                 Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 的 AI 面試官目前正在說話中，這次的內容略過（避免搶話）：「{text}」");
-                return;
+                return false;
             }
             _speakingRooms[roomCode] = true;
 
@@ -1603,7 +1608,7 @@ namespace InterviewProject.Services
                 if (!_activeBots.TryGetValue(roomCode, out var instance) || instance == null)
                 {
                     Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 沒有正在運作的 AI 面試官，略過。");
-                    return;
+                    return false;
                 }
 
                 using var scope = _scopeFactory.CreateScope();
@@ -1619,15 +1624,20 @@ namespace InterviewProject.Services
                 if (audioBytes == null || audioBytes.Length == 0)
                 {
                     Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 的語音合成失敗或沒有內容，略過。");
-                    return;
+                    return false;
                 }
 
                 var base64Audio = Convert.ToBase64String(audioBytes);
                 var speakScript = "(async () => { if (window.__simliSpeak) { await window.__simliSpeak(" +
                                    JsonSerializer.Serialize(base64Audio) +
-                                   "); } else { console.error('[Simli] __simliSpeak 尚未就緒，目前狀態：' + window.__simliStatus); } })();";
+                                   "); return true; } else { console.error('[Simli] __simliSpeak 尚未就緒，目前狀態：' + window.__simliStatus); return false; } })();";
 
-                await instance.PageInstance.EvaluateAsync(speakScript);
+                var delivered = await instance.PageInstance.EvaluateAsync<bool>(speakScript);
+                if (!delivered)
+                {
+                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} Simli 還沒就緒，這句話沒有講出去：「{text}」");
+                    return false;
+                }
                 Console.WriteLine($"[JitsiBot] 房間 {roomCode} 的 AI 面試官已送出語音：「{text}」");
 
                 // 🐛 這輪新增：__simliSpeak 內部只是把音訊丟給 Simli 播放（sendAudioData），
@@ -1639,10 +1649,12 @@ namespace InterviewProject.Services
                 var speechSeconds = (audioBytes.Length / 2.0) / 24000.0;
                 var waitMs = (int)(speechSeconds * 1000) + 700; // +700ms：涵蓋網路/Simli 端一點播放延遲的緩衝
                 await Task.Delay(Math.Max(waitMs, 0));
+                return true;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[JitsiBot] SpeakAsync 失敗（房間 {roomCode}）：{ex.Message}");
+                return false;
             }
             finally
             {
