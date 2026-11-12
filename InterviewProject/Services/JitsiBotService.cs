@@ -841,19 +841,26 @@ namespace InterviewProject.Services
             //    改成：每個人第一次出現時，就用一個固定的「座位」記住他（以 participantId 優先，
             //    沒有的話退回用 label），之後不管 DOM 掃描順序怎麼變，永遠依這個固定座位排序，
             //    畫面位置就會穩定下來，只有真的有人離開/加入才會變動格數。
+            // 座位用「id 和名字」兩把鑰匙都登記：同一個人先用名字出現、之後才補到 id（或反過來）時，
+            // 要認得是同一個人、沿用原本的座位，不然會被當成新的人，位置就會在會議中途突然交換。
             if (!window.__seatOrder) window.__seatOrder = new Map();
-            let nextSeat = window.__seatOrder.size;
-            cells.forEach(c => {
-                const key = c.participantId ? ('id:' + c.participantId) : (c.label ? ('label:' + c.label) : null);
-                if (key && !window.__seatOrder.has(key)) window.__seatOrder.set(key, nextSeat++);
-            });
-            cells.sort((a, b) => {
-                const ka = a.participantId ? ('id:' + a.participantId) : (a.label ? ('label:' + a.label) : null);
-                const kb = b.participantId ? ('id:' + b.participantId) : (b.label ? ('label:' + b.label) : null);
-                const sa = ka && window.__seatOrder.has(ka) ? window.__seatOrder.get(ka) : 9999;
-                const sb = kb && window.__seatOrder.has(kb) ? window.__seatOrder.get(kb) : 9999;
-                return sa - sb;
-            });
+            if (window.__nextSeat === undefined) window.__nextSeat = 0;
+            const keysOf = (cell) => {
+                const ks = [];
+                if (cell.participantId) ks.push('id:' + cell.participantId);
+                if (cell.label) ks.push('label:' + cell.label);
+                return ks;
+            };
+            const seatOfCell = (cell) => {
+                const ks = keysOf(cell);
+                let seat = null;
+                for (const k of ks) { if (window.__seatOrder.has(k)) { seat = window.__seatOrder.get(k); break; } }
+                if (seat === null && ks.length > 0) seat = window.__nextSeat++;
+                if (seat !== null) ks.forEach(k => { if (!window.__seatOrder.has(k)) window.__seatOrder.set(k, seat); });
+                return seat === null ? 9999 : seat;
+            };
+            cells.forEach(c => { c.__seat = seatOfCell(c); });
+            cells.sort((a, b) => a.__seat - b.__seat);
 
             const cols = Math.ceil(Math.sqrt(cells.length));
             const rows = Math.ceil(cells.length / cols);
@@ -864,14 +871,9 @@ namespace InterviewProject.Services
                 if (cell.type === 'video') {
                     try { ctx.drawImage(cell.el, x, y, cellW, cellH); } catch (e) {}
                 } else {
-                    // 佔位格：沒開鏡頭的人，畫灰底 + 提示文字，不留白、也不讓這個人整個消失
-                    ctx.fillStyle = '#2a2a2a';
+                    // 佔位格（沒開鏡頭的人）：純黑畫面，不顯示任何提示文字（名字標籤照樣會畫在下面）
+                    ctx.fillStyle = '#000';
                     ctx.fillRect(x, y, cellW, cellH);
-                    ctx.fillStyle = '#888';
-                    ctx.font = 'bold 14px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('（未開啟鏡頭）', x + cellW / 2, y + cellH / 2);
-                    ctx.textAlign = 'left';
                 }
 
                 // 這樣錄下來的檔案才看得出來哪一格是誰（不然每格都只是一個畫面，看不出角色）。

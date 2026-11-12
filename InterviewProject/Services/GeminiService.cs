@@ -31,7 +31,8 @@ namespace InterviewProject.Services
         public async Task<byte[]?> SynthesizeSpeechAsync(string text, string voice = "Kore")
         {
             var apiKey = _config["Gemini:ApiKey"] ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
-            if (string.IsNullOrEmpty(apiKey) || string.IsNullOrWhiteSpace(text)) return null;
+            if (string.IsNullOrEmpty(apiKey)) { Console.WriteLine("[GeminiService] SynthesizeSpeechAsync：讀不到 Gemini:ApiKey（appsettings.json 的 Gemini 區塊是空的或沒設定），無法產生語音。"); return null; }
+            if (string.IsNullOrWhiteSpace(text)) return null;
 
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(30);
@@ -123,7 +124,7 @@ namespace InterviewProject.Services
                       ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY")
                       ?? "";
 
-            if (string.IsNullOrEmpty(apiKey)) return null;
+            if (string.IsNullOrEmpty(apiKey)) { Console.WriteLine("[GeminiService] AskAsync：讀不到 Gemini:ApiKey（appsettings.json 的 Gemini 區塊是空的或沒設定）。"); return null; }
 
             var client = _httpClientFactory.CreateClient();
 
@@ -153,7 +154,11 @@ namespace InterviewProject.Services
                 var response = await client.PostAsync(url, content);
                 var respBody = await response.Content.ReadAsStringAsync();
 
-                if (!response.IsSuccessStatusCode) return null;
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[GeminiService] AskAsync 失敗：HTTP {(int)response.StatusCode}，內容前 200 字：{respBody.Substring(0, Math.Min(200, respBody.Length))}");
+                    return null;
+                }
 
                 using var doc = JsonDocument.Parse(respBody);
                 var text = doc.RootElement
