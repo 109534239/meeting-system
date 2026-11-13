@@ -43,6 +43,23 @@
         function goToPage(page) {
             if (page < 1 || page > totalPages) return;
 
+            // 往後翻頁前，當頁必須全部作答（往前翻不檢查）
+            if (page > currentPage) {
+                const curEl = document.getElementById('page_' + currentPage);
+                if (curEl) {
+                    const qs = curEl.querySelectorAll('.apt-question');
+                    for (const qEl of qs) {
+                        if (!qEl.querySelector('input[type="radio"]:checked')) {
+                            alert('本頁還有題目尚未作答，請全部作答後再進入下一頁！');
+                            qEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            qEl.classList.add('highlight-unanswered');
+                            setTimeout(() => qEl.classList.remove('highlight-unanswered'), 2500);
+                            return;
+                        }
+                    }
+                }
+            }
+
             document.querySelectorAll('.page-block').forEach(el => el.classList.remove('active'));
             const targetPageEl = document.getElementById('page_' + page);
             if (targetPageEl) {
@@ -55,6 +72,10 @@
             document.getElementById('pageIndicator').innerText = `第 ${currentPage} / ${totalPages} 頁`;
             document.getElementById('prevPageBtn').disabled = (currentPage === 1);
             document.getElementById('nextPageBtn').disabled = (currentPage === totalPages);
+
+            // 送出測驗按鈕只在最後一頁顯示
+            const submitWrap = document.getElementById('submitWrap');
+            if (submitWrap) submitWrap.style.display = (currentPage === totalPages) ? '' : 'none';
 
             const progressPercent = Math.round((currentPage / totalPages) * 100);
             const progressBar = document.getElementById('testProgressBar');
@@ -161,7 +182,7 @@
                     '      <span id="pageIndicator" class="pagination-info">第 1 / ' + totalPages + ' 頁</span>' +
                     '      <button type="button" id="nextPageBtn" class="btn-action btn-action--secondary" onclick="goToPage(currentPage + 1)" ' + (totalPages <= 1 ? 'disabled' : '') + '>下一頁 <i class="fa-solid fa-chevron-right"></i></button>' +
                     '    </div>' +
-                    '    <div class="detail-action my-4 text-center">' +
+                    '    <div id="submitWrap" class="detail-action my-4 text-center" style="' + (totalPages <= 1 ? '' : 'display:none;') + '">' +
                     '      <button type="submit" class="btn-primary-action"><i class="fa-solid fa-paper-plane me-2"></i> 送出測驗</button>' +
                     '    </div>' +
                     '  </form>' +
@@ -225,6 +246,8 @@
 
                         if (submitData.success) {
                             alert('測驗已成功送出，感謝您的作答！');
+                            // 通知開啟此頁的「應徵管理」重新載入，顯示最新面試狀態
+                            try { if (window.opener && !window.opener.closed) window.opener.location.reload(); } catch (e) { }
                             closeThisTab();
                         } else {
                             alert(submitData.message || '送出失敗，請稍後再試');

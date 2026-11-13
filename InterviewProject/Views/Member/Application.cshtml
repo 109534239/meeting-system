@@ -448,6 +448,8 @@
             if (action === 'aptitude') {
                 // 開啟新分頁（若要在同頁面開啟，請改用 window.location.href）
                 window.open('@Url.Action("AptitudeTest", "Member")/' + resumeId, '_blank');
+                // 測驗在新分頁進行；回到本頁時重新載入，才會看到最新面試狀態
+                window.__aptitudeTabOpened = true;
             }
             else if (action === 'waiting') openWaitingModal();
             else if (action === 'interview') openInterviewModal(resumeId);
@@ -633,6 +635,13 @@
         // 🎯 從面試房間被導回來自動開啟彈窗
         (function autoOpenTestFromRedirect() {
             const params = new URLSearchParams(window.location.search);
+            // 從適性測驗分頁切回來時自動刷新狀態（備援：opener 重新載入失敗時）
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible' && window.__aptitudeTabOpened) {
+                    window.__aptitudeTabOpened = false;
+                    location.reload();
+                }
+            });
             const openTestResumeId = params.get('openTest');
             if (openTestResumeId) {
                 openAptitudeModal(openTestResumeId);

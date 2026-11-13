@@ -20,6 +20,7 @@ namespace InterviewProject.Controllers
         private readonly AutoInterviewSchedulingService _scheduler;
         private readonly ResumeAiScoringService _aiScoringService;
         private readonly ApplicantComparisonService _comparisonService;
+        private readonly EmailService _email;
 
         // 🎯 AI 六項評分項目名稱（需與 ResumeAiScoringService 產生的評語明細一致）
         private static readonly string[] AiScoreItemNames =
@@ -36,12 +37,14 @@ namespace InterviewProject.Controllers
             AppDbContext db,
             AutoInterviewSchedulingService scheduler,
             ResumeAiScoringService aiScoringService,
-            ApplicantComparisonService comparisonService)
+            ApplicantComparisonService comparisonService,
+            EmailService email)
         {
             _db = db;
             _scheduler = scheduler;
             _aiScoringService = aiScoringService;
             _comparisonService = comparisonService;
+            _email = email;
         }
 
         // =====================================================================
@@ -1015,6 +1018,7 @@ namespace InterviewProject.Controllers
                 // 從資料庫找出該筆履歷紀錄
                 var resume = await _db.Resumes
                     .Include(r => r.Job)
+                    .Include(r => r.Member)
                     .FirstOrDefaultAsync(r => r.Id == model.Id);
 
                 if (resume == null)
@@ -1078,6 +1082,26 @@ namespace InterviewProject.Controllers
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[UpdateStatus] ResumeId={resume.Id} 自動安排面試檢查失敗：{ex.Message}");
+                }
+
+                // 履歷審核變為「已通過」→ 背景寄信通知求職者去完成適性測驗（寄信失敗只記錄，不影響狀態更新）
+                if (resume.Status == "已通過" && previousStatus != "已通過")
+                {
+                    var toEmail = resume.Member?.Email;
+                    var name = System.Net.WebUtility.HtmlEncode(resume.Member?.Name ?? "求職者");
+                    var jobTitle = System.Net.WebUtility.HtmlEncode(resume.Job?.Title ?? "");
+                    var link = $"{Request.Scheme}://{Request.Host}/Member/Application?openTest={resume.Id}";
+                    var body = $"<h3>{name} 您好：</h3>" +
+                               $"<p>恭喜您，您應徵的「{jobTitle}」履歷審核已通過！</p>" +
+                               "<p>請登入系統，至「應徵管理」完成<b>適性測驗</b>。完成測驗後，系統將為您安排面試。</p>" +
+                               $"<p><a href=\"{link}\">點此前往完成適性測驗</a></p>" +
+                               "<br><p>此信件由系統自動寄出，請勿直接回覆。</p>";
+                    var emailSvc = _email;
+                    _ = Task.Run(async () =>
+                    {
+                        try { await emailSvc.SendAsync(toEmail, "請完成適性測驗", body); }
+                        catch (Exception ex) { Console.WriteLine($"[UpdateStatus] 通知適性測驗信寄送失敗：{ex.Message}"); }
+                    });
                 }
 
                 // 👈 建議在 JSON 回傳當前最新的 InterviewStatus，方便前端更新 UI
