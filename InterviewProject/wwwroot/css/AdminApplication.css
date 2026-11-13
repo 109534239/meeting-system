@@ -77,7 +77,8 @@
 /* ── 🎯 網格直欄寬度 (桌面版預設 9 欄) ── */
 .hrapp-cols {
     display: grid;
-    grid-template-columns: 85px 120px 85px 105px 130px 1fr 100px 95px 90px;
+    /* 1.時間(115px) 2.職缺(1.2fr) 3.姓名(80px) 4.電話(105px) 5.學歷(130px) 6.經歷(1.5fr) 7.狀態(105px) 8.AI(95px) 9.操作(85px) */
+    grid-template-columns: 115px minmax(110px, 1.2fr) 80px 105px 130px minmax(130px, 1.5fr) 105px 95px 85px;
     align-items: center;
     gap: 12px;
 }
@@ -128,10 +129,20 @@
 }
 
 /* 🎯 尚未開放審核時，保留狀態顏色但禁止操作 */
-.status-select:disabled {
-    cursor: not-allowed;
-    opacity: 0.65;
-    pointer-events: none;
+.status-select {
+    width: 100%;
+    padding: 6px 4px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700 !important;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.15s ease-in-out;
+    text-align: center;
+    border: 1px solid transparent !important;
+    display: inline-block;
+    appearance: auto;
+    box-sizing: border-box;
 }
 
 /* ── 各欄位文字細節 ── */
@@ -314,11 +325,13 @@
         pointer-events: auto;
     }
 
+/* ── 替換原本的 .ai-modal-window ── */
 .ai-modal-window {
     background: #ffffff;
     border-radius: 14px;
     width: 100%;
-    max-width: 550px;
+    max-width: 1000px; /* 🎯 從 550px 改為 1000px，與報告視窗寬度一致 */
+    max-height: 90vh; /* 🎯 新增最大高度限制，與報告視窗一致 */
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
     display: flex;
     flex-direction: column;
@@ -332,8 +345,9 @@
     transform: translateY(0);
 }
 
+/* ── 替換原本的 .ai-modal-header ── */
 .ai-modal-header {
-    padding: 16px 20px;
+    padding: 22px 28px; /* 🎯 加大內距，與報告視窗表頭一致 */
     border-bottom: 1px solid #f0f0f0;
     display: flex;
     justify-content: space-between;
@@ -352,30 +366,32 @@
 
 .ai-modal-header h3 {
     margin: 0;
-    font-size: 16px;
+    font-size: 21px; /* 🎯 稍微放大標題字體，配合大視窗 */
     font-weight: 700;
 }
 
 .ai-modal-subtitle {
     margin: 2px 0 0 0;
-    font-size: 12px;
+    font-size: 13px;
     color: #999;
 }
 
 .ai-modal-close {
     background: transparent;
     border: none;
-    font-size: 24px;
+    font-size: 28px;
     color: #aaa;
     cursor: pointer;
 }
 
+/* ── 替換原本的 .ai-modal-body ── */
 .ai-modal-body {
-    padding: 16px 20px;
+    padding: 24px 28px; /* 🎯 加大內距以適應寬視窗 */
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    max-height: 60vh;
+    gap: 16px;
+    flex: 1; /* 🎯 讓內容區塊自動延展 */
+    min-height: 0; /* 🎯 確保內部滾動條正常運作 */
     overflow-y: auto;
 }
 
@@ -417,25 +433,26 @@
     background: #fbfbfe;
     border: 1px solid #e3edf7;
     border-radius: 8px;
-    padding: 12px 16px;
+    padding: 20px; /* 🎯 稍微加大卡片內距 */
 }
 
     .ai-modal-comment-card h4 {
-        margin: 0 0 6px 0;
-        font-size: 13px;
+        margin: 0 0 10px 0;
+        font-size: 15px; /* 🎯 稍微放大 */
         font-weight: 700;
     }
 
 .comment-text-content {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-size: 13.5px;
-    line-height: 1.8;
+    font-size: 14.5px; /* 🎯 放大文字，避免在 1000px 寬度下顯得太小 */
+    line-height: 1.9;
     color: #444;
 }
 
+/* ── 替換原本的 .ai-modal-footer ── */
 .ai-modal-footer {
-    padding: 12px 20px;
+    padding: 16px 28px; /* 🎯 配合 Header 內距調整 */
     border-top: 1px solid #f0f0f0;
     display: flex;
     justify-content: flex-end;
@@ -446,9 +463,9 @@
     background: var(--primary, #0288d1);
     color: white;
     border: none;
-    padding: 8px 16px;
+    padding: 10px 24px;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
 }

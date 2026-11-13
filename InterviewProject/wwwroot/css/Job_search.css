@@ -201,8 +201,8 @@
 /* ── TABLE HEADER (Desktop: 992px 以上) ── */
 .job-table-head {
     display: grid;
-    /* 依比例分配，確保「職缺名稱」有足夠空間 (2.2fr) */
-    grid-template-columns: 100px minmax(180px, 2.2fr) 110px 110px 90px 95px 85px 40px;
+    /* 🎯 微調比例：縮減一點經歷/學歷的寬度，將截止日期的寬度加寬至 130px */
+    grid-template-columns: 100px minmax(180px, 2.2fr) 110px 95px 85px 130px 85px 40px;
     padding: 12px 20px;
     font-size: 13.5px;
     color: #525252;
@@ -273,7 +273,8 @@
     background: var(--white, #ffffff);
     border-radius: 12px;
     display: grid;
-    grid-template-columns: 100px minmax(180px, 2.2fr) 110px 110px 90px 95px 85px 40px;
+    /* 🎯 必須與表頭 .job-table-head 保持完全相同的網格比例 */
+    grid-template-columns: 100px minmax(180px, 2.2fr) 110px 95px 85px 130px 85px 40px;
     align-items: center;
     padding: 16px 20px;
     gap: 10px;
