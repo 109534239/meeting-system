@@ -609,6 +609,8 @@
         let lastSpeakerName = null;
         let lastSpeakerRole = null;   // 'manager' | 'hr' | 'jobseeker' | 'ai'
         let lastWasQuestion = false;
+        let humanVoiceSinceAi = false, aiEndedMs = 0; // AI 上次發言後，是否偵測到有人出聲（不必等轉文字）
+        let aiRequestedUntil = 0; // AI 已被要求發言、還沒開始講的空檔，不可再次觸發（避免連講兩句）
         let humanSeq = 0, aiAtSeq = -1, aiRepeat = 0; // 避免 AI 在沒人新發言時重複問同一件事
         // 🎯 最近的對話內容（職員、求職者、AI 各自說了什麼），給 AI 面試官「依話題延伸提問」用。
         //    由 SpeechTurnInfo（每個人講完一句話時廣播）與 AI 自己說話時的廣播填入，每個人的瀏覽器都收得到，
@@ -660,6 +662,7 @@
 
         // 冷場同步：主持人廣播給所有人「有聲音了」
         hub.on("SpeechDetected", () => {
+            if (!aiSpeakingRemote && Date.now() - aiEndedMs > 1500) humanVoiceSinceAi = true;
             lastSpeechMs = Date.now();
             silT = 0; setSilBar(0);
             if (!isSp) setSt('li', '👂 聆聽中');
@@ -680,6 +683,7 @@
         //    （避免收到 AI 自己的聲音、被當成有人在講話混進逐字稿）。收到 false：全場一起恢復。
         hub.on("AiSpeakingStateChanged", (isSpeaking, text) => {
             aiSpeakingRemote = !!isSpeaking;
+            if (!aiSpeakingRemote) { aiRequestedUntil = 0; lastSpeechMs = Date.now(); aiEndedMs = Date.now(); }
             isSp = aiSpeakingRemote; // 🐛 這輪新增：跟 isSp 同步，recognition.onend 的自動重啟判斷才不會跟這裡打架
             if (aiSpeakingRemote) {
                 lastSpeakerRole = 'ai';
@@ -989,7 +993,7 @@
             let mime = ''; for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
             console.log('[STT-live] 即時轉錄備援啟動（' + MY_NAME + '）');
             // 自己量音量（不依賴別的偵測、也不管 AI 是否在說話旗標），每段記錄最大音量
-            let segPeak = 0, segLoud = 0, livePending = false;
+            let segPeak = 0, segLoud = 0, livePending = false, loudRun = 0, lastVoiceCast = 0;
             try {
                 const lac = new (window.AudioContext || window.webkitAudioContext)();
                 const lan = lac.createAnalyser(); lan.fftSize = 1024;
@@ -1002,6 +1006,16 @@
                     let mx = 0; for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128) / 128; if (v > mx) mx = v; }
                     if (mx > segPeak) segPeak = mx;
                     if (mx > 0.025) segLoud++;
+                    // 有人在講話就立刻通知全場（不用等轉文字），讓主持人那邊的冷場計時重新起算，AI 不會在對方回答時插嘴
+                    if (mx > 0.03 && !aiSpeakingRemote && !isSp) {
+                        loudRun++;
+                        if (loudRun >= 2 && Date.now() - lastVoiceCast > 1500) {
+                            lastVoiceCast = Date.now();
+                            lastSpeechMs = Date.now();
+                            if (Date.now() - aiEndedMs > 1500) humanVoiceSinceAi = true;
+                            try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
+                        }
+                    } else { loudRun = 0; }
                 }, 200);
             } catch (e) { console.warn('[STT-live] 音量偵測建立失敗：' + e.message); }
             function runSegment() {
@@ -1262,7 +1276,7 @@
                 //    要持續講話一段時間才算）與語音辨識的有效結果來決定。
                 startVoiceDetect(an, ac);
                 silInterval = setInterval(() => {
-                    if (!started || ended || isSp || aiSpeakingRemote) { setSilBar(0); logLoopDiag(null, null); return; }
+                    if (!started || ended || isSp || aiSpeakingRemote || Date.now() < aiRequestedUntil) { setSilBar(0); logLoopDiag(null, null); return; }
                     const threshold = getSilenceThresholdSec();
                     const secSince = (Date.now() - lastSpeechMs) / 1000;
                     setSilBar(Math.min((secSince / threshold) * 100, 100));
@@ -1272,7 +1286,7 @@
             } else {
                 // 無麥克風 fallback
                 silInterval = setInterval(() => {
-                    if (!started || ended || isSp || aiSpeakingRemote) { logLoopDiag(null, null); return; }
+                    if (!started || ended || isSp || aiSpeakingRemote || Date.now() < aiRequestedUntil) { logLoopDiag(null, null); return; }
                     const threshold = getSilenceThresholdSec();
                     const secSince = (Date.now() - lastSpeechMs) / 1000;
                     setSilBar(Math.min((secSince / threshold) * 100, 100));
@@ -1307,7 +1321,7 @@
                     console.log('[冷場診斷-triggerAI] 被呼叫但距離上次有聲音不到 3 秒，先跳過這次');
                     return;
                 }
-                if (humanSeq === aiAtSeq && aiRepeat >= 1) {
+                if (humanSeq === aiAtSeq && aiRepeat >= 1 && !humanVoiceSinceAi) {
                     console.log('[冷場診斷-triggerAI] AI 上次發問後沒有人新發言，已追問過一次，這次保持安靜，避免重複');
                     lastSpeechMs = Date.now();
                     return;
@@ -1342,8 +1356,10 @@
                     setSt('li', '👂 聆聽中');
                     return;
                 }
-                if (humanSeq === aiAtSeq) aiRepeat++; else aiRepeat = 0;
-                aiAtSeq = humanSeq;
+                if (humanSeq === aiAtSeq && !humanVoiceSinceAi) aiRepeat++; else aiRepeat = 0;
+                aiAtSeq = humanSeq; humanVoiceSinceAi = false;
+                aiRequestedUntil = Date.now() + 45000; // 等 AI 真的開始/講完（收到廣播會清掉）
+                lastSpeechMs = Date.now();
                 console.log('[冷場診斷-triggerAI] 準備呼叫 aiSpeak，內容：「' + q + '」');
                 aiSpeak(q);
             } finally {
