@@ -18,6 +18,9 @@ namespace InterviewProject.Controllers
 {
     public class RoomController : Controller
     {
+        // 錄影只上傳 Gemini 一次：SaveTranscript 上傳後存在這裡，SaveAiAnalysis 直接沿用，用完才刪
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string uri, string name, DateTime at)> _geminiVideoCache = new();
+
         private readonly AppDbContext _context;
         private readonly JitsiBotService _botService;
         private readonly IWebHostEnvironment _env;
@@ -833,11 +836,11 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             var room = await _context.Rooms.FirstOrDefaultAsync(r => r.JitsiRoomName == roomCode);
             if (room == null) return NotFound();
 
-            for (int i = 0; i < 60; i++)
+            for (int i = 0; i < 120; i++)
             {
                 if (!string.IsNullOrEmpty(room.RecordingFileName) || !string.IsNullOrEmpty(room.AiBotErrorMessage))
                     break;
-                await Task.Delay(2000);
+                await Task.Delay(1000);
                 await _context.Entry(room).ReloadAsync();
             }
 
@@ -873,9 +876,9 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             // 🎯 錄影上傳是背景工作（結束會議後 AI 面試官才離開、轉檔、上傳），這裡跟 SaveAiAnalysis
             //    用同樣的等待邏輯——最多等 2 分鐘，本機測試上傳頻寬常常比較慢，等不到才放棄改用備援。
             string? recordingFileName = room.RecordingFileName;
-            for (int i = 0; i < 60 && string.IsNullOrEmpty(recordingFileName); i++)
+            for (int i = 0; i < 120 && string.IsNullOrEmpty(recordingFileName); i++)
             {
-                await Task.Delay(2000);
+                await Task.Delay(1000);
                 await _context.Entry(room).ReloadAsync();
                 recordingFileName = room.RecordingFileName;
             }
@@ -926,7 +929,8 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                         content = await _gemini.TranscribeInterviewVideoAsync(geminiFileUri, "video/webm", participantNames!);
                     }
 
-                    if (!string.IsNullOrEmpty(geminiFileName)) await _gemini.DeleteFileAsync(geminiFileName); // 用完主動清掉，比較乾淨
+                    // 不在這裡刪：留給 SaveAiAnalysis 沿用同一份上傳，省掉第二次下載+上傳
+                    if (!string.IsNullOrEmpty(geminiFileName)) _geminiVideoCache[roomCode] = (geminiFileUri, geminiFileName, DateTime.UtcNow);
                 }
             }
 
@@ -1166,9 +1170,9 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             //    常常錄影上傳花超過 40 秒還沒好，導致明明錄影後來有成功，AI 分析卻已經先放棄、退回純文字，
             //    白白浪費了多模態分析的機會。拉長到最多等 2 分鐘，比較符合實際本機測試的網路狀況。
             string? recordingFileName = room.RecordingFileName;
-            for (int i = 0; i < 60 && string.IsNullOrEmpty(recordingFileName); i++)
+            for (int i = 0; i < 120 && string.IsNullOrEmpty(recordingFileName); i++)
             {
-                await Task.Delay(2000);
+                await Task.Delay(1000);
                 await _context.Entry(room).ReloadAsync();
                 recordingFileName = room.RecordingFileName;
             }
@@ -1181,7 +1185,12 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             //    避免每位求職者都重傳一次整支影片、浪費時間跟流量
             string? geminiFileUri = null;
             string? geminiFileName = null;
-            if (!string.IsNullOrEmpty(recordingFileName) && _storage.IsConfigured)
+            if (_geminiVideoCache.TryRemove(roomCode, out var cachedVideo) && (DateTime.UtcNow - cachedVideo.at).TotalHours < 24)
+            {
+                geminiFileUri = cachedVideo.uri;
+                geminiFileName = cachedVideo.name;
+            }
+            else if (!string.IsNullOrEmpty(recordingFileName) && _storage.IsConfigured)
             {
                 try
                 {
@@ -1198,17 +1207,14 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 }
             }
 
-            var results = new List<object>();
+            var results = new System.Collections.Concurrent.ConcurrentBag<object>();
 
-            bool isFirst = true;
-            foreach (var jobseeker in jobseekers)
+            // 多位求職者同時分析（只用 _storage/_gemini，不碰 DbContext，可安全並行）
+            async Task AnalyzeOne(RoomParticipant jobseeker)
             {
                 // 🎯 候選人之間加一點間隔，避免連續呼叫 Gemini API 太快撞到免費額度的速率限制
                 //    （這很可能就是「有些候選人分析成功、有些失敗」的真正原因，不是金鑰設定問題——
                 //    金鑰是伺服器端統一設定的同一組，不會因為誰登入而不同）
-                if (!isFirst) await Task.Delay(1500);
-                isFirst = false;
-
                 var candidateName = jobseeker.Resume?.Member?.Name ?? $"求職者{jobseeker.Id}";
 
                 // 🎯 用 RoomParticipants 的實際進場紀錄判斷有沒有參加，而不是硬找逐字稿裡有沒有出現名字
@@ -1228,7 +1234,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                     {
                         results.Add(new { candidateName, success = false, message = "上傳到雲端儲存失敗：" + ex.Message });
                     }
-                    continue;
+                    return;
                 }
 
                 string? analysis = null;
@@ -1277,7 +1283,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 if (analysis == null)
                 {
                     results.Add(new { candidateName, success = false, message = "AI 分析失敗（重試一次後仍失敗，可能是 API 額度用完或速率限制）" });
-                    continue;
+                    return;
                 }
 
                 var fileName = BuildFileName(room, "txt", candidateName);
@@ -1291,6 +1297,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                     results.Add(new { candidateName, success = false, message = "上傳到雲端儲存失敗：" + ex.Message });
                 }
             }
+            await Task.WhenAll(jobseekers.Select(AnalyzeOne));
 
             // 🎯 這場分析用的暫存影片檔在 Gemini 端可以清掉了，不用等 48 小時自動過期
             if (!string.IsNullOrEmpty(geminiFileName))
@@ -1298,7 +1305,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 _ = _gemini.DeleteFileAsync(geminiFileName);
             }
 
-            return Ok(new { success = true, files = results });
+            return Ok(new { success = true, files = results.ToList() });
         }
 
         // 🎯 檔案總管：列出 R2 上「逐字稿」「錄影錄音」「AI分析」三個前綴底下目前存了哪些檔案，並提供下載連結

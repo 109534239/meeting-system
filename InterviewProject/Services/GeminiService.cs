@@ -497,9 +497,9 @@ namespace InterviewProject.Services
                 // Step 3：影片檔要等 Google 端處理完（狀態變成 ACTIVE）才能拿去分析，短輪詢等它
                 //    （音檔通常很快，影片檔可能要等數十秒，這裡最多等 1 分鐘）
                 var attempts = 0;
-                while (state == "PROCESSING" && attempts < 30)
+                while (state == "PROCESSING" && attempts < 60)
                 {
-                    await Task.Delay(2000);
+                    await Task.Delay(1000);
                     attempts++;
                     var pollResp = await client.GetAsync(
                         $"https://generativelanguage.googleapis.com/v1beta/{fileName}?key={apiKey}");
