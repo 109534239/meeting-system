@@ -553,6 +553,23 @@ namespace InterviewProject.Controllers
         // 🎯 逐字稿改用這個當主要來源：不再依賴瀏覽器原生 SpeechRecognition
         //    （已證實會被 Jitsi 搶走麥克風獨佔權，大部分人只收到 no-speech，整場話完全沒被記錄下來）。
         //    改成每個人自己把整場錄下來的麥克風音檔，直接送給 Gemini 做語音轉文字，結果併進同一個資料庫暫存表。
+        // 🎯 即時轉錄：瀏覽器語音辨識（SpeechRecognition）常常 network 錯誤或回傳空字串，
+        //    改由前端每 5 秒送一小段麥克風錄音過來，這裡立刻轉成文字回傳，給 AI 面試官判斷冷場/延伸提問用。
+        //    這裡「不存」資料庫，完整逐字稿仍由會議結束時的整場錄音/錄影轉錄產生。
+        [HttpPost]
+        [RequestSizeLimit(5_000_000)]
+        public async Task<IActionResult> LiveTranscribe([FromQuery] string roomCode, IFormFile? audio)
+        {
+            if (string.IsNullOrEmpty(roomCode) || audio == null || audio.Length < 2000) return Ok(new { text = "" });
+            byte[] bytes;
+            using (var ms = new MemoryStream()) { await audio.CopyToAsync(ms); bytes = ms.ToArray(); }
+            var mime = string.IsNullOrEmpty(audio.ContentType) ? "audio/webm" : audio.ContentType;
+            var text = await _gemini.TranscribeAudioAsync(bytes, mime);
+            if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容")) return Ok(new { text = "" });
+            Console.WriteLine($"[LiveTranscribe] 房間 {roomCode}：{text.Substring(0, Math.Min(40, text.Length))}");
+            return Ok(new { text = text.Trim() });
+        }
+
         [HttpPost]
         [RequestSizeLimit(25_000_000)]
         public async Task<IActionResult> SubmitAudioTranscript([FromQuery] string roomCode, [FromQuery] string speakerName, IFormFile? audio, [FromQuery] long startedAtMs = 0)

@@ -941,6 +941,56 @@
             }
         }
 
+        // 🎯 即時轉錄備援：瀏覽器語音辨識常回空字串/network 錯誤。這裡每 5 秒切一段麥克風錄音，
+        //    有人聲才送伺服器轉文字，結果餵給「冷場/延伸提問」用（同 STT 有效結果的處理）。
+        //    自己在 Jitsi 靜音、AI 正在講話、或瀏覽器語音辨識 15 秒內有效時，都不送。
+        let liveStarted = false;
+        function ensureLiveTranscribe() {
+            if (liveStarted || !audioStream) return;
+            liveStarted = true;
+            const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+            let mime = ''; for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
+            console.log('[STT-live] 即時轉錄備援啟動（' + MY_NAME + '）');
+            function runSegment() {
+                if (ended) return;
+                let rec, chunks = [];
+                window.__segVoice = false;
+                const aiAtStart = aiSpeakingRemote || isSp;
+                try { rec = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {}); }
+                catch (e) { console.warn('[STT-live] 建立錄音失敗：' + e.message); liveStarted = false; return; }
+                rec.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+                rec.onstop = async () => {
+                    const segEnd = Date.now();
+                    setTimeout(runSegment, 0);
+                    try {
+                        if (aiAtStart || aiSpeakingRemote || isSp || !window.__segVoice) return;
+                        if (segEnd - (window.__sttGoodMs || 0) < 15000) return;
+                        let muted = false;
+                        try { muted = await jitsiApi.isAudioMuted(); } catch {}
+                        if (muted) { console.log('[STT-live] 自己在會議中是靜音，略過這段'); return; }
+                        const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+                        if (blob.size < 2000) return;
+                        const fd = new FormData(); fd.append('audio', blob, 'seg.webm');
+                        const r = await fetch('/Room/LiveTranscribe?roomCode=' + encodeURIComponent(ROOM_CODE), { method: 'POST', body: fd });
+                        if (!r.ok) { console.warn('[STT-live] 伺服器回應 ' + r.status); return; }
+                        const d = await r.json();
+                        const txt = (d.text || '').trim();
+                        const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
+                        console.log('[STT-live] 轉錄結果：「' + txt + '」');
+                        if (stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped)) {
+                            try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
+                            try { hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE, txt); } catch {}
+                            lastSpeechMs = Math.max(lastSpeechMs, segEnd);
+                            silT = 0; setSilBar(0);
+                        }
+                    } catch (e) { console.warn('[STT-live] 失敗：' + e.message); }
+                };
+                rec.start();
+                setTimeout(() => { try { if (rec.state !== 'inactive') rec.stop(); } catch {} }, 5000);
+            }
+            runSegment();
+        }
+
         // 🎯 停止錄音、把整段音檔送給伺服器做語音轉文字（取代不可靠的瀏覽器 SpeechRecognition）
         //    要用 await 等它做完，不能像 submitMyTranscript() 那樣用 sendBeacon（音檔太大，sendBeacon 不適合傳大檔案）
         async function submitMyAudioTranscript() {
@@ -1037,6 +1087,7 @@
                         if (inMeeting && !isEchoOfOthers && stripped.length > 1 && !isDuplicateSpam && !isFillerOnly) {
                             window.__lastSttText = stripped;
                             window.__lastSttTime = nowMs;
+                            window.__sttGoodMs = nowMs; // 瀏覽器語音辨識有效，即時轉錄備援就先不介入
                             // ✅ 所有角色都記錄自己說的話
                             const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
                             trxLines.push({ sp: MY_NAME, tx: txt, time: now });
@@ -1112,7 +1163,7 @@
                 if (floor === null) floor = level;
                 floor = level < floor ? floor * 0.8 + level * 0.2 : floor * 0.995 + level * 0.005;
                 const isVoice = level > 20 && level > Math.max(floor * 1.8, floor + 12);
-                if (isVoice) voiceMs += 250; else voiceMs = Math.max(0, voiceMs - 500);
+                if (isVoice) { voiceMs += 250; window.__segVoice = true; } else voiceMs = Math.max(0, voiceMs - 500);
                 if (voiceMs >= 2000) {
                     lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
                     setSt('li', '👂 聆聽中');
@@ -1559,6 +1610,7 @@
             //    之前這裡是完全靜默失敗（.catch(() => {})），部分人同步失敗查不出原因就是這裡造成的
             jitsiApi.addEventListener('videoConferenceJoined', e => {
                 inMeeting = true;
+                ensureLiveTranscribe();
                 myJitsiId = e && e.id ? e.id : null;
                 markJoinedWithRetry(3);
             });
@@ -1568,6 +1620,7 @@
                 try {
                     if (jitsiApi && jitsiApi.getNumberOfParticipants() >= 1) {
                         inMeeting = true;
+                        ensureLiveTranscribe();
                         console.log('[STT] 以房內人數判定已進入會議，開始記錄逐字稿');
                         clearInterval(__joinPoll);
                     }
