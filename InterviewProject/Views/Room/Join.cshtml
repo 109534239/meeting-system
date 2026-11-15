@@ -609,6 +609,7 @@
         let lastSpeakerName = null;
         let lastSpeakerRole = null;   // 'manager' | 'hr' | 'jobseeker' | 'ai'
         let lastWasQuestion = false;
+        let lastVoiceMs = 0, lastTranscriptMs = 0, transcriptWaits = 0; // 有人出聲但轉文字還沒到時，先等一下再問
         let humanVoiceSinceAi = false, aiEndedMs = 0; // AI 上次發言後，是否偵測到有人出聲（不必等轉文字）
         let aiRequestedUntil = 0; // AI 已被要求發言、還沒開始講的空檔，不可再次觸發（避免連講兩句）
         let humanSeq = 0, aiAtSeq = -1, aiRepeat = 0; // 避免 AI 在沒人新發言時重複問同一件事
@@ -663,6 +664,7 @@
         // 冷場同步：主持人廣播給所有人「有聲音了」
         hub.on("SpeechDetected", () => {
             if (!aiSpeakingRemote && Date.now() - aiEndedMs > 1500) humanVoiceSinceAi = true;
+            if (!aiSpeakingRemote) lastVoiceMs = Date.now();
             lastSpeechMs = Date.now();
             silT = 0; setSilBar(0);
             if (!isSp) setSt('li', '👂 聆聽中');
@@ -675,6 +677,7 @@
             lastWasQuestion = !!isQuestion;
             lastSpeakerRole = role;
             humanSeq++;
+            lastTranscriptMs = Date.now(); transcriptWaits = 0;
             pushConvo(name, role, text);
         });
 
@@ -1013,6 +1016,7 @@
                             lastVoiceCast = Date.now();
                             lastSpeechMs = Date.now();
                             if (Date.now() - aiEndedMs > 1500) humanVoiceSinceAi = true;
+                            lastVoiceMs = Date.now();
                             try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
                         }
                     } else { loudRun = 0; }
@@ -1319,6 +1323,14 @@
                 }
                 if ((Date.now() - lastSpeechMs) < 3000) {
                     console.log('[冷場診斷-triggerAI] 被呼叫但距離上次有聲音不到 3 秒，先跳過這次');
+                    return;
+                }
+                // 有人剛出聲、但他說的話還沒轉成文字傳來：AI 現在問會問到過時的話題（例如人家已在回答專業問題，卻又問自我介紹）。
+                // 先等轉文字（最多再等約 18 秒），文字到了再問。
+                if (lastVoiceMs > lastTranscriptMs + 500 && Date.now() - lastVoiceMs < 45000 && transcriptWaits < 6) {
+                    transcriptWaits++;
+                    console.log('[冷場診斷-triggerAI] 有人剛說話但文字還沒到，再等一下（第 ' + transcriptWaits + ' 次）');
+                    lastSpeechMs = Date.now() - 7000; // 約 3 秒後再評估
                     return;
                 }
                 if (humanSeq === aiAtSeq && aiRepeat >= 1 && !humanVoiceSinceAi) {

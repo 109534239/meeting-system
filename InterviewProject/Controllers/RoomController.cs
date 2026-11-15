@@ -797,6 +797,24 @@ namespace InterviewProject.Controllers
                 scenario = "情境C：職員/主持人剛說了一段話（不是問題）。請順著他的話題，向適合的求職者提出一個延伸問題。";
 
             var names = string.Join("、", present.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrEmpty(n)));
+
+            // 🎯 決定「這句話只能對誰說」：最近一句人類發言點名了某位求職者，或剛回答完的就是那位，就只能對他說，
+            //    不能自己挑別人（例如主持人說「從 b 開始」，AI 卻去問吳鼠鼠）。
+            var presentNames = present.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).Distinct().ToList();
+            string? targetName = null;
+            if (lastHuman != null)
+            {
+                var mentioned = presentNames.Where(n => (lastHuman.Text ?? "").Contains(n, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (mentioned.Count == 1) targetName = mentioned[0];
+                else if (lastIsJobseeker)
+                {
+                    var spk = (lastHuman.Name ?? "").Replace("求職者-", "").Trim();
+                    targetName = presentNames.FirstOrDefault(n => string.Equals(n, spk, StringComparison.OrdinalIgnoreCase));
+                }
+            }
+            var targetRule = targetName != null
+                ? $"\n【指定對象】這句話只能對「{targetName}」說，句子以「{targetName}，」開頭；不可以改問其他求職者。\n"
+                : "";
             var jobText = sbJob.Length > 0 ? sbJob.ToString() : "（無）";
             var resumeText = sbResume.Length > 0 ? sbResume.ToString() : "（無履歷資料）";
             var prompt =
@@ -812,7 +830,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 【必須延伸的話題＝最近一句人類發言】
 {anchorText}
 【目前情境與做法】
-{scenario}
+{scenario}{targetRule}
 
 規則：
 1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。
@@ -831,10 +849,21 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             {
                 Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 判斷不發言（回應：{(raw == null ? "null" : Clip(raw, 40))}）");
                 // 冷場時不能一直沉默：模型沒給出可用的句子，就用保底引導（有點名求職者就點名）
-                var firstName = present.Select(p => p.Resume?.Member?.Name).FirstOrDefault(n => !string.IsNullOrEmpty(n));
                 text = lastHuman != null && !lastIsJobseeker
-                    ? (firstName != null ? $"{firstName}，可以先從你最有代表性的一段經歷開始說嗎？" : "可以先從最有代表性的一段經歷開始說嗎？")
-                    : "可以再多說明一下剛剛提到的做法和結果嗎？";
+                    ? (targetName != null ? $"{targetName}，可以先從你最有代表性的一段經歷開始說嗎？" : "可以先從最有代表性的一段經歷開始說嗎？")
+                    : (targetName != null ? $"{targetName}，可以再多說明一下剛剛提到的做法和結果嗎？" : "可以再多說明一下剛剛提到的做法和結果嗎？");
+            }
+            // 模型若無視指定對象、開頭點了別人，強制換成指定的人
+            if (targetName != null)
+            {
+                foreach (var other in presentNames.Where(n => n != targetName))
+                {
+                    if (text.StartsWith(other, StringComparison.OrdinalIgnoreCase))
+                    {
+                        text = targetName + text.Substring(other.Length);
+                        break;
+                    }
+                }
             }
             Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生提問：「{text}」");
             return Ok(new { text });
