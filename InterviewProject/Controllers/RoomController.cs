@@ -921,7 +921,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 {
                     // 🎯 把這個房間所有已知參與者的名字整理出來，當提示給 Gemini 對照畫面上的名字標籤
                     var participants = await _context.RoomParticipants
-                        .Where(p => p.RoomId == room.Id)
+                        .Where(p => p.RoomId == room.Id && (p.Role == ParticipantRole.AI || p.JoinedAt != null))
                         .Include(p => p.Resume).ThenInclude(r => r!.Member)
                         .Include(p => p.Employee)
                         .ToListAsync();
@@ -965,6 +965,28 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 .Where(c => c.RoomCode == roomCode)
                 .OrderBy(c => c.ReceivedAt)
                 .ToListAsync();
+
+            // 🎯 沒有真正進入會議（沒有進場紀錄）的人，不可能有發言：他們的頁面可能只是開著、
+            //    麥克風收到現場別人的聲音，被錯記成他說的。這類紀錄一律剔除。
+            {
+                var allParts = await _context.RoomParticipants.AsNoTracking()
+                    .Where(p => p.RoomId == room.Id && p.Role != ParticipantRole.AI)
+                    .Include(p => p.Resume).ThenInclude(r => r!.Member)
+                    .Include(p => p.Employee)
+                    .ToListAsync();
+                var notJoined = new HashSet<string>();
+                foreach (var p in allParts.Where(p => p.JoinedAt == null))
+                {
+                    var nm = p.Role == ParticipantRole.Jobseeker ? p.Resume?.Member?.Name : p.Employee?.Name;
+                    if (string.IsNullOrEmpty(nm)) continue;
+                    notJoined.Add(nm);
+                    notJoined.Add($"求職者-{nm}"); notJoined.Add($"職員-{nm}"); notJoined.Add($"主持人-{nm}");
+                }
+                var before = chunks.Count;
+                chunks = chunks.Where(c => !notJoined.Contains((c.Speaker ?? "").Trim())).ToList();
+                if (before != chunks.Count)
+                    Console.WriteLine($"[SaveTranscript] 房間 {roomCode}：剔除 {before - chunks.Count} 筆未進場者的發言紀錄。");
+            }
 
             // 🐛 這輪新增：發現一種前面的雜訊判斷完全抓不到的洗版模式——SubmitAudioTranscript
             //    這條新路徑是「整段音檔一次轉錄成一整行」，如果麥克風整場收到的幾乎都是同一個

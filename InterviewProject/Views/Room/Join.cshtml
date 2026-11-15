@@ -581,6 +581,7 @@
         let recognition = null;
         // 🎯 只有「自己真的進到 Jitsi 會議室」之後才記逐字稿（之前在調鏡頭、調麥克風的雜談不收）
         let inMeeting = false;
+        let everJoined = false;        // 自己真的進過 Jitsi 會議室；沒進過就不送任何逐字稿/音檔
         let myJitsiId = null;          // 自己在 Jitsi 的 participant id（videoConferenceJoined 事件給的）
         let dominantId = null;         // Jitsi 判定目前的主要發言者
         let dominantSince = 0;
@@ -951,10 +952,24 @@
             const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
             let mime = ''; for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
             console.log('[STT-live] 即時轉錄備援啟動（' + MY_NAME + '）');
+            // 自己量音量（不依賴別的偵測、也不管 AI 是否在說話旗標），每段記錄最大音量
+            let segPeak = 0, segLoud = 0;
+            try {
+                const lac = new (window.AudioContext || window.webkitAudioContext)();
+                const lan = lac.createAnalyser(); lan.fftSize = 1024;
+                lac.createMediaStreamSource(audioStream).connect(lan);
+                const buf = new Uint8Array(lan.fftSize);
+                setInterval(() => {
+                    lan.getByteTimeDomainData(buf);
+                    let mx = 0; for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128) / 128; if (v > mx) mx = v; }
+                    if (mx > segPeak) segPeak = mx;
+                    if (mx > 0.04) segLoud++;
+                }, 200);
+            } catch (e) { console.warn('[STT-live] 音量偵測建立失敗：' + e.message); }
             function runSegment() {
                 if (ended) return;
                 let rec, chunks = [];
-                window.__segVoice = false;
+                segPeak = 0; segLoud = 0;
                 const aiAtStart = aiSpeakingRemote || isSp;
                 try { rec = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {}); }
                 catch (e) { console.warn('[STT-live] 建立錄音失敗：' + e.message); liveStarted = false; return; }
@@ -963,8 +978,10 @@
                     const segEnd = Date.now();
                     setTimeout(runSegment, 0);
                     try {
-                        if (aiAtStart || aiSpeakingRemote || isSp || !window.__segVoice) return;
-                        if (segEnd - (window.__sttGoodMs || 0) < 15000) return;
+                        console.log('[STT-live] 這段結束：最大音量=' + segPeak.toFixed(3) + '，有聲次數=' + segLoud + '，AI說話中=' + (aiAtStart || aiSpeakingRemote || isSp));
+                        if (aiAtStart || aiSpeakingRemote || isSp) return;
+                        if (segLoud < 3) return; // 這段幾乎沒聲音
+                        if (segEnd - (window.__sttGoodMs || 0) < 15000) { console.log('[STT-live] 瀏覽器語音辨識有效，略過'); return; }
                         let muted = false;
                         try { muted = await jitsiApi.isAudioMuted(); } catch {}
                         if (muted) { console.log('[STT-live] 自己在會議中是靜音，略過這段'); return; }
@@ -994,6 +1011,7 @@
         // 🎯 停止錄音、把整段音檔送給伺服器做語音轉文字（取代不可靠的瀏覽器 SpeechRecognition）
         //    要用 await 等它做完，不能像 submitMyTranscript() 那樣用 sendBeacon（音檔太大，sendBeacon 不適合傳大檔案）
         async function submitMyAudioTranscript() {
+            if (!everJoined) { console.log('[submitMyAudioTranscript] 自己沒有真的進入會議，不送音檔'); return; }
             // 🐛 這輪新增：這支函式原本在「根本沒有錄音機可用」時是完全靜默地直接 return，
             //    回報「TranscriptChunks 整場都沒資料」時，這種靜默略過會讓人誤以為它「有跑但沒送到」，
             //    其實可能從一開始 initAudio() 那步就沒成功建立 myAudioRecorder。先印出來區分。
@@ -1308,6 +1326,7 @@
         //    離開視訊或會議結束時都要呼叫一次，伺服器那邊會依收到時間把大家的片段合併成完整逐字稿
         //    用 sendBeacon（跟 markLeftBeacon 同一套手法），確保就算馬上要跳轉頁面也送得出去
         function submitMyTranscript() {
+            if (!everJoined) { console.log('[submitMyTranscript] 自己沒有真的進入會議，不送逐字稿'); return; }
             // 🐛 這輪新增：這支函式原本完全沒有 log，回報「TranscriptChunks 表整場都沒資料」時，
             //    完全無法判斷是「trxLines 本來就是空的（STT 根本沒抓到任何一句話）」，
             //    還是「trxLines 有內容，但送出去這步失敗/沒送到」。先把這兩種情況都印出來區分。
@@ -1609,7 +1628,7 @@
             //    🎯 加上重試機制：這支 API 沒送到伺服器，JoinedAt 就永遠不會被記錄，
             //    之前這裡是完全靜默失敗（.catch(() => {})），部分人同步失敗查不出原因就是這裡造成的
             jitsiApi.addEventListener('videoConferenceJoined', e => {
-                inMeeting = true;
+                inMeeting = true; everJoined = true;
                 ensureLiveTranscribe();
                 myJitsiId = e && e.id ? e.id : null;
                 markJoinedWithRetry(3);
@@ -1619,7 +1638,7 @@
                 if (inMeeting || ended) { clearInterval(__joinPoll); return; }
                 try {
                     if (jitsiApi && jitsiApi.getNumberOfParticipants() >= 1) {
-                        inMeeting = true;
+                        inMeeting = true; everJoined = true;
                         ensureLiveTranscribe();
                         console.log('[STT] 以房內人數判定已進入會議，開始記錄逐字稿');
                         clearInterval(__joinPoll);
