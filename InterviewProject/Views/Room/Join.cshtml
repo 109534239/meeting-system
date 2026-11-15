@@ -1033,7 +1033,7 @@
                         //    瀏覽器辨識後就被誤記成「我說的」（a 講的被記成 b）。Jitsi 會判定誰是主要發言者：
                         //    如果主要發言者已經穩定是別人（超過 1.5 秒），這句就不算我說的，直接丟掉。
                         const isEchoOfOthers = !!(myJitsiId && dominantId && dominantId !== myJitsiId && (nowMs - dominantSince) > 1500);
-                        if (isEchoOfOthers) console.log('[STT] 判定為別人聲音的回聲，不記錄：' + txt);
+                        console.log('[STT診斷] 辨識到：「' + txt + '」｜inMeeting=' + inMeeting + '，回聲=' + isEchoOfOthers + '，myId=' + myJitsiId + '，dominantId=' + dominantId + '，通過雜訊判斷=' + (stripped.length > 1 && !isDuplicateSpam && !isFillerOnly));
                         if (inMeeting && !isEchoOfOthers && stripped.length > 1 && !isDuplicateSpam && !isFillerOnly) {
                             window.__lastSttText = stripped;
                             window.__lastSttTime = nowMs;
@@ -1562,6 +1562,17 @@
                 myJitsiId = e && e.id ? e.id : null;
                 markJoinedWithRetry(3);
             });
+            // 保險：萬一 videoConferenceJoined 事件沒收到，改用「房內人數 >= 1」判斷已進入會議
+            const __joinPoll = setInterval(() => {
+                if (inMeeting || ended) { clearInterval(__joinPoll); return; }
+                try {
+                    if (jitsiApi && jitsiApi.getNumberOfParticipants() >= 1) {
+                        inMeeting = true;
+                        console.log('[STT] 以房內人數判定已進入會議，開始記錄逐字稿');
+                        clearInterval(__joinPoll);
+                    }
+                } catch {}
+            }, 1000);
             jitsiApi.addEventListener('dominantSpeakerChanged', e => {
                 dominantId = e && e.id ? e.id : null;
                 dominantSince = Date.now();
