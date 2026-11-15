@@ -21,6 +21,8 @@ namespace InterviewProject.Controllers
         // 錄影只上傳 Gemini 一次：SaveTranscript 上傳後存在這裡，SaveAiAnalysis 直接沿用，用完才刪
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string uri, string name, DateTime at)> _geminiVideoCache = new();
         private static int _liveInFlight = 0;
+        // 每個房間、每位求職者被 AI 面試官主動提問的次數（讓 AI 輪流問，不會一直追問同一個人）
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _aiAskCount = new();
 
         private readonly AppDbContext _context;
         private readonly JitsiBotService _botService;
@@ -806,11 +808,21 @@ namespace InterviewProject.Controllers
             {
                 var mentioned = presentNames.Where(n => (lastHuman.Text ?? "").Contains(n, StringComparison.OrdinalIgnoreCase)).ToList();
                 if (mentioned.Count == 1) targetName = mentioned[0];
-                else if (lastIsJobseeker)
+            }
+            // 沒有人被點名：輪流。剛回答完的人可以被追問，但如果他已經比最少被問的人多被問 2 次以上，就換最少被問的人。
+            if (targetName == null && presentNames.Count > 0)
+            {
+                int Cnt(string n) => _aiAskCount.TryGetValue($"{code}|{n}", out var v) ? v : 0;
+                var least = presentNames.Min(Cnt);
+                var leastNames = presentNames.Where(n => Cnt(n) == least).ToList();
+                string? lastName = null;
+                if (lastHuman != null && lastIsJobseeker)
                 {
                     var spk = (lastHuman.Name ?? "").Replace("求職者-", "").Trim();
-                    targetName = presentNames.FirstOrDefault(n => string.Equals(n, spk, StringComparison.OrdinalIgnoreCase));
+                    lastName = presentNames.FirstOrDefault(n => string.Equals(n, spk, StringComparison.OrdinalIgnoreCase));
                 }
+                if (lastName != null && Cnt(lastName) - least < 2) targetName = lastName;
+                else targetName = leastNames[new Random().Next(leastNames.Count)];
             }
             var targetRule = targetName != null
                 ? $"\n【指定對象】這句話只能對「{targetName}」說，句子以「{targetName}，」開頭；不可以改問其他求職者。\n"
@@ -841,6 +853,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（情境A 例外：同一題可以換個說法再引導，但不能原句重複）、問履歷與對話都沒有依據的事。
 6. 如果職員剛問了問題或提出要求、求職者還沒回答：請「就同一個問題」換個說法、縮小範圍，或提示可以從履歷中的哪段經歷談起，幫求職者開口。絕對不能趁機換到另一個話題。
 7. 現在已經冷場，你一定要說一句話，不可以輸出 SKIP。就算話題很簡單（例如請自我介紹），也要用一句具體的引導或追問接上。
+8. 不要跳脫：追問必須緊扣「最近一句人類發言」和目前正在談的題目，不可以跳到新題目、新主題或問履歷裡不相干的事。如果你上一句（AI 面試官）的問題還沒有人回答，這次要換個更具體、更容易回答的角度，不可以原句重複，也不可以換成別的題目。
 只輸出要說的那一句話，不加引號、前綴或說明。";
 
             var raw = await _gemini.AskAsync(prompt, "你是台灣企業面試的 AI 面試官，說話自然、直接、精簡，像真人面試官。", 600);
@@ -865,6 +878,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                     }
                 }
             }
+            foreach (var pn in presentNames) if (text.StartsWith(pn, StringComparison.OrdinalIgnoreCase)) { _aiAskCount.AddOrUpdate($"{code}|{pn}", 1, (_, v) => v + 1); break; }
             Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生提問：「{text}」");
             return Ok(new { text });
         }

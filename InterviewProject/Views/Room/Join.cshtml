@@ -570,7 +570,7 @@
         const JITSI_ROOM = "@jitsiRoom";
         const JITSI_DOMAIN = "@jitsiDomain";
         const JITSI_JWT = "@jitsiJwt";
-        const SIL_SEC    = 10;  // 冷場觸發秒數
+        const SIL_SEC    = 30;  // 冷場觸發秒數
 
         // ══════════════════════════════════
         //  狀態
@@ -666,7 +666,7 @@
         const pendingUtt = {};
         hub.on("UtterancePendingChanged", (id, pending, holdSec) => {
             if (pending) pendingUtt[id] = Date.now() + (holdSec || 5) * 1000;
-            else { delete pendingUtt[id]; lastSpeechMs = Date.now(); lastTranscriptMs = Date.now(); transcriptWaits = 0; } // 這句話完全處理完（文字已送達）才開始算冷場
+            else { delete pendingUtt[id]; lastTranscriptMs = Date.now(); transcriptWaits = 0; } // 冷場計時只看「聲音何時停止」，不等文字
         });
         function anyUtterancePending() {
             const now = Date.now(); let any = false;
@@ -1250,12 +1250,12 @@
         //    不要在單純「換人講話」的空檔就被誤判成冷場；求職者剛講完、可能還在組織下一句時，
         //    也多留一點餘裕，避免打斷正在思考的人。
         function getSilenceThresholdSec() {
-            if (lastSpeakerRole === 'ai') return 30; // AI 剛問完，給求職者充分的時間（AI 發言後 30 秒內本來就不會再開口）
+            if (lastSpeakerRole === 'ai') return 30; // 一律 30 秒：從前一位「聲音停止」那一刻開始算
             if (lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker') {
-                return 15; // 職員/主持人/HR 剛問完問題，等求職者回答，多給充裕的思考時間
+                return 30;
             }
             if (lastSpeakerRole === 'jobseeker') {
-                return 8; // 求職者剛講完（文字已送達才開始算），多留一點喘息空間
+                return 30;
             }
             return SIL_SEC; // 預設值（例如會議剛開始、還沒人真的講過話）
         }
@@ -1364,18 +1364,12 @@
                     return;
                 }
                 if (anyUtterancePending()) {
-                    console.log('[冷場診斷-triggerAI] 有人的一句話正在轉文字，AI 先不開口');
-                    lastSpeechMs = Date.now() - 7000;
+                    console.log('[冷場診斷-triggerAI] 有人正在講話或一句話還在轉文字，AI 不開口（不打斷）');
                     return;
                 }
-                // AI 剛講完不久（30 秒內）不再開口，避免一直刷存在、連續換題
-                if (aiEndedMs && Date.now() - aiEndedMs < 30000) {
-                    console.log('[冷場診斷-triggerAI] AI 剛說完不久，先不再開口');
-                    lastSpeechMs = Date.now() - 4000;
-                    return;
-                }
-                if (humanSeq === aiAtSeq && (humanVoiceSinceAi || aiRepeat >= 1)) {
-                    console.log('[冷場診斷-triggerAI] AI 上次發問後沒有新的發言文字（有人出聲=' + humanVoiceSinceAi + '，已追問=' + aiRepeat + '），這次保持安靜，避免重複');
+                // 一直沒人回應（連續 3 次 AI 說完都沒有任何人出聲）：大概人都不在了，不再繼續自言自語
+                if (humanSeq === aiAtSeq && !humanVoiceSinceAi && aiRepeat >= 3) {
+                    console.log('[冷場診斷-triggerAI] AI 已連續發言 3 次都沒有人回應，停止發言');
                     lastSpeechMs = Date.now();
                     return;
                 }
@@ -1409,7 +1403,13 @@
                     setSt('li', '👂 聆聽中');
                     return;
                 }
-                if (humanSeq === aiAtSeq) aiRepeat++; else aiRepeat = 0;
+                // 伺服器想了幾秒的期間，如果有人開始講話了，就不說，絕不打斷
+                if (anyUtterancePending() || (Date.now() - lastSpeechMs) < 3000) {
+                    console.log('[冷場診斷-triggerAI] 提問準備好了，但這時有人開始講話，放棄這次發言（不打斷）');
+                    setSt('li', '👂 聆聽中');
+                    return;
+                }
+                if (humanSeq === aiAtSeq && !humanVoiceSinceAi) aiRepeat++; else aiRepeat = 0;
                 aiAtSeq = humanSeq; humanVoiceSinceAi = false;
                 aiRequestedUntil = Date.now() + 45000; // 等 AI 真的開始/講完（收到廣播會清掉）
                 lastSpeechMs = Date.now();
