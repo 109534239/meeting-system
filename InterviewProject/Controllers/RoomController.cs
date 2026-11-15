@@ -812,16 +812,20 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 3. 可以指定一位求職者：句子以該求職者的姓名開頭（只用姓名，不要「求職者-」前綴）。有多位求職者時，依剛剛的話題與各自履歷，挑最適合的一位，不要每個人問一樣的問題，也不要連續只問同一個人。
 4. 只能引用被點名者本人的履歷或他自己說過的話，不要拿其他求職者的資料比較。
 5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（情境A 例外：同一題可以換個說法再引導，但不能原句重複）、問履歷與對話都沒有依據的事。
-6. 如果職員剛問了問題或提出要求、求職者還沒回答：只有在你能「就同一個問題」補上更具體的引導時才說；否則輸出 SKIP。絕對不能趁機換到另一個話題。
-7. 沒有真正值得問的內容時，只輸出 SKIP。
-只輸出要說的那一句話，或 SKIP，不加引號、前綴或說明。";
+6. 如果職員剛問了問題或提出要求、求職者還沒回答：請「就同一個問題」換個說法、縮小範圍，或提示可以從履歷中的哪段經歷談起，幫求職者開口。絕對不能趁機換到另一個話題。
+7. 現在已經冷場，你一定要說一句話，不可以輸出 SKIP。就算話題很簡單（例如請自我介紹），也要用一句具體的引導或追問接上。
+只輸出要說的那一句話，不加引號、前綴或說明。";
 
             var raw = await _gemini.AskAsync(prompt, "你是台灣企業面試的 AI 面試官，說話自然、直接、精簡，像真人面試官。", 600);
             var text = (raw ?? "").Trim().Trim('"', '「', '」', '“', '”').Trim();
             if (text.Length < 4 || text.Length > 90 || text.StartsWith("SKIP", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 判斷不發言（回應：{(raw == null ? "null" : Clip(raw, 40))}）");
-                return Ok(new { text = (string?)null });
+                // 冷場時不能一直沉默：模型沒給出可用的句子，就用保底引導（有點名求職者就點名）
+                var firstName = present.Select(p => p.Resume?.Member?.Name).FirstOrDefault(n => !string.IsNullOrEmpty(n));
+                text = lastHuman != null && !lastIsJobseeker
+                    ? (firstName != null ? $"{firstName}，可以先從你最有代表性的一段經歷開始說嗎？" : "可以先從最有代表性的一段經歷開始說嗎？")
+                    : "可以再多說明一下剛剛提到的做法和結果嗎？";
             }
             Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生提問：「{text}」");
             return Ok(new { text });

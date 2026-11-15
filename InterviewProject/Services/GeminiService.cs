@@ -143,7 +143,9 @@ namespace InterviewProject.Services
                 generationConfig = new
                 {
                     maxOutputTokens = maxTokens > 0 ? maxTokens : 200,
-                    temperature = 0.8
+                    temperature = 0.8,
+                    // gemini-2.5-flash 的「思考」會吃掉輸出額度，額度小時整個回應變空白，AI 就判斷成「不發言」。關閉思考。
+                    thinkingConfig = new { thinkingBudget = 0 }
                 }
             };
 
