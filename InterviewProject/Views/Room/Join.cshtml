@@ -609,6 +609,7 @@
         let lastSpeakerName = null;
         let lastSpeakerRole = null;   // 'manager' | 'hr' | 'jobseeker' | 'ai'
         let lastWasQuestion = false;
+        let humanSeq = 0, aiAtSeq = -1, aiRepeat = 0; // 避免 AI 在沒人新發言時重複問同一件事
         // 🎯 最近的對話內容（職員、求職者、AI 各自說了什麼），給 AI 面試官「依話題延伸提問」用。
         //    由 SpeechTurnInfo（每個人講完一句話時廣播）與 AI 自己說話時的廣播填入，每個人的瀏覽器都收得到，
         //    但只有主持人的瀏覽器會真的拿來問 AI。
@@ -670,6 +671,7 @@
             lastSpeakerName = name;
             lastWasQuestion = !!isQuestion;
             lastSpeakerRole = role;
+            humanSeq++;
             pushConvo(name, role, text);
         });
 
@@ -987,7 +989,7 @@
             let mime = ''; for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
             console.log('[STT-live] 即時轉錄備援啟動（' + MY_NAME + '）');
             // 自己量音量（不依賴別的偵測、也不管 AI 是否在說話旗標），每段記錄最大音量
-            let segPeak = 0, segLoud = 0;
+            let segPeak = 0, segLoud = 0, livePending = false;
             try {
                 const lac = new (window.AudioContext || window.webkitAudioContext)();
                 const lan = lac.createAnalyser(); lan.fftSize = 1024;
@@ -999,7 +1001,7 @@
                     lan.getByteTimeDomainData(buf);
                     let mx = 0; for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128) / 128; if (v > mx) mx = v; }
                     if (mx > segPeak) segPeak = mx;
-                    if (mx > 0.04) segLoud++;
+                    if (mx > 0.025) segLoud++;
                 }, 200);
             } catch (e) { console.warn('[STT-live] 音量偵測建立失敗：' + e.message); }
             function runSegment() {
@@ -1016,16 +1018,18 @@
                     try {
                         console.log('[STT-live] 這段結束：最大音量=' + segPeak.toFixed(3) + '，有聲次數=' + segLoud + '，AI說話中=' + (aiAtStart || aiSpeakingRemote || isSp));
                         if (aiAtStart || aiSpeakingRemote || isSp) return;
-                        if (segLoud < 3) return; // 這段幾乎沒聲音
+                        if (segLoud < 1) return; // 這段幾乎沒聲音
+                        if (livePending) { console.log('[STT-live] 上一段還在轉文字，略過這段避免堆積'); return; }
                         if (segEnd - (window.__sttGoodMs || 0) < 15000) { console.log('[STT-live] 瀏覽器語音辨識有效，略過'); return; }
-                        let muted = false;
-                        try { muted = await jitsiApi.isAudioMuted(); } catch {}
-                        if (muted) { console.log('[STT-live] 自己在會議中是靜音，略過這段'); return; }
                         const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
                         if (blob.size < 2000) return;
                         const fd = new FormData(); fd.append('audio', blob, 'seg.webm');
-                        const r = await fetch('/Room/LiveTranscribe?roomCode=' + encodeURIComponent(ROOM_CODE), { method: 'POST', body: fd });
+                        livePending = true;
+                        let r;
+                        try { r = await fetch('/Room/LiveTranscribe?roomCode=' + encodeURIComponent(ROOM_CODE), { method: 'POST', body: fd }); }
+                        finally { livePending = false; }
                         if (!r.ok) { console.warn('[STT-live] 伺服器回應 ' + r.status); return; }
+                        if (Date.now() - segEnd > 20000) { console.log('[STT-live] 結果太晚（超過 20 秒），丟棄'); return; }
                         const d = await r.json();
                         const txt = (d.text || '').trim();
                         const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
@@ -1303,6 +1307,11 @@
                     console.log('[冷場診斷-triggerAI] 被呼叫但距離上次有聲音不到 3 秒，先跳過這次');
                     return;
                 }
+                if (humanSeq === aiAtSeq && aiRepeat >= 1) {
+                    console.log('[冷場診斷-triggerAI] AI 上次發問後沒有人新發言，已追問過一次，這次保持安靜，避免重複');
+                    lastSpeechMs = Date.now();
+                    return;
+                }
                 console.log('[冷場診斷-triggerAI] 通過所有關卡，準備請伺服器依對話與履歷決定提問');
 
                 setSt('th','💭 思考中...');
@@ -1333,6 +1342,8 @@
                     setSt('li', '👂 聆聽中');
                     return;
                 }
+                if (humanSeq === aiAtSeq) aiRepeat++; else aiRepeat = 0;
+                aiAtSeq = humanSeq;
                 console.log('[冷場診斷-triggerAI] 準備呼叫 aiSpeak，內容：「' + q + '」');
                 aiSpeak(q);
             } finally {

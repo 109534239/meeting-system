@@ -20,6 +20,7 @@ namespace InterviewProject.Controllers
     {
         // 錄影只上傳 Gemini 一次：SaveTranscript 上傳後存在這裡，SaveAiAnalysis 直接沿用，用完才刪
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string uri, string name, DateTime at)> _geminiVideoCache = new();
+        private static int _liveInFlight = 0;
 
         private readonly AppDbContext _context;
         private readonly JitsiBotService _botService;
@@ -564,7 +565,15 @@ namespace InterviewProject.Controllers
             byte[] bytes;
             using (var ms = new MemoryStream()) { await audio.CopyToAsync(ms); bytes = ms.ToArray(); }
             var mime = string.IsNullOrEmpty(audio.ContentType) ? "audio/webm" : audio.ContentType;
-            var text = await _gemini.TranscribeAudioAsync(bytes, mime);
+            // 同時處理太多就直接丟掉這段（寧可漏一段，也不要排隊排到幾分鐘後）
+            if (System.Threading.Interlocked.Increment(ref _liveInFlight) > 4)
+            {
+                System.Threading.Interlocked.Decrement(ref _liveInFlight);
+                return Ok(new { text = "" });
+            }
+            string? text;
+            try { text = await _gemini.TranscribeLiveAsync(bytes, mime); }
+            finally { System.Threading.Interlocked.Decrement(ref _liveInFlight); }
             if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容")) return Ok(new { text = "" });
             Console.WriteLine($"[LiveTranscribe] 房間 {roomCode}：{text.Substring(0, Math.Min(40, text.Length))}");
             return Ok(new { text = text.Trim() });
