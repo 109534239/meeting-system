@@ -664,9 +664,9 @@
         // 冷場同步：主持人廣播給所有人「有聲音了」
         // 有人的一句話正在轉文字：全場（尤其主持人）AI 都先不要開口
         const pendingUtt = {};
-        hub.on("UtterancePendingChanged", (id, pending) => {
-            if (pending) pendingUtt[id] = Date.now() + 25000;
-            else { delete pendingUtt[id]; lastTranscriptMs = Date.now(); transcriptWaits = 0; }
+        hub.on("UtterancePendingChanged", (id, pending, holdSec) => {
+            if (pending) pendingUtt[id] = Date.now() + (holdSec || 5) * 1000;
+            else { delete pendingUtt[id]; lastSpeechMs = Date.now(); lastTranscriptMs = Date.now(); transcriptWaits = 0; } // 這句話完全處理完（文字已送達）才開始算冷場
         });
         function anyUtterancePending() {
             const now = Date.now(); let any = false;
@@ -1043,7 +1043,7 @@
                 console.log('[STT-live] 一句話結束：長度=' + (durMs / 1000).toFixed(1) + ' 秒，最大音量=' + peakVal.toFixed(3) + '，大小=' + (blob ? blob.size : 0));
                 if (!blob || blob.size < 3000) return;
                 if (Date.now() - (window.__sttGoodMs || 0) < 15000) { console.log('[STT-live] 瀏覽器語音辨識有效，略過'); return; }
-                try { hub.invoke('UtterancePending', ROOM_CODE, true); } catch {}
+                try { hub.invoke('UtterancePending', ROOM_CODE, true, 30); } catch {} // 轉文字期間，最長 30 秒內 AI 不開口
                 let txt = '';
                 try {
                     const fd = new FormData(); fd.append('audio', blob, 'utt.webm');
@@ -1056,7 +1056,6 @@
                 if (stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped)) {
                     try { await hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE, txt); } catch {}
                 }
-                try { hub.invoke('UtterancePending', ROOM_CODE, false); } catch {}
             }
 
             async function finishUtterance() {
@@ -1067,8 +1066,13 @@
                 const blob = await stopRec();
                 startRec();
                 busy = false;
-                if (overlapped) { console.log('[STT-live] 這句話和 AI 說話重疊，丟棄'); return; }
-                sendUtterance(blob, dur, pk);
+                try {
+                    if (overlapped) console.log('[STT-live] 這句話和 AI 說話重疊，丟棄');
+                    else await sendUtterance(blob, dur, pk);
+                } finally {
+                    // 不論成功、失敗、略過，一定通知全場「這句話處理完了」
+                    try { hub.invoke('UtterancePending', ROOM_CODE, false, 0); } catch {}
+                }
             }
 
             startRec();
@@ -1083,11 +1087,12 @@
                     if (aiBusy) { if (speaking) aiOverlap = true; loudRun = 0; }
                     else if (mx > 0.03) {
                         loudRun++; lastLoudAt = now; if (mx > peak) peak = mx;
-                        if (!speaking && loudRun >= 2) { speaking = true; utterStart = now; aiOverlap = false; console.log('[STT-live] 開始講話'); }
+                        if (!speaking && loudRun >= 2) { speaking = true; utterStart = now; aiOverlap = false; console.log('[STT-live] 開始講話'); try { hub.invoke('UtterancePending', ROOM_CODE, true, 5); } catch {} }
                         if (loudRun >= 2 && now - lastCast > 1000) {
                             lastCast = now; lastSpeechMs = now; lastVoiceMs = now;
                             if (now - aiEndedMs > 1500) humanVoiceSinceAi = true;
                             try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
+                            if (speaking) { try { hub.invoke('UtterancePending', ROOM_CODE, true, 5); } catch {} }
                         }
                     } else { loudRun = 0; }
                     if (speaking && !busy && (now - lastLoudAt > 1300 || now - utterStart > 22000)) { finishUtterance(); break analyserTick; }
@@ -1245,12 +1250,12 @@
         //    不要在單純「換人講話」的空檔就被誤判成冷場；求職者剛講完、可能還在組織下一句時，
         //    也多留一點餘裕，避免打斷正在思考的人。
         function getSilenceThresholdSec() {
-            if (lastSpeakerRole === 'ai') return 20; // AI 剛問完，給正常一點的等待
+            if (lastSpeakerRole === 'ai') return 30; // AI 剛問完，給求職者充分的時間（AI 發言後 30 秒內本來就不會再開口）
             if (lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker') {
-                return 20; // 職員/主持人/HR 剛問完問題，等求職者回答，多給充裕的思考時間
+                return 15; // 職員/主持人/HR 剛問完問題，等求職者回答，多給充裕的思考時間
             }
             if (lastSpeakerRole === 'jobseeker') {
-                return 15; // 求職者剛講完（可能還在想下一句），多留一點喘息空間
+                return 8; // 求職者剛講完（文字已送達才開始算），多留一點喘息空間
             }
             return SIL_SEC; // 預設值（例如會議剛開始、還沒人真的講過話）
         }
@@ -1363,19 +1368,10 @@
                     lastSpeechMs = Date.now() - 7000;
                     return;
                 }
-                // 有人剛出聲、但他說的話還沒轉成文字傳來：AI 現在問會問到過時的話題（例如人家已在回答專業問題，卻又問自我介紹）。
-                // 先等轉文字（最多再等約 18 秒），文字到了再問。
-                if (lastVoiceMs > lastTranscriptMs + 500 && Date.now() - lastVoiceMs < 45000) {
-                    if (transcriptWaits < 6) {
-                        transcriptWaits++;
-                        console.log('[冷場診斷-triggerAI] 有人剛說話但文字還沒到，再等一下（第 ' + transcriptWaits + ' 次）');
-                        lastSpeechMs = Date.now() - 7000; // 約 3 秒後再評估
-                        return;
-                    }
-                    // 等了約 18 秒文字還是沒到：不知道對方說了什麼，這時再問只會重複舊問題或插嘴，所以保持安靜
-                    console.log('[冷場診斷-triggerAI] 有人說話但一直沒有轉出文字，AI 不確定內容，保持安靜（不重複發問）');
-                    lastTranscriptMs = Date.now(); transcriptWaits = 0;
-                    lastSpeechMs = Date.now();
+                // AI 剛講完不久（30 秒內）不再開口，避免一直刷存在、連續換題
+                if (aiEndedMs && Date.now() - aiEndedMs < 30000) {
+                    console.log('[冷場診斷-triggerAI] AI 剛說完不久，先不再開口');
+                    lastSpeechMs = Date.now() - 4000;
                     return;
                 }
                 if (humanSeq === aiAtSeq && (humanVoiceSinceAi || aiRepeat >= 1)) {

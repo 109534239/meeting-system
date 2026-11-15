@@ -230,8 +230,8 @@ namespace InterviewProject.Hubs
 
         // ✅ 任何人偵測到聲音 → 廣播給所有人重置冷場計時（不含逐字稿內容，純粹只是「有人在講話」的訊號）
         // 有人的一句話開始/結束轉文字（AI 面試官據此決定要不要開口，避免插嘴）
-        public async Task UtterancePending(string roomCode, bool pending)
-            => await Clients.Group(roomCode).SendAsync("UtterancePendingChanged", Context.ConnectionId, pending);
+        public async Task UtterancePending(string roomCode, bool pending, int holdSec)
+            => await Clients.Group(roomCode).SendAsync("UtterancePendingChanged", Context.ConnectionId, pending, holdSec);
 
         public async Task BroadcastSpeech(string roomCode)
             => await Clients.Group(roomCode).SendAsync("SpeechDetected");
