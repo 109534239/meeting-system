@@ -901,9 +901,34 @@
         let myAudioRecorder = null;
         let myAudioChunks = [];
 
+        // 🎯 取麥克風時避開「虛擬裝置」（例如 Voice Changer Virtual Audio Device、VB-Cable、OBS 虛擬麥克風）。
+        //    這類裝置常被瀏覽器當成預設麥克風，但輸出是靜音，會導致逐字稿、冷場偵測全部收不到聲音。
+        //    先取一次拿到裝置名稱，若是虛擬裝置，就改指定一支真正的實體麥克風（例如 Realtek）。
+        const BAD_MIC = /virtual|voice changer|vb-audio|cable|stereo mix|立體聲混音|obs|snap camera|nvidia broadcast/i;
+        async function getRealMic(opts) {
+            const base = opts || {};
+            let s = await navigator.mediaDevices.getUserMedia({ audio: base, video: false });
+            try {
+                const t = s.getAudioTracks()[0];
+                if (t && BAD_MIC.test(t.label || '')) {
+                    console.warn('[麥克風] 預設裝置是虛擬裝置「' + t.label + '」，改找實體麥克風');
+                    const devs = await navigator.mediaDevices.enumerateDevices();
+                    const good = devs.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications' && !BAD_MIC.test(d.label || ''));
+                    // 優先含 Realtek / Microphone / 麥克風 的實體裝置
+                    good.sort((a, b2) => (/realtek|microphone|麥克風|mic/i.test(b2.label) ? 1 : 0) - (/realtek|microphone|麥克風|mic/i.test(a.label) ? 1 : 0));
+                    if (good.length) {
+                        s.getTracks().forEach(x => x.stop());
+                        s = await navigator.mediaDevices.getUserMedia({ audio: Object.assign({}, base, { deviceId: { exact: good[0].deviceId } }), video: false });
+                        console.log('[麥克風] 已改用：' + good[0].label);
+                    }
+                }
+            } catch (e) { console.warn('[麥克風] 挑選實體麥克風失敗，沿用預設：' + e.message); }
+            return s;
+        }
+
         async function initAudio() {
             try {
-                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                audioStream = await getRealMic({});
                 console.log('[initAudio] 成功取得麥克風（' + MY_NAME + '）');
 
                 // 🎯 逐字稿改用這個當主要來源：整場錄下自己的麥克風音檔，結束時送給 Gemini 轉文字，
@@ -952,7 +977,7 @@
             // 進會議後重新取一份麥克風（原本進會議前取的那份，可能被 Jitsi 接手後收不到聲音，音量一直是 0）
             let liveStream = audioStream;
             try {
-                liveStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true }, video: false });
+                liveStream = await getRealMic({ echoCancellation: false, noiseSuppression: false, autoGainControl: true });
                 console.log('[STT-live] 已重新取得麥克風串流');
             } catch (e) { console.warn('[STT-live] 重新取得麥克風失敗，沿用原本的：' + e.message); }
             if (!liveStream) { liveStarted = false; return; }
