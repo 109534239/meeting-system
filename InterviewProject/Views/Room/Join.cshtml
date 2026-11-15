@@ -946,9 +946,18 @@
         //    有人聲才送伺服器轉文字，結果餵給「冷場/延伸提問」用（同 STT 有效結果的處理）。
         //    自己在 Jitsi 靜音、AI 正在講話、或瀏覽器語音辨識 15 秒內有效時，都不送。
         let liveStarted = false;
-        function ensureLiveTranscribe() {
-            if (liveStarted || !audioStream) return;
+        async function ensureLiveTranscribe() {
+            if (liveStarted) return;
             liveStarted = true;
+            // 進會議後重新取一份麥克風（原本進會議前取的那份，可能被 Jitsi 接手後收不到聲音，音量一直是 0）
+            let liveStream = audioStream;
+            try {
+                liveStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true }, video: false });
+                console.log('[STT-live] 已重新取得麥克風串流');
+            } catch (e) { console.warn('[STT-live] 重新取得麥克風失敗，沿用原本的：' + e.message); }
+            if (!liveStream) { liveStarted = false; return; }
+            const __t = liveStream.getAudioTracks()[0];
+            console.log('[STT-live] 麥克風軌道 readyState=' + (__t && __t.readyState) + ' muted=' + (__t && __t.muted) + ' enabled=' + (__t && __t.enabled) + ' label=' + (__t && __t.label));
             const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
             let mime = ''; for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
             console.log('[STT-live] 即時轉錄備援啟動（' + MY_NAME + '）');
@@ -957,7 +966,9 @@
             try {
                 const lac = new (window.AudioContext || window.webkitAudioContext)();
                 const lan = lac.createAnalyser(); lan.fftSize = 1024;
-                lac.createMediaStreamSource(audioStream).connect(lan);
+                lac.createMediaStreamSource(liveStream).connect(lan);
+                try { await lac.resume(); } catch {}
+                console.log('[STT-live] AudioContext 狀態=' + lac.state);
                 const buf = new Uint8Array(lan.fftSize);
                 setInterval(() => {
                     lan.getByteTimeDomainData(buf);
@@ -971,7 +982,7 @@
                 let rec, chunks = [];
                 segPeak = 0; segLoud = 0;
                 const aiAtStart = aiSpeakingRemote || isSp;
-                try { rec = new MediaRecorder(audioStream, mime ? { mimeType: mime } : {}); }
+                try { rec = new MediaRecorder(liveStream, mime ? { mimeType: mime } : {}); }
                 catch (e) { console.warn('[STT-live] 建立錄音失敗：' + e.message); liveStarted = false; return; }
                 rec.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
                 rec.onstop = async () => {
@@ -1214,6 +1225,7 @@
                 const ac = new (window.AudioContext || window.webkitAudioContext)();
                 const an = ac.createAnalyser(); an.fftSize = 256;
                 ac.createMediaStreamSource(audioStream).connect(an);
+                try { ac.resume(); } catch {}
 
                 // 🎯 改版：不再用「麥克風原始音量」直接重置冷場計時（雜音、打字聲、冷氣聲都會讓整段頻譜平均
                 //    超標，導致冷場判斷失靈）。這個 800ms 迴圈現在只負責「算沉默了幾秒、到門檻就觸發」；
