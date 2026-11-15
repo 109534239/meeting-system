@@ -579,6 +579,11 @@
         let silT = 0, isSp = false;
         let audioStream = null;
         let recognition = null;
+        // 🎯 只有「自己真的進到 Jitsi 會議室」之後才記逐字稿（之前在調鏡頭、調麥克風的雜談不收）
+        let inMeeting = false;
+        let myJitsiId = null;          // 自己在 Jitsi 的 participant id（videoConferenceJoined 事件給的）
+        let dominantId = null;         // Jitsi 判定目前的主要發言者
+        let dominantSince = 0;
         let trxLines = [];
         let lastSpeechMs = 0;
         let recentSpeech = [];
@@ -1024,7 +1029,12 @@
                         //    不計入逐字稿，也不重置冷場計時器。真正在回答問題的內容，就算夾雜語助詞，
                         //    也一定會有其他實質的字，不會被這個規則誤傷。
                         const isFillerOnly = /^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped);
-                        if (stripped.length > 1 && !isDuplicateSpam && !isFillerOnly) {
+                        // 🎯 回聲過濾：同一間教室測試時，我的麥克風會收到別人從喇叭/現場傳來的聲音，
+                        //    瀏覽器辨識後就被誤記成「我說的」（a 講的被記成 b）。Jitsi 會判定誰是主要發言者：
+                        //    如果主要發言者已經穩定是別人（超過 1.5 秒），這句就不算我說的，直接丟掉。
+                        const isEchoOfOthers = !!(myJitsiId && dominantId && dominantId !== myJitsiId && (nowMs - dominantSince) > 1500);
+                        if (isEchoOfOthers) console.log('[STT] 判定為別人聲音的回聲，不記錄：' + txt);
+                        if (inMeeting && !isEchoOfOthers && stripped.length > 1 && !isDuplicateSpam && !isFillerOnly) {
                             window.__lastSttText = stripped;
                             window.__lastSttTime = nowMs;
                             // ✅ 所有角色都記錄自己說的話
@@ -1548,7 +1558,13 @@
             //    🎯 加上重試機制：這支 API 沒送到伺服器，JoinedAt 就永遠不會被記錄，
             //    之前這裡是完全靜默失敗（.catch(() => {})），部分人同步失敗查不出原因就是這裡造成的
             jitsiApi.addEventListener('videoConferenceJoined', e => {
+                inMeeting = true;
+                myJitsiId = e && e.id ? e.id : null;
                 markJoinedWithRetry(3);
+            });
+            jitsiApi.addEventListener('dominantSpeakerChanged', e => {
+                dominantId = e && e.id ? e.id : null;
+                dominantSince = Date.now();
             });
 
             async function markJoinedWithRetry(retriesLeft) {
@@ -1574,6 +1590,7 @@
             // 🎯 使用者離開視訊（不管是自己按掛斷、還是斷線），記錄離開時間
             //    這只代表「他自己離開」，不會影響會議本身，會議只有主持人按「結束會議」才會真的結束
             jitsiApi.addEventListener('videoConferenceLeft', e => {
+                inMeeting = false;
                 markLeftBeacon();
             });
 
