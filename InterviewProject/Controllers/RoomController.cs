@@ -558,7 +558,7 @@ namespace InterviewProject.Controllers
         //    改由前端每 5 秒送一小段麥克風錄音過來，這裡立刻轉成文字回傳，給 AI 面試官判斷冷場/延伸提問用。
         //    這裡「不存」資料庫，完整逐字稿仍由會議結束時的整場錄音/錄影轉錄產生。
         [HttpPost]
-        [RequestSizeLimit(5_000_000)]
+        [RequestSizeLimit(10_000_000)]
         public async Task<IActionResult> LiveTranscribe([FromQuery] string roomCode, IFormFile? audio)
         {
             if (string.IsNullOrEmpty(roomCode) || audio == null || audio.Length < 2000) return Ok(new { text = "" });
@@ -566,7 +566,7 @@ namespace InterviewProject.Controllers
             using (var ms = new MemoryStream()) { await audio.CopyToAsync(ms); bytes = ms.ToArray(); }
             var mime = string.IsNullOrEmpty(audio.ContentType) ? "audio/webm" : audio.ContentType;
             // 同時處理太多就直接丟掉這段（寧可漏一段，也不要排隊排到幾分鐘後）
-            if (System.Threading.Interlocked.Increment(ref _liveInFlight) > 4)
+            if (System.Threading.Interlocked.Increment(ref _liveInFlight) > 8)
             {
                 System.Threading.Interlocked.Decrement(ref _liveInFlight);
                 return Ok(new { text = "" });

@@ -535,7 +535,7 @@ namespace InterviewProject.Services
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(12);
+                client.Timeout = TimeSpan.FromSeconds(25);
                 var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
                 var body = new
                 {
@@ -543,7 +543,7 @@ namespace InterviewProject.Services
                         new { text = "把這段錄音逐字轉成繁體中文，只輸出人說的話本身。聽不清楚就略過，不要猜、不要補完、不要重複。若沒有人說話，只回覆「（無語音內容）」。" },
                         new { inline_data = new { mime_type = mimeType, data = Convert.ToBase64String(audioBytes) } }
                     } } },
-                    generationConfig = new { maxOutputTokens = 300, temperature = 0.1, thinkingConfig = new { thinkingBudget = 0 } }
+                    generationConfig = new { maxOutputTokens = 600, temperature = 0.1, thinkingConfig = new { thinkingBudget = 0 } }
                 };
                 var resp = await client.PostAsync(url, new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
                 var respBody = await resp.Content.ReadAsStringAsync();

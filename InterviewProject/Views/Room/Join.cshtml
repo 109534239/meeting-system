@@ -662,6 +662,17 @@
         });
 
         // 冷場同步：主持人廣播給所有人「有聲音了」
+        // 有人的一句話正在轉文字：全場（尤其主持人）AI 都先不要開口
+        const pendingUtt = {};
+        hub.on("UtterancePendingChanged", (id, pending) => {
+            if (pending) pendingUtt[id] = Date.now() + 25000;
+            else { delete pendingUtt[id]; lastTranscriptMs = Date.now(); transcriptWaits = 0; }
+        });
+        function anyUtterancePending() {
+            const now = Date.now(); let any = false;
+            for (const k in pendingUtt) { if (pendingUtt[k] > now) any = true; else delete pendingUtt[k]; }
+            return any;
+        }
         hub.on("SpeechDetected", () => {
             if (!aiSpeakingRemote && Date.now() - aiEndedMs > 1500) humanVoiceSinceAi = true;
             if (!aiSpeakingRemote) lastVoiceMs = Date.now();
@@ -981,90 +992,111 @@
         //    有人聲才送伺服器轉文字，結果餵給「冷場/延伸提問」用（同 STT 有效結果的處理）。
         //    自己在 Jitsi 靜音、AI 正在講話、或瀏覽器語音辨識 15 秒內有效時，都不送。
         let liveStarted = false;
+        // 🎯 即時轉錄（重寫）：以「一整句話」為單位，不再每 5 秒硬切一段。
+        //    偵測到開始講話 → 持續錄 → 停頓 1.3 秒（或超過 22 秒）視為講完 → 把這整句送去轉文字。
+        //    整句轉出來更準，也能精確知道「這個人講完了」。送出去到收到結果之間，會通知全場「有一句話轉文字中」，
+        //    AI（主持人視窗）在有人講話、或有句子還在轉文字時一律不開口，不會插嘴。
         async function ensureLiveTranscribe() {
             if (liveStarted) return;
             liveStarted = true;
-            // 進會議後重新取一份麥克風（原本進會議前取的那份，可能被 Jitsi 接手後收不到聲音，音量一直是 0）
             let liveStream = audioStream;
             try {
-                liveStream = await getRealMic({ echoCancellation: false, noiseSuppression: false, autoGainControl: true });
+                liveStream = await getRealMic({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
                 console.log('[STT-live] 已重新取得麥克風串流');
             } catch (e) { console.warn('[STT-live] 重新取得麥克風失敗，沿用原本的：' + e.message); }
             if (!liveStream) { liveStarted = false; return; }
             const __t = liveStream.getAudioTracks()[0];
-            console.log('[STT-live] 麥克風軌道 readyState=' + (__t && __t.readyState) + ' muted=' + (__t && __t.muted) + ' enabled=' + (__t && __t.enabled) + ' label=' + (__t && __t.label));
+            console.log('[STT-live] 麥克風 label=' + (__t && __t.label) + ' readyState=' + (__t && __t.readyState));
+
             const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
             let mime = ''; for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
-            console.log('[STT-live] 即時轉錄備援啟動（' + MY_NAME + '）');
-            // 自己量音量（不依賴別的偵測、也不管 AI 是否在說話旗標），每段記錄最大音量
-            let segPeak = 0, segLoud = 0, livePending = false, loudRun = 0, lastVoiceCast = 0;
-            try {
-                const lac = new (window.AudioContext || window.webkitAudioContext)();
-                const lan = lac.createAnalyser(); lan.fftSize = 1024;
-                lac.createMediaStreamSource(liveStream).connect(lan);
-                try { await lac.resume(); } catch {}
-                console.log('[STT-live] AudioContext 狀態=' + lac.state);
-                const buf = new Uint8Array(lan.fftSize);
-                setInterval(() => {
-                    lan.getByteTimeDomainData(buf);
-                    let mx = 0; for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128) / 128; if (v > mx) mx = v; }
-                    if (mx > segPeak) segPeak = mx;
-                    if (mx > 0.025) segLoud++;
-                    // 有人在講話就立刻通知全場（不用等轉文字），讓主持人那邊的冷場計時重新起算，AI 不會在對方回答時插嘴
-                    if (mx > 0.02 && !aiSpeakingRemote && !isSp) {
-                        loudRun++;
-                        if (loudRun >= 2 && Date.now() - lastVoiceCast > 1500) {
-                            lastVoiceCast = Date.now();
-                            lastSpeechMs = Date.now();
-                            if (Date.now() - aiEndedMs > 1500) humanVoiceSinceAi = true;
-                            lastVoiceMs = Date.now();
+
+            const lac = new (window.AudioContext || window.webkitAudioContext)();
+            const lan = lac.createAnalyser(); lan.fftSize = 1024;
+            lac.createMediaStreamSource(liveStream).connect(lan);
+            try { await lac.resume(); } catch {}
+            const abuf = new Uint8Array(lan.fftSize);
+
+            let rec = null, chunks = [], recStart = 0;
+            let speaking = false, loudRun = 0, lastLoudAt = 0, utterStart = 0, aiOverlap = false, busy = false, lastCast = 0, peak = 0;
+
+            function startRec() {
+                chunks = [];
+                try {
+                    const r = new MediaRecorder(liveStream, mime ? { mimeType: mime } : {});
+                    r.ondataavailable = ev => { if (ev.data && ev.data.size > 0) chunks.push(ev.data); };
+                    r.start(500);
+                    rec = r; recStart = Date.now();
+                } catch (ex) { console.warn('[STT-live] 建立錄音失敗：' + ex.message); rec = null; }
+            }
+            function stopRec() {
+                return new Promise(res => {
+                    const r = rec;
+                    if (!r || r.state === 'inactive') { res(null); return; }
+                    r.onstop = () => res(new Blob(chunks, { type: r.mimeType || 'audio/webm' }));
+                    try { r.stop(); } catch { res(null); }
+                });
+            }
+
+            async function sendUtterance(blob, durMs, peakVal) {
+                const tooQuiet = peakVal < 0.05;
+                console.log('[STT-live] 一句話結束：長度=' + (durMs / 1000).toFixed(1) + ' 秒，最大音量=' + peakVal.toFixed(3) + '，大小=' + (blob ? blob.size : 0));
+                if (!blob || blob.size < 3000) return;
+                if (Date.now() - (window.__sttGoodMs || 0) < 15000) { console.log('[STT-live] 瀏覽器語音辨識有效，略過'); return; }
+                try { hub.invoke('UtterancePending', ROOM_CODE, true); } catch {}
+                let txt = '';
+                try {
+                    const fd = new FormData(); fd.append('audio', blob, 'utt.webm');
+                    const r = await fetch('/Room/LiveTranscribe?roomCode=' + encodeURIComponent(ROOM_CODE), { method: 'POST', body: fd });
+                    if (r.ok) { const d = await r.json(); txt = (d.text || '').trim(); }
+                    else console.warn('[STT-live] 伺服器回應 ' + r.status);
+                } catch (ex) { console.warn('[STT-live] 送出失敗：' + ex.message); }
+                const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
+                console.log('[STT-live] 轉錄結果：「' + txt + '」');
+                if (stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped)) {
+                    try { await hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE, txt); } catch {}
+                }
+                try { hub.invoke('UtterancePending', ROOM_CODE, false); } catch {}
+            }
+
+            async function finishUtterance() {
+                if (busy) return;
+                busy = true;
+                const dur = Date.now() - utterStart, pk = peak, overlapped = aiOverlap;
+                speaking = false; peak = 0; loudRun = 0;
+                const blob = await stopRec();
+                startRec();
+                busy = false;
+                if (overlapped) { console.log('[STT-live] 這句話和 AI 說話重疊，丟棄'); return; }
+                sendUtterance(blob, dur, pk);
+            }
+
+            startRec();
+            console.log('[STT-live] 即時轉錄（整句模式）啟動（' + MY_NAME + '）');
+            setInterval(async () => {
+                if (ended) return;
+                analyserTick: {
+                    lan.getByteTimeDomainData(abuf);
+                    let mx = 0; for (let i = 0; i < abuf.length; i++) { const v = Math.abs(abuf[i] - 128) / 128; if (v > mx) mx = v; }
+                    const now = Date.now();
+                    const aiBusy = aiSpeakingRemote || isSp || (now - aiEndedMs) < 1200;
+                    if (aiBusy) { if (speaking) aiOverlap = true; loudRun = 0; }
+                    else if (mx > 0.03) {
+                        loudRun++; lastLoudAt = now; if (mx > peak) peak = mx;
+                        if (!speaking && loudRun >= 2) { speaking = true; utterStart = now; aiOverlap = false; console.log('[STT-live] 開始講話'); }
+                        if (loudRun >= 2 && now - lastCast > 1000) {
+                            lastCast = now; lastSpeechMs = now; lastVoiceMs = now;
+                            if (now - aiEndedMs > 1500) humanVoiceSinceAi = true;
                             try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
                         }
                     } else { loudRun = 0; }
-                }, 200);
-            } catch (e) { console.warn('[STT-live] 音量偵測建立失敗：' + e.message); }
-            function runSegment() {
-                if (ended) return;
-                let rec, chunks = [];
-                segPeak = 0; segLoud = 0;
-                const aiAtStart = aiSpeakingRemote || isSp;
-                try { rec = new MediaRecorder(liveStream, mime ? { mimeType: mime } : {}); }
-                catch (e) { console.warn('[STT-live] 建立錄音失敗：' + e.message); liveStarted = false; return; }
-                rec.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
-                rec.onstop = async () => {
-                    const segEnd = Date.now();
-                    setTimeout(runSegment, 0);
-                    try {
-                        console.log('[STT-live] 這段結束：最大音量=' + segPeak.toFixed(3) + '，有聲次數=' + segLoud + '，AI說話中=' + (aiAtStart || aiSpeakingRemote || isSp));
-                        if (aiAtStart || aiSpeakingRemote || isSp) return;
-                        if (segLoud < 1) return; // 這段幾乎沒聲音
-                        if (livePending) { console.log('[STT-live] 上一段還在轉文字，略過這段避免堆積'); return; }
-                        if (segEnd - (window.__sttGoodMs || 0) < 15000) { console.log('[STT-live] 瀏覽器語音辨識有效，略過'); return; }
-                        const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
-                        if (blob.size < 2000) return;
-                        const fd = new FormData(); fd.append('audio', blob, 'seg.webm');
-                        livePending = true;
-                        let r;
-                        try { r = await fetch('/Room/LiveTranscribe?roomCode=' + encodeURIComponent(ROOM_CODE), { method: 'POST', body: fd }); }
-                        finally { livePending = false; }
-                        if (!r.ok) { console.warn('[STT-live] 伺服器回應 ' + r.status); return; }
-                        if (Date.now() - segEnd > 20000) { console.log('[STT-live] 結果太晚（超過 20 秒），丟棄'); return; }
-                        const d = await r.json();
-                        const txt = (d.text || '').trim();
-                        const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
-                        console.log('[STT-live] 轉錄結果：「' + txt + '」');
-                        if (stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped)) {
-                            try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
-                            try { hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE, txt); } catch {}
-                            lastSpeechMs = Math.max(lastSpeechMs, segEnd);
-                            silT = 0; setSilBar(0);
-                        }
-                    } catch (e) { console.warn('[STT-live] 失敗：' + e.message); }
-                };
-                rec.start();
-                setTimeout(() => { try { if (rec.state !== 'inactive') rec.stop(); } catch {} }, 5000);
-            }
-            runSegment();
+                    if (speaking && !busy && (now - lastLoudAt > 1300 || now - utterStart > 22000)) { finishUtterance(); break analyserTick; }
+                    // 沒人講話時，錄音機定期重開，避免累積太長的靜音
+                    if (!speaking && !busy && now - recStart > 6000) {
+                        busy = true; await stopRec(); startRec(); busy = false;
+                    }
+                }
+            }, 100);
         }
 
         // 🎯 停止錄音、把整段音檔送給伺服器做語音轉文字（取代不可靠的瀏覽器 SpeechRecognition）
@@ -1326,16 +1358,28 @@
                     console.log('[冷場診斷-triggerAI] 被呼叫但距離上次有聲音不到 3 秒，先跳過這次');
                     return;
                 }
-                // 有人剛出聲、但他說的話還沒轉成文字傳來：AI 現在問會問到過時的話題（例如人家已在回答專業問題，卻又問自我介紹）。
-                // 先等轉文字（最多再等約 18 秒），文字到了再問。
-                if (lastVoiceMs > lastTranscriptMs + 500 && Date.now() - lastVoiceMs < 45000 && transcriptWaits < 6) {
-                    transcriptWaits++;
-                    console.log('[冷場診斷-triggerAI] 有人剛說話但文字還沒到，再等一下（第 ' + transcriptWaits + ' 次）');
-                    lastSpeechMs = Date.now() - 7000; // 約 3 秒後再評估
+                if (anyUtterancePending()) {
+                    console.log('[冷場診斷-triggerAI] 有人的一句話正在轉文字，AI 先不開口');
+                    lastSpeechMs = Date.now() - 7000;
                     return;
                 }
-                if (humanSeq === aiAtSeq && aiRepeat >= 1 && !humanVoiceSinceAi) {
-                    console.log('[冷場診斷-triggerAI] AI 上次發問後沒有人新發言，已追問過一次，這次保持安靜，避免重複');
+                // 有人剛出聲、但他說的話還沒轉成文字傳來：AI 現在問會問到過時的話題（例如人家已在回答專業問題，卻又問自我介紹）。
+                // 先等轉文字（最多再等約 18 秒），文字到了再問。
+                if (lastVoiceMs > lastTranscriptMs + 500 && Date.now() - lastVoiceMs < 45000) {
+                    if (transcriptWaits < 6) {
+                        transcriptWaits++;
+                        console.log('[冷場診斷-triggerAI] 有人剛說話但文字還沒到，再等一下（第 ' + transcriptWaits + ' 次）');
+                        lastSpeechMs = Date.now() - 7000; // 約 3 秒後再評估
+                        return;
+                    }
+                    // 等了約 18 秒文字還是沒到：不知道對方說了什麼，這時再問只會重複舊問題或插嘴，所以保持安靜
+                    console.log('[冷場診斷-triggerAI] 有人說話但一直沒有轉出文字，AI 不確定內容，保持安靜（不重複發問）');
+                    lastTranscriptMs = Date.now(); transcriptWaits = 0;
+                    lastSpeechMs = Date.now();
+                    return;
+                }
+                if (humanSeq === aiAtSeq && (humanVoiceSinceAi || aiRepeat >= 1)) {
+                    console.log('[冷場診斷-triggerAI] AI 上次發問後沒有新的發言文字（有人出聲=' + humanVoiceSinceAi + '，已追問=' + aiRepeat + '），這次保持安靜，避免重複');
                     lastSpeechMs = Date.now();
                     return;
                 }
@@ -1369,7 +1413,7 @@
                     setSt('li', '👂 聆聽中');
                     return;
                 }
-                if (humanSeq === aiAtSeq && !humanVoiceSinceAi) aiRepeat++; else aiRepeat = 0;
+                if (humanSeq === aiAtSeq) aiRepeat++; else aiRepeat = 0;
                 aiAtSeq = humanSeq; humanVoiceSinceAi = false;
                 aiRequestedUntil = Date.now() + 45000; // 等 AI 真的開始/講完（收到廣播會清掉）
                 lastSpeechMs = Date.now();
