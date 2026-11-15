@@ -570,7 +570,7 @@
         const JITSI_ROOM = "@jitsiRoom";
         const JITSI_DOMAIN = "@jitsiDomain";
         const JITSI_JWT = "@jitsiJwt";
-        const SIL_SEC    = 22;  // 冷場觸發秒數
+        const SIL_SEC    = 10;  // 冷場觸發秒數
 
         // ══════════════════════════════════
         //  狀態
@@ -1075,12 +1075,12 @@
         //    不要在單純「換人講話」的空檔就被誤判成冷場；求職者剛講完、可能還在組織下一句時，
         //    也多留一點餘裕，避免打斷正在思考的人。
         function getSilenceThresholdSec() {
-            if (lastSpeakerRole === 'ai') return 26; // AI 剛問完，給正常一點的等待
+            if (lastSpeakerRole === 'ai') return 10; // AI 剛問完，給正常一點的等待
             if (lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker') {
-                return 40; // 職員/主持人/HR 剛問完問題，等求職者回答，多給充裕的思考時間
+                return 10; // 職員/主持人/HR 剛問完問題，等求職者回答，多給充裕的思考時間
             }
             if (lastSpeakerRole === 'jobseeker') {
-                return 30; // 求職者剛講完（可能還在想下一句），多留一點喘息空間
+                return 10; // 求職者剛講完（可能還在想下一句），多留一點喘息空間
             }
             return SIL_SEC; // 預設值（例如會議剛開始、還沒人真的講過話）
         }
