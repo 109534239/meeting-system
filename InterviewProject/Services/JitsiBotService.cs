@@ -1469,31 +1469,32 @@ namespace InterviewProject.Services
                 _ = Task.Run(async () =>
                 {
                     await Task.Delay(1500); // 留一點緩衝，讓解除靜音、錄影機都先穩定下來
-                    // 🎯 等人到齊才開場：受邀的人（求職者、職員）都進場了才說開場白；
-                    //    有人一直沒來，就在「最後一人進場後 2 分鐘」（至少已有一位求職者在場）或最久 8 分鐘後才開口。
+                    // 🎯 不等所有人：主持人進會議後 30 秒就開場（主持人一直沒進來，最久等 5 分鐘）
                     try
                     {
-                        var waitStart = DateTime.UtcNow; DateTime lastChange = DateTime.UtcNow; int lastJoined = -1;
-                        while ((DateTime.UtcNow - waitStart).TotalMinutes < 8)
+                        var botReady = DateTime.Now; var waitStart = DateTime.UtcNow;
+                        while ((DateTime.UtcNow - waitStart).TotalMinutes < 5)
                         {
                             using var wscope = _scopeFactory.CreateScope();
                             var wdb = wscope.ServiceProvider.GetRequiredService<InterviewProject.Data.AppDbContext>();
                             var wroom = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
                                 wdb.Rooms, r => r.JitsiRoomName == roomCode);
                             if (wroom == null) break;
-                            var parts = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
-                                wdb.RoomParticipants.Where(p => p.RoomId == wroom.Id && p.Role != InterviewProject.Models.ParticipantRole.AI
-                                    && (p.Status == InterviewProject.Models.ParticipantStatus.Invited || p.Status == InterviewProject.Models.ParticipantStatus.Admitted)));
-                            var joined = parts.Count(p => p.JoinedAt != null && p.LeftAt == null);
-                            if (joined != lastJoined) { lastJoined = joined; lastChange = DateTime.UtcNow; }
-                            bool allHere = parts.Count > 0 && joined >= parts.Count;
-                            bool someJobseeker = parts.Any(p => p.Role == InterviewProject.Models.ParticipantRole.Jobseeker && p.JoinedAt != null && p.LeftAt == null);
-                            if (allHere) { await Task.Delay(3000); break; }
-                            if (someJobseeker && (DateTime.UtcNow - lastChange).TotalSeconds >= 120) break;
-                            await Task.Delay(3000);
+                            var host = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
+                                wdb.RoomParticipants.Where(p => p.RoomId == wroom.Id && p.Role == InterviewProject.Models.ParticipantRole.Manager
+                                    && p.EmployeeId == wroom.HostEmployeeId && p.JoinedAt != null));
+                            if (host != null)
+                            {
+                                var ref0 = host.JoinedAt!.Value > botReady ? host.JoinedAt!.Value : botReady;
+                                var remain = ref0.AddSeconds(30) - DateTime.Now;
+                                if (remain.TotalMilliseconds > 30000) remain = TimeSpan.FromSeconds(30); // clamp: timezone mismatch guard
+                                if (remain.TotalMilliseconds > 0) await Task.Delay(remain);
+                                break;
+                            }
+                            await Task.Delay(2000);
                         }
                     }
-                    catch (Exception ex) { Console.WriteLine($"[JitsiBot] 等人到齊的檢查失敗，直接開場：{ex.Message}"); }
+                    catch (Exception ex) { Console.WriteLine($"[JitsiBot] 等主持人的檢查失敗，直接開場：{ex.Message}"); }
                     Console.WriteLine($"[JitsiBot] 房間 {roomCode} AI 面試官準備開口打招呼（一進會議室就講，方便單人測試時直接確認聲音有沒有通）。");
                     const string greeting = "哈囉，大家好，我是今天的 AI 面試官，很高興加入這場面試，我們開始吧。";
                     // 🎯 開場白是 AI 面試官自己直接講的，不會經過主持人瀏覽器的「AI 說話」廣播，
