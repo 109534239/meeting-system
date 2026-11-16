@@ -1438,7 +1438,7 @@ namespace InterviewProject.Services
                     const int maxAttempts = 10;
                     for (int attempt = 1; attempt <= maxAttempts; attempt++)
                     {
-                        await page.WaitForTimeoutAsync(2000);
+                        await page.WaitForTimeoutAsync(1000);
                         var participantCheck = await page.EvaluateAsync<string>(@"() => {
                             try {
                                 const room = window.APP && window.APP.conference && window.APP.conference._room;
@@ -1511,10 +1511,11 @@ namespace InterviewProject.Services
                 _ = Task.Run(async () =>
                 {
                     await Task.Delay(1500); // 留一點緩衝，讓解除靜音、錄影機都先穩定下來
-                    // 🎯 不等所有人：主持人進會議後 30 秒就開場（主持人一直沒進來，最久等 5 分鐘）
+                    // 🎯 開場時間：以「主持人進會議的時間 + 30 秒」為準；AI 比較晚進來、主持人早就在了，就馬上開場，不再另外多等。
+                    //    （沒有任何人進場時才等，最久 5 分鐘）
                     try
                     {
-                        var botReady = DateTime.Now; var waitStart = DateTime.UtcNow;
+                        var waitStart = DateTime.UtcNow;
                         while ((DateTime.UtcNow - waitStart).TotalMinutes < 5)
                         {
                             using var wscope = _scopeFactory.CreateScope();
@@ -1522,15 +1523,17 @@ namespace InterviewProject.Services
                             var wroom = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
                                 wdb.Rooms, r => r.JitsiRoomName == roomCode);
                             if (wroom == null) break;
-                            var host = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
-                                wdb.RoomParticipants.Where(p => p.RoomId == wroom.Id && p.Role == InterviewProject.Models.ParticipantRole.Manager
-                                    && p.EmployeeId == wroom.HostEmployeeId && p.JoinedAt != null));
-                            if (host != null)
+                            var joinedList = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+                                wdb.RoomParticipants.Where(p => p.RoomId == wroom.Id && p.Role != InterviewProject.Models.ParticipantRole.AI && p.JoinedAt != null));
+                            if (joinedList.Count > 0)
                             {
-                                var ref0 = host.JoinedAt!.Value > botReady ? host.JoinedAt!.Value : botReady;
-                                var remain = ref0.AddSeconds(30) - DateTime.Now;
-                                if (remain.TotalMilliseconds > 30000) remain = TimeSpan.FromSeconds(30); // clamp: timezone mismatch guard
-                                if (remain.TotalMilliseconds > 0) await Task.Delay(remain);
+                                var hostRow = joinedList.FirstOrDefault(p => p.Role == InterviewProject.Models.ParticipantRole.Manager && p.EmployeeId == wroom.HostEmployeeId);
+                                var refJoined = (hostRow ?? joinedList.OrderBy(p => p.JoinedAt).First()).JoinedAt!.Value;
+                                double e1 = (DateTime.Now - refJoined).TotalSeconds, e2 = (DateTime.UtcNow - refJoined).TotalSeconds;
+                                double elapsed = e1 < 0 ? e2 : (e2 < 0 ? e1 : Math.Min(e1, e2)); // 不確定資料庫存的是本地還是 UTC 時間，取合理的那個
+                                double remain = Math.Max(0, Math.Min(30, 30 - elapsed));
+                                Console.WriteLine($"[JitsiBot] 房間 {roomCode}：進場者已在場 {elapsed:0} 秒，再等 {remain:0} 秒開場。");
+                                if (remain > 0) await Task.Delay(TimeSpan.FromSeconds(remain));
                                 break;
                             }
                             await Task.Delay(2000);
