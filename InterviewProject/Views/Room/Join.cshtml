@@ -623,6 +623,13 @@
             if (convoLog.length > 14) convoLog.shift();
         }
         let aiSpeakingRemote = false; // AI 現在是不是正在講話（全場共享的狀態，不是只有觸發者自己知道）
+        // 🎯 「有人講話/講完」改走 HTTP 讓伺服器廣播（說話者的 SignalR 連線不穩時主持人也收得到）
+        function voicePing(pending, hold) {
+            try {
+                fetch('/Room/VoicePing', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&speaker=' + encodeURIComponent(MY_NAME) + '&pending=' + pending + '&hold=' + (hold || 5) }).catch(() => {});
+            } catch {}
+        }
         // 🎯 有人開口就立刻讓 AI 閉嘴（不等轉文字）。任何人的瀏覽器偵測到都可以呼叫，伺服器端是冪等的。
         let lastStopReqMs = 0;
         function requestAiStop(why) {
@@ -1063,12 +1070,12 @@
                 const tooQuiet = peakVal < 0.05;
                 console.log('[STT-live] 一句話結束：長度=' + (durMs / 1000).toFixed(1) + ' 秒，最大音量=' + peakVal.toFixed(3) + '，大小=' + (blob ? blob.size : 0));
                 if (!blob || blob.size < 3000) return;
-                try { hub.invoke('UtterancePending', ROOM_CODE, true, 30); } catch {} // 轉文字期間，最長 30 秒內 AI 不開口
+                voicePing(1, 30); // 轉文字期間，最長 30 秒內 AI 不開口
                 let txt = '';
                 try {
                     const fd = new FormData(); fd.append('audio', blob, 'utt.webm');
                     const r = await fetch('/Room/LiveTranscribe?roomCode=' + encodeURIComponent(ROOM_CODE)
-                        + '&speaker=' + encodeURIComponent(MY_NAME) + '&startedAtMs=' + (startMs || Date.now()) + '&peak=' + peakVal.toFixed(3),
+                        + '&speaker=' + encodeURIComponent(MY_NAME) + '&startedAtMs=' + (startMs || Date.now()) + '&peak=' + peakVal.toFixed(3) + '&role=' + encodeURIComponent(MY_ROLE),
                         { method: 'POST', body: fd });
                     if (r.ok) { const d = await r.json(); txt = (d.text || '').trim(); }
                     else console.warn('[STT-live] 伺服器回應 ' + r.status);
@@ -1077,7 +1084,7 @@
                 console.log('[STT-live] 轉錄結果：「' + txt + '」');
                 if (stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped)) {
                     window.__liveSent = (window.__liveSent || 0) + 1;
-                    try { await hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE, txt); } catch {}
+                    // （「誰講了什麼」由伺服器在 LiveTranscribe 收到時直接廣播，這裡不再重複發）
                 }
             }
 
@@ -1094,7 +1101,7 @@
                     else await sendUtterance(blob, dur, pk, stMs);
                 } finally {
                     // 不論成功、失敗、略過，一定通知全場「這句話處理完了」
-                    try { hub.invoke('UtterancePending', ROOM_CODE, false, 0); } catch {}
+                    voicePing(0, 0);
                 }
             }
 
@@ -1120,12 +1127,11 @@
                     else if (mx > 0.03) {
                         loudRun++; lastLoudAt = now; if (mx > peak) peak = mx;
                         if (IS_HOST && loudRun >= 2 && Date.now() < aiRequestedUntil) requestAiStop('AI 準備開口時主持人開始講話');
-                        if (!speaking && loudRun >= 2) { speaking = true; utterStart = now; aiOverlap = false; console.log('[STT-live] 開始講話'); try { hub.invoke('UtterancePending', ROOM_CODE, true, 5); } catch {} }
+                        if (!speaking && loudRun >= 2) { speaking = true; utterStart = now; aiOverlap = false; console.log('[STT-live] 開始講話'); voicePing(1, 5); }
                         if (loudRun >= 2 && now - lastCast > 1000) {
                             lastCast = now; lastSpeechMs = now; lastVoiceMs = now;
                             if (now - aiEndedMs > 1500) humanVoiceSinceAi = true;
-                            try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
-                            if (speaking) { try { hub.invoke('UtterancePending', ROOM_CODE, true, 5); } catch {} }
+                            voicePing(speaking ? 1 : -1, 5);
                         }
                     } else { loudRun = 0; }
                     if (speaking && !busy && (now - lastLoudAt > 1300 || now - utterStart > 22000)) { finishUtterance(); break analyserTick; }
@@ -1357,6 +1363,7 @@
                     const secSince = (Date.now() - lastSpeechMs) / 1000;
                     setSilBar(Math.min((secSince / threshold) * 100, 100));
                     logLoopDiag(secSince, threshold);
+                    maybePrefetch(secSince, threshold);
                     if (secSince >= threshold && !coldCallBusy) { coldCallBusy = true; triggerAI(); }
                 }, 800);
             } else {
@@ -1367,6 +1374,7 @@
                     const secSince = (Date.now() - lastSpeechMs) / 1000;
                     setSilBar(Math.min((secSince / threshold) * 100, 100));
                     logLoopDiag(secSince, threshold);
+                    maybePrefetch(secSince, threshold);
                     if (secSince >= threshold && !coldCallBusy) { coldCallBusy = true; triggerAI(); }
                 }, 800);
             }
@@ -1380,6 +1388,39 @@
         //    各自觸發，多人同時倒數到同一時間點時會一起打去伺服器，AI 可能被要求同時講兩句話疊在一起。
         //    改成只有一個權威來源做這個決定；其他人的瀏覽器還是繼續跑倒數計時（給自己畫面上的
         //    冷場偵測進度條用），但不會真的呼叫伺服器。
+        // ── 預先想題目：沉默到約 16 秒時，先向伺服器要好下一題，30 秒一到只剩語音合成的時間 ──
+        let aiPre = null, aiPreBusy = false;
+        async function fetchAiQuestion(unans) {
+            try {
+                const r = await fetch('/Room/AiNextQuestion', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        roomCode: ROOM_CODE,
+                        lastSpeakerName: lastSpeakerName,
+                        lastSpeakerRole: lastSpeakerRole,
+                        lastWasQuestion: !!lastWasQuestion,
+                        aiUnanswered: unans,
+                        lines: convoLog.slice(-12)
+                    })
+                });
+                if (r.ok) { const d = await r.json(); if (d.text && d.text.length > 3) return d.text.trim(); }
+                else console.warn('[冷場診斷-triggerAI] /Room/AiNextQuestion 回應不是 200，status=' + r.status);
+            } catch (e) { console.warn('[冷場診斷-triggerAI] /Room/AiNextQuestion 呼叫噴例外：' + e.message); }
+            return null;
+        }
+        async function maybePrefetch(secSince, threshold) {
+            if (!IS_HOST || !staffSpokeAfterAi || aiPreBusy || ended || !started || isSp || aiSpeakingRemote) return;
+            if (secSince < threshold - 14) return;
+            if (aiPre && aiPre.ls === lastSpeechMs && aiPre.seq === humanSeq) return; // 這段沉默已經準備過了
+            if (anyUtterancePending()) return;
+            aiPreBusy = true;
+            const ls = lastSpeechMs, seq = humanSeq, un = (humanSeq === aiAtSeq && !humanVoiceSinceAi);
+            try {
+                const q = await fetchAiQuestion(un);
+                aiPre = { q, ls, seq, un };
+                console.log('[冷場診斷-預先準備] ' + (q ? '題目已準備好：「' + q + '」' : '伺服器沒有提供題目'));
+            } finally { aiPreBusy = false; }
+        }
         async function triggerAI() {
             // 🐛 這幾個提早 return 的關卡都印一行 log，下次測完搜尋 [冷場診斷-triggerAI]
             //    就能確定卡在哪一關，或是根本沒被呼叫到（如果連一行都沒出現，代表問題在
@@ -1420,21 +1461,14 @@
                 setSt('th','💭 思考中...');
                 const aiUnanswered = (humanSeq === aiAtSeq && !humanVoiceSinceAi); // AI 上次問完後，一直沒人出聲/發言
                 let q = null;
-                try {
-                    const r = await fetch('/Room/AiNextQuestion', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            roomCode: ROOM_CODE,
-                            lastSpeakerName: lastSpeakerName,
-                            lastSpeakerRole: lastSpeakerRole,
-                            lastWasQuestion: !!lastWasQuestion,
-                            aiUnanswered: aiUnanswered,
-                            lines: convoLog.slice(-12)
-                        })
-                    });
-                    if (r.ok) { const d = await r.json(); if (d.text && d.text.length > 3) q = d.text.trim(); }
-                    else { console.warn('[冷場診斷-triggerAI] /Room/AiNextQuestion 回應不是 200，status=' + r.status); }
-                } catch (e) { console.warn('[冷場診斷-triggerAI] /Room/AiNextQuestion 呼叫噴例外：' + e.message); }
+                // 🎯 冷場到 30 秒前（約 16 秒起）就先把題目想好；等的時候如果預先想的還在跑，最多等 8 秒
+                for (let w = 0; aiPreBusy && w < 40; w++) await new Promise(res => setTimeout(res, 200));
+                if (aiPre && aiPre.q && aiPre.ls === lastSpeechMs && aiPre.seq === humanSeq && aiPre.un === aiUnanswered) {
+                    q = aiPre.q; console.log('[冷場診斷-triggerAI] 使用事先想好的題目（30 秒一到就能立刻開口）');
+                } else {
+                    q = await fetchAiQuestion(aiUnanswered);
+                }
+                aiPre = null;
 
                 if (!q) {
                     // 沒有值得問的內容：不說話，把計時重新起算，下次到門檻再評估一次
@@ -1747,6 +1781,7 @@
                     enableWelcomePage:            false,
                     // ✅ 避免 5 分鐘限制：不使用嵌入模式的限制端點
                     p2p:                          { enabled: false },
+                    channelLastN:                 -1,   // 不要因為頻寬把某個人（例如 AI 面試官）的視訊自動關掉
                     toolbarButtons: IS_HOST
                         ? [
                             // 🎯 主持人不給原生「掛斷」按鈕，避免誤按只是自己離開視訊、卻沒有真的結束會議

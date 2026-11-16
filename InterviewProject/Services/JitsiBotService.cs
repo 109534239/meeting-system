@@ -831,6 +831,32 @@ namespace InterviewProject.Services
         cells.length = 0;
         cells.push(...dedupedCells);
 
+        // 🎯 同一個人被畫兩次的根因：真的視訊畫面找不到名字標籤、而「在場名單」裡這個人又沒有對到畫面，
+        //    結果補了一格黑色名字格——變成一格沒名字的真人、一格有名字的黑畫面，看起來像多了一個人。
+        //    這裡把「沒標籤的真畫面」和「在場名單中還沒對到畫面的人」配對：剛好 1 對 1 就直接認定；
+        //    對不上（多對多）就寧可畫面不標名字，也不再多補黑格、不亂猜是誰。
+        let placeholderSkip = 0;
+        {
+            const lblSet0 = new Set(cells.filter(c => c.label).map(c => c.label));
+            const idSet0 = new Set(cells.map(c => c.participantId).filter(Boolean));
+            const unl = cells.filter(c => c.type === 'video' && !c.label);
+            const missing0 = Object.keys(nameMap).filter(pid => nameMap[pid] && !idSet0.has(pid) && !lblSet0.has(nameMap[pid]));
+            // 從 Jitsi 內部狀態查「誰現在有開鏡頭」：沒開鏡頭的人不可能是那格真畫面的主人
+            let videoOn = null;
+            try {
+                const st0 = window.APP && window.APP.store && window.APP.store.getState();
+                const tr = st0 && st0['features/base/tracks'];
+                if (Array.isArray(tr) && tr.length > 0) {
+                    videoOn = new Set(tr.filter(t => t && t.mediaType === 'video' && t.videoType !== 'desktop' && !t.muted && t.participantId).map(t => t.participantId));
+                }
+            } catch (e) {}
+            const cand0 = videoOn ? missing0.filter(pid => videoOn.has(pid)) : missing0;
+            if (unl.length === 1 && cand0.length === 1) { unl[0].label = nameMap[cand0[0]]; unl[0].participantId = cand0[0]; }
+            else if (unl.length > 0 && missing0.length > 0) {
+                if (unl.length === 1 && missing0.length === 1) { unl[0].label = nameMap[missing0[0]]; unl[0].participantId = missing0[0]; }
+                else placeholderSkip = Math.min(unl.length, missing0.length);
+            }
+        }
         const coveredIds = new Set(cells.map(c => c.participantId).filter(Boolean));
         // 🐛 這輪修正（抓到明確的 log/畫面證據：求職者-aa 同時出現一格真的畫面、又出現一格
         //    「未開啟鏡頭」佔位格，變成畫面上有兩個她）：根因是這裡原本只用 participantId 判斷
@@ -847,6 +873,7 @@ namespace InterviewProject.Services
             const name = nameMap[pid];
             if (!name) return;
             if (coveredLabels.has(name)) return;
+            if (placeholderSkip > 0) { placeholderSkip--; return; }
             cells.push({ type: 'placeholder', label: name });
         });
 
@@ -1263,7 +1290,7 @@ namespace InterviewProject.Services
                 //         這才是「Simli 連線正常、getUserMedia 也正常，但人類端完全看不到這個參與者」的真正原因。
                 //      兩個都拿掉之後，改成老實依賴下面「等預備加入畫面按鈕真的渲染出來再點」這條路，
                 //      不要再嘗試用 URL 參數走捷徑跳過這個畫面。
-                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.lobby.enableLobby=false&config.disableTileView=true";
+                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.lobby.enableLobby=false&config.disableTileView=true&config.channelLastN=-1";
 
                 Console.WriteLine($"[JitsiBot 導航] AI 面試官正在前往官方雲端會議室：{targetUrl}");
 

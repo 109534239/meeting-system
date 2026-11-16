@@ -27,6 +27,8 @@ namespace InterviewProject.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<string>> _aiQuestions = new();
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string? Name, string Text)> _aiLast = new();
 
+        // 已產生、但還沒真的說出口的問題（真的說出口才算「問過」，提前準備好的題目被丟掉不算）
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Text, string? Name, bool ModeU)> _aiPending = new();
         private static string StripName(string t, IEnumerable<string> names)
         {
             t = (t ?? "").Trim();
@@ -592,7 +594,7 @@ namespace InterviewProject.Controllers
         [HttpPost]
         [RequestSizeLimit(10_000_000)]
         public async Task<IActionResult> LiveTranscribe([FromQuery] string roomCode, IFormFile? audio,
-            [FromQuery] string? speaker = null, [FromQuery] long startedAtMs = 0, [FromQuery] double peak = 0)
+            [FromQuery] string? speaker = null, [FromQuery] long startedAtMs = 0, [FromQuery] double peak = 0, [FromQuery] string? role = null)
         {
             if (string.IsNullOrEmpty(roomCode) || audio == null || audio.Length < 2000) return Ok(new { text = "" });
             byte[] bytes;
@@ -628,6 +630,15 @@ namespace InterviewProject.Controllers
                     await _context.SaveChangesAsync();
                 }
                 catch (Exception ex) { Console.WriteLine($"[LiveTranscribe] 存逐字稿片段失敗：{ex.Message}"); }
+            }
+            // 🎯 「誰剛講完什麼」改由伺服器直接廣播給全場（原本靠說話者的瀏覽器用 SignalR 發，說話者那端的連線不穩時，
+            //    主持人完全收不到，AI 就以為沒人回答、提早又問）
+            if (!string.IsNullOrWhiteSpace(speaker))
+            {
+                var tt = text.Trim();
+                bool isQ = System.Text.RegularExpressions.Regex.IsMatch(tt, @"[?？]\s*$") ||
+                           System.Text.RegularExpressions.Regex.IsMatch(tt, @"(嗎|呢\s*$|為什麼|怎麼|如何|能不能|可不可以|有沒有|是不是|多少|哪裡|哪個|什麼時候|可以.*嗎)");
+                try { await _hub.Clients.Group(roomCode.Trim()).SendAsync("SpeechTurnInfo", speaker.Trim(), isQ, role ?? "", tt); } catch { }
             }
             return Ok(new { text = text.Trim() });
         }
@@ -745,6 +756,16 @@ namespace InterviewProject.Controllers
 
             roomCode = roomCode.Trim();
 
+            if (!_botService.IsSpeaking(roomCode) && _aiPending.TryGetValue(roomCode, out var pend) && pend.Text == text.Trim())
+            {
+                // 這題真的要說出口了：記進整場「已問過」清單、輪流計數、上一題是問誰
+                _aiPending.TryRemove(roomCode, out _);
+                var qs = _aiQuestions.GetOrAdd(roomCode, _ => new List<string>());
+                lock (qs) qs.Add(pend.Text);
+                if (pend.Name != null && !pend.ModeU) _aiAskCount.AddOrUpdate($"{roomCode}|{pend.Name}", 1, (_, v) => v + 1);
+                _aiLast[roomCode] = (pend.Name, pend.Text);
+            }
+
             if (_botService.IsSpeaking(roomCode))
             {
                 Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 的 AI 面試官已經在說話中，這次的觸發略過（避免搶話）：「{text}」");
@@ -757,6 +778,23 @@ namespace InterviewProject.Controllers
 
             _ = SpeakAndBroadcastAsync(roomCode, text); // 🎯 不擋住呼叫端：語音合成+送進 Simli 需要幾秒鐘，讓它背景執行就好
             return Ok(new { success = true });
+        }
+
+        // 🎯 「有人正在講話／講完了」改走 HTTP 由伺服器廣播（比說話者瀏覽器自己的 SignalR 連線可靠）
+        //    pending: 1=正在講話或轉文字中, 0=這句話處理完了, -1=只是出聲通知
+        [HttpPost]
+        public async Task<IActionResult> VoicePing([FromForm] string roomCode, [FromForm] string? speaker, [FromForm] int pending = -1, [FromForm] int hold = 5)
+        {
+            if (string.IsNullOrWhiteSpace(roomCode)) return Ok();
+            roomCode = roomCode.Trim();
+            var id = string.IsNullOrWhiteSpace(speaker) ? "?" : speaker.Trim();
+            try
+            {
+                if (pending == -1 || (pending == 1 && hold <= 5)) await _hub.Clients.Group(roomCode).SendAsync("SpeechDetected"); // 轉文字中(hold>5)不算「又有聲音」
+                if (pending >= 0) await _hub.Clients.Group(roomCode).SendAsync("UtterancePendingChanged", id, pending == 1, hold);
+            }
+            catch { }
+            return Ok();
         }
 
         // 🎯 有人開口：馬上讓 AI 面試官停止說話（不等語音辨識，不管對方說了什麼）
@@ -983,9 +1021,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 }
             }
             string? askedName = presentNames.FirstOrDefault(pn => text.StartsWith(pn, StringComparison.OrdinalIgnoreCase));
-            if (askedName != null && !modeU) _aiAskCount.AddOrUpdate($"{code}|{askedName}", 1, (_, v) => v + 1);
-            lock (prevQs) prevQs.Add(text);
-            _aiLast[code] = (askedName ?? targetName, text);
+            _aiPending[code] = (text, askedName ?? targetName, modeU); // 等真的說出口（AiSpeak）才記進「已問過」
             Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生提問：「{text}」");
             return Ok(new { text });
         }
