@@ -624,10 +624,10 @@
         }
         let aiSpeakingRemote = false; // AI 現在是不是正在講話（全場共享的狀態，不是只有觸發者自己知道）
         // 🎯 「有人講話/講完」改走 HTTP 讓伺服器廣播（說話者的 SignalR 連線不穩時主持人也收得到）
-        function voicePing(pending, hold, empty) {
+        function voicePing(pending, hold, empty) {  // role 一併帶給伺服器，主持人才知道是不是職員開口了
             try {
                 fetch('/Room/VoicePing', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&speaker=' + encodeURIComponent(MY_NAME) + '&pending=' + pending + '&hold=' + (hold || 5) + (empty ? '&empty=1' : '') }).catch(() => {});
+                    body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&speaker=' + encodeURIComponent(MY_NAME) + '&pending=' + pending + '&hold=' + (hold || 5) + (empty ? '&empty=1' : '') + '&role=' + encodeURIComponent(MY_ROLE) }).catch(() => {});
             } catch {}
         }
         // 🎯 有人開口就立刻讓 AI 閉嘴（不等轉文字）。任何人的瀏覽器偵測到都可以呼叫，伺服器端是冪等的。
@@ -711,7 +711,9 @@
             const base = Math.max(realSpeechMs, aiEndedMs, 0);
             if (base > 0 && lastSpeechMs > base) { lastSpeechMs = base; console.log('[冷場診斷] 剛剛的聲音轉不出文字（雜音），冷場計時還原'); }
         });
-        hub.on("SpeechDetected", () => {
+        hub.on("SpeechDetected", (who, role) => {
+            // 職員/主持人開口了（不必等轉出文字）：AI 之後才可以做冷場判斷
+            if (role && role !== 'jobseeker' && role !== 'ai') staffSpokeAfterAi = true;
             if (IS_HOST && (aiSpeakingRemote || Date.now() < aiRequestedUntil)) requestAiStop('收到有人出聲的通知');
             if (!aiSpeakingRemote && Date.now() - aiEndedMs > 1500) humanVoiceSinceAi = true;
             if (!aiSpeakingRemote) lastVoiceMs = Date.now();

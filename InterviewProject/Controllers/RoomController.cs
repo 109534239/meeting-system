@@ -816,14 +816,14 @@ namespace InterviewProject.Controllers
         // 🎯 「有人正在講話／講完了」改走 HTTP 由伺服器廣播（比說話者瀏覽器自己的 SignalR 連線可靠）
         //    pending: 1=正在講話或轉文字中, 0=這句話處理完了, -1=只是出聲通知
         [HttpPost]
-        public async Task<IActionResult> VoicePing([FromForm] string roomCode, [FromForm] string? speaker, [FromForm] int pending = -1, [FromForm] int hold = 5, [FromForm] int empty = 0)
+        public async Task<IActionResult> VoicePing([FromForm] string roomCode, [FromForm] string? speaker, [FromForm] int pending = -1, [FromForm] int hold = 5, [FromForm] int empty = 0, [FromForm] string? role = null)
         {
             if (string.IsNullOrWhiteSpace(roomCode)) return Ok();
             roomCode = roomCode.Trim();
             var id = string.IsNullOrWhiteSpace(speaker) ? "?" : speaker.Trim();
             try
             {
-                if (pending == -1 || (pending == 1 && hold <= 5)) await _hub.Clients.Group(roomCode).SendAsync("SpeechDetected"); // 轉文字中(hold>5)不算「又有聲音」
+                if (pending == -1 || (pending == 1 && hold <= 5)) await _hub.Clients.Group(roomCode).SendAsync("SpeechDetected", id, role ?? ""); // 轉文字中(hold>5)不算「又有聲音」
                 if (pending >= 0) await _hub.Clients.Group(roomCode).SendAsync("UtterancePendingChanged", id, pending == 1, hold);
                 if (empty == 1) await _hub.Clients.Group(roomCode).SendAsync("VoiceFalseAlarm", id); // 這段聲音轉不出任何話（雜音），冷場計時不該被它歸零
             }
@@ -916,6 +916,14 @@ namespace InterviewProject.Controllers
 
             // 對話內容太少（例如還沒人實質講話）就不要硬問
             if (lines.Count(l => l.Role != "ai") == 0)
+            {
+                // 沒有任何文字、但前端判定職員/主持人已經開口且冷場超過 30 秒：不能因為語音辨識沒出字就一直沉默，
+                // 改依職缺條件與求職者履歷提一個專業問題
+                Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 沒有任何辨識出來的文字，改依職缺與履歷提問。");
+                lines.Add(new AiConvoLine { Name = "職員", Role = "manager", Text = "（職員剛剛有發言，語音沒辨識出文字）依職缺與履歷提一個專業問題" });
+                sbConvo.Clear(); foreach (var l in lines) sbConvo.AppendLine($"{l.Name}：{Clip(l.Text, 200)}");
+            }
+            if (false)
             {
                 Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到請求，但對話裡沒有任何人類發言（語音辨識沒有產生文字），所以不發言。目前收到 {lines.Count} 句，全是 AI。");
                 return Ok(new { text = (string?)null });
