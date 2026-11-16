@@ -29,6 +29,32 @@ namespace InterviewProject.Controllers
 
         // 已產生、但還沒真的說出口的問題（真的說出口才算「問過」，提前準備好的題目被丟掉不算）
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Text, string? Name, bool ModeU)> _aiPending = new();
+        // 🎯 伺服器自己記一份「這場會議最近講了什麼」（不靠主持人瀏覽器的 SignalR 收訊，否則收不到就會一直用舊對話出題）
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<AiConvoLine>> _convo = new();
+        private static void AddConvo(string code, string name, string role, string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return;
+            var l = _convo.GetOrAdd(code, _ => new List<AiConvoLine>());
+            lock (l)
+            {
+                var t = text.Trim(); if (t.Length > 200) t = t.Substring(0, 200);
+                if (l.Count > 0 && l[^1].Name == name && l[^1].Text == t) return;
+                l.Add(new AiConvoLine { Name = name ?? "", Role = role ?? "", Text = t });
+                if (l.Count > 40) l.RemoveAt(0);
+            }
+        }
+
+        // 瀏覽器語音辨識（備援路徑）辨識出一句話：改走 HTTP 讓伺服器記錄並廣播給全場
+        [HttpPost]
+        public async Task<IActionResult> SpeechTurn([FromForm] string roomCode, [FromForm] string speaker, [FromForm] string? role, [FromForm] string text, [FromForm] bool isQuestion = false)
+        {
+            if (string.IsNullOrWhiteSpace(roomCode) || string.IsNullOrWhiteSpace(speaker) || string.IsNullOrWhiteSpace(text)) return Ok();
+            var code = roomCode.Trim();
+            AddConvo(code, speaker.Trim(), role ?? "", text);
+            try { await _hub.Clients.Group(code).SendAsync("SpeechTurnInfo", speaker.Trim(), isQuestion, role ?? "", text.Trim()); } catch { }
+            return Ok();
+        }
+
         private static string StripName(string t, IEnumerable<string> names)
         {
             t = (t ?? "").Trim();
@@ -636,6 +662,7 @@ namespace InterviewProject.Controllers
             if (!string.IsNullOrWhiteSpace(speaker))
             {
                 var tt = text.Trim();
+                AddConvo(roomCode.Trim(), speaker.Trim(), role ?? "", tt);
                 bool isQ = System.Text.RegularExpressions.Regex.IsMatch(tt, @"[?？]\s*$") ||
                            System.Text.RegularExpressions.Regex.IsMatch(tt, @"(嗎|呢\s*$|為什麼|怎麼|如何|能不能|可不可以|有沒有|是不是|多少|哪裡|哪個|什麼時候|可以.*嗎)");
                 try { await _hub.Clients.Group(roomCode.Trim()).SendAsync("SpeechTurnInfo", speaker.Trim(), isQ, role ?? "", tt); } catch { }
@@ -776,6 +803,7 @@ namespace InterviewProject.Controllers
             //    到底有沒有真的被觸發過——之前只有「略過」的分支會印，正常觸發完全沒有留下任何痕跡。
             Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 收到觸發請求，內容：「{text}」，準備轉發給 JitsiBotService。");
 
+            AddConvo(roomCode, "AI 面試官", "ai", text);
             _ = SpeakAndBroadcastAsync(roomCode, text); // 🎯 不擋住呼叫端：語音合成+送進 Simli 需要幾秒鐘，讓它背景執行就好
             return Ok(new { success = true });
         }
@@ -867,6 +895,16 @@ namespace InterviewProject.Controllers
             }
 
             var lines = (req.Lines ?? new List<AiConvoLine>()).TakeLast(20).ToList();
+            // 🎯 以伺服器自己記的對話為準（主持人瀏覽器漏收廣播時，req.Lines 會停在舊內容，AI 就一直問舊話題）
+            if (_convo.TryGetValue(code, out var srvConvo))
+            {
+                List<AiConvoLine> snap; lock (srvConvo) snap = srvConvo.TakeLast(20).ToList();
+                if (snap.Count(x => x.Role != "ai") > 0 && (snap.Count(x => x.Role != "ai") >= lines.Count(x => x.Role != "ai")))
+                {
+                    if (snap.Count != lines.Count) Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 改用伺服器記錄的最新對話（{snap.Count} 句；瀏覽器回報 {lines.Count} 句）。");
+                    lines = snap;
+                }
+            }
             var sbConvo = new StringBuilder();
             foreach (var l in lines) sbConvo.AppendLine($"{l.Name}：{Clip(l.Text, 200)}");
 
@@ -1070,7 +1108,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             try
             {
                 await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", true, text);
-                await _botService.SpeakAsync(roomCode, text); // 這裡面會等到真的講完（依音訊長度換算）才回傳
+                await _botService.SpeakAsync(roomCode, text, async () => { await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); }); // 這裡面會等到真的講完（依音訊長度換算）才回傳
             }
             finally
             {

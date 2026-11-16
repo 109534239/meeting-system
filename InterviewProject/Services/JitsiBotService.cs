@@ -1536,6 +1536,20 @@ namespace InterviewProject.Services
                                 if (remain > 0) await Task.Delay(TimeSpan.FromSeconds(remain));
                                 break;
                             }
+                            // 資料庫還沒記到有人進場（MarkJoined 沒成功等情況）：改看 AI 自己在會議室裡看得到幾個人，
+                            // 看得到別人就不用再等資料庫了，最多再等 5 秒就開場
+                            try
+                            {
+                                var others = await page.EvaluateAsync<int>(@"() => { try { const r = window.APP && window.APP.conference && window.APP.conference._room; return r && r.getParticipants ? r.getParticipants().length : 0; } catch (e) { return 0; } }");
+                                if (others > 0)
+                                {
+                                    Console.WriteLine($"[JitsiBot] 房間 {roomCode}：資料庫沒有進場記錄，但 AI 自己看得到 {others} 位其他人，5 秒後開場。");
+                                    await Task.Delay(5000);
+                                    break;
+                                }
+                            }
+                            catch { }
+                            if ((DateTime.UtcNow - waitStart).TotalSeconds > 20) { Console.WriteLine($"[JitsiBot] 房間 {roomCode}：等了 20 秒還是看不到任何人，先開場。"); break; }
                             await Task.Delay(2000);
                         }
                     }
@@ -1722,7 +1736,7 @@ namespace InterviewProject.Services
             return true;
         }
 
-        public async Task<bool> SpeakAsync(string roomCode, string text)
+        public async Task<bool> SpeakAsync(string roomCode, string text, Func<Task>? onAudioStart = null)
         {
             if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text)) return false;
             roomCode = roomCode.Trim();
@@ -1779,6 +1793,8 @@ namespace InterviewProject.Services
                                    JsonSerializer.Serialize(base64Audio) +
                                    "); return true; } else { console.error('[Simli] __simliSpeak 尚未就緒，目前狀態：' + window.__simliStatus); return false; } })();";
 
+                // 🎯 字幕要等「聲音真的要開始播」才顯示（之前一開始合成就顯示，合成要好幾秒、被打斷或失敗時字幕就和聲音對不上）
+                if (onAudioStart != null) { try { await onAudioStart(); } catch { } }
                 var delivered = await instance.PageInstance.EvaluateAsync<bool>(speakScript);
                 if (!delivered)
                 {

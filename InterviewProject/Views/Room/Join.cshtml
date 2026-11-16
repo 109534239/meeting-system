@@ -730,12 +730,13 @@
         // 🐛 這輪新增：AI 面試官現在開始/結束講話的全場廣播（取代原本只有觸發者自己聽得到的
         //    瀏覽器內建語音合成）。收到 true：全場一起暫停冷場計時、顯示字幕、暫停自己的語音辨識
         //    （避免收到 AI 自己的聲音、被當成有人在講話混進逐字稿）。收到 false：全場一起恢復。
+        hub.on("AiSubtitle", text => { if (text) showMsg(text); });
         hub.on("AiSpeakingStateChanged", (isSpeaking, text, interrupted) => {
             aiSpeakingRemote = !!isSpeaking;
             if (!aiSpeakingRemote) {
                 aiRequestedUntil = 0; lastSpeechMs = Date.now(); aiEndedMs = Date.now();
                 // 被人打斷：不要把打斷者的聲音當成 AI 的回音丟掉，也不算「沒人回應」
-                if (interrupted) { aiEndedMs = 0; humanVoiceSinceAi = true; console.log('[打斷] AI 已被打斷停止'); }
+                if (interrupted) { showMsg('（AI 面試官的話被打斷了）'); aiEndedMs = 0; humanVoiceSinceAi = true; console.log('[打斷] AI 已被打斷停止'); }
             }
             isSp = aiSpeakingRemote; // 🐛 這輪新增：跟 isSp 同步，recognition.onend 的自動重啟判斷才不會跟這裡打架
             if (aiSpeakingRemote) {
@@ -744,7 +745,7 @@
                 pushConvo('AI 面試官', 'ai', text);
                 lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
                 if (recognition) { try { recognition.stop(); } catch {} }
-                if (text) showMsg(text);
+                // 字幕改由 AiSubtitle（聲音真的開始播時才送）顯示，這裡先顯示「思考中」的點點
                 setSt('sp', '🗣️ 說話中'); setRing(true); showDots();
                 if (IS_HOST && text) {
                     const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -1269,7 +1270,9 @@
 
                             // 🐛 這輪新增：順便廣播「是誰講的、像不像問題」這個輕量資訊，
                             //    給主持人那邊判斷「現在是不是在等別人回答，不算冷場」用
-                            try { hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE, txt); } catch {}
+                            try { fetch('/Room/SpeechTurn', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&speaker=' + encodeURIComponent(MY_NAME) + '&role=' + encodeURIComponent(MY_ROLE)
+                                    + '&isQuestion=' + (looksLikeQuestion(txt) ? 'true' : 'false') + '&text=' + encodeURIComponent(txt) }).catch(() => {}); } catch {}
 
                             // 🎯 只有真的判定成有意義內容的最終結果，才重置冷場計時器（見上方註解）
                             lastSpeechMs = Date.now();
