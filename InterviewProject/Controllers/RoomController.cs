@@ -622,6 +622,7 @@ namespace InterviewProject.Controllers
         public async Task<IActionResult> LiveTranscribe([FromQuery] string roomCode, IFormFile? audio,
             [FromQuery] string? speaker = null, [FromQuery] long startedAtMs = 0, [FromQuery] double peak = 0, [FromQuery] string? role = null)
         {
+            Console.WriteLine($"[LiveTranscribe] 收到音檔：房間 {roomCode}，{(speaker ?? "?")}，{(audio?.Length ?? 0)} bytes，{audio?.ContentType}");
             if (string.IsNullOrEmpty(roomCode) || audio == null || audio.Length < 2000) return Ok(new { text = "" });
             byte[] bytes;
             using (var ms = new MemoryStream()) { await audio.CopyToAsync(ms); bytes = ms.ToArray(); }
@@ -635,7 +636,11 @@ namespace InterviewProject.Controllers
             string? text;
             try { text = await _gemini.TranscribeLiveAsync(bytes, mime); }
             finally { System.Threading.Interlocked.Decrement(ref _liveInFlight); }
-            if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容")) return Ok(new { text = "" });
+            if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容"))
+            {
+                Console.WriteLine($"[LiveTranscribe] 房間 {roomCode}：{(speaker ?? "?")} 這段轉出來是空的（Gemini 回傳：{(text == null ? "null（上面應有 TranscribeLiveAsync 錯誤行）" : "「" + text + "」")}）");
+                return Ok(new { text = "", why = _gemini.LastLiveError ?? (string.IsNullOrWhiteSpace(text) ? "Gemini 回傳空白" : "Gemini 判斷沒有人聲") });
+            }
             Console.WriteLine($"[LiveTranscribe] 房間 {roomCode}：{(speaker ?? "?")}：{text.Substring(0, Math.Min(40, text.Length))}");
             // 🎯 逐字稿的「誰講的」只認「錄到這句話的那個人自己的瀏覽器」：這裡直接存成一筆逐字稿片段，
             //    並把這句話的最大音量（peak）記在 TimeLabel（"|p=0.123"），之後同一句話被多支麥克風收到時，

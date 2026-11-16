@@ -1065,7 +1065,7 @@
             const abuf = new Uint8Array(lan.fftSize);
 
             let rec = null, chunks = [], recStart = 0;
-            let bargeWin = [], bargeRun = 0, noiseFloor = 0.004, voiceThr = 0.02;
+            let bargeWin = [], bargeRun = 0, noiseFloor = 0.004, voiceThr = 0.02, learnedMin = 0; // learnedMin：從「轉不出話的假警報」學到的最低音量門檻
             let speaking = false, loudRun = 0, lastLoudAt = 0, utterStart = 0, aiOverlap = false, busy = false, lastCast = 0, peak = 0;
 
             function startRec() {
@@ -1097,12 +1097,17 @@
                     const r = await fetch('/Room/LiveTranscribe?roomCode=' + encodeURIComponent(ROOM_CODE)
                         + '&speaker=' + encodeURIComponent(MY_NAME) + '&startedAtMs=' + (startMs || Date.now()) + '&peak=' + peakVal.toFixed(3) + '&role=' + encodeURIComponent(MY_ROLE),
                         { method: 'POST', body: fd });
-                    if (r.ok) { const d = await r.json(); txt = (d.text || '').trim(); }
+                    if (r.ok) { const d = await r.json(); txt = (d.text || '').trim(); if (!txt && d.why) console.warn('[STT-live] 轉錄為空，原因：' + d.why); }
                     else console.warn('[STT-live] 伺服器回應 ' + r.status);
                 } catch (ex) { console.warn('[STT-live] 送出失敗：' + ex.message); }
                 const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
                 console.log('[STT-live] 轉錄結果：「' + txt + '」');
-                if (!(stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped))) window.__uttEmpty = true;
+                if (!(stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped))) {
+                    window.__uttEmpty = true;
+                    // 轉不出話＝剛剛是雜音/回音：把「算有人講話」的音量門檻提高到比它大一點，下次同樣大的雜音就不再誤判
+                    learnedMin = Math.min(0.2, Math.max(learnedMin, peakVal * 0.8));
+                    console.log('[STT-live] 這段是雜音，門檻提高到 ' + learnedMin.toFixed(3));
+                } else learnedMin *= 0.6;
                 if (stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped)) {
                     window.__liveSent = (window.__liveSent || 0) + 1;
                     // （「誰講了什麼」由伺服器在 LiveTranscribe 收到時直接廣播，這裡不再重複發）
@@ -1135,6 +1140,12 @@
                     lan.getByteTimeDomainData(abuf);
                     let mx = 0; for (let i = 0; i < abuf.length; i++) { const v = Math.abs(abuf[i] - 128) / 128; if (v > mx) mx = v; }
                     const now = Date.now();
+                    // 🎯 自己在 Jitsi 已經閉麥＝不可能在對會議講話：麥克風收到的聲音（雜音、喇叭回音）一律不算有人講話
+                    if (now - (window.__muteChk || 0) > 2000) {
+                        window.__muteChk = now;
+                        try { jitsiApi.isAudioMuted().then(m => { window.__myMuted = !!m; }).catch(() => {}); } catch {}
+                    }
+                    if (window.__myMuted) mx = 0;
                     const aiBusy = aiSpeakingRemote || isSp || (now - aiEndedMs) < 1200;
                     if (aiSpeakingRemote || isSp) {
                         // AI 說話中：音量明顯偏大且持續 0.3 秒＝有人開口，馬上停掉 AI（門檻比平常高，避免把 AI 自己的回音當成有人講話）
@@ -1150,6 +1161,8 @@
                     // 🎯 偵測有人講話的門檻改成跟著環境底噪／麥克風音量調整（聲音小的人固定門檻 0.03 會被當成沒講話，AI 就插嘴）
                     if (!aiBusy && !speaking && mx < voiceThr) noiseFloor = noiseFloor * 0.97 + mx * 0.03;
                     voiceThr = Math.min(0.04, Math.max(0.012, noiseFloor * 2.5 + 0.006));
+                    learnedMin *= 0.9985; if (learnedMin < 0.01) learnedMin = 0; // 慢慢淡化，避免把小聲說話的人永遠擋掉
+                    if (learnedMin > voiceThr) voiceThr = learnedMin;
                     if (aiBusy) { if (speaking) aiOverlap = true; loudRun = 0; }
                     else if (mx > voiceThr) {
                         loudRun++; lastLoudAt = now; if (mx > peak) peak = mx;
@@ -1866,6 +1879,7 @@
                     }
                 } catch {}
             }, 1000);
+            jitsiApi.addEventListener('audioMuteStatusChanged', e => { window.__myMuted = !!(e && e.muted); console.log('[STT-live] 自己的麥克風' + (window.__myMuted ? '已閉麥，不再偵測講話' : '已開麥')); });
             jitsiApi.addEventListener('dominantSpeakerChanged', e => {
                 dominantId = e && e.id ? e.id : null;
                 dominantSince = Date.now();

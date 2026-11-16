@@ -528,10 +528,12 @@ namespace InterviewProject.Services
 
         // 🎯 即時轉錄專用：不排隊（不共用會議結束時的並發限制）、不重試、12 秒逾時，慢了就直接放棄，
         //    避免請求堆積造成幾分鐘後才收到「早就過時」的內容。
+        public string? LastLiveError { get; private set; }
         public async Task<string?> TranscribeLiveAsync(byte[] audioBytes, string mimeType)
         {
             var apiKey = _config["Gemini:ApiKey"] ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
-            if (string.IsNullOrEmpty(apiKey) || audioBytes.Length == 0) return null;
+            LastLiveError = null;
+            if (string.IsNullOrEmpty(apiKey) || audioBytes.Length == 0) { LastLiveError = "沒有 API key 或音檔是空的"; return null; }
             try
             {
                 // Gemini 不接受 "audio/webm;codecs=opus" 這種帶參數的 MIME，只留主類型
@@ -550,13 +552,13 @@ namespace InterviewProject.Services
                 };
                 var resp = await client.PostAsync(url, new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
                 var respBody = await resp.Content.ReadAsStringAsync();
-                if (!resp.IsSuccessStatusCode) { Console.WriteLine($"[GeminiService] TranscribeLiveAsync HTTP {(int)resp.StatusCode}（{mimeType}，{audioBytes.Length} bytes）：{(respBody.Length > 300 ? respBody.Substring(0, 300) : respBody)}"); return null; }
+                if (!resp.IsSuccessStatusCode) { LastLiveError = $"Gemini HTTP {(int)resp.StatusCode}：{(respBody.Length > 200 ? respBody.Substring(0, 200) : respBody)}"; Console.WriteLine($"[GeminiService] TranscribeLiveAsync HTTP {(int)resp.StatusCode}（{mimeType}，{audioBytes.Length} bytes）：{(respBody.Length > 300 ? respBody.Substring(0, 300) : respBody)}"); return null; }
                 using var doc = JsonDocument.Parse(respBody);
                 if (!doc.RootElement.TryGetProperty("candidates", out var cands) || cands.GetArrayLength() == 0 || !cands[0].TryGetProperty("content", out var cont) || !cont.TryGetProperty("parts", out _))
-                { Console.WriteLine($"[GeminiService] TranscribeLiveAsync 回應沒有文字：{(respBody.Length > 300 ? respBody.Substring(0, 300) : respBody)}"); return ""; }
+                { LastLiveError = "Gemini 回應裡沒有文字：" + (respBody.Length > 200 ? respBody.Substring(0, 200) : respBody); Console.WriteLine($"[GeminiService] TranscribeLiveAsync 回應沒有文字：{(respBody.Length > 300 ? respBody.Substring(0, 300) : respBody)}"); return ""; }
                 return (doc.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString() ?? "").Trim();
             }
-            catch (Exception ex) { Console.WriteLine($"[GeminiService] TranscribeLiveAsync 例外：{ex.Message}"); return null; }
+            catch (Exception ex) { LastLiveError = "例外：" + ex.Message; Console.WriteLine($"[GeminiService] TranscribeLiveAsync 例外：{ex.Message}"); return null; }
         }
 
         // 🎯 分析用完的暫存影片檔，主動刪掉比較乾淨（非必要——Google 那邊 48 小時後也會自動清掉）
