@@ -698,7 +698,9 @@
 
         // 🐛 這輪新增：收到別人剛講完一句話的輕量資訊（誰講的、像不像問題），
         //    更新「換人講話該不該算冷場」判斷用的共享狀態
+        let staffSpokeAfterAi = false; // AI 開場後，主持人/職員有沒有先開口；沒有就不做冷場判斷（可能還在等人到齊）
         hub.on("SpeechTurnInfo", (name, isQuestion, role, text) => {
+            if (role && role !== 'jobseeker' && role !== 'ai') staffSpokeAfterAi = true;
             lastSpeakerName = name;
             lastWasQuestion = !!isQuestion;
             lastSpeakerRole = role;
@@ -1387,6 +1389,10 @@
             //    用 try/finally 包住全部，確保每一條路徑都會釋放這個旗標。
             try {
                 if (!IS_HOST) { console.log('[冷場診斷-triggerAI] 被呼叫但 IS_HOST=false，不是主持人不會真的觸發，正常'); return; }
+                if (!staffSpokeAfterAi) {
+                    lastSpeechMs = Date.now(); // 還沒有主持人/職員開場：不算冷場，繼續等（可能在等人到齊）
+                    return;
+                }
                 if (isSp || ended || !started || aiSpeakingRemote) {
                     console.log('[冷場診斷-triggerAI] 被呼叫但提早返回：isSp=' + isSp + '，ended=' + ended + '，started=' + started + '，aiSpeakingRemote=' + aiSpeakingRemote);
                     return;
