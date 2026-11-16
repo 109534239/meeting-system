@@ -787,6 +787,8 @@
             }
         }
         startHub();
+        // 版本標記：左下角小字 + console，確認每個人跑的是同一版（測試前請每台都看到 v0245）
+        (function () { try { const d = document.createElement('div'); d.textContent = 'v0245'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
 
         // 🎯 保底輪詢：不管 SignalR 廣播這次有沒有送達（長時間閒置等待時 SignalR 群組可能悄悄失效），
         //    每 4 秒主動問一次伺服器「會議現在到底是什麼狀態」，用真實資料庫狀態校正畫面，
@@ -1126,6 +1128,7 @@
                 busy = true;
                 const dur = Date.now() - utterStart, pk = peak, overlapped = aiOverlap, stMs = utterStart;
                 speaking = false; peak = 0; loudRun = 0;
+                voicePing(1, 5); // 這句話「講完」的時間點：冷場 30 秒從這裡開始算
                 const blob = await stopRec();
                 startRec();
                 busy = false;
@@ -1152,7 +1155,7 @@
                         window.__muteChk = now;
                         try { jitsiApi.isAudioMuted().then(m => { window.__myMuted = !!m; }).catch(() => {}); } catch {}
                     }
-                    if (window.__myMuted) mx = 0;
+                    if (window.__myMuted && !speaking) mx = 0; // 閉麥只擋「新的一句」；正在講的這句不能因為中途按了閉麥就被截掉（否則主持人只收到開頭，30 秒後 AI 就搶話）
                     const aiBusy = aiSpeakingRemote || isSp || (now - aiEndedMs) < 1200;
                     if (aiSpeakingRemote || isSp) {
                         // AI 說話中：音量明顯偏大且持續 0.3 秒＝有人開口，馬上停掉 AI（門檻比平常高，避免把 AI 自己的回音當成有人講話）
@@ -1181,6 +1184,8 @@
                             voicePing(speaking ? 1 : -1, 5);
                         }
                     } else { loudRun = 0; }
+                    // 這一句還在講的期間，每秒固定回報一次（不管這 100ms 取樣剛好大不大聲），冷場計時才會從「真正講完」才開始算
+                    if (speaking && !aiBusy && now - lastCast > 1000) { lastCast = now; lastSpeechMs = now; lastVoiceMs = now; if (now - aiEndedMs > 1500) humanVoiceSinceAi = true; voicePing(1, 5); }
                     if (speaking && !busy && (now - lastLoudAt > 1300 || now - utterStart > 22000)) { finishUtterance(); break analyserTick; }
                     // 沒人講話時，錄音機定期重開，避免累積太長的靜音
                     if (!speaking && !busy && now - recStart > 6000) {
@@ -1441,7 +1446,7 @@
         //    冷場偵測進度條用），但不會真的呼叫伺服器。
         // ── 預先想題目：沉默到約 16 秒時，先向伺服器要好下一題，30 秒一到只剩語音合成的時間 ──
         let aiPre = null, aiPreBusy = false;
-        async function fetchAiQuestion(unans) {
+        async function fetchAiQuestion(unans, pre) {
             try {
                 const r = await fetch('/Room/AiNextQuestion', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1451,10 +1456,11 @@
                         lastSpeakerRole: lastSpeakerRole,
                         lastWasQuestion: !!lastWasQuestion,
                         aiUnanswered: unans,
+                        prefetch: !!pre,
                         lines: convoLog.slice(-20)
                     })
                 });
-                if (r.ok) { const d = await r.json(); if (d.text && d.text.length > 3) return d.text.trim(); }
+                if (r.ok) { const d = await r.json(); if (d.waitSec) window.__aiWaitSec = d.waitSec; if (d.text && d.text.length > 3) return d.text.trim(); }
                 else console.warn('[冷場診斷-triggerAI] /Room/AiNextQuestion 回應不是 200，status=' + r.status);
             } catch (e) { console.warn('[冷場診斷-triggerAI] /Room/AiNextQuestion 呼叫噴例外：' + e.message); }
             return null;
@@ -1467,7 +1473,7 @@
             aiPreBusy = true;
             const ls = lastSpeechMs, seq = humanSeq, un = (humanSeq === aiAtSeq && !humanVoiceSinceAi);
             try {
-                const q = await fetchAiQuestion(un);
+                const q = await fetchAiQuestion(un, true);
                 aiPre = { q, ls, seq, un };
                 console.log('[冷場診斷-預先準備] ' + (q ? '題目已準備好：「' + q + '」' : '伺服器沒有提供題目'));
             } finally { aiPreBusy = false; }
@@ -1511,7 +1517,7 @@
                 //    在場求職者的履歷」決定要不要說、對誰說、說什麼；沒有值得問的就回傳空字串，AI 保持安靜。
                 setSt('th','💭 思考中...');
                 const aiUnanswered = (humanSeq === aiAtSeq && !humanVoiceSinceAi); // AI 上次問完後，一直沒人出聲/發言
-                let q = null;
+                let q = null; window.__aiWaitSec = 0;
                 // 🎯 冷場到 30 秒前（約 16 秒起）就先把題目想好；等的時候如果預先想的還在跑，最多等 8 秒
                 for (let w = 0; aiPreBusy && w < 40; w++) await new Promise(res => setTimeout(res, 200));
                 if (aiPre && aiPre.q && aiPre.ls === lastSpeechMs && aiPre.seq === humanSeq && aiPre.un === aiUnanswered) {
@@ -1523,6 +1529,14 @@
 
                 if (!q) {
                     // 沒有值得問的內容：不說話，把計時重新起算，下次到門檻再評估一次
+                    const ws = window.__aiWaitSec || 0; window.__aiWaitSec = 0;
+                    if (ws > 0) {
+                        // 伺服器聽到會議裡剛才還有人聲（前端的計時算早了）：把計時校正成「還要再等 ws 秒」
+                        console.log('[冷場診斷-triggerAI] 伺服器說會議裡剛才還有人聲，再等 ' + ws + ' 秒');
+                        lastSpeechMs = Date.now() - Math.max(0, 30 - ws) * 1000;
+                        setSt('li', '👂 聆聽中');
+                        return;
+                    }
                     console.log('[冷場診斷-triggerAI] 伺服器判斷目前沒有值得提問的內容，AI 保持安靜');
                     lastSpeechMs = Date.now();
                     setSt('li', '👂 聆聽中');
@@ -1558,6 +1572,14 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&text=' + encodeURIComponent(text)
+            }).then(r => r.json()).then(d => {
+                if (d && d.refused) {
+                    // 伺服器說距離上次有人出聲還不到 30 秒（前端計時算早了）：校正成「還要再等 waitSec 秒」，這次不講
+                    const ws = d.waitSec || 5;
+                    aiRequestedUntil = 0; lastSpeechMs = Date.now() - Math.max(0, 30 - ws) * 1000;
+                    console.log('[冷場診斷-aiSpeak] 伺服器拒絕開口（還有人聲），再等 ' + ws + ' 秒');
+                    setSt('li', '👂 聆聽中');
+                }
             }).catch(() => {});
         }
 

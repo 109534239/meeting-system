@@ -385,6 +385,22 @@ namespace InterviewProject.Services
         audioCtx.createMediaStreamSource(dest.stream).connect(diagAnalyser);
     } catch (e) { console.warn('[Recorder 音量診斷] 接上 AnalyserNode 失敗：' + e.message); }
     const diagBuf = new Float32Array(diagAnalyser.fftSize);
+    // 🎯 伺服器端「會議裡真的聽得到人聲」偵測：直接量混音圖（＝會議裡每個人實際送出的聲音）的音量。
+    //    不依賴任何人的瀏覽器通知，也不受各人 Jitsi 閉麥狀態影響（閉麥的人送出來的是靜音）。
+    //    C# 端用 window.__lastAudibleMs 判斷「距離上一次有人聲多久了」。
+    window.__lastAudibleMs = 0;
+    try {
+        const lvAn = audioCtx.createAnalyser(); lvAn.fftSize = 1024;
+        audioCtx.createMediaStreamSource(dest.stream).connect(lvAn);
+        const lvBuf = new Float32Array(lvAn.fftSize); let lvRun = 0;
+        setInterval(() => {
+            try {
+                lvAn.getFloatTimeDomainData(lvBuf);
+                let p = 0; for (let i = 0; i < lvBuf.length; i++) { const a = Math.abs(lvBuf[i]); if (a > p) p = a; }
+                if (p > 0.02) { lvRun++; if (lvRun >= 2) window.__lastAudibleMs = Date.now(); } else lvRun = 0;
+            } catch (e) {}
+        }, 150);
+    } catch (e) { console.warn('[Recorder] 人聲偵測初始化失敗：' + e.message); }
     window.__audioLevelInterval = setInterval(() => {
         try {
             diagAnalyser.getFloatTimeDomainData(diagBuf);
@@ -1669,6 +1685,19 @@ namespace InterviewProject.Services
 
         public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> RecordingStartTimes = new();
 
+        // 距離上一次「會議混音裡聽得到人聲」過了幾秒；null＝無法判斷（AI 不在房間、混音沒在跑、還沒聽到過）
+        public async Task<double?> GetAudibleSilenceSecondsAsync(string roomCode)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(roomCode) || !_activeBots.TryGetValue(roomCode.Trim(), out var inst) || inst == null) return null;
+                var ms = await inst.PageInstance.EvaluateAsync<double>("() => window.__lastAudibleMs ? (Date.now() - window.__lastAudibleMs) : -1");
+                if (ms < 0) return null;
+                return ms / 1000.0;
+            }
+            catch { return null; }
+        }
+
         public bool IsSpeaking(string roomCode)
             => !string.IsNullOrEmpty(roomCode) && _speakingRooms.TryGetValue(roomCode.Trim(), out var v) && v;
 
@@ -1736,7 +1765,7 @@ namespace InterviewProject.Services
             return true;
         }
 
-        public async Task<bool> SpeakAsync(string roomCode, string text, Func<Task>? onAudioStart = null, Func<bool>? shouldAbort = null)
+        public async Task<bool> SpeakAsync(string roomCode, string text, Func<Task>? onAudioStart = null, Func<Task<bool>>? shouldAbort = null)
         {
             if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text)) return false;
             roomCode = roomCode.Trim();
@@ -1789,7 +1818,7 @@ namespace InterviewProject.Services
                 }
 
                 // 最後一道關卡：語音合成好了、要開口前，如果這一刻有人正在講話（或話還在轉文字），就不送出，絕不搶話
-                if (shouldAbort != null && shouldAbort())
+                if (shouldAbort != null && await shouldAbort())
                 {
                     _interrupted[roomCode] = true;
                     Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 要開口時有人正在講話，這句話不送出：「{text}」");

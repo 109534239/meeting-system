@@ -58,6 +58,11 @@ namespace InterviewProject.Controllers
         // 🎯 伺服器自己也記「現在有沒有人在講話」：AI 語音合成好、真的要開口前最後再確認一次，有人在講就不送出（不打斷）
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastVoiceUtc = new();
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _pendingUntil = new(); // key: 房間|說話者
+        // 🎯 伺服器端「這個房間最後一次有人/AI 出聲」的時間：說話被送到伺服器（LiveTranscribe 那個 HTTP 請求，講完後約 1 秒就到）、
+        //    出聲通知、AI 自己講完，都會更新它。冷場 30 秒以它為準——不依賴任何瀏覽器之間的即時通知。
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastActivityUtc = new();
+        private static void MarkActivity(string code) { if (!string.IsNullOrEmpty(code)) _lastActivityUtc[code.Trim()] = DateTime.UtcNow; }
+
         private static bool PersonSpeaking(string code)
         {
             var now = DateTime.UtcNow;
@@ -638,6 +643,9 @@ namespace InterviewProject.Controllers
             byte[] bytes;
             using (var ms = new MemoryStream()) { await audio.CopyToAsync(ms); bytes = ms.ToArray(); }
             var mime = string.IsNullOrEmpty(audio.ContentType) ? "audio/webm" : audio.ContentType;
+            // 這句話剛講完就送到了：馬上記下「剛剛有人講話」（轉文字要幾秒，不能等結果出來才算）；結果若是雜音再還原
+            _lastActivityUtc.TryGetValue(roomCode.Trim(), out var prevActivity);
+            var actStamp = DateTime.UtcNow; _lastActivityUtc[roomCode.Trim()] = actStamp;
             // 同時處理太多就直接丟掉這段（寧可漏一段，也不要排隊排到幾分鐘後）
             if (System.Threading.Interlocked.Increment(ref _liveInFlight) > 8)
             {
@@ -661,6 +669,8 @@ namespace InterviewProject.Controllers
             }
             if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容"))
             {
+                if (_lastActivityUtc.TryGetValue(roomCode.Trim(), out var curAct) && curAct == actStamp)
+                { if (prevActivity == default) _lastActivityUtc.TryRemove(roomCode.Trim(), out _); else _lastActivityUtc[roomCode.Trim()] = prevActivity; }
                 Console.WriteLine($"[LiveTranscribe] 房間 {roomCode}：{(speaker ?? "?")} 這段轉出來是空的（Gemini 回傳：{(text == null ? "null（上面應有 TranscribeLiveAsync 錯誤行）" : "「" + text + "」")}）");
                 return Ok(new { text = "", why = _gemini.LastLiveError ?? (string.IsNullOrWhiteSpace(text) ? "Gemini 回傳空白" : "Gemini 判斷沒有人聲") });
             }
@@ -811,6 +821,20 @@ namespace InterviewProject.Controllers
 
             roomCode = roomCode.Trim();
 
+            // 🎯 真正開口前的最後一道伺服器端把關（預先準備好的題目是直接走這裡的，不會經過 AiNextQuestion 的檢查）：
+            //    距離上次有人出聲／AI 講完不到 27 秒、或有人正在講話，一律不准開口，回覆「再等幾秒」。
+            {
+                double? q0 = await _botService.GetAudibleSilenceSecondsAsync(roomCode);
+                if (_lastActivityUtc.TryGetValue(roomCode, out var act0)) { var sq0 = (DateTime.UtcNow - act0).TotalSeconds; if (!q0.HasValue || sq0 < q0.Value) q0 = sq0; }
+                if (PersonSpeaking(roomCode)) q0 = 0;
+                if (q0.HasValue && q0.Value < 27)
+                {
+                    var w0 = Math.Max(1, (int)Math.Ceiling(30 - q0.Value));
+                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口，請前端再等 {w0} 秒。[伺服器版本 v0245]");
+                    return Ok(new { success = true, refused = true, waitSec = w0 });
+                }
+            }
+
             if (!_botService.IsSpeaking(roomCode) && _aiPending.TryGetValue(roomCode, out var pend) && pend.Text == text.Trim())
             {
                 // 這題真的要說出口了：記進整場「已問過」清單、輪流計數、上一題是問誰
@@ -846,7 +870,7 @@ namespace InterviewProject.Controllers
             var id = string.IsNullOrWhiteSpace(speaker) ? "?" : speaker.Trim();
             try
             {
-                if (pending == -1 || (pending == 1 && hold <= 5)) _lastVoiceUtc[roomCode] = DateTime.UtcNow;
+                if (pending == -1 || (pending == 1 && hold <= 5)) { _lastVoiceUtc[roomCode] = DateTime.UtcNow; MarkActivity(roomCode); }
                 if (pending == 1) _pendingUntil[roomCode + "|" + id] = DateTime.UtcNow.AddSeconds(Math.Min(Math.Max(hold, 1), 30));
                 else if (pending == 0) _pendingUntil.TryRemove(roomCode + "|" + id, out _);
                 if (empty == 1) _lastVoiceUtc.TryRemove(roomCode, out _); // 雜音：不要讓它擋住 AI
@@ -877,8 +901,28 @@ namespace InterviewProject.Controllers
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RoomCode)) return Ok(new { text = (string?)null });
             var code = req.RoomCode.Trim();
-            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。");
+            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0245]");
             if (_botService.IsSpeaking(code)) return Ok(new { text = (string?)null });
+
+            // 🎯 最後的保險（不管前端計時有沒有算錯）：會議的混音裡不到 27 秒前還聽得到人聲，就還不能因為冷場而開口。
+            //    這個量測在伺服器端的 AI 面試官自己身上，直接聽會議裡實際送出的聲音。
+            if (!req.Prefetch)
+            {
+                double? quiet = await _botService.GetAudibleSilenceSecondsAsync(code);
+                string quietSrc = "會議混音";
+                if (_lastActivityUtc.TryGetValue(code, out var actAt))
+                {
+                    var srvQuiet = (DateTime.UtcNow - actAt).TotalSeconds;
+                    if (!quiet.HasValue || srvQuiet < quiet.Value) { quiet = srvQuiet; quietSrc = "伺服器收到的說話/出聲記錄"; }
+                }
+                if (PersonSpeaking(code)) { quiet = 0; quietSrc = "有人正在講話或話還在轉文字"; }
+                if (quiet.HasValue && quiet.Value < 28)
+                {
+                    var wait = Math.Max(1, (int)Math.Ceiling(30 - quiet.Value));
+                    Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 依「{quietSrc}」，距離上次有人出聲只有 {quiet.Value:0.0} 秒，還不能開口，請前端再等 {wait} 秒。");
+                    return Ok(new { text = (string?)null, waitSec = wait });
+                }
+            }
 
             var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(r => r.JitsiRoomName == code);
             if (room == null) return Ok(new { text = (string?)null });
@@ -986,6 +1030,8 @@ namespace InterviewProject.Controllers
             else
                 scenario = "情境C：職員/主持人剛說了一段話（不是問題）。請順著他的話題，向適合的求職者提出一個延伸問題。";
 
+            if (lastHuman != null && !lastIsJobseeker && System.Text.RegularExpressions.Regex.IsMatch(lastHuman.Text ?? "", @"自我介紹|介紹一下自己|做.{0,3}介紹|先介紹"))
+                scenario += "\n【特別注意】職員剛剛要求的是「自我介紹」，到現在還沒有人做。你只要請指定的那一位求職者開始簡單自我介紹就好（例如「○○，那就由你先簡單做個自我介紹吧」），不要問履歷裡的專案或技術細節。";
             var names = string.Join("、", present.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrEmpty(n)));
 
             // 🎯 決定「這句話只能對誰說」：最近一句人類發言點名了某位求職者，或剛回答完的就是那位，就只能對他說，
@@ -1161,11 +1207,12 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             try
             {
                 await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", true, text);
-                await _botService.SpeakAsync(roomCode, text, async () => { await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); }, () => PersonSpeaking(roomCode)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
+                await _botService.SpeakAsync(roomCode, text, async () => { await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); }, async () => PersonSpeaking(roomCode) || ((await _botService.GetAudibleSilenceSecondsAsync(roomCode)) is double aq && aq < 1.2)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
             }
             finally
             {
                 // 不管上面成功還失敗，都要廣播「說完了」，不然全場的冷場計時器會永遠卡在暫停狀態
+                MarkActivity(roomCode); // AI 講完＝新的安靜起點
                 var interrupted = _botService.ConsumeInterrupted(roomCode);
                 await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", false, text, interrupted);
             }
@@ -1995,6 +2042,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
         public bool LastWasQuestion { get; set; }
         public bool AiUnanswered { get; set; }   // AI 上次提問之後，沒有任何人出聲/發言
         public List<AiConvoLine>? Lines { get; set; }
+        public bool Prefetch { get; set; }       // 預先準備題目（不是真的要開口），不受「會議裡剛有人聲」的限制
     }
 
     public class AiConvoLine
