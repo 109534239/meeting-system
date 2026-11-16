@@ -1362,6 +1362,8 @@
                 floor = level < floor ? floor * 0.8 + level * 0.2 : floor * 0.995 + level * 0.005;
                 const isVoice = level > 20 && level > Math.max(floor * 1.8, floor + 12);
                 if (isVoice) { voiceMs += 250; window.__segVoice = true; } else voiceMs = Math.max(0, voiceMs - 500);
+                // 自己已閉麥，或新的「整句偵測」已在運作（它會依轉文字結果修正誤判）時，這個舊的偵測不再重置冷場計時
+                if (window.__myMuted || liveStarted) { voiceMs = 0; return; }
                 if (voiceMs >= 2000) {
                     lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
                     setSt('li', '👂 聆聽中');

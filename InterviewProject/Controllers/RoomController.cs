@@ -636,6 +636,18 @@ namespace InterviewProject.Controllers
             string? text;
             try { text = await _gemini.TranscribeLiveAsync(bytes, mime); }
             finally { System.Threading.Interlocked.Decrement(ref _liveInFlight); }
+            // 雜音常被 Gemini 瞎猜成韓文/日文：面試是中文（或夾英文），這類結果一律當雜音丟掉
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                int han = 0, hk = 0, lat = 0;
+                foreach (var ch in text)
+                {
+                    if ((ch >= '\uAC00' && ch <= '\uD7AF') || (ch >= '\u1100' && ch <= '\u11FF') || (ch >= '\u3040' && ch <= '\u30FF')) hk++;
+                    else if (ch >= '\u4E00' && ch <= '\u9FFF') han++;
+                    else if (char.IsLetter(ch)) lat++;
+                }
+                if (hk > 0 && hk * 2 >= han + lat + hk) { Console.WriteLine($"[LiveTranscribe] 房間 {roomCode}：{(speaker ?? "?")} 轉出韓文/日文，視為雜音丟掉：{text.Substring(0, Math.Min(20, text.Length))}"); text = ""; }
+            }
             if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容"))
             {
                 Console.WriteLine($"[LiveTranscribe] 房間 {roomCode}：{(speaker ?? "?")} 這段轉出來是空的（Gemini 回傳：{(text == null ? "null（上面應有 TranscribeLiveAsync 錯誤行）" : "「" + text + "」")}）");

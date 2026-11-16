@@ -545,7 +545,7 @@ namespace InterviewProject.Services
                 var body = new
                 {
                     contents = new[] { new { parts = new object[] {
-                        new { text = "把這段錄音逐字轉成繁體中文，只輸出人說的話本身。聽不清楚就略過，不要猜、不要補完、不要重複。若沒有人說話，只回覆「（無語音內容）」。" },
+                        new { text = "把這段錄音逐字轉成繁體中文，只輸出人說的話本身。這是中文（或夾雜英文）的面試，不可能出現韓文、日文等其他語言；如果聽起來像背景雜音、音樂、他人遠處的說話聲或你無法確定的聲音，一律只回覆「（無語音內容）」，絕對不要猜成韓文或其他語言。聽不清楚就略過，不要猜、不要補完、不要重複。若沒有人說話，只回覆「（無語音內容）」。" },
                         new { inline_data = new { mime_type = mimeType, data = Convert.ToBase64String(audioBytes) } }
                     } } },
                     generationConfig = new { maxOutputTokens = 600, temperature = 0.1, thinkingConfig = new { thinkingBudget = 0 } }
