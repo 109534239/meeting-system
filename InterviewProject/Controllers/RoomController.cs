@@ -878,13 +878,15 @@ namespace InterviewProject.Controllers
             }
 
             // 🎯 「要延伸的話題」＝最近一句非 AI 的發言。AI 的問題必須從這句延伸，不能另起爐灶跳到履歷別的地方。
-            var lastHuman = lines.LastOrDefault(l => l.Role != "ai");
+            // 「謝謝」「嗯」「對」這種太短的客套話不當作要延伸的話題（否則 AI 會把職員剛問的題目忘掉）
+            var lastHuman = lines.LastOrDefault(l => l.Role != "ai" && ((l.Text ?? "").Trim().Length >= 6))
+                            ?? lines.LastOrDefault(l => l.Role != "ai");
             var anchorText = lastHuman != null ? $"{lastHuman.Name}：{Clip(lastHuman.Text, 200)}" : "（無）";
 
             // 🎯 「目前面試進行到哪個主題」＝職員/主持人最近一次的提問或要求；更早的職員提問＝已經談完的階段
             bool IsStaffLine(AiConvoLine l) => l.Role != "ai" && !string.Equals(l.Role, "jobseeker", StringComparison.OrdinalIgnoreCase) && !(l.Name ?? "").StartsWith("求職者");
             var staffLines = lines.Where(IsStaffLine).ToList();
-            var themeLine = staffLines.LastOrDefault();
+            var themeLine = staffLines.LastOrDefault(l => (l.Text ?? "").Trim().Length >= 6) ?? staffLines.LastOrDefault();
             var themeText = themeLine != null ? $"{themeLine.Name}：{Clip(themeLine.Text, 120)}" : "（職員還沒有提問）";
             var earlierStaff = staffLines.Count > 1 ? string.Join("\n", staffLines.Take(staffLines.Count - 1).Select(l => "- " + Clip(l.Text, 80))) : "（無）";
             // 職員已經問過的題目也要避免被 AI 換句話說重問
@@ -913,7 +915,18 @@ namespace InterviewProject.Controllers
             string? targetName = null;
             if (lastHuman != null)
             {
-                var mentioned = presentNames.Where(n => (lastHuman.Text ?? "").Contains(n, StringComparison.OrdinalIgnoreCase)).ToList();
+                var htxt = lastHuman.Text ?? "";
+                var mentioned = presentNames.Where(n => htxt.Contains(n, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (mentioned.Count == 0)
+                {
+                    // 語音辨識常把名字聽錯（例如「吳鼠鼠」變成「吳叔叔」「吳淑淑」）：姓氏在前 10 個字內、後面接 1~2 個字再接標點，
+                    // 而且在場的人裡只有一位是這個姓，就當作點名那位
+                    var head = htxt.Length > 12 ? htxt.Substring(0, 12) : htxt;
+                    var fuzzy = presentNames.Where(n => n.Length >= 2 && char.GetUnicodeCategory(n[0]) == System.Globalization.UnicodeCategory.OtherLetter
+                        && presentNames.Count(m => m.Length > 0 && m[0] == n[0]) == 1
+                        && System.Text.RegularExpressions.Regex.IsMatch(head, System.Text.RegularExpressions.Regex.Escape(n.Substring(0, 1)) + @"[\u4e00-\u9fff]{1,2}[，,、：: ]")).ToList();
+                    if (fuzzy.Count == 1) mentioned = fuzzy;
+                }
                 if (mentioned.Count == 1) targetName = mentioned[0];
             }
             // 沒有人被點名：輪流。剛回答完的人可以被追問，但如果他已經比最少被問的人多被問 2 次以上，就換最少被問的人。
@@ -952,7 +965,7 @@ namespace InterviewProject.Controllers
                 ? "1. 只對指定的那一位，針對你上次的問題換個說法，不可原句重複。"
                 : (scenario.StartsWith("情境N")
                     ? "1. 問題要緊扣「目前主題（職員最近一次的提問）」，換一個新的角度或下一步；不要追問剛剛已回答的內容，不要和「已問過的問題」相同或相近，也不可以回到「職員已談完的較早主題」。"
-                    : "1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。\n   例：職員說「請先做自我介紹」，就只能順著自我介紹引導（如請對方提到某段相關經歷），不能直接問會議記錄之類的別的主題。");
+                    : "1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。");
             string rule8 = modeU
                 ? "8. 不要換人、不要換題目：只能就上次那個問題換個角度。"
                 : "8. 整場會議已經問過的問題一律不可重複或換句話說重問（見「已問過的問題」）。";
@@ -989,7 +1002,8 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 4. 只能引用被點名者本人的履歷或他自己說過的話，不要拿其他求職者的資料比較。
 5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（情境A 例外：同一題可以換個說法再引導，但不能原句重複）、問履歷與對話都沒有依據的事。
 6. 如果職員剛問了問題或提出要求、求職者還沒回答：請「就同一個問題」換個說法、縮小範圍，或提示可以從履歷中的哪段經歷談起，幫求職者開口。絕對不能趁機換到另一個話題。
-7. 現在已經冷場，你一定要說一句話，不可以輸出 SKIP。就算話題很簡單（例如請自我介紹），也要用一句具體的引導或追問接上。
+7. 現在已經冷場，你一定要說一句話，不可以輸出 SKIP，要用一句具體的引導或追問接上目前主題。
+9. 自我介紹早就結束了：除非「目前主題」本身就是在請人自我介紹，否則題目裡絕對不可以出現「自我介紹」「介紹一下自己」「介紹自己」這類字眼，也不可以問履歷簡介；要問就問更深入、更專業的內容（做法、數字、判斷、取捨）。
 {rule8}
 只輸出要說的那一句話，不加引號、前綴或說明。";
 
@@ -1003,6 +1017,17 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 text = lastHuman != null && !lastIsJobseeker
                     ? (targetName != null ? $"{targetName}，可以先從你最有代表性的一段經歷開始說嗎？" : "可以先從最有代表性的一段經歷開始說嗎？")
                     : (targetName != null ? $"{targetName}，可以再多說明一下剛剛提到的做法和結果嗎？" : "可以再多說明一下剛剛提到的做法和結果嗎？");
+            }
+            // 🎯 禁止在自我介紹階段結束後又回頭問自我介紹（除非職員最近一次提問就是在請自我介紹）
+            bool themeIsIntro = themeLine != null && System.Text.RegularExpressions.Regex.IsMatch(themeLine.Text ?? "", "自我介紹|介紹一下自己|介紹自己");
+            bool IntroAgain(string t) => !themeIsIntro && System.Text.RegularExpressions.Regex.IsMatch(t ?? "", "自我介紹|介紹一下自己|介紹自己|簡單介紹");
+            if (IntroAgain(text))
+            {
+                Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生的問題又回到自我介紹，重新產生：「{text}」");
+                var rawI = await _gemini.AskAsync(prompt + "\n\n【重要】你剛才的問題「" + text + "」回頭問了自我介紹，面試早就進入專業問題了。請改問跟「目前主題」有關、更深入的專業細節（做法、數字、判斷、取捨），不可以出現「自我介紹」，只輸出那一句話。", "你是台灣企業面試的 AI 面試官，說話自然、直接、精簡，像真人面試官。", 600);
+                var tI = (rawI ?? "").Trim().Trim('"', '「', '」', '“', '”').Trim();
+                if (tI.Length >= 4 && tI.Length <= 90 && !IntroAgain(tI) && !tI.StartsWith("SKIP", StringComparison.OrdinalIgnoreCase)) text = tI;
+                else text = targetName != null ? $"{targetName}，剛剛談到的這件事，你當時最關鍵的判斷或做法是什麼？" : "剛剛談到的這件事，你當時最關鍵的判斷或做法是什麼？";
             }
             // 🎯 去重：和整場問過的題目太像就重生一次，還是太像就用保底題庫（情境U 只要求不是原句重複）
             double simTh = modeU ? 0.8 : 0.5;
