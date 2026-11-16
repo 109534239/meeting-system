@@ -573,7 +573,7 @@ namespace InterviewProject.Services
         // 🎯 針對單一位求職者，用「錄影檔（多模態：畫面表情 + 聲音語氣）+ 逐字稿」一起分析，
         //    不再只看文字逐字稿——這樣才分析得出語氣、表情這些逐字稿完全看不出來的東西。
         //    fileUri 是 UploadFileAsync() 拿到的、已經在 Gemini 端 ACTIVE 的影片檔參照。
-        public async Task<string?> AnalyzeInterviewVideoAsync(string fileUri, string fileMimeType, string candidateName, string transcript, int maxTokens)
+        public async Task<string?> AnalyzeInterviewVideoAsync(string fileUri, string fileMimeType, string candidateName, string transcript, int maxTokens, List<string>? joinedRoster = null)
         {
             var apiKey = _config["Gemini:ApiKey"] ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
             if (string.IsNullOrEmpty(apiKey)) return null;
@@ -583,7 +583,13 @@ namespace InterviewProject.Services
 
             var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
 
+            var rosterRule = (joinedRoster != null && joinedRoster.Count > 0)
+                ? $"【辨識身分的規則——最重要】\n本場「實際在會議中」的人只有：{string.Join("、", joinedRoster)}。名單以外的名字都沒有參加，絕對不可能出現在畫面或聲音裡。\n" +
+                  $"畫面上每一格視訊右下／左下角有顯示名稱的標籤，只能依標籤上的名字判斷那一格是誰，不可以憑長相、位置、排列順序或說話順序猜；分析「{candidateName}」時，只能看標籤顯示這個名字的那一格與屬於他的聲音。\n" +
+                  $"每個人只算一位：同一個人不要拆成兩個人，也不要把別人的畫面、表情或話算給「{candidateName}」。看不到名稱標籤、或無法確定是不是他時，請直接寫「無法確認」，不要猜。\n\n"
+                : "";
             var promptText =
+                rosterRule +
                 $"這是一場面試的完整錄影（包含畫面與聲音），底下是逐字稿可以幫助你對照時間點與內容（可能包含多位求職者，發言前有標示姓名）：\n\n{transcript}\n\n" +
                 $"請只針對「{candidateName}」這位求職者，實際觀看影片畫面、聆聽聲音語氣後進行分析（繁體中文），" +
                 $"分析內容務必真的根據影片畫面與聲音判斷，不能只是把逐字稿文字複述一遍。請提供：\n" +

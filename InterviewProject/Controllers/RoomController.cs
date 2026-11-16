@@ -591,7 +591,8 @@ namespace InterviewProject.Controllers
         //    這裡「不存」資料庫，完整逐字稿仍由會議結束時的整場錄音/錄影轉錄產生。
         [HttpPost]
         [RequestSizeLimit(10_000_000)]
-        public async Task<IActionResult> LiveTranscribe([FromQuery] string roomCode, IFormFile? audio)
+        public async Task<IActionResult> LiveTranscribe([FromQuery] string roomCode, IFormFile? audio,
+            [FromQuery] string? speaker = null, [FromQuery] long startedAtMs = 0, [FromQuery] double peak = 0)
         {
             if (string.IsNullOrEmpty(roomCode) || audio == null || audio.Length < 2000) return Ok(new { text = "" });
             byte[] bytes;
@@ -607,7 +608,27 @@ namespace InterviewProject.Controllers
             try { text = await _gemini.TranscribeLiveAsync(bytes, mime); }
             finally { System.Threading.Interlocked.Decrement(ref _liveInFlight); }
             if (string.IsNullOrWhiteSpace(text) || text.Contains("無語音內容")) return Ok(new { text = "" });
-            Console.WriteLine($"[LiveTranscribe] 房間 {roomCode}：{text.Substring(0, Math.Min(40, text.Length))}");
+            Console.WriteLine($"[LiveTranscribe] 房間 {roomCode}：{(speaker ?? "?")}：{text.Substring(0, Math.Min(40, text.Length))}");
+            // 🎯 逐字稿的「誰講的」只認「錄到這句話的那個人自己的瀏覽器」：這裡直接存成一筆逐字稿片段，
+            //    並把這句話的最大音量（peak）記在 TimeLabel（"|p=0.123"），之後同一句話被多支麥克風收到時，
+            //    以「音量最大的那支麥克風」的主人為準。
+            if (!string.IsNullOrWhiteSpace(speaker) && startedAtMs > 0)
+            {
+                try
+                {
+                    var at = DateTimeOffset.FromUnixTimeMilliseconds(startedAtMs).ToLocalTime().DateTime;
+                    _context.TranscriptChunks.Add(new TranscriptChunkRecord
+                    {
+                        RoomCode = roomCode.Trim(),
+                        Speaker = speaker.Trim(),
+                        Text = text.Trim(),
+                        TimeLabel = at.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW")) + "|p=" + peak.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture),
+                        ReceivedAt = at
+                    });
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception ex) { Console.WriteLine($"[LiveTranscribe] 存逐字稿片段失敗：{ex.Message}"); }
+            }
             return Ok(new { text = text.Trim() });
         }
 
@@ -1082,12 +1103,19 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                         return roleLabel != null ? $"{roleLabel}-{personName}" : personName;
                     }).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList()!;
 
-                    content = await _gemini.TranscribeInterviewVideoAsync(geminiFileUri, "video/webm", participantNames!);
-                    if (content == null)
+                    // 🎯 有「各人自己麥克風」的逐字稿片段就不用影片猜講者了（影片轉錄是靠畫面/聲音猜誰在講，最容易認錯人，
+                    //    而且要多花 1~2 分鐘）；只有整場完全沒有任何片段時才退回影片轉錄。
+                    var hasOwnChunks = await _context.TranscriptChunks.AnyAsync(c => c.RoomCode == roomCode && c.Speaker != "AI 面試官");
+                    if (!hasOwnChunks)
                     {
-                        await Task.Delay(2000);
                         content = await _gemini.TranscribeInterviewVideoAsync(geminiFileUri, "video/webm", participantNames!);
+                        if (content == null)
+                        {
+                            await Task.Delay(2000);
+                            content = await _gemini.TranscribeInterviewVideoAsync(geminiFileUri, "video/webm", participantNames!);
+                        }
                     }
+                    else Console.WriteLine($"[SaveTranscript] 房間 {roomCode}：已有各人自己麥克風的片段，略過影片轉錄（避免認錯講者、加快處理）。");
 
                     // 不在這裡刪：留給 SaveAiAnalysis 沿用同一份上傳，省掉第二次下載+上傳
                     if (!string.IsNullOrEmpty(geminiFileName)) _geminiVideoCache[roomCode] = (geminiFileUri, geminiFileName, DateTime.UtcNow);
@@ -1156,6 +1184,36 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             }
             chunks = spamFilteredChunks;
 
+            // 🎯 講者歸屬規則（最重要）：
+            //    1. 有「即時整句轉錄」片段（TimeLabel 帶 |p=音量）的人，只信這些片段，他其他來源（整段音檔、瀏覽器辨識）的片段丟掉。
+            //    2. 同一句話被好幾支麥克風收到（同一個房間、喇叭外放），只留「音量最大那支麥克風」的主人，其餘當成串音丟掉。
+            {
+                double PeakOf(TranscriptChunkRecord c)
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(c.TimeLabel ?? "", @"\|p=([0-9\.]+)");
+                    return m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : -1;
+                }
+                var liveSpeakers = new HashSet<string>(chunks.Where(c => PeakOf(c) >= 0).Select(c => c.Speaker ?? ""));
+                var b0 = chunks.Count;
+                chunks = chunks.Where(c => PeakOf(c) >= 0 || (c.Speaker ?? "") == "AI 面試官" || !liveSpeakers.Contains(c.Speaker ?? "")).ToList();
+                var lives = chunks.Where(c => PeakOf(c) >= 0).ToList();
+                var dropBleed = new HashSet<int>();
+                foreach (var c in chunks)
+                {
+                    if ((c.Speaker ?? "") == "AI 面試官") continue;
+                    var pc = PeakOf(c);
+                    foreach (var o in lives)
+                    {
+                        if (o.Id == c.Id || (o.Speaker ?? "") == (c.Speaker ?? "")) continue;
+                        if (Math.Abs((o.ReceivedAt - c.ReceivedAt).TotalSeconds) > 10) continue;
+                        if (BigramSim(c.Text, o.Text) < 0.4) continue;
+                        if (PeakOf(o) > pc) { dropBleed.Add(c.Id); break; }
+                    }
+                }
+                chunks = chunks.Where(c => !dropBleed.Contains(c.Id)).ToList();
+                if (b0 != chunks.Count) Console.WriteLine($"[SaveTranscript] 房間 {roomCode}：丟掉 {b0 - chunks.Count} 筆非本人麥克風來源／串音的片段（共 {dropBleed.Count} 筆為串音）。");
+            }
+
             // 🐛 這輪修正（回報：「主持人還不如 TranscriptChunks 準確」）：
             //    主持人自己裝置錄音轉出來的內容，一直都比影片轉錄準（影片轉錄是從整場會議合成畫面
             //    去猜聲音內容，音質/畫質都打了折扣，難免比較容易聽錯）。原本兩邊內容不分青紅皂白
@@ -1183,7 +1241,17 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 if (!looksLikeSpam) speakersWithChunks.Add(group.Key);
             }
 
-            if (!string.IsNullOrEmpty(content) && room.StartAt.HasValue)
+            // 🎯 影片轉錄只在「完全沒有任何片段」時才用，而且講者必須是實際進場的人（或 AI），名字對不上的行整行丟掉
+            HashSet<string>? joinedNamesForVideo = null;
+            if (chunks.Count == 0 && !string.IsNullOrEmpty(content))
+            {
+                var jp = await _context.RoomParticipants.AsNoTracking()
+                    .Where(p => p.RoomId == room.Id && p.Role != ParticipantRole.AI && p.JoinedAt != null)
+                    .Include(p => p.Resume).ThenInclude(r => r!.Member).Include(p => p.Employee).ToListAsync();
+                joinedNamesForVideo = new HashSet<string>(jp.Select(p => p.Role == ParticipantRole.Jobseeker ? p.Resume?.Member?.Name : p.Employee?.Name)
+                    .Where(n => !string.IsNullOrEmpty(n)).Select(n => n!));
+            }
+            if (chunks.Count == 0 && !string.IsNullOrEmpty(content) && room.StartAt.HasValue && joinedNamesForVideo != null)
             {
                 var baseTime = room.StartAt.Value;
                 foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
@@ -1195,6 +1263,9 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 
                     // 這個人已經有自己裝置錄音的內容了，影片轉錄這行就跳過，避免同一句話出現兩個版本
                     if (speakerName != null && speakersWithChunks.Contains(speakerName)) continue;
+                    // 講者不是實際進場的人（也不是 AI）→ 一定是認錯人，整行丟掉
+                    if (speakerName == null) continue;
+                    if (speakerName != "AI 面試官" && !joinedNamesForVideo.Any(n => speakerName == n || speakerName.EndsWith("-" + n))) continue;
 
                     var minutes = int.Parse(m.Groups[1].Value);
                     var seconds = int.Parse(m.Groups[2].Value);
@@ -1391,6 +1462,13 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 
             var results = new System.Collections.Concurrent.ConcurrentBag<object>();
 
+            // 🎯 實際進場的人名單，給影片分析辨識畫面上是誰用
+            var joinedRoster = (await _context.RoomParticipants.AsNoTracking()
+                    .Where(p => p.RoomId == room.Id && p.Role != ParticipantRole.AI && p.JoinedAt != null)
+                    .Include(p => p.Resume).ThenInclude(r => r!.Member).Include(p => p.Employee).ToListAsync())
+                .Select(p => p.Role == ParticipantRole.Jobseeker ? "求職者-" + p.Resume?.Member?.Name : "職員/主持人-" + p.Employee?.Name)
+                .Where(n => !n.EndsWith("-")).ToList();
+
             // 多位求職者同時分析（只用 _storage/_gemini，不碰 DbContext，可安全並行）
             async Task AnalyzeOne(RoomParticipant jobseeker)
             {
@@ -1430,11 +1508,11 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 //    拉高到 8000，讓 Gemini 有足夠空間把 6 個段落真的寫完。
                 if (!string.IsNullOrEmpty(geminiFileUri))
                 {
-                    analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000);
+                    analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000, joinedRoster);
                     if (analysis == null)
                     {
                         await Task.Delay(2000);
-                        analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000);
+                        analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000, joinedRoster);
                     }
                 }
 

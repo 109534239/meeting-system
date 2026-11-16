@@ -1057,22 +1057,24 @@
                 });
             }
 
-            async function sendUtterance(blob, durMs, peakVal) {
+            async function sendUtterance(blob, durMs, peakVal, startMs) {
                 const tooQuiet = peakVal < 0.05;
                 console.log('[STT-live] 一句話結束：長度=' + (durMs / 1000).toFixed(1) + ' 秒，最大音量=' + peakVal.toFixed(3) + '，大小=' + (blob ? blob.size : 0));
                 if (!blob || blob.size < 3000) return;
-                if (Date.now() - (window.__sttGoodMs || 0) < 15000) { console.log('[STT-live] 瀏覽器語音辨識有效，略過'); return; }
                 try { hub.invoke('UtterancePending', ROOM_CODE, true, 30); } catch {} // 轉文字期間，最長 30 秒內 AI 不開口
                 let txt = '';
                 try {
                     const fd = new FormData(); fd.append('audio', blob, 'utt.webm');
-                    const r = await fetch('/Room/LiveTranscribe?roomCode=' + encodeURIComponent(ROOM_CODE), { method: 'POST', body: fd });
+                    const r = await fetch('/Room/LiveTranscribe?roomCode=' + encodeURIComponent(ROOM_CODE)
+                        + '&speaker=' + encodeURIComponent(MY_NAME) + '&startedAtMs=' + (startMs || Date.now()) + '&peak=' + peakVal.toFixed(3),
+                        { method: 'POST', body: fd });
                     if (r.ok) { const d = await r.json(); txt = (d.text || '').trim(); }
                     else console.warn('[STT-live] 伺服器回應 ' + r.status);
                 } catch (ex) { console.warn('[STT-live] 送出失敗：' + ex.message); }
                 const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
                 console.log('[STT-live] 轉錄結果：「' + txt + '」');
                 if (stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped)) {
+                    window.__liveSent = (window.__liveSent || 0) + 1;
                     try { await hub.invoke('NotifySpeechTurn', ROOM_CODE, MY_NAME, looksLikeQuestion(txt), MY_ROLE, txt); } catch {}
                 }
             }
@@ -1080,14 +1082,14 @@
             async function finishUtterance() {
                 if (busy) return;
                 busy = true;
-                const dur = Date.now() - utterStart, pk = peak, overlapped = aiOverlap;
+                const dur = Date.now() - utterStart, pk = peak, overlapped = aiOverlap, stMs = utterStart;
                 speaking = false; peak = 0; loudRun = 0;
                 const blob = await stopRec();
                 startRec();
                 busy = false;
                 try {
                     if (overlapped) console.log('[STT-live] 這句話和 AI 說話重疊，丟棄');
-                    else await sendUtterance(blob, dur, pk);
+                    else await sendUtterance(blob, dur, pk, stMs);
                 } finally {
                     // 不論成功、失敗、略過，一定通知全場「這句話處理完了」
                     try { hub.invoke('UtterancePending', ROOM_CODE, false, 0); } catch {}
@@ -1137,6 +1139,7 @@
         //    要用 await 等它做完，不能像 submitMyTranscript() 那樣用 sendBeacon（音檔太大，sendBeacon 不適合傳大檔案）
         async function submitMyAudioTranscript() {
             if (!everJoined) { console.log('[submitMyAudioTranscript] 自己沒有真的進入會議，不送音檔'); return; }
+            if ((window.__liveSent || 0) > 0) { console.log('[submitMyAudioTranscript] 已即時送出 ' + window.__liveSent + ' 句（含講者與音量），不再重複送整段音檔'); return; }
             // 🐛 這輪新增：這支函式原本在「根本沒有錄音機可用」時是完全靜默地直接 return，
             //    回報「TranscriptChunks 整場都沒資料」時，這種靜默略過會讓人誤以為它「有跑但沒送到」，
             //    其實可能從一開始 initAudio() 那步就沒成功建立 myAudioRecorder。先印出來區分。
