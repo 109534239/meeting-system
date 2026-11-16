@@ -705,13 +705,18 @@
             return any;
         }
         let realSpeechMs = 0; // 最近一次「真的轉出文字」的那句話大約結束的時間
-        hub.on("VoiceFalseAlarm", () => {
+        const voiceBy = {}; // 每個人最近一次出聲的時間（用來在某個人被判定為雜音時，只收回他的那一份）
+        hub.on("VoiceFalseAlarm", who => {
             // 剛剛偵測到的聲音其實轉不出任何話（雜音/回音/咳嗽）：把冷場計時還原成「上一次真的有人講話或 AI 講完」的時間
             if (anyUtterancePending()) return;
-            const base = Math.max(realSpeechMs, aiEndedMs, 0);
+            // 只收回「這個人」造成的歸零；其他人（例如正在回答的求職者）最近的聲音要保留，不然會把計時倒退、AI 提早開口
+            if (who) delete voiceBy[who];
+            let base = Math.max(realSpeechMs, aiEndedMs, window.__jitsiVoiceMs || 0, 0);
+            for (const k in voiceBy) base = Math.max(base, voiceBy[k]);
             if (base > 0 && lastSpeechMs > base) { lastSpeechMs = base; console.log('[冷場診斷] 剛剛的聲音轉不出文字（雜音），冷場計時還原'); }
         });
         hub.on("SpeechDetected", (who, role) => {
+            if (who) voiceBy[who] = Date.now();
             // 職員/主持人開口了（不必等轉出文字）：AI 之後才可以做冷場判斷
             if (role && role !== 'jobseeker' && role !== 'ai') staffSpokeAfterAi = true;
             if (IS_HOST && (aiSpeakingRemote || Date.now() < aiRequestedUntil)) requestAiStop('收到有人出聲的通知');
@@ -1890,7 +1895,7 @@
                 // 🎯 第二條獨立的「有人在講話」訊號：Jitsi 自己判斷的主講者換人了＝有人開口（不依賴別人瀏覽器的通知，
                 //    主持人這台自己就能看到）。只會讓 AI 更晚開口，不會更早，所以不怕誤判。
                 if (IS_HOST && dominantId && !aiSpeakingRemote && !isSp && Date.now() - aiEndedMs > 1500) {
-                    lastSpeechMs = Date.now(); humanVoiceSinceAi = true;
+                    lastSpeechMs = Date.now(); humanVoiceSinceAi = true; window.__jitsiVoiceMs = lastSpeechMs;
                     console.log('[冷場診斷] Jitsi 回報主講者換人（有人開口），冷場計時歸零');
                 }
             });

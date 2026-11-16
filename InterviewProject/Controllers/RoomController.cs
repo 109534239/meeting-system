@@ -55,6 +55,17 @@ namespace InterviewProject.Controllers
             return Ok();
         }
 
+        // 🎯 伺服器自己也記「現在有沒有人在講話」：AI 語音合成好、真的要開口前最後再確認一次，有人在講就不送出（不打斷）
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastVoiceUtc = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _pendingUntil = new(); // key: 房間|說話者
+        private static bool PersonSpeaking(string code)
+        {
+            var now = DateTime.UtcNow;
+            if (_lastVoiceUtc.TryGetValue(code, out var t) && (now - t).TotalMilliseconds < 1800) return true;
+            foreach (var kv in _pendingUntil) if (kv.Key.StartsWith(code + "|") && kv.Value > now) return true;
+            return false;
+        }
+
         private static string StripName(string t, IEnumerable<string> names)
         {
             t = (t ?? "").Trim();
@@ -835,6 +846,10 @@ namespace InterviewProject.Controllers
             var id = string.IsNullOrWhiteSpace(speaker) ? "?" : speaker.Trim();
             try
             {
+                if (pending == -1 || (pending == 1 && hold <= 5)) _lastVoiceUtc[roomCode] = DateTime.UtcNow;
+                if (pending == 1) _pendingUntil[roomCode + "|" + id] = DateTime.UtcNow.AddSeconds(Math.Min(Math.Max(hold, 1), 30));
+                else if (pending == 0) _pendingUntil.TryRemove(roomCode + "|" + id, out _);
+                if (empty == 1) _lastVoiceUtc.TryRemove(roomCode, out _); // 雜音：不要讓它擋住 AI
                 if (pending == -1 || (pending == 1 && hold <= 5)) await _hub.Clients.Group(roomCode).SendAsync("SpeechDetected", id, role ?? ""); // 轉文字中(hold>5)不算「又有聲音」
                 if (pending >= 0) await _hub.Clients.Group(roomCode).SendAsync("UtterancePendingChanged", id, pending == 1, hold);
                 if (empty == 1) await _hub.Clients.Group(roomCode).SendAsync("VoiceFalseAlarm", id); // 這段聲音轉不出任何話（雜音），冷場計時不該被它歸零
@@ -991,6 +1006,18 @@ namespace InterviewProject.Controllers
                         && System.Text.RegularExpressions.Regex.IsMatch(head, System.Text.RegularExpressions.Regex.Escape(n.Substring(0, 1)) + @"[\u4e00-\u9fff]{1,2}[，,、：: ]")).ToList();
                     if (fuzzy.Count == 1) mentioned = fuzzy;
                 }
+                // 名字被聽成完全不像的字（例如「吳鼠鼠」→「叔叔」，沒有姓氏可比對）：請模型依同音/相近音，從在場名單挑出最可能被點名的人
+                if (mentioned.Count == 0 && presentNames.Count > 1 && !lastIsJobseeker && htxt.Trim().Length > 0)
+                {
+                    try
+                    {
+                        var rp = $"面試中職員/主持人說了這句話（語音辨識，常把名字聽成同音或相近的字）：「{Clip(htxt, 60)}」\n在場求職者名單：{string.Join("、", presentNames)}\n這句話有點名其中某一位求職者嗎（例如開頭稱呼對方、叫某人做某事）？有的話只回覆名單中那位的完整姓名（依發音最接近的判斷），沒有點名任何人就只回覆「無」。不要解釋。";
+                        var ans = (await _gemini.AskAsync(rp, "你只輸出一個名字或「無」。", 30))?.Trim() ?? "";
+                        var hit = presentNames.FirstOrDefault(n => ans.Contains(n, StringComparison.OrdinalIgnoreCase));
+                        if (hit != null) { mentioned = new List<string> { hit }; Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 依發音判斷被點名的是「{hit}」（原句：{Clip(htxt, 30)}）"); }
+                    }
+                    catch { }
+                }
                 if (mentioned.Count == 1) targetName = mentioned[0];
             }
             // 沒有人被點名：輪流。剛回答完的人可以被追問，但如果他已經比最少被問的人多被問 2 次以上，就換最少被問的人。
@@ -1134,7 +1161,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             try
             {
                 await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", true, text);
-                await _botService.SpeakAsync(roomCode, text, async () => { await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); }); // 這裡面會等到真的講完（依音訊長度換算）才回傳
+                await _botService.SpeakAsync(roomCode, text, async () => { await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); }, () => PersonSpeaking(roomCode)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
             }
             finally
             {

@@ -1736,7 +1736,7 @@ namespace InterviewProject.Services
             return true;
         }
 
-        public async Task<bool> SpeakAsync(string roomCode, string text, Func<Task>? onAudioStart = null)
+        public async Task<bool> SpeakAsync(string roomCode, string text, Func<Task>? onAudioStart = null, Func<bool>? shouldAbort = null)
         {
             if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text)) return false;
             roomCode = roomCode.Trim();
@@ -1785,6 +1785,14 @@ namespace InterviewProject.Services
                 {
                     _interrupted[roomCode] = true;
                     Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 語音合成完成時已有人開口，這句話不送出：「{text}」");
+                    return false;
+                }
+
+                // 最後一道關卡：語音合成好了、要開口前，如果這一刻有人正在講話（或話還在轉文字），就不送出，絕不搶話
+                if (shouldAbort != null && shouldAbort())
+                {
+                    _interrupted[roomCode] = true;
+                    Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 要開口時有人正在講話，這句話不送出：「{text}」");
                     return false;
                 }
 
