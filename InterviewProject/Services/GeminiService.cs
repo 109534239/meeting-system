@@ -534,6 +534,9 @@ namespace InterviewProject.Services
             if (string.IsNullOrEmpty(apiKey) || audioBytes.Length == 0) return null;
             try
             {
+                // Gemini 不接受 "audio/webm;codecs=opus" 這種帶參數的 MIME，只留主類型
+                mimeType = (mimeType ?? "audio/webm").Split(';')[0].Trim();
+                if (mimeType.Length == 0) mimeType = "audio/webm";
                 var client = _httpClientFactory.CreateClient();
                 client.Timeout = TimeSpan.FromSeconds(25);
                 var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
@@ -547,8 +550,10 @@ namespace InterviewProject.Services
                 };
                 var resp = await client.PostAsync(url, new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
                 var respBody = await resp.Content.ReadAsStringAsync();
-                if (!resp.IsSuccessStatusCode) { Console.WriteLine($"[GeminiService] TranscribeLiveAsync HTTP {(int)resp.StatusCode}"); return null; }
+                if (!resp.IsSuccessStatusCode) { Console.WriteLine($"[GeminiService] TranscribeLiveAsync HTTP {(int)resp.StatusCode}（{mimeType}，{audioBytes.Length} bytes）：{(respBody.Length > 300 ? respBody.Substring(0, 300) : respBody)}"); return null; }
                 using var doc = JsonDocument.Parse(respBody);
+                if (!doc.RootElement.TryGetProperty("candidates", out var cands) || cands.GetArrayLength() == 0 || !cands[0].TryGetProperty("content", out var cont) || !cont.TryGetProperty("parts", out _))
+                { Console.WriteLine($"[GeminiService] TranscribeLiveAsync 回應沒有文字：{(respBody.Length > 300 ? respBody.Substring(0, 300) : respBody)}"); return ""; }
                 return (doc.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString() ?? "").Trim();
             }
             catch (Exception ex) { Console.WriteLine($"[GeminiService] TranscribeLiveAsync 例外：{ex.Message}"); return null; }

@@ -811,7 +811,7 @@ namespace InterviewProject.Controllers
         // 🎯 「有人正在講話／講完了」改走 HTTP 由伺服器廣播（比說話者瀏覽器自己的 SignalR 連線可靠）
         //    pending: 1=正在講話或轉文字中, 0=這句話處理完了, -1=只是出聲通知
         [HttpPost]
-        public async Task<IActionResult> VoicePing([FromForm] string roomCode, [FromForm] string? speaker, [FromForm] int pending = -1, [FromForm] int hold = 5)
+        public async Task<IActionResult> VoicePing([FromForm] string roomCode, [FromForm] string? speaker, [FromForm] int pending = -1, [FromForm] int hold = 5, [FromForm] int empty = 0)
         {
             if (string.IsNullOrWhiteSpace(roomCode)) return Ok();
             roomCode = roomCode.Trim();
@@ -820,6 +820,7 @@ namespace InterviewProject.Controllers
             {
                 if (pending == -1 || (pending == 1 && hold <= 5)) await _hub.Clients.Group(roomCode).SendAsync("SpeechDetected"); // 轉文字中(hold>5)不算「又有聲音」
                 if (pending >= 0) await _hub.Clients.Group(roomCode).SendAsync("UtterancePendingChanged", id, pending == 1, hold);
+                if (empty == 1) await _hub.Clients.Group(roomCode).SendAsync("VoiceFalseAlarm", id); // 這段聲音轉不出任何話（雜音），冷場計時不該被它歸零
             }
             catch { }
             return Ok();

@@ -624,10 +624,10 @@
         }
         let aiSpeakingRemote = false; // AI 現在是不是正在講話（全場共享的狀態，不是只有觸發者自己知道）
         // 🎯 「有人講話/講完」改走 HTTP 讓伺服器廣播（說話者的 SignalR 連線不穩時主持人也收得到）
-        function voicePing(pending, hold) {
+        function voicePing(pending, hold, empty) {
             try {
                 fetch('/Room/VoicePing', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&speaker=' + encodeURIComponent(MY_NAME) + '&pending=' + pending + '&hold=' + (hold || 5) }).catch(() => {});
+                    body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&speaker=' + encodeURIComponent(MY_NAME) + '&pending=' + pending + '&hold=' + (hold || 5) + (empty ? '&empty=1' : '') }).catch(() => {});
             } catch {}
         }
         // 🎯 有人開口就立刻讓 AI 閉嘴（不等轉文字）。任何人的瀏覽器偵測到都可以呼叫，伺服器端是冪等的。
@@ -704,6 +704,13 @@
             for (const k in pendingUtt) { if (pendingUtt[k] > now) any = true; else delete pendingUtt[k]; }
             return any;
         }
+        let realSpeechMs = 0; // 最近一次「真的轉出文字」的那句話大約結束的時間
+        hub.on("VoiceFalseAlarm", () => {
+            // 剛剛偵測到的聲音其實轉不出任何話（雜音/回音/咳嗽）：把冷場計時還原成「上一次真的有人講話或 AI 講完」的時間
+            if (anyUtterancePending()) return;
+            const base = Math.max(realSpeechMs, aiEndedMs, 0);
+            if (base > 0 && lastSpeechMs > base) { lastSpeechMs = base; console.log('[冷場診斷] 剛剛的聲音轉不出文字（雜音），冷場計時還原'); }
+        });
         hub.on("SpeechDetected", () => {
             if (IS_HOST && (aiSpeakingRemote || Date.now() < aiRequestedUntil)) requestAiStop('收到有人出聲的通知');
             if (!aiSpeakingRemote && Date.now() - aiEndedMs > 1500) humanVoiceSinceAi = true;
@@ -723,6 +730,7 @@
             lastWasQuestion = !!isQuestion;
             lastSpeakerRole = role;
             humanSeq++;
+            realSpeechMs = Math.min(Date.now() - 2500, lastSpeechMs > 0 ? lastSpeechMs : Date.now());
             lastTranscriptMs = Date.now(); transcriptWaits = 0;
             pushConvo(name, role, text);
         });
@@ -1081,7 +1089,7 @@
             async function sendUtterance(blob, durMs, peakVal, startMs) {
                 const tooQuiet = peakVal < 0.05;
                 console.log('[STT-live] 一句話結束：長度=' + (durMs / 1000).toFixed(1) + ' 秒，最大音量=' + peakVal.toFixed(3) + '，大小=' + (blob ? blob.size : 0));
-                if (!blob || blob.size < 3000) return;
+                if (!blob || blob.size < 3000) { window.__uttEmpty = true; return; }
                 voicePing(1, 30); // 轉文字期間，最長 30 秒內 AI 不開口
                 let txt = '';
                 try {
@@ -1094,6 +1102,7 @@
                 } catch (ex) { console.warn('[STT-live] 送出失敗：' + ex.message); }
                 const stripped = txt.replace(/[。，、！？…\.\,\!\?\s]/g, '');
                 console.log('[STT-live] 轉錄結果：「' + txt + '」');
+                if (!(stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped))) window.__uttEmpty = true;
                 if (stripped.length > 1 && !/^(嗯|呃|啊|喔|噢|欸|唉)+$/.test(stripped)) {
                     window.__liveSent = (window.__liveSent || 0) + 1;
                     // （「誰講了什麼」由伺服器在 LiveTranscribe 收到時直接廣播，這裡不再重複發）
@@ -1109,11 +1118,12 @@
                 startRec();
                 busy = false;
                 try {
+                    window.__uttEmpty = false;
                     if (overlapped) console.log('[STT-live] 這句話和 AI 說話重疊，丟棄');
                     else await sendUtterance(blob, dur, pk, stMs);
                 } finally {
-                    // 不論成功、失敗、略過，一定通知全場「這句話處理完了」
-                    voicePing(0, 0);
+                    // 不論成功、失敗、略過，一定通知全場「這句話處理完了」（轉不出文字的話一併告知，冷場計時不被雜音歸零）
+                    voicePing(0, 0, !!window.__uttEmpty && !overlapped);
                 }
             }
 
