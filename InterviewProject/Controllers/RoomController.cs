@@ -23,6 +23,36 @@ namespace InterviewProject.Controllers
         private static int _liveInFlight = 0;
         // 每個房間、每位求職者被 AI 面試官主動提問的次數（讓 AI 輪流問，不會一直追問同一個人）
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _aiAskCount = new();
+        // 整場會議 AI 問過的所有問題（不可重複）、以及上一次問了誰什麼
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<string>> _aiQuestions = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string? Name, string Text)> _aiLast = new();
+
+        private static string StripName(string t, IEnumerable<string> names)
+        {
+            t = (t ?? "").Trim();
+            foreach (var n in names) if (t.StartsWith(n, StringComparison.OrdinalIgnoreCase)) { t = t.Substring(n.Length).TrimStart('，', ',', ' ', '、'); break; }
+            return t;
+        }
+        private static double BigramSim(string a, string b)
+        {
+            HashSet<string> G(string x)
+            {
+                var h = new HashSet<string>();
+                x = new string((x ?? "").Where(c => !char.IsPunctuation(c) && !char.IsWhiteSpace(c) && !char.IsSymbol(c)).ToArray());
+                for (int i = 0; i + 1 < x.Length; i++) h.Add(x.Substring(i, 2));
+                return h;
+            }
+            var ga = G(a); var gb = G(b);
+            if (ga.Count == 0 || gb.Count == 0) return 0;
+            int inter = ga.Count(g => gb.Contains(g));
+            return (double)inter / (ga.Count + gb.Count - inter);
+        }
+        private static bool TooSimilar(string text, List<string> prev, IEnumerable<string> names, double th)
+        {
+            var t = StripName(text, names);
+            foreach (var q in prev) if (BigramSim(t, StripName(q, names)) >= th) return true;
+            return false;
+        }
 
         private readonly AppDbContext _context;
         private readonly JitsiBotService _botService;
@@ -708,6 +738,15 @@ namespace InterviewProject.Controllers
             return Ok(new { success = true });
         }
 
+        // 🎯 有人開口：馬上讓 AI 面試官停止說話（不等語音辨識，不管對方說了什麼）
+        [HttpPost]
+        public async Task<IActionResult> AiStop([FromForm] string roomCode)
+        {
+            if (string.IsNullOrWhiteSpace(roomCode)) return Ok(new { success = true });
+            var stopped = await _botService.StopSpeakingAsync(roomCode.Trim());
+            return Ok(new { success = true, stopped });
+        }
+
         // 🎯 AI 面試官「該不該說話、說什麼」的決定點。
         //    依最近的對話（職員、求職者說了什麼）+ 職缺條件 + 在場求職者各自的履歷，產生「一句」延伸提問；
         //    可以指定其中一位求職者（句子以姓名開頭），不同求職者問不同的問題。
@@ -824,6 +863,31 @@ namespace InterviewProject.Controllers
                 if (lastName != null && Cnt(lastName) - least < 2) targetName = lastName;
                 else targetName = leastNames[new Random().Next(leastNames.Count)];
             }
+            // 🎯 模式判斷
+            //   U（上一題沒人回答、30 秒後仍冷場）：同一位、同一題換個說法／更具體／給提示，不能原句重複，不換人
+            //   N（其他：求職者已回答完等）：不再追問已回答的內容，也不重複任何問過的題目，問一個全新的題目
+            var prevQs = _aiQuestions.GetOrAdd(code, _ => new List<string>());
+            List<string> prevSnapshot; lock (prevQs) prevSnapshot = prevQs.ToList();
+            bool modeU = false;
+            if (req.AiUnanswered && _aiLast.TryGetValue(code, out var lastAi) && lastAi.Name != null && presentNames.Contains(lastAi.Name))
+            {
+                modeU = true;
+                targetName = lastAi.Name;
+                scenario = $"情境U：你（AI 面試官）剛才問「{lastAi.Name}」：「{lastAi.Text}」，過了 30 秒沒有人回答，職員也沒有接著問。請仍然只對「{lastAi.Name}」，針對同一個問題換個問法：更具體、更好回答，或提示可以從履歷中的哪一段經歷談起。不可以原句重複，也不可以換成別的題目或別的人。";
+            }
+            else if (lastIsJobseeker)
+            {
+                scenario = "情境N：剛剛的問題已經有人回答完了。不要再針對剛剛回答的內容追問，也不要重複任何問過的問題；請提出一個「全新、不同面向」的問題（可從履歷、職缺要求的其他部分切入）。";
+            }
+            var historyText = prevSnapshot.Count == 0 ? "（無）" : string.Join("\n", prevSnapshot.Select(q => "- " + q));
+            string rule1 = modeU
+                ? "1. 只對指定的那一位，針對你上次的問題換個說法，不可原句重複。"
+                : (scenario.StartsWith("情境N")
+                    ? "1. 這是全新的問題：不要延伸、追問剛剛已回答的內容，也不要和下面「已問過的問題」相同或相近；從不同面向問。"
+                    : "1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。\n   例：職員說「請先做自我介紹」，就只能順著自我介紹引導（如請對方提到某段相關經歷），不能直接問會議記錄之類的別的主題。");
+            string rule8 = modeU
+                ? "8. 不要換人、不要換題目：只能就上次那個問題換個角度。"
+                : "8. 整場會議已經問過的問題一律不可重複或換句話說重問（見「已問過的問題」）。";
             var targetRule = targetName != null
                 ? $"\n【指定對象】這句話只能對「{targetName}」說，句子以「{targetName}，」開頭；不可以改問其他求職者。\n"
                 : "";
@@ -841,19 +905,20 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 最近一位發言者：{req.LastSpeakerName}（{req.LastSpeakerRole}）
 【必須延伸的話題＝最近一句人類發言】
 {anchorText}
+【整場已問過的問題（不可重複）】
+{historyText}
 【目前情境與做法】
 {scenario}{targetRule}
 
 規則：
-1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。
-   例：職員說「請先做自我介紹」，就只能順著自我介紹引導（如請對方提到某段相關經歷），不能直接問會議記錄之類的別的主題。
+{rule1}
 2. 一次只問一個問題，口語自然，40 字以內。
 3. 可以指定一位求職者：句子以該求職者的姓名開頭（只用姓名，不要「求職者-」前綴）。有多位求職者時，依剛剛的話題與各自履歷，挑最適合的一位，不要每個人問一樣的問題，也不要連續只問同一個人。
 4. 只能引用被點名者本人的履歷或他自己說過的話，不要拿其他求職者的資料比較。
 5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（情境A 例外：同一題可以換個說法再引導，但不能原句重複）、問履歷與對話都沒有依據的事。
 6. 如果職員剛問了問題或提出要求、求職者還沒回答：請「就同一個問題」換個說法、縮小範圍，或提示可以從履歷中的哪段經歷談起，幫求職者開口。絕對不能趁機換到另一個話題。
 7. 現在已經冷場，你一定要說一句話，不可以輸出 SKIP。就算話題很簡單（例如請自我介紹），也要用一句具體的引導或追問接上。
-8. 不要跳脫：追問必須緊扣「最近一句人類發言」和目前正在談的題目，不可以跳到新題目、新主題或問履歷裡不相干的事。如果你上一句（AI 面試官）的問題還沒有人回答，這次要換個更具體、更容易回答的角度，不可以原句重複，也不可以換成別的題目。
+{rule8}
 只輸出要說的那一句話，不加引號、前綴或說明。";
 
             var raw = await _gemini.AskAsync(prompt, "你是台灣企業面試的 AI 面試官，說話自然、直接、精簡，像真人面試官。", 600);
@@ -865,6 +930,24 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 text = lastHuman != null && !lastIsJobseeker
                     ? (targetName != null ? $"{targetName}，可以先從你最有代表性的一段經歷開始說嗎？" : "可以先從最有代表性的一段經歷開始說嗎？")
                     : (targetName != null ? $"{targetName}，可以再多說明一下剛剛提到的做法和結果嗎？" : "可以再多說明一下剛剛提到的做法和結果嗎？");
+            }
+            // 🎯 去重：和整場問過的題目太像就重生一次，還是太像就用保底題庫（情境U 只要求不是原句重複）
+            double simTh = modeU ? 0.8 : 0.5;
+            if (TooSimilar(text, prevSnapshot, presentNames, simTh))
+            {
+                Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生的問題和之前太像，重新產生：「{text}」");
+                var raw2 = await _gemini.AskAsync(prompt + "\n\n【重要】你剛才想的問題「" + text + "」和已問過的太像了，請換一個完全不同的問法／面向，只輸出那一句話。", "你是台灣企業面試的 AI 面試官，說話自然、直接、精簡，像真人面試官。", 600);
+                var t2 = (raw2 ?? "").Trim().Trim('"', '「', '」', '“', '”').Trim();
+                if (t2.Length >= 4 && t2.Length <= 90 && !t2.StartsWith("SKIP", StringComparison.OrdinalIgnoreCase)) text = t2;
+                if (TooSimilar(text, prevSnapshot, presentNames, simTh))
+                {
+                    var pool = modeU
+                        ? new[] { "換個角度，可以先舉一個你印象最深的實際例子嗎？", "如果不知道從哪開始，可以先說說你當時扮演的角色嗎？", "不用說得很完整，先講你做過的一件具體的事就好。" }
+                        : new[] { "可以分享一次你在工作或專案中遇到最大的挑戰，以及你怎麼解決的嗎？", "你覺得自己最符合這個職位的一項能力是什麼？可以舉個例子嗎？", "如果加入團隊，你希望前三個月做出什麼貢獻？", "你有跟不同部門合作的經驗嗎？意見不同時你怎麼處理？", "最近你學到的一項新技能是什麼？怎麼運用的？", "你為什麼對這個職位有興趣？" };
+                    var unused = pool.Where(c => !TooSimilar(c, prevSnapshot, presentNames, simTh)).ToList();
+                    var pick = unused.Count > 0 ? unused[new Random().Next(unused.Count)] : pool[new Random().Next(pool.Length)];
+                    text = targetName != null ? $"{targetName}，{pick}" : pick;
+                }
             }
             // 模型若無視指定對象、開頭點了別人，強制換成指定的人
             if (targetName != null)
@@ -878,7 +961,10 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                     }
                 }
             }
-            foreach (var pn in presentNames) if (text.StartsWith(pn, StringComparison.OrdinalIgnoreCase)) { _aiAskCount.AddOrUpdate($"{code}|{pn}", 1, (_, v) => v + 1); break; }
+            string? askedName = presentNames.FirstOrDefault(pn => text.StartsWith(pn, StringComparison.OrdinalIgnoreCase));
+            if (askedName != null && !modeU) _aiAskCount.AddOrUpdate($"{code}|{askedName}", 1, (_, v) => v + 1);
+            lock (prevQs) prevQs.Add(text);
+            _aiLast[code] = (askedName ?? targetName, text);
             Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生提問：「{text}」");
             return Ok(new { text });
         }
@@ -893,7 +979,8 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             finally
             {
                 // 不管上面成功還失敗，都要廣播「說完了」，不然全場的冷場計時器會永遠卡在暫停狀態
-                await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", false, text);
+                var interrupted = _botService.ConsumeInterrupted(roomCode);
+                await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", false, text, interrupted);
             }
         }
 
@@ -1662,6 +1749,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
         public string? LastSpeakerName { get; set; }
         public string? LastSpeakerRole { get; set; }
         public bool LastWasQuestion { get; set; }
+        public bool AiUnanswered { get; set; }   // AI 上次提問之後，沒有任何人出聲/發言
         public List<AiConvoLine>? Lines { get; set; }
     }
 

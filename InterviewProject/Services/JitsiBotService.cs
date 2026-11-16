@@ -161,7 +161,22 @@ namespace InterviewProject.Services
             await client.start();
 
             window.__simliStatus = '已連線';
+            window.__simliGen = 0;
+            // 🎯 有人開口時立刻停止 AI 說話：清掉 Simli 還沒播完的音訊緩衝
+            window.__simliStop = function () {
+                window.__simliGen = (window.__simliGen || 0) + 1;
+                try {
+                    const c = window.__simliClient;
+                    if (c) {
+                        if (typeof c.ClearBuffer === 'function') c.ClearBuffer();
+                        else if (typeof c.clearBuffer === 'function') c.clearBuffer();
+                        else console.warn('[Simli] 找不到 ClearBuffer，無法清除緩衝');
+                    }
+                    return true;
+                } catch (e) { console.error('[Simli] 停止說話失敗：', e); return false; }
+            };
             window.__simliSpeak = async function (base64Pcm24k) {
+                const gen = window.__simliGen || 0;
                 try {
                     const raw = atob(base64Pcm24k);
                     const bytes = new Uint8Array(raw.length);
@@ -187,6 +202,8 @@ namespace InterviewProject.Services
                         outInt16[i] = s < 0 ? s * 32768 : s * 32767;
                     }
                     const outBytes = new Uint8Array(outInt16.buffer);
+                    // 被打斷（有人開口）：降取樣期間若已經呼叫過停止，這段音訊就不要送出去了
+                    if ((window.__simliGen || 0) !== gen) { console.log('[Simli] 這段語音已被打斷，不送出'); return; }
                     if (window.__simliClient) window.__simliClient.sendAudioData(outBytes);
                 } catch (e) { console.error('[Simli] speak 失敗：', e); }
             };
@@ -1607,6 +1624,32 @@ namespace InterviewProject.Services
             Console.WriteLine($"[JitsiBot] CloseAllBotsAsync：已嘗試關閉 {instances.Count} 個還在運作的 AI 面試官分身。");
         }
 
+        // 🎯 打斷機制：有人開口時，馬上停止 AI 說話（不用等知道對方說了什麼）
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _speakCts = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastStopUtc = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _interrupted = new();
+
+        public bool ConsumeInterrupted(string roomCode)
+            => !string.IsNullOrEmpty(roomCode) && _interrupted.TryRemove(roomCode.Trim(), out var v) && v;
+
+        public async Task<bool> StopSpeakingAsync(string roomCode)
+        {
+            if (string.IsNullOrEmpty(roomCode)) return false;
+            roomCode = roomCode.Trim();
+            _lastStopUtc[roomCode] = DateTime.UtcNow;
+            if (!IsSpeaking(roomCode)) return false;
+            _interrupted[roomCode] = true;
+            try { if (_speakCts.TryGetValue(roomCode, out var cts)) cts.Cancel(); } catch { }
+            try
+            {
+                if (_activeBots.TryGetValue(roomCode, out var instance) && instance != null)
+                    await instance.PageInstance.EvaluateAsync<bool>("(() => window.__simliStop ? window.__simliStop() : false)()");
+            }
+            catch (Exception ex) { Console.WriteLine($"[JitsiBot] StopSpeakingAsync 失敗（房間 {roomCode}）：{ex.Message}"); }
+            Console.WriteLine($"[JitsiBot] 房間 {roomCode} 有人開口，AI 面試官已被打斷、停止說話。");
+            return true;
+        }
+
         public async Task<bool> SpeakAsync(string roomCode, string text)
         {
             if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text)) return false;
@@ -1620,6 +1663,10 @@ namespace InterviewProject.Services
                 return false;
             }
             _speakingRooms[roomCode] = true;
+            var speakStartUtc = DateTime.UtcNow;
+            var speakCts = new CancellationTokenSource();
+            _speakCts[roomCode] = speakCts;
+            _interrupted.TryRemove(roomCode, out _);
 
             try
             {
@@ -1647,6 +1694,14 @@ namespace InterviewProject.Services
                     return false;
                 }
 
+                // 語音合成期間如果有人已經開口（收到停止），就不要把這句送出去
+                if (speakCts.IsCancellationRequested || (_lastStopUtc.TryGetValue(roomCode, out var stopAt) && stopAt > speakStartUtc))
+                {
+                    _interrupted[roomCode] = true;
+                    Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 語音合成完成時已有人開口，這句話不送出：「{text}」");
+                    return false;
+                }
+
                 var base64Audio = Convert.ToBase64String(audioBytes);
                 var speakScript = "(async () => { if (window.__simliSpeak) { await window.__simliSpeak(" +
                                    JsonSerializer.Serialize(base64Audio) +
@@ -1668,8 +1723,12 @@ namespace InterviewProject.Services
                 //    什麼時候廣播「AI 說完了」給全場，讓大家的冷場計時器重新啟動的時機才會準。
                 var speechSeconds = (audioBytes.Length / 2.0) / 24000.0;
                 var waitMs = (int)(speechSeconds * 1000) + 700; // +700ms：涵蓋網路/Simli 端一點播放延遲的緩衝
-                await Task.Delay(Math.Max(waitMs, 0));
+                await Task.Delay(Math.Max(waitMs, 0), speakCts.Token);
                 return true;
+            }
+            catch (OperationCanceledException)
+            {
+                return false; // 被打斷
             }
             catch (Exception ex)
             {
@@ -1679,6 +1738,8 @@ namespace InterviewProject.Services
             finally
             {
                 _speakingRooms[roomCode] = false;
+                _speakCts.TryRemove(roomCode, out _);
+                speakCts.Dispose();
             }
         }
     }

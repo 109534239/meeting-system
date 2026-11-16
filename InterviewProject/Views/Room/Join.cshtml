@@ -623,6 +623,18 @@
             if (convoLog.length > 14) convoLog.shift();
         }
         let aiSpeakingRemote = false; // AI 現在是不是正在講話（全場共享的狀態，不是只有觸發者自己知道）
+        // 🎯 有人開口就立刻讓 AI 閉嘴（不等轉文字）。任何人的瀏覽器偵測到都可以呼叫，伺服器端是冪等的。
+        let lastStopReqMs = 0;
+        function requestAiStop(why) {
+            const now = Date.now();
+            if (now - lastStopReqMs < 800) return;
+            lastStopReqMs = now;
+            console.log('[打斷] 有人開口（' + why + '），要求 AI 面試官立刻停止說話');
+            try {
+                fetch('/Room/AiStop', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'roomCode=' + encodeURIComponent(ROOM_CODE) }).catch(() => {});
+            } catch {}
+        }
 
         // 🎯 簡單的中文/英文問句判斷：結尾問號，或包含常見疑問詞。只是啟發式規則，
         //    抓不準也沒關係——最壞情況只是冷場等待時間退回比較保守的預設值，不影響其他功能。
@@ -665,6 +677,7 @@
         // 有人的一句話正在轉文字：全場（尤其主持人）AI 都先不要開口
         const pendingUtt = {};
         hub.on("UtterancePendingChanged", (id, pending, holdSec) => {
+            if (pending && IS_HOST && (aiSpeakingRemote || Date.now() < aiRequestedUntil)) requestAiStop('有人開始講話');
             if (pending) pendingUtt[id] = Date.now() + (holdSec || 5) * 1000;
             else { delete pendingUtt[id]; lastTranscriptMs = Date.now(); transcriptWaits = 0; } // 冷場計時只看「聲音何時停止」，不等文字
         });
@@ -674,6 +687,7 @@
             return any;
         }
         hub.on("SpeechDetected", () => {
+            if (IS_HOST && (aiSpeakingRemote || Date.now() < aiRequestedUntil)) requestAiStop('收到有人出聲的通知');
             if (!aiSpeakingRemote && Date.now() - aiEndedMs > 1500) humanVoiceSinceAi = true;
             if (!aiSpeakingRemote) lastVoiceMs = Date.now();
             if (IS_HOST && Date.now() - (window.__lastVoiceLog || 0) > 3000) { window.__lastVoiceLog = Date.now(); console.log('[冷場診斷] 收到有人出聲的通知（冷場計時已歸零）'); }
@@ -696,9 +710,13 @@
         // 🐛 這輪新增：AI 面試官現在開始/結束講話的全場廣播（取代原本只有觸發者自己聽得到的
         //    瀏覽器內建語音合成）。收到 true：全場一起暫停冷場計時、顯示字幕、暫停自己的語音辨識
         //    （避免收到 AI 自己的聲音、被當成有人在講話混進逐字稿）。收到 false：全場一起恢復。
-        hub.on("AiSpeakingStateChanged", (isSpeaking, text) => {
+        hub.on("AiSpeakingStateChanged", (isSpeaking, text, interrupted) => {
             aiSpeakingRemote = !!isSpeaking;
-            if (!aiSpeakingRemote) { aiRequestedUntil = 0; lastSpeechMs = Date.now(); aiEndedMs = Date.now(); }
+            if (!aiSpeakingRemote) {
+                aiRequestedUntil = 0; lastSpeechMs = Date.now(); aiEndedMs = Date.now();
+                // 被人打斷：不要把打斷者的聲音當成 AI 的回音丟掉，也不算「沒人回應」
+                if (interrupted) { aiEndedMs = 0; humanVoiceSinceAi = true; console.log('[打斷] AI 已被打斷停止'); }
+            }
             isSp = aiSpeakingRemote; // 🐛 這輪新增：跟 isSp 同步，recognition.onend 的自動重啟判斷才不會跟這裡打架
             if (aiSpeakingRemote) {
                 lastSpeakerRole = 'ai';
@@ -1018,6 +1036,7 @@
             const abuf = new Uint8Array(lan.fftSize);
 
             let rec = null, chunks = [], recStart = 0;
+            let bargeRun = 0;
             let speaking = false, loudRun = 0, lastLoudAt = 0, utterStart = 0, aiOverlap = false, busy = false, lastCast = 0, peak = 0;
 
             function startRec() {
@@ -1084,9 +1103,19 @@
                     let mx = 0; for (let i = 0; i < abuf.length; i++) { const v = Math.abs(abuf[i] - 128) / 128; if (v > mx) mx = v; }
                     const now = Date.now();
                     const aiBusy = aiSpeakingRemote || isSp || (now - aiEndedMs) < 1200;
+                    if (aiSpeakingRemote || isSp) {
+                        // AI 說話中：音量明顯偏大且持續 0.3 秒＝有人開口，馬上停掉 AI（門檻比平常高，避免把 AI 自己的回音當成有人講話）
+                        if (mx > 0.10) bargeRun++; else bargeRun = 0;
+                        if (bargeRun >= 3) {
+                            bargeRun = 0;
+                            requestAiStop('本機麥克風偵測到聲音 ' + mx.toFixed(2));
+                            try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
+                        }
+                    } else bargeRun = 0;
                     if (aiBusy) { if (speaking) aiOverlap = true; loudRun = 0; }
                     else if (mx > 0.03) {
                         loudRun++; lastLoudAt = now; if (mx > peak) peak = mx;
+                        if (IS_HOST && loudRun >= 2 && Date.now() < aiRequestedUntil) requestAiStop('AI 準備開口時主持人開始講話');
                         if (!speaking && loudRun >= 2) { speaking = true; utterStart = now; aiOverlap = false; console.log('[STT-live] 開始講話'); try { hub.invoke('UtterancePending', ROOM_CODE, true, 5); } catch {} }
                         if (loudRun >= 2 && now - lastCast > 1000) {
                             lastCast = now; lastSpeechMs = now; lastVoiceMs = now;
@@ -1380,6 +1409,7 @@
                 // 🎯 改版：不再用固定題庫或「不用緊張」這類通用鼓勵。改由伺服器依「最近對話內容 + 職缺條件 +
                 //    在場求職者的履歷」決定要不要說、對誰說、說什麼；沒有值得問的就回傳空字串，AI 保持安靜。
                 setSt('th','💭 思考中...');
+                const aiUnanswered = (humanSeq === aiAtSeq && !humanVoiceSinceAi); // AI 上次問完後，一直沒人出聲/發言
                 let q = null;
                 try {
                     const r = await fetch('/Room/AiNextQuestion', {
@@ -1389,6 +1419,7 @@
                             lastSpeakerName: lastSpeakerName,
                             lastSpeakerRole: lastSpeakerRole,
                             lastWasQuestion: !!lastWasQuestion,
+                            aiUnanswered: aiUnanswered,
                             lines: convoLog.slice(-12)
                         })
                     });
