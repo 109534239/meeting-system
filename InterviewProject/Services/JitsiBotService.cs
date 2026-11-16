@@ -205,7 +205,22 @@ namespace InterviewProject.Services
                     const outBytes = new Uint8Array(outInt16.buffer);
                     // 被打斷（有人開口）：降取樣期間若已經呼叫過停止，這段音訊就不要送出去了
                     if ((window.__simliGen || 0) !== gen) { console.log('[Simli] 這段語音已被打斷，不送出'); return; }
-                    if (window.__simliClient) window.__simliClient.sendAudioData(outBytes);
+                    if (window.__simliClient) {
+                        // 🎯 不一次把整段送進 Simli（送出去就收不回來，有人開口也停不下來）：
+                        //    切成 0.25 秒一塊、領先播放時間約 0.5 秒，按實際播放速度送；
+                        //    被打斷（__simliGen 改變）就停止再送，最多只剩約 0.5 秒已送出的音訊。
+                        const CH = 8000;                 // 16kHz、16-bit → 32000 bytes/秒；8000 bytes = 0.25 秒
+                        const t0 = performance.now();
+                        (async () => {
+                            for (let off = 0, i = 0; off < outBytes.length; off += CH, i++) {
+                                if ((window.__simliGen || 0) !== gen) { console.log('[Simli] 說話被打斷，停止送出剩餘音訊（已送 ' + i + ' 塊）'); return; }
+                                const wait = (i * 250 - 500) - (performance.now() - t0);
+                                if (wait > 0) await new Promise(r => setTimeout(r, wait));
+                                if ((window.__simliGen || 0) !== gen) { console.log('[Simli] 說話被打斷，停止送出剩餘音訊（已送 ' + i + ' 塊）'); return; }
+                                try { window.__simliClient.sendAudioData(outBytes.slice(off, off + CH)); } catch (e) { console.error('[Simli] sendAudioData 失敗：', e); return; }
+                            }
+                        })();
+                    }
                 } catch (e) { console.error('[Simli] speak 失敗：', e); }
             };
         } catch (e) {

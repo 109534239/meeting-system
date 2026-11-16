@@ -866,7 +866,7 @@ namespace InterviewProject.Controllers
                 if (tags.Length > 0) sbJob.AppendLine("技能：" + tags);
             }
 
-            var lines = (req.Lines ?? new List<AiConvoLine>()).TakeLast(12).ToList();
+            var lines = (req.Lines ?? new List<AiConvoLine>()).TakeLast(20).ToList();
             var sbConvo = new StringBuilder();
             foreach (var l in lines) sbConvo.AppendLine($"{l.Name}：{Clip(l.Text, 200)}");
 
@@ -880,6 +880,15 @@ namespace InterviewProject.Controllers
             // 🎯 「要延伸的話題」＝最近一句非 AI 的發言。AI 的問題必須從這句延伸，不能另起爐灶跳到履歷別的地方。
             var lastHuman = lines.LastOrDefault(l => l.Role != "ai");
             var anchorText = lastHuman != null ? $"{lastHuman.Name}：{Clip(lastHuman.Text, 200)}" : "（無）";
+
+            // 🎯 「目前面試進行到哪個主題」＝職員/主持人最近一次的提問或要求；更早的職員提問＝已經談完的階段
+            bool IsStaffLine(AiConvoLine l) => l.Role != "ai" && !string.Equals(l.Role, "jobseeker", StringComparison.OrdinalIgnoreCase) && !(l.Name ?? "").StartsWith("求職者");
+            var staffLines = lines.Where(IsStaffLine).ToList();
+            var themeLine = staffLines.LastOrDefault();
+            var themeText = themeLine != null ? $"{themeLine.Name}：{Clip(themeLine.Text, 120)}" : "（職員還沒有提問）";
+            var earlierStaff = staffLines.Count > 1 ? string.Join("\n", staffLines.Take(staffLines.Count - 1).Select(l => "- " + Clip(l.Text, 80))) : "（無）";
+            // 職員已經問過的題目也要避免被 AI 換句話說重問
+            var staffQTexts = staffLines.Select(l => l.Text ?? "").Where(t => t.Length > 4).ToList();
 
             // 🎯 判斷現在是哪一種情境，直接告訴模型該怎麼做（不讓它自己亂選）
             string scenario;
@@ -936,13 +945,13 @@ namespace InterviewProject.Controllers
             }
             else if (lastIsJobseeker)
             {
-                scenario = "情境N：剛剛的問題已經有人回答完了。不要再針對剛剛回答的內容追問，也不要重複任何問過的問題；請提出一個「全新、不同面向」的問題（可從履歷、職缺要求的其他部分切入）。";
+                scenario = "情境N：剛剛的問題已經有人回答完了。不要再針對剛剛回答的內容追問，也不要重複任何問過的問題。請依「目前主題」提出另一個不同角度的子問題，或自然銜接到「目前主題」的下一步；不可以回到職員已經談完的較早主題（例如已經過了自我介紹，就不能再問自我介紹或履歷簡介）。履歷只用來讓問題更貼近這位求職者。";
             }
             var historyText = prevSnapshot.Count == 0 ? "（無）" : string.Join("\n", prevSnapshot.Select(q => "- " + q));
             string rule1 = modeU
                 ? "1. 只對指定的那一位，針對你上次的問題換個說法，不可原句重複。"
                 : (scenario.StartsWith("情境N")
-                    ? "1. 這是全新的問題：不要延伸、追問剛剛已回答的內容，也不要和下面「已問過的問題」相同或相近；從不同面向問。"
+                    ? "1. 問題要緊扣「目前主題（職員最近一次的提問）」，換一個新的角度或下一步；不要追問剛剛已回答的內容，不要和「已問過的問題」相同或相近，也不可以回到「職員已談完的較早主題」。"
                     : "1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。\n   例：職員說「請先做自我介紹」，就只能順著自我介紹引導（如請對方提到某段相關經歷），不能直接問會議記錄之類的別的主題。");
             string rule8 = modeU
                 ? "8. 不要換人、不要換題目：只能就上次那個問題換個角度。"
@@ -962,7 +971,11 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 【最近的對話】（由舊到新；「求職者-」「職員-」「主持人-」是身分前綴，AI 面試官是你自己）
 {sbConvo}
 最近一位發言者：{req.LastSpeakerName}（{req.LastSpeakerRole}）
-【必須延伸的話題＝最近一句人類發言】
+【目前主題＝職員最近一次的提問／要求】
+{themeText}
+【職員較早問過的題目＝已談完的階段，不可以再回頭問】
+{earlierStaff}
+【最近一句人類發言】
 {anchorText}
 【整場已問過的問題（不可重複）】
 {historyText}
@@ -980,6 +993,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 {rule8}
 只輸出要說的那一句話，不加引號、前綴或說明。";
 
+            var prevForCheck = prevSnapshot.Concat(staffQTexts).ToList();
             var raw = await _gemini.AskAsync(prompt, "你是台灣企業面試的 AI 面試官，說話自然、直接、精簡，像真人面試官。", 600);
             var text = (raw ?? "").Trim().Trim('"', '「', '」', '“', '”').Trim();
             if (text.Length < 4 || text.Length > 90 || text.StartsWith("SKIP", StringComparison.OrdinalIgnoreCase))
@@ -992,18 +1006,18 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             }
             // 🎯 去重：和整場問過的題目太像就重生一次，還是太像就用保底題庫（情境U 只要求不是原句重複）
             double simTh = modeU ? 0.8 : 0.5;
-            if (TooSimilar(text, prevSnapshot, presentNames, simTh))
+            if (TooSimilar(text, prevForCheck, presentNames, simTh))
             {
                 Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生的問題和之前太像，重新產生：「{text}」");
                 var raw2 = await _gemini.AskAsync(prompt + "\n\n【重要】你剛才想的問題「" + text + "」和已問過的太像了，請換一個完全不同的問法／面向，只輸出那一句話。", "你是台灣企業面試的 AI 面試官，說話自然、直接、精簡，像真人面試官。", 600);
                 var t2 = (raw2 ?? "").Trim().Trim('"', '「', '」', '“', '”').Trim();
                 if (t2.Length >= 4 && t2.Length <= 90 && !t2.StartsWith("SKIP", StringComparison.OrdinalIgnoreCase)) text = t2;
-                if (TooSimilar(text, prevSnapshot, presentNames, simTh))
+                if (TooSimilar(text, prevForCheck, presentNames, simTh))
                 {
                     var pool = modeU
                         ? new[] { "換個角度，可以先舉一個你印象最深的實際例子嗎？", "如果不知道從哪開始，可以先說說你當時扮演的角色嗎？", "不用說得很完整，先講你做過的一件具體的事就好。" }
                         : new[] { "可以分享一次你在工作或專案中遇到最大的挑戰，以及你怎麼解決的嗎？", "你覺得自己最符合這個職位的一項能力是什麼？可以舉個例子嗎？", "如果加入團隊，你希望前三個月做出什麼貢獻？", "你有跟不同部門合作的經驗嗎？意見不同時你怎麼處理？", "最近你學到的一項新技能是什麼？怎麼運用的？", "你為什麼對這個職位有興趣？" };
-                    var unused = pool.Where(c => !TooSimilar(c, prevSnapshot, presentNames, simTh)).ToList();
+                    var unused = pool.Where(c => !TooSimilar(c, prevForCheck, presentNames, simTh)).ToList();
                     var pick = unused.Count > 0 ? unused[new Random().Next(unused.Count)] : pool[new Random().Next(pool.Length)];
                     text = targetName != null ? $"{targetName}，{pick}" : pick;
                 }

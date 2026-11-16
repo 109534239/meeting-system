@@ -656,13 +656,24 @@
         // ══════════════════════════════════
         const hub = new signalR.HubConnectionBuilder()
             .withUrl("/meetingHub")
-            .withAutomaticReconnect()
+            // 預設的自動重連只試 4 次（0/2/10/30 秒）就永遠放棄；手機熱點一斷就收不到「AI 正在說話」等廣播，
+            // 結果把 AI 的聲音當成自己在講話。改成不放棄、每 0.5~5 秒重試一次。
+            .withAutomaticReconnect({ nextRetryDelayInMilliseconds: ctx => Math.min(5000, 500 + ctx.previousRetryCount * 1000) })
             .build();
 
         // 🎯 重要修正：斷線重連後，之前用 JoinRoom 加入的群組會消失，一定要重新加入，
         //    不然主持人開始會議的廣播會收不到（卡在等待畫面不會動）
+        hub.onreconnecting(() => { console.warn('[Hub] 連線中斷，重連中…（這段時間收不到全場廣播）'); });
         hub.onreconnected(() => {
+            console.log('[Hub] 已重新連線');
             hub.invoke("JoinRoom", ROOM_CODE).catch(() => {});
+        });
+        hub.onclose(async () => {
+            console.warn('[Hub] 連線已關閉，持續嘗試重新連線');
+            for (let i = 0; i < 600; i++) {
+                try { await hub.start(); await hub.invoke("JoinRoom", ROOM_CODE); console.log('[Hub] 已重新連線並重新加入房間'); return; }
+                catch { await new Promise(r => setTimeout(r, 2000)); }
+            }
         });
 
         hub.on("MeetingStarted", () => { if (!started) onMeetingStart(); });
@@ -1045,7 +1056,7 @@
             const abuf = new Uint8Array(lan.fftSize);
 
             let rec = null, chunks = [], recStart = 0;
-            let bargeRun = 0;
+            let bargeRun = 0, noiseFloor = 0.004, voiceThr = 0.02;
             let speaking = false, loudRun = 0, lastLoudAt = 0, utterStart = 0, aiOverlap = false, busy = false, lastCast = 0, peak = 0;
 
             function startRec() {
@@ -1123,8 +1134,11 @@
                             try { hub.invoke('BroadcastSpeech', ROOM_CODE); } catch {}
                         }
                     } else bargeRun = 0;
+                    // 🎯 偵測有人講話的門檻改成跟著環境底噪／麥克風音量調整（聲音小的人固定門檻 0.03 會被當成沒講話，AI 就插嘴）
+                    if (!aiBusy && !speaking && mx < voiceThr) noiseFloor = noiseFloor * 0.97 + mx * 0.03;
+                    voiceThr = Math.min(0.04, Math.max(0.012, noiseFloor * 2.5 + 0.006));
                     if (aiBusy) { if (speaking) aiOverlap = true; loudRun = 0; }
-                    else if (mx > 0.03) {
+                    else if (mx > voiceThr) {
                         loudRun++; lastLoudAt = now; if (mx > peak) peak = mx;
                         if (IS_HOST && loudRun >= 2 && Date.now() < aiRequestedUntil) requestAiStop('AI 準備開口時主持人開始講話');
                         if (!speaking && loudRun >= 2) { speaking = true; utterStart = now; aiOverlap = false; console.log('[STT-live] 開始講話'); voicePing(1, 5); }
@@ -1400,7 +1414,7 @@
                         lastSpeakerRole: lastSpeakerRole,
                         lastWasQuestion: !!lastWasQuestion,
                         aiUnanswered: unans,
-                        lines: convoLog.slice(-12)
+                        lines: convoLog.slice(-20)
                     })
                 });
                 if (r.ok) { const d = await r.json(); if (d.text && d.text.length > 3) return d.text.trim(); }
@@ -1840,6 +1854,12 @@
             jitsiApi.addEventListener('dominantSpeakerChanged', e => {
                 dominantId = e && e.id ? e.id : null;
                 dominantSince = Date.now();
+                // 🎯 第二條獨立的「有人在講話」訊號：Jitsi 自己判斷的主講者換人了＝有人開口（不依賴別人瀏覽器的通知，
+                //    主持人這台自己就能看到）。只會讓 AI 更晚開口，不會更早，所以不怕誤判。
+                if (IS_HOST && dominantId && !aiSpeakingRemote && !isSp && Date.now() - aiEndedMs > 1500) {
+                    lastSpeechMs = Date.now(); humanVoiceSinceAi = true;
+                    console.log('[冷場診斷] Jitsi 回報主講者換人（有人開口），冷場計時歸零');
+                }
             });
 
             async function markJoinedWithRetry(retriesLeft) {
