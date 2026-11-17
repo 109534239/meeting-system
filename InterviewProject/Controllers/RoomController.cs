@@ -44,6 +44,163 @@ namespace InterviewProject.Controllers
             }
         }
 
+
+        // ═════════ 即時記錄：會議進行中，每位求職者每答完一題，就即時評估這次回答並記錄 ═════════
+        //   會後的個人分析與比較，會把這些即時記錄一起交給 Gemini 當依據（不只是事後重看影片）。
+        private static string Clip(string? s, int n) { s = (s ?? "").Replace("\r", " ").Replace("\n", " ").Trim(); return s.Length <= n ? s : s.Substring(0, n) + "…"; }
+        public class LiveNote
+        {
+            public string Name = ""; public string Answer = ""; public string Question = ""; public string AskedWho = "未指定";
+            public bool Addressed = true; public int Relevance, Specific, Logic; public string Note = ""; public DateTime At = DateTime.Now;
+        }
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<LiveNote>> _liveNotes = new();
+        private static readonly SemaphoreSlim _noteGate = new(2);
+
+        private void QueueLiveNote(string code, string speaker, string role, string text)
+        {
+            try
+            {
+                bool js = string.Equals(role, "jobseeker", StringComparison.OrdinalIgnoreCase) || speaker.StartsWith("求職者");
+                var ans = (text ?? "").Trim();
+                if (!js || ans.Length < 12) return;
+                var name = speaker.Replace("求職者-", "").Trim();
+                List<AiConvoLine> ctx = new();
+                if (_convo.TryGetValue(code, out var cl)) lock (cl) ctx = cl.TakeLast(7).ToList();
+                var ctxText = string.Join("\n", ctx.Select(l => $"{l.Name}：{Clip(l.Text, 80)}"));
+                var present = _convo.TryGetValue(code, out var cl2) ? "" : "";
+                _ = Task.Run(async () =>
+                {
+                    await _noteGate.WaitAsync();
+                    try
+                    {
+                        var p = $"下面是面試中最近的對話（由舊到新），最後一段是求職者「{name}」剛回答的內容（語音辨識，可能有錯字）：\n{ctxText}\n\n" +
+                                "請判斷：1.「{name}」這次回答的是哪一個問題（簡述）；2.那個問題是問誰（姓名，沒指名或對大家問就寫「未指定」；語音辨識常把名字聽錯，請依發音判斷）；" +
+                                "3.相關度、具體度（有無實例/數字/做法）、邏輯（有條理）各 0~10 分；4.一句 25 字內的觀察。\n" +
+                                "只輸出一行 JSON：{\"question\":\"\",\"asked\":\"\",\"relevance\":0,\"specific\":0,\"logic\":0,\"note\":\"\"}";
+                        p = p.Replace("{name}", name);
+                        var raw = await _gemini.AskAsync(p, "你是面試記錄員，只輸出 JSON。", 300);
+                        if (string.IsNullOrWhiteSpace(raw)) return;
+                        var m = System.Text.RegularExpressions.Regex.Match(raw, @"\{.*\}", System.Text.RegularExpressions.RegexOptions.Singleline);
+                        if (!m.Success) return;
+                        using var doc = System.Text.Json.JsonDocument.Parse(m.Value);
+                        var r = doc.RootElement;
+                        int N(string k) { if (r.TryGetProperty(k, out var v)) { if (v.ValueKind == System.Text.Json.JsonValueKind.Number && v.TryGetInt32(out var i)) return Math.Clamp(i, 0, 10); if (v.ValueKind == System.Text.Json.JsonValueKind.String && int.TryParse(v.GetString(), out var j)) return Math.Clamp(j, 0, 10); } return 0; }
+                        string S(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? (v.GetString() ?? "") : "";
+                        var asked = S("asked").Trim(); if (string.IsNullOrEmpty(asked)) asked = "未指定";
+                        var note = new LiveNote
+                        {
+                            Name = name,
+                            Answer = Clip(ans, 120),
+                            Question = Clip(S("question"), 80),
+                            AskedWho = asked,
+                            Addressed = asked == "未指定" || asked.Contains(name, StringComparison.OrdinalIgnoreCase) || name.Contains(asked, StringComparison.OrdinalIgnoreCase),
+                            Relevance = N("relevance"),
+                            Specific = N("specific"),
+                            Logic = N("logic"),
+                            Note = Clip(S("note"), 40)
+                        };
+                        var list = _liveNotes.GetOrAdd(code, _ => new List<LiveNote>());
+                        lock (list) { if (!list.Any(x => x.Name == name && x.Answer == note.Answer)) list.Add(note); }
+                    }
+                    catch { }
+                    finally { _noteGate.Release(); }
+                });
+            }
+            catch { }
+        }
+
+        // ═════════ 評分依據（權重）═════════
+        private static readonly (string Key, string Title, int Weight, string Basis)[] Rubric =
+        {
+            ("A", "專業知識與回答具體度", 30, "有沒有實際做法、數字、案例、工具與成果；空泛口號給低分"),
+            ("B", "答題邏輯與結構",       25, "是否緊扣問題、先後有序、因果清楚、能自圓其說"),
+            ("C", "與職缺及履歷契合度",   20, "回答與職缺要求、自己履歷所寫經驗是否一致且相符"),
+            ("D", "溝通表達與語氣",       15, "語調、語速、停頓、清晰度、自信程度（從聲音判斷）"),
+            ("E", "臨場態度與專注",       10, "眼神、表情、姿態、有無認真聆聽（從畫面判斷）；喝水、調整眼鏡等正常小動作不算不專業"),
+        };
+
+        public class CandScore { public string Name = ""; public Dictionary<string, int> S = new(); public double Total; public string Summary = "", Strengths = "", Risks = ""; }
+
+        private string BuildRubricGuidance(string roomCode, string candidate)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("【評分依據（五個維度與權重，總分由系統加權計算，你不要自己算總分）】");
+            foreach (var r in Rubric) sb.AppendLine($"{r.Key}. {r.Title}（權重 {r.Weight}%）：{r.Basis}");
+            sb.AppendLine("每個維度請各給 0~100 分，並在內文寫出依據（引用逐字稿或畫面/聲音的具體片段）。");
+            sb.AppendLine("【判斷「答非所問」的規則】先確認每個問題是問誰：下面的「即時記錄」與逐字稿都有標示被問者。如果求職者回答的是問別人的問題，要寫明「該問題原本是問○○」，不可以直接當成他不會聽、不可扣 B、E 的分數；只有『被問到的就是他、卻答非所問』才扣分。語音辨識常把名字聽錯，請依發音判斷。");
+            sb.AppendLine("第 4 項「AI 綜合評分」請不要輸出，改在全文最後輸出（只輸出這一個區塊，JSON 內分數是整數）：");
+            sb.AppendLine("[[SCORES]]{\"A\":0,\"B\":0,\"C\":0,\"D\":0,\"E\":0,\"summary\":\"一句話總評\",\"strengths\":\"主要優點\",\"risks\":\"主要疑慮\"}[[/SCORES]]");
+            if (_liveNotes.TryGetValue(roomCode, out var list))
+            {
+                List<LiveNote> mine; lock (list) mine = list.Where(x => string.Equals(x.Name, candidate, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (mine.Count > 0)
+                {
+                    sb.AppendLine($"【會議進行中的即時記錄（{candidate}）】");
+                    foreach (var n in mine)
+                        sb.AppendLine($"- {n.At:HH:mm} 針對「{n.Question}」（問的是：{n.AskedWho}{(n.Addressed ? "" : "，非問他本人")}）｜相關{n.Relevance}/具體{n.Specific}/邏輯{n.Logic}（滿分10）｜{n.Note}｜回答：{n.Answer}");
+                }
+            }
+            return sb.ToString();
+        }
+
+        // 解析模型輸出的分數區塊，用權重算總分，並把明細附在文末
+        private static (string Text, CandScore? Score) FinalizeAnalysis(string analysis, string candidate)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(analysis, @"\[\[SCORES\]\](.*?)\[\[/SCORES\]\]", System.Text.RegularExpressions.RegexOptions.Singleline);
+            var body = System.Text.RegularExpressions.Regex.Replace(analysis, @"\[\[SCORES\]\].*?\[\[/SCORES\]\]", "", System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (!m.Success) return (analysis.TrimEnd() + "\n\n（註：這份分析沒有產生各維度分數，無法計算加權總分。）", null);
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(System.Text.RegularExpressions.Regex.Match(m.Groups[1].Value, @"\{.*\}", System.Text.RegularExpressions.RegexOptions.Singleline).Value);
+                var r = doc.RootElement;
+                var cs = new CandScore { Name = candidate };
+                foreach (var ru in Rubric)
+                {
+                    int v = 0;
+                    if (r.TryGetProperty(ru.Key, out var e)) { if (e.ValueKind == System.Text.Json.JsonValueKind.Number) v = (int)Math.Round(e.GetDouble()); else if (e.ValueKind == System.Text.Json.JsonValueKind.String) int.TryParse(e.GetString(), out v); }
+                    cs.S[ru.Key] = Math.Clamp(v, 0, 100);
+                }
+                string Sx(string k) => r.TryGetProperty(k, out var e) && e.ValueKind == System.Text.Json.JsonValueKind.String ? (e.GetString() ?? "") : "";
+                cs.Summary = Sx("summary"); cs.Strengths = Sx("strengths"); cs.Risks = Sx("risks");
+                cs.Total = Math.Round(Rubric.Sum(ru => cs.S[ru.Key] * ru.Weight / 100.0));
+                // 模型如果還是自己寫了總分那行，拿掉，避免兩個分數不一致
+                body = System.Text.RegularExpressions.Regex.Replace(body, @"^.*AI\s*綜合評分\s*[：:].*$\r?\n?", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+                var sb = new System.Text.StringBuilder(body.TrimEnd());
+                sb.AppendLine().AppendLine().AppendLine("════ 加權評分明細（總分 = 各維度分數 × 權重 加總）════");
+                foreach (var ru in Rubric) sb.AppendLine($"{ru.Title}（權重 {ru.Weight}%）：{cs.S[ru.Key]} 分 → 加權 {cs.S[ru.Key] * ru.Weight / 100.0:0.0} 分");
+                sb.AppendLine($"AI 綜合評分：{cs.Total:0} 分");
+                return (sb.ToString(), cs);
+            }
+            catch { return (body.TrimEnd() + "\n\n（註：分數區塊格式錯誤，無法計算加權總分。）", null); }
+        }
+
+        private async Task<string> BuildComparisonAsync(Room room, List<CandScore> scores)
+        {
+            var ranked = scores.OrderByDescending(x => x.Total).ToList();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"面試比較總表｜職缺：{room.Job?.Title ?? "未知職缺"}｜{(room.StartAt ?? room.ScheduledAt ?? DateTime.Now):yyyy-MM-dd}");
+            sb.AppendLine();
+            sb.AppendLine("【評分依據與權重】");
+            foreach (var ru in Rubric) sb.AppendLine($"- {ru.Title}（{ru.Weight}%）：{ru.Basis}");
+            sb.AppendLine();
+            sb.AppendLine("【排名】");
+            int rk = 1;
+            foreach (var c in ranked) sb.AppendLine($"{rk++}. {c.Name}　綜合 {c.Total:0} 分（" + string.Join("、", Rubric.Select(ru => $"{ru.Title.Substring(0, 2)}{c.S[ru.Key]}")) + "）");
+            sb.AppendLine();
+            sb.AppendLine("【各人重點】");
+            foreach (var c in ranked) sb.AppendLine($"■ {c.Name}：{c.Summary}\n  優點：{c.Strengths}\n  疑慮：{c.Risks}");
+            try
+            {
+                var data = string.Join("\n", ranked.Select(c => $"{c.Name}｜總分{c.Total:0}｜" + string.Join("、", Rubric.Select(ru => $"{ru.Title}{c.S[ru.Key]}")) + $"｜{c.Summary}｜優點:{c.Strengths}｜疑慮:{c.Risks}"));
+                var cmp = await _gemini.AskAsync($"以下是同一場面試中各求職者的評分資料（總分已依權重算好）：\n{data}\n\n請用繁體中文寫「比較與建議」：誰最適合這個職缺、關鍵差距在哪個維度、各自需要再確認的地方。只能根據上面資料，不可編造；200 字內。", "你是專業人資顧問。", 800);
+                if (!string.IsNullOrWhiteSpace(cmp)) { sb.AppendLine(); sb.AppendLine("【比較與建議】"); sb.AppendLine(cmp.Trim()); }
+            }
+            catch { }
+            sb.AppendLine();
+            sb.AppendLine("（本表為 AI 輔助參考，最終錄取請由面試官綜合判斷。）");
+            return sb.ToString();
+        }
+
         // 瀏覽器語音辨識（備援路徑）辨識出一句話：改走 HTTP 讓伺服器記錄並廣播給全場
         [HttpPost]
         public async Task<IActionResult> SpeechTurn([FromForm] string roomCode, [FromForm] string speaker, [FromForm] string? role, [FromForm] string text, [FromForm] bool isQuestion = false)
@@ -51,6 +208,7 @@ namespace InterviewProject.Controllers
             if (string.IsNullOrWhiteSpace(roomCode) || string.IsNullOrWhiteSpace(speaker) || string.IsNullOrWhiteSpace(text)) return Ok();
             var code = roomCode.Trim();
             AddConvo(code, speaker.Trim(), role ?? "", text);
+            QueueLiveNote(code, speaker.Trim(), role ?? "", text);
             try { await _hub.Clients.Group(code).SendAsync("SpeechTurnInfo", speaker.Trim(), isQuestion, role ?? "", text.Trim()); } catch { }
             return Ok();
         }
@@ -701,6 +859,7 @@ namespace InterviewProject.Controllers
             {
                 var tt = text.Trim();
                 AddConvo(roomCode.Trim(), speaker.Trim(), role ?? "", tt);
+                QueueLiveNote(roomCode.Trim(), speaker.Trim(), role ?? "", tt);
                 bool isQ = System.Text.RegularExpressions.Regex.IsMatch(tt, @"[?？]\s*$") ||
                            System.Text.RegularExpressions.Regex.IsMatch(tt, @"(嗎|呢\s*$|為什麼|怎麼|如何|能不能|可不可以|有沒有|是不是|多少|哪裡|哪個|什麼時候|可以.*嗎)");
                 try { await _hub.Clients.Group(roomCode.Trim()).SendAsync("SpeechTurnInfo", speaker.Trim(), isQ, role ?? "", tt); } catch { }
@@ -1764,6 +1923,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             }
 
             var results = new System.Collections.Concurrent.ConcurrentBag<object>();
+            var scoreBag = new System.Collections.Concurrent.ConcurrentBag<CandScore>();
 
             // 🎯 實際進場的人名單，給影片分析辨識畫面上是誰用
             var joinedRoster = (await _context.RoomParticipants.AsNoTracking()
@@ -1801,6 +1961,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 }
 
                 string? analysis = null;
+                var rubricText = BuildRubricGuidance(roomCode, candidateName);
 
                 // 🎯 優先走多模態（看畫面表情、聽聲音語氣），只有在錄影不可用時才退回純文字
                 //
@@ -1811,11 +1972,11 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 //    拉高到 8000，讓 Gemini 有足夠空間把 6 個段落真的寫完。
                 if (!string.IsNullOrEmpty(geminiFileUri))
                 {
-                    analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000, joinedRoster);
+                    analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000, joinedRoster, rubricText);
                     if (analysis == null)
                     {
                         await Task.Delay(2000);
-                        analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000, joinedRoster);
+                        analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000, joinedRoster, rubricText);
                     }
                 }
 
@@ -1826,7 +1987,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                         $"以下是一場面試的完整逐字稿（可能包含多位求職者，發言前有標示姓名），" +
                         $"請只針對「{candidateName}」這位求職者的發言與表現進行分析（繁體中文，不用分析其他人）：\n\n{transcript}\n\n" +
                         $"請提供：1.語氣表達 2.答題品質 3.AI 綜合評分（0-100分，格式：AI 綜合評分：XX 分） 4.錄取建議 5.整體評語（完整寫完，不要中途省略）\n" +
-                        $"（提醒：這次沒有錄影畫面可看，只能依逐字稿文字判斷，語氣/表情部分請誠實註明「僅依文字內容推測，非實際觀察畫面與聲音」）";
+                        $"（提醒：這次沒有錄影畫面可看，只能依逐字稿文字判斷，語氣/表情部分請誠實註明「僅依文字內容推測，非實際觀察畫面與聲音」）\n\n{rubricText}";
 
                     analysis = await _gemini.AskAsync(
                         prompt,
@@ -1849,6 +2010,9 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                     return;
                 }
 
+                var (finalText, cscore) = FinalizeAnalysis(analysis, candidateName);
+                if (cscore != null) scoreBag.Add(cscore);
+                analysis = finalText;
                 var fileName = BuildFileName(room, "txt", candidateName);
                 try
                 {
@@ -1861,6 +2025,20 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 }
             }
             await Task.WhenAll(jobseekers.Select(AnalyzeOne));
+
+            // 🎯 會議結束後：把各求職者的加權分數放在一起比較，輸出一份比較總表
+            if (scoreBag.Count >= 2)
+            {
+                try
+                {
+                    var cmpText = await BuildComparisonAsync(room, scoreBag.ToList());
+                    var cmpName = BuildFileName(room, "txt", "比較總表");
+                    await _storage.UploadTextAsync($"AI分析/{cmpName}", cmpText);
+                    results.Add(new { candidateName = "比較總表", success = true, fileName = cmpName });
+                }
+                catch (Exception ex) { Console.WriteLine("[SaveAiAnalysis] 比較總表產生失敗：" + ex.Message); }
+            }
+            _liveNotes.TryRemove(roomCode, out _);
 
             // 🎯 這場分析用的暫存影片檔在 Gemini 端可以清掉了，不用等 48 小時自動過期
             if (!string.IsNullOrEmpty(geminiFileName))

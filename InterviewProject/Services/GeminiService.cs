@@ -580,7 +580,7 @@ namespace InterviewProject.Services
         // 🎯 針對單一位求職者，用「錄影檔（多模態：畫面表情 + 聲音語氣）+ 逐字稿」一起分析，
         //    不再只看文字逐字稿——這樣才分析得出語氣、表情這些逐字稿完全看不出來的東西。
         //    fileUri 是 UploadFileAsync() 拿到的、已經在 Gemini 端 ACTIVE 的影片檔參照。
-        public async Task<string?> AnalyzeInterviewVideoAsync(string fileUri, string fileMimeType, string candidateName, string transcript, int maxTokens, List<string>? joinedRoster = null)
+        public async Task<string?> AnalyzeInterviewVideoAsync(string fileUri, string fileMimeType, string candidateName, string transcript, int maxTokens, List<string>? joinedRoster = null, string? extraGuidance = null)
         {
             var apiKey = _config["Gemini:ApiKey"] ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
             if (string.IsNullOrEmpty(apiKey)) return null;
@@ -605,7 +605,7 @@ namespace InterviewProject.Services
                 $"3. 答題邏輯與內容品質\n" +
                 $"4. AI 綜合評分（0-100 分，請用「AI 綜合評分：XX 分」這個格式單獨一行）\n" +
                 $"5. 錄取建議\n" +
-                $"6. 整體評語（完整寫完，不要中途省略）";
+                $"6. 整體評語（完整寫完，不要中途省略）\n\n" + (extraGuidance ?? "");
 
             var body = new
             {
