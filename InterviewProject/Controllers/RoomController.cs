@@ -830,7 +830,7 @@ namespace InterviewProject.Controllers
                 if (q0.HasValue && q0.Value < 27)
                 {
                     var w0 = Math.Max(1, (int)Math.Ceiling(30 - q0.Value));
-                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口，請前端再等 {w0} 秒。[伺服器版本 v0250]");
+                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口，請前端再等 {w0} 秒。[伺服器版本 v0270]");
                     return Ok(new { success = true, refused = true, waitSec = w0 });
                 }
             }
@@ -901,7 +901,7 @@ namespace InterviewProject.Controllers
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RoomCode)) return Ok(new { text = (string?)null });
             var code = req.RoomCode.Trim();
-            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0250]");
+            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0270]");
             if (_botService.IsSpeaking(code)) return Ok(new { text = (string?)null });
 
             // 🎯 最後的保險（不管前端計時有沒有算錯）：會議的混音裡不到 27 秒前還聽得到人聲，就還不能因為冷場而開口。
@@ -1029,6 +1029,11 @@ namespace InterviewProject.Controllers
                 scenario = "情境B：求職者剛回答完，職員/主持人還沒接著問。請針對他剛回答裡的具體內容追問一個細節（例如做法、成果、遇到的困難、數字），或視情況自然銜接履歷/職缺要求的下一題。";
             else
                 scenario = "情境C：職員/主持人剛說了一段話（不是問題）。請順著他的話題，向適合的求職者提出一個延伸問題。";
+            // 職員/主持人只是在收尾、道謝、表示「我們清楚了」（不是提問）：不能當成「有人沒回答」，也不要追問剛結束的話題，換一個新方向
+            bool closingStmt = lastHuman != null && !lastIsJobseeker && !lastLooksLikeAsk
+                && System.Text.RegularExpressions.Regex.IsMatch(lastHuman.Text ?? "", @"謝謝|感謝|清楚了|了解了|瞭解了|明白了|沒問題|先這樣|好的|好，|好,|OK|ok");
+            if (closingStmt)
+                scenario = "情境D：職員/主持人剛才只是在收尾、道謝或表示「這個話題我們清楚了」（不是提問），並沒有人漏回答。請不要追問剛結束的那個話題，也不要把它當成有人沒回答；請換一個新的方向：依該求職者履歷裡的具體經歷出一個情境題，或問這個職缺上班時可能遇到的狀況。";
 
             if (lastHuman != null && !lastIsJobseeker && System.Text.RegularExpressions.Regex.IsMatch(lastHuman.Text ?? "", @"自我介紹|介紹一下自己|做.{0,3}介紹|先介紹"))
                 scenario += "\n【特別注意】職員剛剛要求的是「自我介紹」，到現在還沒有人做。你只要請指定的那一位求職者開始簡單自我介紹就好（例如「○○，那就由你先簡單做個自我介紹吧」），不要問履歷裡的專案或技術細節。";
@@ -1067,6 +1072,29 @@ namespace InterviewProject.Controllers
                 }
                 if (mentioned.Count == 1) targetName = mentioned[0];
             }
+            // 🎯 自我介紹階段：如果會議一開始是在請大家自我介紹（職員/主持人或 AI 提出），在場求職者還沒全部講完之前，
+            //    冷場時就請「還沒介紹的那一位」接著自我介紹；全部都介紹完了，才進入依履歷出題。
+            //    如果第一個題目不是自我介紹，這段完全不適用。
+            bool JsLine(AiConvoLine l) => l.Role != "ai" && (string.Equals(l.Role, "jobseeker", StringComparison.OrdinalIgnoreCase) || (l.Name ?? "").StartsWith("求職者"));
+            var introRx = new System.Text.RegularExpressions.Regex(@"自我介紹|介紹一下自己|簡單做個介紹|做.{0,3}介紹|先介紹");
+            bool introPhase = false;
+            string newcomerNote = "";
+            {
+                int introIdx = lines.FindLastIndex(l => !JsLine(l) && introRx.IsMatch(l.Text ?? ""));
+                if (introIdx >= 0)
+                {
+                    var introduced = lines.Skip(introIdx + 1).Where(l => JsLine(l) && (l.Text ?? "").Trim().Length >= 8)
+                        .Select(l => (l.Name ?? "").Replace("求職者-", "").Trim()).ToList();
+                    var notYet = presentNames.Where(n => !introduced.Any(i => string.Equals(i, n, StringComparison.OrdinalIgnoreCase))
+                        && lines.Count(l => l.Role == "ai" && (l.Text ?? "").StartsWith(n) && introRx.IsMatch(l.Text ?? "")) < 2).ToList();
+                    if (notYet.Count > 0)
+                    {
+                        introPhase = true;
+                        if (targetName == null) targetName = notYet[0];
+                        Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 還在自我介紹階段，尚未介紹：{string.Join("、", notYet)}，這次請「{targetName}」自我介紹。");
+                    }
+                }
+            }
             // 沒有人被點名：輪流。剛回答完的人可以被追問，但如果他已經比最少被問的人多被問 2 次以上，就換最少被問的人。
             if (targetName == null && presentNames.Count > 0)
             {
@@ -1081,12 +1109,31 @@ namespace InterviewProject.Controllers
                 }
                 // 🎯 除了「自我介紹」階段可以輪流換人，其他時候一律「上一個問題問誰，這次就問誰」：
                 //    剛回答完的求職者 → 繼續問他；否則 → 問回 AI 上一題問的那位；都沒有才輪流。
-                bool introPhase = (lastHuman != null && !lastIsJobseeker && System.Text.RegularExpressions.Regex.IsMatch(lastHuman.Text ?? "", @"自我介紹|介紹一下自己|做.{0,3}介紹|先介紹"))
-                                  || (_aiLast.TryGetValue(code, out var introAi) && System.Text.RegularExpressions.Regex.IsMatch(introAi.Text ?? "", @"自我介紹|介紹一下自己|簡單做個介紹"));
                 string? stickyName = lastName;
+                if (stickyName == null)
+                {
+                    // 最近一位回答的求職者＝「上一個問題問的那位」
+                    var lastJs = lines.LastOrDefault(l => l.Role != "ai" && (string.Equals(l.Role, "jobseeker", StringComparison.OrdinalIgnoreCase) || (l.Name ?? "").StartsWith("求職者")));
+                    if (lastJs != null)
+                    {
+                        var jn = (lastJs.Name ?? "").Replace("求職者-", "").Trim();
+                        stickyName = presentNames.FirstOrDefault(n => string.Equals(n, jn, StringComparison.OrdinalIgnoreCase));
+                    }
+                }
                 if (stickyName == null && _aiLast.TryGetValue(code, out var stickyAi) && stickyAi.Name != null && presentNames.Contains(stickyAi.Name)) stickyName = stickyAi.Name;
-                if (!introPhase && stickyName != null) targetName = stickyName;
-                else if (lastName != null && Cnt(lastName) - least < 2) targetName = lastName;
+                // 🎯 中途才加入、或到現在還沒被問過也沒開口講過話的求職者：不能只圍繞一開始就在的人提問。
+                //    （職員剛提了問題、等人回答的情況不動；原本問的那位已經被 AI 問過至少一次，就輪到這位）
+                var spokenJs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var l in lines.Where(JsLine)) spokenJs.Add((l.Name ?? "").Replace("求職者-", "").Trim());
+                if (_convo.TryGetValue(code, out var fullConvo)) { lock (fullConvo) foreach (var l in fullConvo.Where(JsLine)) spokenJs.Add((l.Name ?? "").Replace("求職者-", "").Trim()); }
+                var unheard = presentNames.FirstOrDefault(n => Cnt(n) == 0 && !spokenJs.Contains(n));
+                if (unheard != null && !scenario.StartsWith("情境A") && (stickyName == null || Cnt(stickyName) >= 1 || string.Equals(stickyName, unheard, StringComparison.OrdinalIgnoreCase)))
+                {
+                    targetName = unheard;
+                    newcomerNote = $"\n【新加入／還沒被問過的求職者】「{unheard}」目前還沒被問過、也還沒開口。這一題請直接問他，題目要用「他自己的履歷」來出，不要延續前一位求職者的回答或內容。";
+                    Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 「{unheard}」還沒被問過也沒講過話（可能是中途加入），這次改問他。");
+                }
+                else if (stickyName != null) targetName = stickyName;
                 else targetName = leastNames[new Random().Next(leastNames.Count)];
             }
             // 🎯 模式判斷
@@ -1103,14 +1150,21 @@ namespace InterviewProject.Controllers
             }
             else if (lastIsJobseeker)
             {
-                scenario = "情境N：剛剛的問題已經有人回答完了。不要再針對剛剛回答的內容追問，也不要重複任何問過的問題。請依「目前主題」提出另一個不同角度的子問題，或自然銜接到「目前主題」的下一步；不可以回到職員已經談完的較早主題（例如已經過了自我介紹，就不能再問自我介紹或履歷簡介）。履歷只用來讓問題更貼近這位求職者。";
+                scenario = "情境N：剛剛的問題已經有人回答完了。不要重複問已經回答的內容，也不要重複任何問過的問題；但可以根據「上一個問題和他的回答」往下延伸（例如以他說的做法為背景，出一個「如果遇到……你會怎麼調整」的情境題），或依「目前主題」換一個不同角度、自然銜接下一步；不可以回到職員已經談完的較早主題（例如已經過了自我介紹，就不能再問自我介紹或履歷簡介）。履歷只用來讓問題更貼近這位求職者。";
             }
             var historyText = prevSnapshot.Count == 0 ? "（無）" : string.Join("\n", prevSnapshot.Select(q => "- " + q));
+            if (introPhase && !modeU && targetName != null)
+                scenario = $"情境I：會議一開始是在請大家自我介紹，還有求職者沒介紹到。請只對「{targetName}」說一句，邀請他也簡單做個自我介紹（例如「{targetName}，接下來也請你簡單自我介紹一下吧」）。不要問履歷或專業問題。";
+            if (!modeU && !introPhase && newcomerNote.Length > 0) scenario += newcomerNote;
             string rule1 = modeU
                 ? "1. 只對指定的那一位，針對你上次的問題換個說法，不可原句重複。"
+                : (scenario.StartsWith("情境I")
+                    ? "1. 只邀請指定的那位求職者簡單自我介紹，不要問別的。"
+                : scenario.StartsWith("情境D")
+                    ? "1. 不要追問剛結束的話題；請換一個新的方向，根據該求職者履歷裡的具體經歷出情境題，或問這個職缺上班時可能遇到的狀況。"
                 : (scenario.StartsWith("情境N")
-                    ? "1. 問題要緊扣「目前主題（職員最近一次的提問）」，換一個新的角度或下一步；不要追問剛剛已回答的內容，不要和「已問過的問題」相同或相近，也不可以回到「職員已談完的較早主題」。"
-                    : "1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。");
+                    ? "1. 問題要緊扣「目前主題（職員最近一次的提問）」，可以根據上一個問題和回答延伸，或換一個新的角度或下一步；不要重複問剛剛已回答的內容，不要和「已問過的問題」相同或相近，也不可以回到「職員已談完的較早主題」。"
+                    : "1. 你的問題必須直接延伸「最近一句人類發言」的話題（接著他剛說的內容往下問、深入追問或引導）。履歷只用來讓這個追問更具體，不可以丟開這句話、另外跳去問履歷裡不相干的事，也不可以換成新的主題。"));
             string rule8 = modeU
                 ? "8. 不要換人、不要換題目：只能就上次那個問題換個角度。"
                 : "8. 整場會議已經問過的問題一律不可重複或換句話說重問（見「已問過的問題」）。";
@@ -1148,6 +1202,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（情境A 例外：同一題可以換個說法再引導，但不能原句重複）、問履歷與對話都沒有依據的事。
 6. 如果職員剛問了問題或提出要求、求職者還沒回答：請「就同一個問題」換個說法、縮小範圍，或提示可以從履歷中的哪段經歷談起，幫求職者開口。絕對不能趁機換到另一個話題。
 7. 現在已經冷場，你一定要說一句話，不可以輸出 SKIP，要用一句具體的引導或追問接上目前主題。
+11. 履歷上已經寫明的事實（公司名稱、職稱、做過的專案、學歷、證照）不要再問，更不要問「可以談談你在○○公司的經驗嗎」「說明你負責的項目」這種把履歷念一遍的表面問題；要根據履歷寫的具體經驗，出情境題或判斷題（例如以他做過的專案為背景：「如果遇到……狀況，你會怎麼處理、怎麼取捨？」），讓他說出履歷看不到的思考與做法。（情境U 與情境I 不適用此條。）
 10. 題型可以多樣：除了延伸上一題與回答、依履歷追問之外，也可以問「這個職缺實際上班時可能會遇到的狀況」或出情境題（例如「如果……，你會怎麼處理？」「遇到……你會怎麼取捨？」）。情境題必須和職缺的工作內容、目前主題相關，具體、口語、40 字以內，不要出空泛或與職缺無關的題目。（情境U 只能換個說法問同一題，不適用此條。）
 9. 自我介紹早就結束了：除非「目前主題」本身就是在請人自我介紹，否則題目裡絕對不可以出現「自我介紹」「介紹一下自己」「介紹自己」這類字眼，也不可以問履歷簡介；要問就問更深入、更專業的內容（做法、數字、判斷、取捨）。
 {rule8}
