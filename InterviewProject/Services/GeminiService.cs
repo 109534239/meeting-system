@@ -600,7 +600,7 @@ namespace InterviewProject.Services
                 $"這是一場面試的完整錄影，底下是逐字稿：\n\n{transcript}\n\n請只針對「{candidateName}」分析（繁體中文），內容要完整寫完。")
                 : (rosterRule +
                 $"這是一場面試的完整錄影（包含畫面與聲音），底下是逐字稿可以幫助你對照時間點與內容（語音辨識，可能有錯字，發言前有標示姓名）：\n\n{transcript}\n\n" +
-                $"請只針對「{candidateName}」這位求職者，實際聆聽影片內容後進行分析（繁體中文）。分析要依據他實際說的內容，不能只是把逐字稿複述一遍。\n\n" + extraGuidance);
+                $"請只針對「{candidateName}」這位求職者，實際聆聽影片內容後進行分析。全文一律使用繁體中文，直接輸出報告，不要輸出思考過程、計畫或任何英文說明。分析要依據他實際說的內容，不能只是把逐字稿複述一遍。\n\n" + extraGuidance);
 
             var body = new
             {
@@ -618,7 +618,8 @@ namespace InterviewProject.Services
                 generationConfig = new
                 {
                     maxOutputTokens = maxTokens > 0 ? maxTokens : 8000, // 🎯 這輪把預設值也一起拉高，跟呼叫端保持一致
-                    temperature = 0.4
+                    temperature = 0.3,
+                    thinkingConfig = new { thinkingBudget = 1024, includeThoughts = false } // 思考不能吃掉輸出額度，也不能混進報告
                 }
             };
 
@@ -631,14 +632,13 @@ namespace InterviewProject.Services
                 if (!response.IsSuccessStatusCode) return null;
 
                 using var doc = JsonDocument.Parse(respBody);
-                var text = doc.RootElement
-                    .GetProperty("candidates")[0]
-                    .GetProperty("content")
-                    .GetProperty("parts")[0]
-                    .GetProperty("text")
-                    .GetString() ?? "";
-
-                return text.Trim();
+                var sbText = new StringBuilder();
+                foreach (var part in doc.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts").EnumerateArray())
+                {
+                    if (part.TryGetProperty("thought", out var th) && th.ValueKind == JsonValueKind.True) continue; // 跳過思考內容
+                    if (part.TryGetProperty("text", out var tx)) sbText.Append(tx.GetString());
+                }
+                return sbText.ToString().Trim();
             }
             catch
             {

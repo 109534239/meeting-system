@@ -156,37 +156,94 @@ namespace InterviewProject.Controllers
             return sb.ToString();
         }
 
-        // 解析模型輸出的分數區塊，用權重算總分，並把明細附在文末
-        private static (string Text, CandScore? Score) FinalizeAnalysis(string analysis, string candidate)
+        // 語音辨識偶爾會「我是,我是,我是…」重複幾百次：丟給分析前先壓縮，免得塞滿額度、也讓模型跟著重複
+        private static string CleanTranscript(string t)
         {
-            var m = System.Text.RegularExpressions.Regex.Match(analysis, @"\[\[SCORES\]\](.*?)\[\[/SCORES\]\]", System.Text.RegularExpressions.RegexOptions.Singleline);
-            var body = System.Text.RegularExpressions.Regex.Replace(analysis, @"\[\[SCORES\]\].*?\[\[/SCORES\]\]", "", System.Text.RegularExpressions.RegexOptions.Singleline);
-            if (!m.Success) return (analysis.TrimEnd() + "\n\n（註：這份分析沒有產生各維度分數，無法計算加權總分。）", null);
+            if (string.IsNullOrEmpty(t)) return t;
+            t = System.Text.RegularExpressions.Regex.Replace(t, @"(?<u>[^\s,，。、：:\]\[]{1,8})(?:[,，、 ]*\k<u>){3,}", "${u}…");
+            return t;
+        }
+
+        private static bool LooksLikeChineseAnalysis(string? a)
+        {
+            if (string.IsNullOrWhiteSpace(a) || a.Length < 300) return false;
+            int cjk = a.Count(c => c >= 0x4e00 && c <= 0x9fff), lat = a.Count(c => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'));
+            return cjk >= 150 && cjk >= lat;
+        }
+
+        private static CandScore? ParseScoreJson(string json, string candidate)
+        {
             try
             {
-                using var doc = System.Text.Json.JsonDocument.Parse(System.Text.RegularExpressions.Regex.Match(m.Groups[1].Value, @"\{.*\}", System.Text.RegularExpressions.RegexOptions.Singleline).Value);
+                var m = System.Text.RegularExpressions.Regex.Match(json, @"\{.*\}", System.Text.RegularExpressions.RegexOptions.Singleline);
+                if (!m.Success) return null;
+                using var doc = System.Text.Json.JsonDocument.Parse(m.Value);
                 var r = doc.RootElement;
                 var cs = new CandScore { Name = candidate };
                 foreach (var ru in Rubric)
                 {
+                    if (!r.TryGetProperty(ru.Key, out var e)) return null;
                     int v = 0;
-                    if (r.TryGetProperty(ru.Key, out var e)) { if (e.ValueKind == System.Text.Json.JsonValueKind.Number) v = (int)Math.Round(e.GetDouble()); else if (e.ValueKind == System.Text.Json.JsonValueKind.String) int.TryParse(e.GetString(), out v); }
+                    if (e.ValueKind == System.Text.Json.JsonValueKind.Number) v = (int)Math.Round(e.GetDouble()); else if (e.ValueKind == System.Text.Json.JsonValueKind.String) int.TryParse(e.GetString(), out v); else return null;
                     cs.S[ru.Key] = Math.Clamp(v, 0, 100);
                 }
                 string Sx(string k) => r.TryGetProperty(k, out var e) && e.ValueKind == System.Text.Json.JsonValueKind.String ? (e.GetString() ?? "") : "";
                 cs.Summary = Sx("summary"); cs.Strengths = Sx("strengths"); cs.Risks = Sx("risks"); cs.Confidence = Sx("confidence"); cs.ToConfirm = Sx("to_confirm");
                 cs.Total = Math.Round(Rubric.Sum(ru => cs.S[ru.Key] * ru.Weight / 100.0));
-                // 模型如果還是自己寫了總分那行，拿掉，避免兩個分數不一致
-                body = System.Text.RegularExpressions.Regex.Replace(body, @"^.*AI\s*綜合評分\s*[：:].*$\r?\n?", "", System.Text.RegularExpressions.RegexOptions.Multiline);
-                var sb = new System.Text.StringBuilder(body.TrimEnd());
-                sb.AppendLine().AppendLine().AppendLine("════ 加權評分明細（總分 = 各維度分數 × 權重 加總）════");
-                foreach (var ru in Rubric) sb.AppendLine($"{ru.Title}（權重 {ru.Weight}%）：{cs.S[ru.Key]} 分 → 加權 {cs.S[ru.Key] * ru.Weight / 100.0:0.0} 分");
-                sb.AppendLine($"AI 綜合評分：{cs.Total:0} 分");
-                sb.AppendLine($"判讀信心：{(string.IsNullOrWhiteSpace(cs.Confidence) ? "未提供" : cs.Confidence)}（信心低時，分數僅供參考，請人工對照影片確認）");
-                sb.AppendLine("（本分數只依回答內容計算，不含外表、表情、小動作、畫質與收音；AI 僅輔助，不做錄取決定。）");
-                return (sb.ToString(), cs);
+                return cs;
             }
-            catch { return (body.TrimEnd() + "\n\n（註：分數區塊格式錯誤，無法計算加權總分。）", null); }
+            catch { return null; }
+        }
+
+        private static string AppendScoreDetail(string body, CandScore cs, string? source)
+        {
+            var sb = new System.Text.StringBuilder(body.TrimEnd());
+            sb.AppendLine().AppendLine().AppendLine("════ 加權評分明細（總分 = 各維度分數 × 權重 加總）════");
+            foreach (var ru in Rubric) sb.AppendLine($"{ru.Title}（權重 {ru.Weight}%）：{cs.S[ru.Key]} 分 → 加權 {cs.S[ru.Key] * ru.Weight / 100.0:0.0} 分");
+            sb.AppendLine($"AI 綜合評分：{cs.Total:0} 分");
+            if (!string.IsNullOrEmpty(source)) sb.AppendLine($"分數來源：{source}");
+            sb.AppendLine($"判讀信心：{(string.IsNullOrWhiteSpace(cs.Confidence) ? "未提供" : cs.Confidence)}（信心低時分數僅供參考，請人工對照影片確認）");
+            sb.AppendLine("（本分數只依回答內容計算，不含外表、表情、小動作、畫質與收音；AI 僅輔助，不做錄取決定。）");
+            return sb.ToString();
+        }
+
+        // 解析模型輸出的分數區塊；沒有就回傳 null（由呼叫端用備援補算，不會在報告裡留下「失敗」字樣）
+        private static (string Text, CandScore? Score) FinalizeAnalysis(string analysis, string candidate)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(analysis, @"\[\[SCORES\]\](.*?)\[\[/SCORES\]\]", System.Text.RegularExpressions.RegexOptions.Singleline);
+            var body = System.Text.RegularExpressions.Regex.Replace(analysis, @"\[\[SCORES\]\].*?\[\[/SCORES\]\]", "", System.Text.RegularExpressions.RegexOptions.Singleline);
+            body = System.Text.RegularExpressions.Regex.Replace(body, @"^.*AI\s*綜合評分\s*[：:].*$\r?\n?", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+            var cs = m.Success ? ParseScoreJson(m.Groups[1].Value, candidate) : null;
+            if (cs == null) return (body.TrimEnd(), null);
+            return (AppendScoreDetail(body, cs, null), cs);
+        }
+
+        // 備援一：模型沒給分數區塊，就用「已寫好的分析文字」再請它只輸出分數 JSON
+        private async Task<CandScore?> ScoreFromTextAsync(string analysis, string candidate)
+        {
+            try
+            {
+                var p = "以下是對求職者「" + candidate + "」的面試分析報告。請只根據報告內容，依四個維度各給 0~100 整數分，只輸出一行 JSON，不要其他文字：\n" +
+                        "維度：A 答題內容與具體度、B 邏輯結構、C 與職缺及履歷相關度、D 溝通清晰度。報告沒提到、無法判斷的維度給 60 分。\n" +
+                        "格式：{\"A\":0,\"B\":0,\"C\":0,\"D\":0,\"confidence\":\"中\",\"summary\":\"一句話\",\"strengths\":\"\",\"risks\":\"\",\"to_confirm\":\"\"}\n\n報告：\n" + Clip(analysis, 6000);
+                var raw = await _gemini.AskAsync(p, "你是評分員，只輸出 JSON。", 600);
+                return string.IsNullOrWhiteSpace(raw) ? null : ParseScoreJson(raw, candidate);
+            }
+            catch { return null; }
+        }
+
+        // 備援二：用會議中的即時記錄平均來估算
+        private CandScore? ScoreFromLiveNotes(string roomCode, string candidate)
+        {
+            if (!_liveNotes.TryGetValue(roomCode, out var list)) return null;
+            List<LiveNote> mine; lock (list) mine = list.Where(x => string.Equals(x.Name, candidate, StringComparison.OrdinalIgnoreCase) && x.Addressed).ToList();
+            if (mine.Count == 0) return null;
+            int Avg(Func<LiveNote, int> f) => (int)Math.Round(mine.Average(f) * 10);
+            var cs = new CandScore { Name = candidate, Confidence = "低", Summary = "依會議中即時記錄估算（共 " + mine.Count + " 次回答）" };
+            cs.S["A"] = Avg(x => x.Specific); cs.S["B"] = Avg(x => x.Logic); cs.S["C"] = Avg(x => x.Relevance);
+            cs.S["D"] = (int)Math.Round((cs.S["A"] + cs.S["B"] + cs.S["C"]) / 3.0);
+            cs.Total = Math.Round(Rubric.Sum(ru => cs.S[ru.Key] * ru.Weight / 100.0));
+            return cs;
         }
 
         private async Task<string> BuildComparisonAsync(Room room, List<CandScore> scores)
@@ -1007,7 +1064,7 @@ namespace InterviewProject.Controllers
                 if (q0.HasValue && q0.Value < 27)
                 {
                     var w0 = Math.Max(1, (int)Math.Ceiling(30 - q0.Value));
-                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口（活動計時={(q0 ?? -1):0.0}，混音靜音={(aud0 ?? -1):0.0}），請前端再等 {w0} 秒。[伺服器版本 v0281]");
+                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口（活動計時={(q0 ?? -1):0.0}，混音靜音={(aud0 ?? -1):0.0}），請前端再等 {w0} 秒。[伺服器版本 v0290]");
                     return Ok(new { success = true, refused = true, waitSec = w0 });
                 }
             }
@@ -1032,8 +1089,7 @@ namespace InterviewProject.Controllers
             //    到底有沒有真的被觸發過——之前只有「略過」的分支會印，正常觸發完全沒有留下任何痕跡。
             Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 收到觸發請求，內容：「{text}」，準備轉發給 JitsiBotService。");
 
-            AddConvo(roomCode, "AI 面試官", "ai", text);
-            _ = SpeakAndBroadcastAsync(roomCode, text); // 🎯 不擋住呼叫端：語音合成+送進 Simli 需要幾秒鐘，讓它背景執行就好
+            _ = SpeakAndBroadcastAsync(roomCode, text); // AI 的話要等「聲音真的開始播」才記進對話紀錄（見 SpeakAndBroadcastAsync） // 🎯 不擋住呼叫端：語音合成+送進 Simli 需要幾秒鐘，讓它背景執行就好
             return Ok(new { success = true });
         }
 
@@ -1078,7 +1134,7 @@ namespace InterviewProject.Controllers
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RoomCode)) return Ok(new { text = (string?)null });
             var code = req.RoomCode.Trim();
-            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0281]");
+            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0290]");
             if (_botService.IsSpeaking(code)) return Ok(new { text = (string?)null });
 
             // 🎯 最後的保險（不管前端計時有沒有算錯）：會議的混音裡不到 27 秒前還聽得到人聲，就還不能因為冷場而開口。
@@ -1471,7 +1527,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             try
             {
                 await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", true, text);
-                await _botService.SpeakAsync(roomCode, text, async () => { await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); }, async () => PersonSpeaking(roomCode) || ((await _botService.GetAudibleSilenceSecondsAsync(roomCode)) is double aq && aq < 1.2)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
+                await _botService.SpeakAsync(roomCode, text, async () => { AddConvo(roomCode, "AI 面試官", "ai", text); await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); }, async () => PersonSpeaking(roomCode) || ((await _botService.GetAudibleSilenceSecondsAsync(roomCode)) is double aq && aq < 1.2)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
             }
             finally
             {
@@ -1948,6 +2004,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 .Where(n => !n.EndsWith("-")).ToList();
 
             // 多位求職者同時分析（只用 _storage/_gemini，不碰 DbContext，可安全並行）
+            var cleanTx = CleanTranscript(transcript);
             async Task AnalyzeOne(RoomParticipant jobseeker)
             {
                 // 🎯 候選人之間加一點間隔，避免連續呼叫 Gemini API 太快撞到免費額度的速率限制
@@ -1987,11 +2044,17 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 //    拉高到 8000，讓 Gemini 有足夠空間把 6 個段落真的寫完。
                 if (!string.IsNullOrEmpty(geminiFileUri))
                 {
-                    analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000, joinedRoster, rubricText);
+                    analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, cleanTx, maxTokens: 12000, joinedRoster, rubricText);
                     if (analysis == null)
                     {
                         await Task.Delay(2000);
-                        analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, transcript, maxTokens: 8000, joinedRoster, rubricText);
+                        analysis = await _gemini.AnalyzeInterviewVideoAsync(geminiFileUri, "video/webm", candidateName, cleanTx, maxTokens: 12000, joinedRoster, rubricText);
+                    }
+                    // 輸出不是完整的中文報告（例如夾帶英文思考過程、被截斷）就視為失敗，走重試/退回純文字
+                    if (analysis != null && !LooksLikeChineseAnalysis(analysis))
+                    {
+                        Console.WriteLine($"[SaveAiAnalysis] {candidateName} 影片分析輸出不是完整中文報告，改用純文字分析。");
+                        analysis = null;
                     }
                 }
 
@@ -2000,13 +2063,13 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                     // 🎯 沒有錄影可用，或多模態分析失敗兩次，退回原本純文字逐字稿分析（確保這功能不會整個掛掉）
                     var prompt =
                         $"以下是一場面試的完整逐字稿（可能包含多位求職者，發言前有標示姓名），" +
-                        $"請只針對「{candidateName}」這位求職者的發言與表現進行分析（繁體中文，不用分析其他人）：\n\n{transcript}\n\n" +
+                        $"請只針對「{candidateName}」這位求職者的發言與表現進行分析（繁體中文，不用分析其他人）：\n\n{cleanTx}\n\n" +
                         $"（這次沒有錄影畫面，只能依逐字稿文字判斷；時間標記請寫逐字稿上的時間，並註明這是現實時間。）\n\n{rubricText}";
 
                     analysis = await _gemini.AskAsync(
                         prompt,
                         "你是專業人資顧問，說繁體中文，格式清晰條列，內容要完整寫完，不能寫到一半就停。",
-                        maxTokens: 8000);
+                        maxTokens: 12000);
 
                     if (analysis == null)
                     {
@@ -2025,6 +2088,16 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 }
 
                 var (finalText, cscore) = FinalizeAnalysis(analysis, candidateName);
+                if (cscore == null)
+                {
+                    cscore = await ScoreFromTextAsync(finalText, candidateName);
+                    if (cscore != null) finalText = AppendScoreDetail(finalText, cscore, "依上述分析內容補算");
+                }
+                if (cscore == null)
+                {
+                    cscore = ScoreFromLiveNotes(roomCode, candidateName);
+                    if (cscore != null) finalText = AppendScoreDetail(finalText, cscore, "依會議中即時記錄估算（參考用）");
+                }
                 if (cscore != null) scoreBag.Add(cscore);
                 analysis = finalText;
                 var fileName = BuildFileName(room, "txt", candidateName);

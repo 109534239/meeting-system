@@ -745,7 +745,16 @@
         // 🐛 這輪新增：AI 面試官現在開始/結束講話的全場廣播（取代原本只有觸發者自己聽得到的
         //    瀏覽器內建語音合成）。收到 true：全場一起暫停冷場計時、顯示字幕、暫停自己的語音辨識
         //    （避免收到 AI 自己的聲音、被當成有人在講話混進逐字稿）。收到 false：全場一起恢復。
-        hub.on("AiSubtitle", text => { if (text) showMsg(text); });
+        hub.on("AiSubtitle", text => {
+            if (!text) return;
+            pushConvo('AI 面試官', 'ai', text);
+            showMsg(text);
+            // 🎯 AI 的題目要等「聲音真的開始播」才記進逐字稿（被人搶話、沒真的說出口的題目不記）
+            if (IS_HOST) {
+                const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                trxLines.push({ sp: 'AI 面試官', tx: text, time: now }); // 只有主持人記一次，避免逐字稿重複
+            }
+        });
         hub.on("AiSpeakingStateChanged", (isSpeaking, text, interrupted) => {
             aiSpeakingRemote = !!isSpeaking;
             if (!aiSpeakingRemote) {
@@ -757,15 +766,10 @@
             if (aiSpeakingRemote) {
                 lastSpeakerRole = 'ai';
                 lastWasQuestion = looksLikeQuestion(text);
-                pushConvo('AI 面試官', 'ai', text);
                 lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
                 if (recognition) { try { recognition.stop(); } catch {} }
                 // 字幕改由 AiSubtitle（聲音真的開始播時才送）顯示，這裡先顯示「思考中」的點點
                 setSt('sp', '🗣️ 說話中'); setRing(true); showDots();
-                if (IS_HOST && text) {
-                    const now = new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-                    trxLines.push({ sp: 'AI 面試官', tx: text, time: now }); // 只有主持人記一次，避免逐字稿重複
-                }
             } else {
                 lastSpeechMs = Date.now(); silT = 0; setSilBar(0);
                 setSt('li', '👂 聆聽中'); setRing(false);
@@ -788,7 +792,7 @@
         }
         startHub();
         // 版本標記：左下角小字 + console，確認每個人跑的是同一版（測試前請每台都看到 v0245）
-        (function () { try { const d = document.createElement('div'); d.textContent = 'v0245'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
+        (function () { try { const d = document.createElement('div'); d.textContent = 'v0290'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
 
         // 🎯 保底輪詢：不管 SignalR 廣播這次有沒有送達（長時間閒置等待時 SignalR 群組可能悄悄失效），
         //    每 4 秒主動問一次伺服器「會議現在到底是什麼狀態」，用真實資料庫狀態校正畫面，
