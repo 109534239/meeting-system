@@ -830,7 +830,7 @@ namespace InterviewProject.Controllers
                 if (q0.HasValue && q0.Value < 27)
                 {
                     var w0 = Math.Max(1, (int)Math.Ceiling(30 - q0.Value));
-                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口，請前端再等 {w0} 秒。[伺服器版本 v0245]");
+                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口，請前端再等 {w0} 秒。[伺服器版本 v0250]");
                     return Ok(new { success = true, refused = true, waitSec = w0 });
                 }
             }
@@ -901,7 +901,7 @@ namespace InterviewProject.Controllers
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RoomCode)) return Ok(new { text = (string?)null });
             var code = req.RoomCode.Trim();
-            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0245]");
+            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0250]");
             if (_botService.IsSpeaking(code)) return Ok(new { text = (string?)null });
 
             // 🎯 最後的保險（不管前端計時有沒有算錯）：會議的混音裡不到 27 秒前還聽得到人聲，就還不能因為冷場而開口。
@@ -1057,7 +1057,8 @@ namespace InterviewProject.Controllers
                 {
                     try
                     {
-                        var rp = $"面試中職員/主持人說了這句話（語音辨識，常把名字聽成同音或相近的字）：「{Clip(htxt, 60)}」\n在場求職者名單：{string.Join("、", presentNames)}\n這句話有點名其中某一位求職者嗎（例如開頭稱呼對方、叫某人做某事）？有的話只回覆名單中那位的完整姓名（依發音最接近的判斷），沒有點名任何人就只回覆「無」。不要解釋。";
+                        var recentCtx = string.Join("\n", lines.Where(l => l.Role != "ai").TakeLast(4).Select(l => $"{l.Name}：{Clip(l.Text, 60)}"));
+                        var rp = $"面試中職員/主持人說了下面這些話（語音辨識，常把名字聽成同音或相近的字，例如「吳鼠鼠」可能被聽成「吳叔叔」「吳淑淑」「叔叔」「書書」）：\n{recentCtx}\n重點是最後一句：「{Clip(htxt, 60)}」\n在場求職者名單：{string.Join("、", presentNames)}\n這句話有點名其中某一位求職者嗎（例如開頭稱呼對方、叫某人做某事）？有的話只回覆名單中那位的完整姓名（依發音最接近的判斷），沒有點名任何人就只回覆「無」。不要解釋。";
                         var ans = (await _gemini.AskAsync(rp, "你只輸出一個名字或「無」。", 30))?.Trim() ?? "";
                         var hit = presentNames.FirstOrDefault(n => ans.Contains(n, StringComparison.OrdinalIgnoreCase));
                         if (hit != null) { mentioned = new List<string> { hit }; Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 依發音判斷被點名的是「{hit}」（原句：{Clip(htxt, 30)}）"); }
@@ -1078,7 +1079,14 @@ namespace InterviewProject.Controllers
                     var spk = (lastHuman.Name ?? "").Replace("求職者-", "").Trim();
                     lastName = presentNames.FirstOrDefault(n => string.Equals(n, spk, StringComparison.OrdinalIgnoreCase));
                 }
-                if (lastName != null && Cnt(lastName) - least < 2) targetName = lastName;
+                // 🎯 除了「自我介紹」階段可以輪流換人，其他時候一律「上一個問題問誰，這次就問誰」：
+                //    剛回答完的求職者 → 繼續問他；否則 → 問回 AI 上一題問的那位；都沒有才輪流。
+                bool introPhase = (lastHuman != null && !lastIsJobseeker && System.Text.RegularExpressions.Regex.IsMatch(lastHuman.Text ?? "", @"自我介紹|介紹一下自己|做.{0,3}介紹|先介紹"))
+                                  || (_aiLast.TryGetValue(code, out var introAi) && System.Text.RegularExpressions.Regex.IsMatch(introAi.Text ?? "", @"自我介紹|介紹一下自己|簡單做個介紹"));
+                string? stickyName = lastName;
+                if (stickyName == null && _aiLast.TryGetValue(code, out var stickyAi) && stickyAi.Name != null && presentNames.Contains(stickyAi.Name)) stickyName = stickyAi.Name;
+                if (!introPhase && stickyName != null) targetName = stickyName;
+                else if (lastName != null && Cnt(lastName) - least < 2) targetName = lastName;
                 else targetName = leastNames[new Random().Next(leastNames.Count)];
             }
             // 🎯 模式判斷
@@ -1140,6 +1148,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
 5. 禁止廢話：不要打氣、安撫（例如「不用緊張」「慢慢想」）、客套、總結剛剛的對話、重複問過的問題（情境A 例外：同一題可以換個說法再引導，但不能原句重複）、問履歷與對話都沒有依據的事。
 6. 如果職員剛問了問題或提出要求、求職者還沒回答：請「就同一個問題」換個說法、縮小範圍，或提示可以從履歷中的哪段經歷談起，幫求職者開口。絕對不能趁機換到另一個話題。
 7. 現在已經冷場，你一定要說一句話，不可以輸出 SKIP，要用一句具體的引導或追問接上目前主題。
+10. 題型可以多樣：除了延伸上一題與回答、依履歷追問之外，也可以問「這個職缺實際上班時可能會遇到的狀況」或出情境題（例如「如果……，你會怎麼處理？」「遇到……你會怎麼取捨？」）。情境題必須和職缺的工作內容、目前主題相關，具體、口語、40 字以內，不要出空泛或與職缺無關的題目。（情境U 只能換個說法問同一題，不適用此條。）
 9. 自我介紹早就結束了：除非「目前主題」本身就是在請人自我介紹，否則題目裡絕對不可以出現「自我介紹」「介紹一下自己」「介紹自己」這類字眼，也不可以問履歷簡介；要問就問更深入、更專業的內容（做法、數字、判斷、取捨）。
 {rule8}
 只輸出要說的那一句話，不加引號、前綴或說明。";
