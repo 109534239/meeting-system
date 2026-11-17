@@ -568,35 +568,48 @@
                     </div>
 
                     <div class="eval-files">
-                        @if (!string.IsNullOrEmpty(room.TranscriptFileName))
-                        {
-                            <div class="file-item">
-                                <span class="file-label">📝 逐字稿</span>
-                                <button type="button" class="btn-file-view" onclick="toggleTextPanel('transcript-@room.Id', '@Url.Action("ViewFile", "Room", new { folder = "逐字稿", fileName = room.TranscriptFileName })')">查看</button>
-                                <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "逐字稿", fileName = room.TranscriptFileName })">下載</a>
-                            </div>
-                        }
                         @{
                             var roomAiFiles = aiAnalysisByRoom.TryGetValue(room.Id, out var aif) ? aif : new List<string>();
                         }
-                        @foreach (var aiFileName in roomAiFiles)
-                        {
-                            // 檔名格式：面試會議_日期_職缺_求職者姓名.txt，取最後一段當標籤
-                            var labelName = aiFileName.Replace(".txt", "");
-                            var parts = labelName.Split('_');
-                            var candidateLabel = parts.Length > 0 ? parts[^1] : labelName;
-                            var panelId = "aianalysis-" + room.Id + "-" + aiFileName.GetHashCode().ToString().Replace("-", "n");
-                            <div class="file-item">
-                                <span class="file-label">🤖 AI分析（@candidateLabel）</span>
-                                <button type="button" class="btn-file-view" onclick="toggleTextPanel('@panelId', '@Url.Action("ViewFile", "Room", new { folder = "AI分析", fileName = aiFileName })')">查看</button>
-                                <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "AI分析", fileName = aiFileName })">下載</a>
-                            </div>
+                        @{
+                            var rptFiles = new List<object>();
+                            if (!string.IsNullOrEmpty(room.TranscriptFileName))
+                                rptFiles.Add(new { label = "逐字稿", kind = "transcript", viewUrl = Url.Action("ViewFile", "Room", new { folder = "逐字稿", fileName = room.TranscriptFileName }), downloadUrl = Url.Action("DownloadFile", "Room", new { folder = "逐字稿", fileName = room.TranscriptFileName }) });
+                            foreach (var aiFileName in roomAiFiles.OrderBy(f => f.Contains("比較總表") ? 1 : 0).ThenBy(f => f))
+                            {
+                                // 檔名格式：面試會議_日期_職缺_求職者姓名.txt，取最後一段當標籤
+                                var lastPart = aiFileName.Replace(".txt", "").Split('_').Last();
+                                var isCmp = lastPart == "比較總表";
+                                rptFiles.Add(new { label = isCmp ? "AI分析比較總表" : lastPart + "_AI分析", kind = isCmp ? "compare" : "analysis", viewUrl = Url.Action("ViewFile", "Room", new { folder = "AI分析", fileName = aiFileName }), downloadUrl = Url.Action("DownloadFile", "Room", new { folder = "AI分析", fileName = aiFileName }) });
+                            }
+                            if (!string.IsNullOrEmpty(room.RecordingFileName))
+                                rptFiles.Add(new { label = "影音", kind = "video", viewUrl = Url.Action("ViewFile", "Room", new { folder = "錄影錄音", fileName = room.RecordingFileName }), downloadUrl = Url.Action("DownloadFile", "Room", new { folder = "錄影錄音", fileName = room.RecordingFileName }), vttUrl = string.IsNullOrEmpty(room.TranscriptFileName) ? "" : Url.Action("TranscriptVtt", "Room", new { roomId = room.Id }) });
+                            // 適性測驗結果：每位求職者一份（雷達圖＋各構面分數），在彈窗裡用下拉選單切換
+                            {
+                                var aptItems = new List<object>();
+                                foreach (var cj in candidates)
+                                {
+                                    var cjName = cj.Resume?.Member?.Name ?? "未知";
+                                    var cjApt = cj.Resume != null && aptitudeResultsByResume.TryGetValue(cj.Resume.Id, out var cjA) ? cjA : null;
+                                    string aptHtml, aptText = "";
+                                    if (cjApt == null) aptHtml = "<div class='rpt-empty'>這位求職者沒有適性測驗結果</div>";
+                                    else
+                                    {
+                                        var rows = new[] { ("抗壓性", cjApt.StressToleranceScore), ("團隊合作", cjApt.TeamworkScore), ("積極主動", cjApt.ProactivenessScore), ("可靠負責", cjApt.ReliabilityScore), ("溝通表達", cjApt.CommunicationScore) };
+                                        aptHtml = "<div style='text-align:center'>" + BuildRadarSvg(cjApt) + "</div><div class='rpt-note' style='margin-top:8px'>適性測驗僅供參考（1~5 分），不做及格與否的判斷。作答時間：" + cjApt.SubmittedAt.ToString("yyyy-MM-dd HH:mm") + "</div>";
+                                    }
+                                    if (cjApt != null) aptText = string.Join("\r\n", new[] { ("抗壓性", cjApt.StressToleranceScore), ("團隊合作", cjApt.TeamworkScore), ("積極主動", cjApt.ProactivenessScore), ("可靠負責", cjApt.ReliabilityScore), ("溝通表達", cjApt.CommunicationScore) }.Select(r => r.Item1 + "：" + r.Item2.ToString("0.0") + " 分")) + "\r\n作答時間：" + cjApt.SubmittedAt.ToString("yyyy-MM-dd HH:mm");
+                                    aptItems.Add(new { name = cjName, html = aptHtml, text = aptText });
+                                }
+                                if (aptItems.Count > 0) rptFiles.Add(new { label = "適性測驗結果", kind = "aptitude", items = aptItems });
+                            }
+                            var rptJson = System.Text.Json.JsonSerializer.Serialize(rptFiles);
                         }
-                        @if (!string.IsNullOrEmpty(room.RecordingFileName))
+                        @if (rptFiles.Count > 0)
                         {
                             <div class="file-item">
-                                <span class="file-label">🎬 錄影錄音（下方可直接播放）</span>
-                                <a class="btn-file-download" href="@Url.Action("DownloadFile", "Room", new { folder = "錄影錄音", fileName = room.RecordingFileName })">下載</a>
+                                <span class="file-label">📄 面試會議結果記錄和分析</span>
+                                <button type="button" class="btn-file-view" data-report-btn data-title="@(room.Job?.Title ?? "未指定職缺") ｜ @(room.StartAt?.ToString("yyyy-MM-dd HH:mm") ?? "")" data-files="@rptJson">查看報告</button>
                             </div>
                         }
                         @if (string.IsNullOrEmpty(room.TranscriptFileName) && string.IsNullOrEmpty(room.RecordingFileName) && !roomAiFiles.Any())
@@ -605,45 +618,6 @@
                         }
                     </div>
 
-                    @if (!string.IsNullOrEmpty(room.TranscriptFileName))
-                    {
-                        <pre class="text-panel" id="panel-transcript-@room.Id" style="display:none;"></pre>
-                    }
-                    @foreach (var aiFileName in roomAiFiles)
-                    {
-                        var panelId = "aianalysis-" + room.Id + "-" + aiFileName.GetHashCode().ToString().Replace("-", "n");
-                        <pre class="text-panel" id="panel-@panelId" style="display:none;"></pre>
-                    }
-
-                    @if (!string.IsNullOrEmpty(room.RecordingFileName))
-                    {
-                        <div class="video-wrap">
-                            <video id="video-@room.Id" controls preload="metadata"
-                                   src="@Url.Action("ViewFile", "Room", new { folder = "錄影錄音", fileName = room.RecordingFileName })">
-                                @if (!string.IsNullOrEmpty(room.TranscriptFileName))
-                                {
-                                    <track kind="captions" srclang="zh-Hant" label="逐字稿字幕（估算時間，僅供參考）"
-                                           src="@Url.Action("TranscriptVtt", "Room", new { roomId = room.Id })" default />
-                                }
-                                您的瀏覽器不支援影片播放，請改用下載連結。
-                            </video>
-                            <div class="video-controls-extra">
-                                <label>
-                                    播放速度：
-                                    <select onchange="document.getElementById('video-@room.Id').playbackRate = this.value">
-                                        <option value="0.5">0.5x</option>
-                                        <option value="0.75">0.75x</option>
-                                        <option value="1" selected>1x（正常）</option>
-                                        <option value="1.25">1.25x</option>
-                                        <option value="1.5">1.5x</option>
-                                        <option value="2">2x</option>
-                                    </select>
-                                </label>
-                                <button type="button" onclick="document.getElementById('video-@room.Id').requestFullscreen()">⛶ 全螢幕</button>
-                                <span class="video-hint">內建可拖拉進度條／音量／字幕（CC）按鈕；字幕時間為估算值，僅供對照參考</span>
-                            </div>
-                        </div>
-                    }
 
                     @if (candidates.Any())
                     {
@@ -665,21 +639,7 @@
                             <div class="eval-candidate">
                                 <div class="eval-candidate-name">@name</div>
 
-                                @* 🎯 適性測驗結果：跟逐字稿／影片／AI分析一樣當評分參考 *@
-                                @{
-                                    var aptitude = resume != null && aptitudeResultsByResume.TryGetValue(resume.Id, out var apt) ? apt : null;
-                                }
-                                <div class="aptitude-box">
-                                    <div class="manager-eval-ref-title">適性測驗結果（參考，1~5分）</div>
-                                    @if (aptitude != null)
-                                    {
-                                        @Html.Raw(BuildRadarSvg(aptitude))
-                                    }
-                                    else
-                                    {
-                                        <div class="text-muted" style="font-size:13px;">這位求職者沒有適性測驗結果</div>
-                                    }
-                                </div>
+                                @* 適性測驗結果已移到「查看報告」彈窗的「適性測驗結果」頁籤（下拉選單切換求職者） *@
 
                                 @* 🎯 主持人：無論自己是否已評分，都能看到其他職員的評分紀錄作為參考 *@
                                 @if (hostRoomIds.Contains(room.Id))
@@ -979,3 +939,5 @@
         }
     </script>
 }
+
+@await Html.PartialAsync("_ReportModal")

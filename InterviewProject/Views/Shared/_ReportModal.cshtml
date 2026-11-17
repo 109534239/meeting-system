@@ -1,0 +1,387 @@
+@* 面試會議結果記錄和分析彈窗：逐字稿（預設）／每位求職者的 AI 分析／AI 分析比較總表／影音（直接播放）。
+   只讀取已存在的 txt 檔文字（走原本的 Room/ViewFile），不改任何檔案內容。
+   頁面上用 data-report-btn 的按鈕開啟，資料放在 data-files（JSON：label, kind, viewUrl, downloadUrl）。 *@
+<style>
+    .rpt-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 3000;
+        padding: 16px;
+    }
+
+        .rpt-overlay.open {
+            display: flex;
+        }
+
+    .rpt-window {
+        background: #fff;
+        width: min(1000px, 100%);
+        max-height: 92vh;
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 60px rgba(0,0,0,.25);
+        overflow: hidden;
+    }
+
+    .rpt-head {
+        padding: 22px 28px 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .rpt-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: #1f2937;
+        margin: 0;
+    }
+
+    .rpt-sub {
+        font-size: 13px;
+        color: #6b7280;
+        margin-top: 6px;
+    }
+
+    .rpt-close {
+        border: none;
+        background: none;
+        font-size: 28px;
+        line-height: 1;
+        color: #6b7280;
+        cursor: pointer;
+    }
+
+    .rpt-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+        gap: 2px 4px;
+        padding: 0 20px;
+        border-bottom: 1px solid #e5e7eb;
+        overflow: visible;
+    }
+
+    .rpt-tab {
+        flex-shrink: 0;
+        border: none;
+        background: none;
+        padding: 12px 12px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #6b7280;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        white-space: nowrap;
+    }
+
+        .rpt-tab.active {
+            color: #1f6b8a;
+            border-bottom-color: #1f6b8a;
+        }
+
+    .rpt-body {
+        padding: 22px 28px;
+        overflow-y: auto;
+        flex: 1;
+        color: #374151;
+        font-size: 15px;
+        line-height: 1.85;
+    }
+
+    .rpt-foot {
+        padding: 14px 28px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .rpt-note {
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .rpt-btn {
+        background: #1f6b8a;
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 24px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .rpt-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .rpt-dl {
+        display: none;
+        background: #fff;
+        color: #1f6b8a;
+        border: 1px solid #1f6b8a;
+        border-radius: 10px;
+        padding: 9px 20px;
+        font-weight: 600;
+        font-size: 14px;
+        text-decoration: none;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+        .rpt-dl:hover {
+            background: #eef6fa;
+        }
+
+    .rpt-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+        margin-bottom: 22px;
+    }
+
+    .rpt-card {
+        background: #f5f7fb;
+        border: 1px solid #e5e9f2;
+        border-radius: 14px;
+        padding: 16px 18px;
+    }
+
+        .rpt-card .k {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .rpt-card .v {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .rpt-card .s {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+    .rpt-h {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1f2937;
+        margin: 22px 0 8px;
+        padding-top: 14px;
+        border-top: 1px solid #eef0f4;
+    }
+
+        .rpt-h:first-child {
+            border-top: none;
+            margin-top: 0;
+            padding-top: 0;
+        }
+
+    .rpt-p {
+        margin: 4px 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .rpt-li {
+        margin: 4px 0 4px 14px;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .rpt-score {
+        display: inline-block;
+        background: #1f6b8a;
+        color: #fff;
+        border-radius: 10px;
+        padding: 6px 16px;
+        font-weight: 700;
+        margin: 8px 0;
+    }
+
+    .rpt-line {
+        display: flex;
+        gap: 12px;
+        padding: 6px 0;
+        border-bottom: 1px dashed #eef0f4;
+    }
+
+        .rpt-line .t {
+            color: #9ca3af;
+            font-size: 12px;
+            min-width: 76px;
+            padding-top: 3px;
+        }
+
+        .rpt-line .w {
+            font-weight: 700;
+            min-width: 120px;
+            color: #1f6b8a;
+        }
+
+        .rpt-line.ai .w {
+            color: #7c3aed;
+        }
+
+        .rpt-line .x {
+            flex: 1;
+            word-break: break-word;
+        }
+
+    .rpt-empty {
+        color: #9ca3af;
+        text-align: center;
+        padding: 40px 0;
+    }
+</style>
+<div id="rptOverlay" class="rpt-overlay">
+    <div class="rpt-window">
+        <div class="rpt-head">
+            <div><h2 class="rpt-title" id="rptTitle">面試會議結果記錄和分析</h2><div class="rpt-sub" id="rptSub"></div></div>
+            <button type="button" class="rpt-close" id="rptCloseX">&times;</button>
+        </div>
+        <div class="rpt-tabs" id="rptTabs"></div>
+        <div class="rpt-body" id="rptBody"></div>
+        <div class="rpt-foot">
+            <div><span class="rpt-note">AI 分析結果僅供面試參考，不代表最終錄取決定，實際結果仍由人資及用人主管決定。</span></div>
+            <div class="rpt-actions"><a class="rpt-dl" id="rptDl" href="#">下載</a><button type="button" class="rpt-btn" id="rptClose">關閉報告</button></div>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        const ov = document.getElementById('rptOverlay'), tabs = document.getElementById('rptTabs'), body = document.getElementById('rptBody');
+        const cache = {};
+        const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+        const clean = s => s.replace(/\*\*/g, '').replace(/^\s*[\*\-]\s+/, '').replace(/^\s*#+\s*/, '');
+
+        function renderTranscript(text) {
+            const wrap = document.createElement('div');
+            let n = 0;
+            text.split(/\r?\n/).forEach(raw => {
+                const line = raw.trim(); if (!line) return;
+                const m = line.match(/^\[([^\]]+)\]\s*([^：:]+)[：:]\s*(.*)$/);
+                if (m) {
+                    const row = el('div', 'rpt-line' + (m[2].indexOf('AI') === 0 ? ' ai' : ''));
+                    row.appendChild(el('div', 't', m[1])); row.appendChild(el('div', 'w', m[2])); row.appendChild(el('div', 'x', m[3]));
+                    wrap.appendChild(row); n++;
+                } else wrap.appendChild(el('div', 'rpt-p', line));
+            });
+            if (!wrap.childNodes.length) return el('div', 'rpt-empty', '這份逐字稿沒有內容');
+            return wrap;
+        }
+
+        function renderAnalysis(text, isCompare) {
+            const wrap = document.createElement('div');
+            if (isCompare) {
+                const cards = el('div', 'rpt-cards'); let any = false;
+                text.split(/\r?\n/).forEach(l => {
+                    const m = l.match(/^(\d+)\.\s*(.+?)\s*綜合\s*(\d+)\s*分/);
+                    if (m) { any = true; const c = el('div', 'rpt-card'); c.appendChild(el('div', 'k', '第 ' + m[1] + ' 名　' + m[2].trim())); c.appendChild(el('div', 'v', m[3])); c.appendChild(el('div', 's', '加權綜合分（滿分 100）')); cards.appendChild(c); }
+                });
+                if (any) wrap.appendChild(cards);
+            }
+            if (!isCompare) {
+                const cards = el('div', 'rpt-cards'); let any = false;
+                text.split(/\r?\n/).forEach(l => {
+                    const m = l.match(/^(.+?)（權重\s*(\d+)%）[：:]\s*(\d+)\s*分/);
+                    if (m) { any = true; const c = el('div', 'rpt-card'); c.appendChild(el('div', 'k', m[1].trim())); c.appendChild(el('div', 'v', m[3])); c.appendChild(el('div', 's', '權重 ' + m[2] + '%（滿分 100）')); cards.appendChild(c); }
+                });
+                if (any) wrap.appendChild(cards);
+            }
+            text.split(/\r?\n/).forEach(raw => {
+                let line = clean(raw.replace(/^\s+/, ' ')).trim(); if (!line) return;
+                if (/^[【\[]?[一二三四五六七八九十]+、/.test(line) || /^【.+】$/.test(line)) { wrap.appendChild(el('div', 'rpt-h', line.replace(/[【】]/g, ''))); return; }
+                if (/^═+/.test(line)) { wrap.appendChild(el('div', 'rpt-h', line.replace(/═+/g, '').trim())); return; }
+                const sc = line.match(/^AI\s*綜合評分[：:]\s*(\d+)\s*分/);
+                if (sc) { wrap.appendChild(el('div', 'rpt-score', 'AI 綜合評分　' + sc[1] + ' 分')); return; }
+                if (/^\[\[\/?SCORES\]\]/.test(line)) return;
+                if (/^(■|•|·|-)\s*/.test(line) || /^\d+\./.test(line)) { wrap.appendChild(el('div', 'rpt-li', line)); return; }
+                wrap.appendChild(el('div', 'rpt-p', line));
+            });
+            if (!wrap.childNodes.length) return el('div', 'rpt-empty', '這份報告沒有內容');
+            return wrap;
+        }
+
+        function renderVideo(file) {
+            const wrap = document.createElement('div');
+            const v = document.createElement('video');
+            v.controls = true; v.preload = 'metadata'; v.src = file.viewUrl; v.style.cssText = 'width:100%;max-height:60vh;background:#000;border-radius:10px;';
+            if (file.vttUrl) { const tr = document.createElement('track'); tr.kind = 'captions'; tr.srclang = 'zh-Hant'; tr.label = '逐字稿字幕（估算時間，僅供參考）'; tr.src = file.vttUrl; tr.default = true; v.appendChild(tr); }
+            wrap.appendChild(v);
+            const bar = el('div', 'rpt-p'); bar.style.cssText = 'margin-top:10px;';
+            bar.appendChild(el('span', 'rpt-note', '字幕時間為估算值，僅供對照參考'));
+            wrap.appendChild(bar);
+            return wrap;
+        }
+
+        // 適性測驗結果：下拉選單切換求職者（內容由伺服器產生好放在 file.items）
+        function renderAptitude(file) {
+            const wrap = document.createElement('div');
+            const bar = el('div', 'rpt-p'); bar.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:16px;';
+            bar.appendChild(el('label', null, '求職者：'));
+            const sel = document.createElement('select'); sel.style.cssText = 'padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;';
+            (file.items || []).forEach((it, i) => { const op = document.createElement('option'); op.value = i; op.textContent = it.name; sel.appendChild(op); });
+            bar.appendChild(sel); wrap.appendChild(bar);
+            const box = document.createElement('div'); wrap.appendChild(box);
+            const draw = () => {
+                const it = (file.items || [])[sel.value]; box.innerHTML = it ? it.html : '';
+                const dl = document.getElementById('rptDl');
+                if (it) {
+                    const txt = it.name + ' 適性測驗結果（1~5 分）\r\n' + (it.text || '沒有適性測驗結果');
+                    if (dl._blobUrl) URL.revokeObjectURL(dl._blobUrl);
+                    dl._blobUrl = URL.createObjectURL(new Blob(['\ufeff' + txt], { type: 'text/plain;charset=utf-8' }));
+                    dl.href = dl._blobUrl; dl.setAttribute('download', it.name + '_適性測驗結果.txt'); dl.textContent = '下載此份 txt'; dl.style.display = 'inline-block';
+                }
+            };
+            sel.onchange = draw; draw();
+            return wrap;
+        }
+
+        async function show(file) {
+            const dl = document.getElementById('rptDl');
+            dl.removeAttribute('download');
+            if (file.downloadUrl) { dl.href = file.downloadUrl; dl.textContent = file.kind === 'video' ? '下載影片' : '下載此份 txt'; dl.style.display = 'inline-block'; } else dl.style.display = 'none';
+            if (file.kind === 'video') { body.replaceChildren(renderVideo(file)); body.scrollTop = 0; return; }
+            if (file.kind === 'aptitude') { body.replaceChildren(renderAptitude(file)); body.scrollTop = 0; return; }
+            body.replaceChildren(el('div', 'rpt-empty', '讀取中…'));
+            try {
+                if (!(file.viewUrl in cache)) { const r = await fetch(file.viewUrl); if (!r.ok) throw new Error('HTTP ' + r.status); cache[file.viewUrl] = await r.text(); }
+                const t = cache[file.viewUrl];
+                body.replaceChildren(file.kind === 'transcript' ? renderTranscript(t) : renderAnalysis(t, file.kind === 'compare'));
+                body.scrollTop = 0;
+            } catch (e) { body.replaceChildren(el('div', 'rpt-empty', '讀取失敗，請改用「下載此份 txt」查看')); }
+        }
+
+        function open(btn) {
+            let files = []; try { files = JSON.parse(btn.dataset.files || '[]'); } catch { }
+            document.getElementById('rptTitle').textContent = '面試會議結果記錄和分析';
+            document.getElementById('rptSub').textContent = btn.dataset.title || '';
+            tabs.replaceChildren();
+            if (!files.length) { body.replaceChildren(el('div', 'rpt-empty', '尚無檔案')); ov.classList.add('open'); return; }
+            files.forEach((f, i) => {
+                const b = el('button', 'rpt-tab' + (i === 0 ? ' active' : ''), f.label); b.type = 'button';
+                b.onclick = () => { tabs.querySelectorAll('.rpt-tab').forEach(x => x.classList.remove('active')); b.classList.add('active'); show(f); };
+                tabs.appendChild(b);
+            });
+            ov.classList.add('open'); show(files[0]);
+        }
+        const close = () => { ov.classList.remove('open'); body.replaceChildren(); }; // 關閉時一併移除影片，停止播放
+        document.getElementById('rptClose').onclick = close; document.getElementById('rptCloseX').onclick = close;
+        ov.addEventListener('click', e => { if (e.target === ov) close(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+        document.addEventListener('click', e => { const b = e.target.closest('[data-report-btn]'); if (b) open(b); });
+    })();
+</script>

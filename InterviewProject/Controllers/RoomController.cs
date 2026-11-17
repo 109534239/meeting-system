@@ -29,6 +29,9 @@ namespace InterviewProject.Controllers
 
         // 已產生、但還沒真的說出口的問題（真的說出口才算「問過」，提前準備好的題目被丟掉不算）
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Text, string? Name, bool ModeU)> _aiPending = new();
+        // 每位求職者被 AI 要求「自我介紹」的次數（不靠逐字稿，AI 真的說出口就記；最多兩次，絕不會一直回頭問）
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _introAskCount = new();
+        private static readonly System.Text.RegularExpressions.Regex IntroBroadRx = new(@"自我介紹|介紹一下自己|介紹自己|簡單介紹|介紹一下吧|介紹你自己|做個介紹");
         // 🎯 伺服器自己記一份「這場會議最近講了什麼」（不靠主持人瀏覽器的 SignalR 收訊，否則收不到就會一直用舊對話出題）
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<AiConvoLine>> _convo = new();
         private static void AddConvo(string code, string name, string role, string text)
@@ -129,18 +132,20 @@ namespace InterviewProject.Controllers
             sb.AppendLine("2. 看不清、聽不清、講者無法確定、題目是問誰不確定時，寫「無法判斷」，該項不扣分，也不要硬下結論。");
             sb.AppendLine("3. 每個判斷都要附證據：[mm:ss] 加原句。時間一律用「影片時間」mm:ss，不要使用現實時鐘時間。逐字稿是語音辨識，人名與專有名詞常有錯字（例如「吳叔叔」「吳書書」都可能是吳鼠鼠）；與影片聲音不同時以影片聲音為準，並註明差異。");
             sb.AppendLine("4. 先確認每個問題「是誰問的、問誰」。AI 面試官問的題目要寫「AI 面試官」，不可說成職員問的；問別人的題目，他沒回答不算他聽不懂或沒回答，不可扣分。");
-            sb.AppendLine("5. 不做錄取或不錄取的決定，也不要用「強烈建議／不建議」這類字眼，只列出「建議後續關注點」，最後由人決定。優缺點都要寫，不可通篇讚美或通篇批評。");
+            sb.AppendLine("5. 沒有被回答的題目（沒回答、被打斷、題目其實沒被聽見、是問別人的）一律「不計分、不扣分」，只在各題表現寫一行「未回答（不計分）」。不可以因此推論專注度、態度、理解力、反應速度或溝通問題，也不可以把它寫進優缺點、風險或後續關注點。各維度分數只根據「有回答的題目」。");
+            sb.AppendLine("6. 「溝通清晰度」只看內容有沒有講清楚、有沒有條理。嚴禁提到口音、發音、語速、音量、聲音、語氣、流暢度；逐字稿裡的錯字（例如把名字或專有名詞聽錯）是語音辨識的問題，不是求職者的問題，不可拿來扣分。也不要描述表情、眼神或動作。");
+            sb.AppendLine("7. 不做錄取或不錄取的決定，也不要用「強烈建議／不建議」這類字眼，只列出「建議後續關注點」，最後由人決定。優缺點都要寫，不可通篇讚美或通篇批評。");
             sb.AppendLine();
             sb.AppendLine("【評分依據（四個維度與權重，總分由系統加權計算，你不要自己算總分）】");
             foreach (var r in Rubric) sb.AppendLine($"{r.Key}. {r.Title}（權重 {r.Weight}%）：{r.Basis}");
             sb.AppendLine("每個維度 0~100 分並寫出依據。");
             sb.AppendLine();
             sb.AppendLine($"請依下列結構輸出（繁體中文，不要重複寫同樣的內容；只針對「{candidate}」）：");
-            sb.AppendLine("一、各題表現：逐題列「[mm:ss] 題目（來源：職員/主持人名字 或 AI 面試官；問的是誰）→ 回答重點 → 證據原句 → 本題評分 0~100 或「無法判斷」＋一句理由」。若他沒有被問、只是自己插話，要照實寫。");
+            sb.AppendLine("一、各題表現：逐題寫成這種格式（直接寫內容，不要照抄這句說明）：\n   例：[02:15] 職員-王小明問「如何降低成本？」→ 重點：…；證據：「…原句…」；本題 80 分（有具體數字）。\n   沒有回答的題目只寫：[03:40] AI 面試官問「…」→ 未回答（不計分）。若他沒被問、只是自己插話，要照實寫。");
             sb.AppendLine("二、各維度評分與依據（A~D）。");
             sb.AppendLine("三、待確認事項：履歷與口述不一致、或需要 HR 查證的地方（例如證照、年資、職稱）。這是需要確認，不是加分也不是扣分。");
             sb.AppendLine("四、建議後續關注點：給面試官的追問方向。不寫錄取決定。");
-            sb.AppendLine("五、錄影與判讀限制（不影響評分）：畫面、收音、講者辨識上的限制。表情、動作只能中性描述且不計分；沒有就寫「無」。");
+            sb.AppendLine("五、錄影與判讀限制（不影響評分）：只寫畫面、收音、講者辨識上的技術限制；不要描述任何人的表情或動作；沒有就寫「無」。");
             sb.AppendLine("最後（全文最後，只輸出這個區塊，分數為整數）：");
             sb.AppendLine("[[SCORES]]{\"A\":0,\"B\":0,\"C\":0,\"D\":0,\"confidence\":\"高/中/低（講者辨識與題目歸屬的把握程度）\",\"summary\":\"一句話總結\",\"strengths\":\"主要優點\",\"risks\":\"主要待追問處\",\"to_confirm\":\"待確認事項，沒有就寫無\"}[[/SCORES]]");
             if (_liveNotes.TryGetValue(roomCode, out var list))
@@ -210,8 +215,10 @@ namespace InterviewProject.Controllers
         // 解析模型輸出的分數區塊；沒有就回傳 null（由呼叫端用備援補算，不會在報告裡留下「失敗」字樣）
         private static (string Text, CandScore? Score) FinalizeAnalysis(string analysis, string candidate)
         {
-            var m = System.Text.RegularExpressions.Regex.Match(analysis, @"\[\[SCORES\]\](.*?)\[\[/SCORES\]\]", System.Text.RegularExpressions.RegexOptions.Singleline);
-            var body = System.Text.RegularExpressions.Regex.Replace(analysis, @"\[\[SCORES\]\].*?\[\[/SCORES\]\]", "", System.Text.RegularExpressions.RegexOptions.Singleline);
+            // 結尾標記寫錯（例如 [/SCORES]]）或根本沒寫，也要抓得到、也要從報告裡拿掉
+            const string endTag = @"(?:\[\[/SCORES\]\]|\[/SCORES\]\]?|\[\[/SCORES\]|$)";
+            var m = System.Text.RegularExpressions.Regex.Match(analysis, @"\[\[SCORES\]\](.*?)" + endTag, System.Text.RegularExpressions.RegexOptions.Singleline);
+            var body = System.Text.RegularExpressions.Regex.Replace(analysis, @"\[\[SCORES\]\].*?" + endTag, "", System.Text.RegularExpressions.RegexOptions.Singleline);
             body = System.Text.RegularExpressions.Regex.Replace(body, @"^.*AI\s*綜合評分\s*[：:].*$\r?\n?", "", System.Text.RegularExpressions.RegexOptions.Multiline);
             var cs = m.Success ? ParseScoreJson(m.Groups[1].Value, candidate) : null;
             if (cs == null) return (body.TrimEnd(), null);
@@ -1064,7 +1071,7 @@ namespace InterviewProject.Controllers
                 if (q0.HasValue && q0.Value < 27)
                 {
                     var w0 = Math.Max(1, (int)Math.Ceiling(30 - q0.Value));
-                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口（活動計時={(q0 ?? -1):0.0}，混音靜音={(aud0 ?? -1):0.0}），請前端再等 {w0} 秒。[伺服器版本 v0290]");
+                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口（活動計時={(q0 ?? -1):0.0}，混音靜音={(aud0 ?? -1):0.0}），請前端再等 {w0} 秒。[伺服器版本 v0291]");
                     return Ok(new { success = true, refused = true, waitSec = w0 });
                 }
             }
@@ -1077,6 +1084,7 @@ namespace InterviewProject.Controllers
                 lock (qs) qs.Add(pend.Text);
                 if (pend.Name != null && !pend.ModeU) _aiAskCount.AddOrUpdate($"{roomCode}|{pend.Name}", 1, (_, v) => v + 1);
                 _aiLast[roomCode] = (pend.Name, pend.Text);
+                if (pend.Name != null && IntroBroadRx.IsMatch(pend.Text)) _introAskCount.AddOrUpdate($"{roomCode}|{pend.Name}", 1, (_, v) => v + 1);
             }
 
             if (_botService.IsSpeaking(roomCode))
@@ -1134,7 +1142,7 @@ namespace InterviewProject.Controllers
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RoomCode)) return Ok(new { text = (string?)null });
             var code = req.RoomCode.Trim();
-            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0290]");
+            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0291]");
             if (_botService.IsSpeaking(code)) return Ok(new { text = (string?)null });
 
             // 🎯 最後的保險（不管前端計時有沒有算錯）：會議的混音裡不到 27 秒前還聽得到人聲，就還不能因為冷場而開口。
@@ -1333,8 +1341,16 @@ namespace InterviewProject.Controllers
                 {
                     var introduced = lines.Skip(introIdx + 1).Where(l => JsLine(l) && (l.Text ?? "").Trim().Length >= 8)
                         .Select(l => (l.Name ?? "").Replace("求職者-", "").Trim()).ToList();
+                    // 伺服器完整對話紀錄裡，講過累計 25 字以上的求職者也算已經介紹過（避免只看最近幾句而漏掉）
+                    if (_convo.TryGetValue(code, out var fullC))
+                    {
+                        List<AiConvoLine> snapC; lock (fullC) snapC = fullC.ToList();
+                        introduced.AddRange(snapC.Where(JsLine).GroupBy(l => (l.Name ?? "").Replace("求職者-", "").Trim())
+                            .Where(g => g.Sum(x => (x.Text ?? "").Trim().Length) >= 25).Select(g => g.Key));
+                    }
                     var notYet = presentNames.Where(n => !introduced.Any(i => string.Equals(i, n, StringComparison.OrdinalIgnoreCase))
-                        && lines.Count(l => l.Role == "ai" && (l.Text ?? "").StartsWith(n) && introRx.IsMatch(l.Text ?? "")) < 2).ToList();
+                        && lines.Count(l => l.Role == "ai" && (l.Text ?? "").StartsWith(n) && IntroBroadRx.IsMatch(l.Text ?? "")) < 2
+                        && (_introAskCount.TryGetValue($"{code}|{n}", out var ic) ? ic : 0) < 2).ToList();
                     if (notYet.Count > 0)
                     {
                         introPhase = true;
@@ -1477,7 +1493,8 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             }
             // 🎯 禁止在自我介紹階段結束後又回頭問自我介紹（除非職員最近一次提問就是在請自我介紹）
             bool themeIsIntro = themeLine != null && System.Text.RegularExpressions.Regex.IsMatch(themeLine.Text ?? "", "自我介紹|介紹一下自己|介紹自己");
-            bool IntroAgain(string t) => !themeIsIntro && System.Text.RegularExpressions.Regex.IsMatch(t ?? "", "自我介紹|介紹一下自己|介紹自己|簡單介紹");
+            // 只有「真的還有人沒自我介紹」的階段才准 AI 問自我介紹；其他時候（包含職員最近一次提問剛好是請人自我介紹，但人已經介紹完了）一律不准
+            bool IntroAgain(string t) => !introPhase && IntroBroadRx.IsMatch(t ?? "");
             if (IntroAgain(text))
             {
                 Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 產生的問題又回到自我介紹，重新產生：「{text}」");
