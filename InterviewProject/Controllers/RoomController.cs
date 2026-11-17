@@ -824,13 +824,16 @@ namespace InterviewProject.Controllers
             // 🎯 真正開口前的最後一道伺服器端把關（預先準備好的題目是直接走這裡的，不會經過 AiNextQuestion 的檢查）：
             //    距離上次有人出聲／AI 講完不到 27 秒、或有人正在講話，一律不准開口，回覆「再等幾秒」。
             {
-                double? q0 = await _botService.GetAudibleSilenceSecondsAsync(roomCode);
-                if (_lastActivityUtc.TryGetValue(roomCode, out var act0)) { var sq0 = (DateTime.UtcNow - act0).TotalSeconds; if (!q0.HasValue || sq0 < q0.Value) q0 = sq0; }
+                double? aud0 = await _botService.GetAudibleSilenceSecondsAsync(roomCode);
+                double? q0 = null;
+                if (_lastActivityUtc.TryGetValue(roomCode, out var act0)) q0 = (DateTime.UtcNow - act0).TotalSeconds;
+                // 機器人混音聽到的聲音只在「真的剛剛才有聲音（3 秒內）」才算，避免背景雜音讓 AI 永遠不能開口
+                if (aud0.HasValue && aud0.Value < 3 && (!q0.HasValue || aud0.Value < q0.Value)) q0 = aud0;
                 if (PersonSpeaking(roomCode)) q0 = 0;
                 if (q0.HasValue && q0.Value < 27)
                 {
                     var w0 = Math.Max(1, (int)Math.Ceiling(30 - q0.Value));
-                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口，請前端再等 {w0} 秒。[伺服器版本 v0270]");
+                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口（活動計時={(q0 ?? -1):0.0}，混音靜音={(aud0 ?? -1):0.0}），請前端再等 {w0} 秒。[伺服器版本 v0281]");
                     return Ok(new { success = true, refused = true, waitSec = w0 });
                 }
             }
@@ -901,7 +904,7 @@ namespace InterviewProject.Controllers
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RoomCode)) return Ok(new { text = (string?)null });
             var code = req.RoomCode.Trim();
-            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0270]");
+            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0281]");
             if (_botService.IsSpeaking(code)) return Ok(new { text = (string?)null });
 
             // 🎯 最後的保險（不管前端計時有沒有算錯）：會議的混音裡不到 27 秒前還聽得到人聲，就還不能因為冷場而開口。
@@ -1043,18 +1046,33 @@ namespace InterviewProject.Controllers
             //    不能自己挑別人（例如主持人說「從 b 開始」，AI 卻去問吳鼠鼠）。
             var presentNames = present.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).Distinct().ToList();
             string? targetName = null;
+            string turnText = "";
+            bool JsLine0(AiConvoLine l) => l.Role != "ai" && (string.Equals(l.Role, "jobseeker", StringComparison.OrdinalIgnoreCase) || (l.Name ?? "").StartsWith("求職者"));
             if (lastHuman != null)
             {
                 var htxt = lastHuman.Text ?? "";
+                // 職員一段話常被切成好幾句：把「最後一句 AI／求職者發言之後」連續的職員/主持人發言接起來一起看，名字可能在前面那句
+                if (!lastIsJobseeker)
+                {
+                    var turnParts = new List<string>();
+                    for (int ti = lines.Count - 1; ti >= 0 && turnParts.Count < 4; ti--)
+                    {
+                        var tl = lines[ti];
+                        if (tl.Role == "ai" || JsLine0(tl)) break;
+                        turnParts.Insert(0, tl.Text ?? "");
+                    }
+                    if (turnParts.Count > 0) htxt = string.Join("，", turnParts);
+                }
+                turnText = htxt;
                 var mentioned = presentNames.Where(n => htxt.Contains(n, StringComparison.OrdinalIgnoreCase)).ToList();
                 if (mentioned.Count == 0)
                 {
                     // 語音辨識常把名字聽錯（例如「吳鼠鼠」變成「吳叔叔」「吳淑淑」）：姓氏在前 10 個字內、後面接 1~2 個字再接標點，
                     // 而且在場的人裡只有一位是這個姓，就當作點名那位
-                    var head = htxt.Length > 12 ? htxt.Substring(0, 12) : htxt;
+                    var head = htxt;
                     var fuzzy = presentNames.Where(n => n.Length >= 2 && char.GetUnicodeCategory(n[0]) == System.Globalization.UnicodeCategory.OtherLetter
                         && presentNames.Count(m => m.Length > 0 && m[0] == n[0]) == 1
-                        && System.Text.RegularExpressions.Regex.IsMatch(head, System.Text.RegularExpressions.Regex.Escape(n.Substring(0, 1)) + @"[\u4e00-\u9fff]{1,2}[，,、：: ]")).ToList();
+                        && System.Text.RegularExpressions.Regex.IsMatch(head, System.Text.RegularExpressions.Regex.Escape(n.Substring(0, 1)) + @"[\u4e00-\u9fff]{1,2}(?=[，,、：: 請你可先來說談回答幫跟]|$)")).ToList();
                     if (fuzzy.Count == 1) mentioned = fuzzy;
                 }
                 // 名字被聽成完全不像的字（例如「吳鼠鼠」→「叔叔」，沒有姓氏可比對）：請模型依同音/相近音，從在場名單挑出最可能被點名的人
@@ -1080,8 +1098,8 @@ namespace InterviewProject.Controllers
             bool introPhase = false;
             string newcomerNote = "";
             {
-                int introIdx = lines.FindLastIndex(l => !JsLine(l) && introRx.IsMatch(l.Text ?? ""));
-                if (introIdx >= 0)
+                int introIdx = lines.FindIndex(l => !JsLine(l) && introRx.IsMatch(l.Text ?? "")); // 第一次要求自我介紹的位置（之後職員又提到「自我介紹」不能把已介紹的人洗掉）
+                if (introIdx >= 0 && (lastIsJobseeker || lastHuman == null || introRx.IsMatch(turnText)))
                 {
                     var introduced = lines.Skip(introIdx + 1).Where(l => JsLine(l) && (l.Text ?? "").Trim().Length >= 8)
                         .Select(l => (l.Name ?? "").Replace("求職者-", "").Trim()).ToList();
@@ -1095,8 +1113,16 @@ namespace InterviewProject.Controllers
                     }
                 }
             }
+            // 🎯 職員/主持人剛提問、求職者還沒回答，但聽不出問的是誰：絕不能自己挑人（不用「上一位」也不輪流），
+            //    只有一位求職者時就是他；多位時用不點名的方式讓大家接話。
+            bool ambiguousStaffQ = false;
+            if (targetName == null && !introPhase && scenario.StartsWith("情境A") && !req.AiUnanswered && presentNames.Count > 0)
+            {
+                if (presentNames.Count == 1) targetName = presentNames[0];
+                else { ambiguousStaffQ = true; Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 職員剛提問但聽不出問的是誰，這次不點名。"); }
+            }
             // 沒有人被點名：輪流。剛回答完的人可以被追問，但如果他已經比最少被問的人多被問 2 次以上，就換最少被問的人。
-            if (targetName == null && presentNames.Count > 0)
+            if (targetName == null && !ambiguousStaffQ && presentNames.Count > 0)
             {
                 int Cnt(string n) => _aiAskCount.TryGetValue($"{code}|{n}", out var v) ? v : 0;
                 var least = presentNames.Min(Cnt);
@@ -1170,7 +1196,7 @@ namespace InterviewProject.Controllers
                 : "8. 整場會議已經問過的問題一律不可重複或換句話說重問（見「已問過的問題」）。";
             var targetRule = targetName != null
                 ? $"\n【指定對象】這句話只能對「{targetName}」說，句子以「{targetName}，」開頭；不可以改問其他求職者。\n"
-                : "";
+                : (ambiguousStaffQ ? "\n【指定對象】職員剛提的問題沒聽清楚是問誰，這句話不要點任何人的名字，不要用「○○，」開頭；請就同一個問題換個說法，用「哪位想先分享」「請有經驗的人先談談」這類不指定對象的說法。\n" : "");
             var jobText = sbJob.Length > 0 ? sbJob.ToString() : "（無）";
             var resumeText = sbResume.Length > 0 ? sbResume.ToString() : "（無履歷資料）";
             var prompt =
