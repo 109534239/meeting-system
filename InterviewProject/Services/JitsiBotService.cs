@@ -1013,6 +1013,23 @@ namespace InterviewProject.Services
     }
     drawFrame();
 
+    // 把「不是回答者」的求職者靜音（機器人是 moderator）。回傳這次實際靜音了幾人
+    window.__muteOthers = function (allowed) {
+        try {
+            var room = window.APP && window.APP.conference && window.APP.conference._room;
+            if (!room || typeof room.getParticipants !== 'function') return -1;
+            var n = 0;
+            room.getParticipants().forEach(function (p) {
+                var name = (p.getDisplayName && p.getDisplayName()) || '';
+                if (name.indexOf('求職者-') !== 0) return;
+                if (name.substring(4).toLowerCase() === String(allowed).toLowerCase()) return;
+                var muted = p.isAudioMuted ? p.isAudioMuted() : true;
+                if (!muted) { room.muteParticipant(p.getId(), 'audio'); n++; }
+            });
+            return n;
+        } catch (e) { return 'ERR:' + e.message; }
+    };
+
     // 目前會議室裡所有「求職者」的顯示名稱（含沒開鏡頭的），給回答者判斷用
     window.__jsLabels = function () {
         try { return (window.__lastCells || []).map(function (c) { return (c && c.label) || ''; }).filter(function (l) { return /^求職者-/.test(l); }); } catch (e) { return []; }
@@ -1327,7 +1344,7 @@ namespace InterviewProject.Services
                     ?? throw new InvalidOperationException("appsettings.json 缺少 JaaS:AppId 設定");
 
                 // 🎯 JaaS 需要 JWT 才能真的加入會議，AI 面試官不是主持人，moderator=false
-                string botJwt = _jaasJwt.GenerateToken(roomCode, "ai-interviewer", "AI 面試官", isModerator: false);
+                string botJwt = _jaasJwt.GenerateToken(roomCode, "ai-interviewer", "AI 面試官", isModerator: true); // 要有 moderator 才能把「不是回答者」的求職者靜音
 
                 // 組合完整的 URL 並注入跳過確認畫面參數 + JWT
                 //   🎯 disableTileView：讓畫面固定用「目前誰在說話就放大顯示、其他人縮圖排在旁邊」的排版，
@@ -1747,6 +1764,27 @@ namespace InterviewProject.Services
             }
             catch { }
             return res;
+        }
+
+        private readonly Dictionary<string, DateTime> _muteLog = new();
+        // 由機器人直接把「不是回答者」的求職者靜音（不依賴求職者自己的網頁）
+        public async Task MuteJobseekersExceptAsync(string roomCode, string allowedPlain)
+        {
+            try
+            {
+                BotInstance? inst;
+                lock (_activeBotsLock) { if (!_activeBots.TryGetValue((roomCode ?? "").Trim(), out inst) || inst == null) return; }
+                var el = await inst.PageInstance.EvaluateAsync<JsonElement>("(a) => (window.__muteOthers ? window.__muteOthers(a) : -2)", allowedPlain);
+                if (el.ValueKind == JsonValueKind.Number)
+                {
+                    var n = el.GetInt32();
+                    if (n > 0) Console.WriteLine($"[回答者] 房間 {roomCode}：機器人把 {n} 位非回答者（回答者={allowedPlain}）的麥克風靜音。");
+                    else if (n < 0 && (!_muteLog.TryGetValue(roomCode, out var t) || (DateTime.UtcNow - t).TotalSeconds > 30)) { _muteLog[roomCode] = DateTime.UtcNow; Console.WriteLine($"[回答者] 房間 {roomCode}：機器人拿不到 Jitsi 會議物件（代碼 {n}），無法靜音。"); }
+                }
+                else if (el.ValueKind == JsonValueKind.String && (!_muteLog.TryGetValue(roomCode, out var t2) || (DateTime.UtcNow - t2).TotalSeconds > 30))
+                { _muteLog[roomCode] = DateTime.UtcNow; Console.WriteLine($"[回答者] 房間 {roomCode}：機器人靜音失敗：{el.GetString()}"); }
+            }
+            catch { }
         }
 
         // 目前在會議室裡的求職者名字（Jitsi 顯示名稱去掉「求職者-」）

@@ -299,6 +299,7 @@ namespace InterviewProject.Controllers
         //   觸發：AI 面試官實際說出口的題目有指定對象、或職員/主持人的發言點名了某位求職者（只在能明確判斷是哪一位時才鎖）
         //   解除：該求職者答完後約 8 秒、被點名後 45 秒仍沒回答、換人被點名、或主持人按「解除」
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Name, DateTime At, DateTime? AnsweredAt)> _responder = new();
+        public static string? CurrentResponder(string code) => _responder.TryGetValue(code ?? "", out var r) ? r.Name : null;
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime At, List<string> Names)> _nameCache = new();
 
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastQuestionUtc = new();
