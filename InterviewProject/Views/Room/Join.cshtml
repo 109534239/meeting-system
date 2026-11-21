@@ -796,12 +796,33 @@
                     if (m) return;
                     forcedMute = true; jitsiApi.executeCommand('toggleAudio'); window.__myMuted = true;
                     const now = Date.now();
-                    if (now - lastLockToast > 2500) { lastLockToast = now; showLockToast('目前請「' + window.__responder + '」回答，您的麥克風已暫時關閉，輪到您時會自動開啟。', 5000); }
+                    if (now - lastLockToast > 1500) { lastLockToast = now; showLockToast('現在是「' + window.__responder + '」回答，您的麥克風已被關閉，請稍候，輪到您時會自動開啟。', 5000); }
                 }).catch(() => {});
             } catch {}
         }
         setInterval(enforceMute, 1000);
-        hub.on("ResponderChanged", name => {
+        // 保險：每 2 秒向伺服器要一次「誰在回答／誰戴口罩／誰在講話」，不管哪個角色、有沒有漏收 SignalR 廣播都看得到
+        let _lastRespSeen;
+        async function pollBannerState() {
+            if (!started || ended) return;
+            try {
+                const r = await fetch('/Room/BannerState?roomCode=' + encodeURIComponent(ROOM_CODE), { cache: 'no-store' });
+                if (!r.ok) return;
+                const d = await r.json();
+                window.__maskNames = Array.isArray(d.masks) ? d.masks : [];
+                if (window.__maskNames.includes(MY_NAME) && Date.now() - lastMaskToast > 30000) { lastMaskToast = Date.now(); showLockToast('偵測到您戴著口罩，請取下口罩，謝謝。', 6000); }
+                if (d.speaker && d.speakerAgeMs != null && d.speakerAgeMs < 3000 && !/^AI/.test(d.speaker)) noteSpeaker(d.speaker);
+                const nr = d.responder || null;
+                if (nr !== (window.__responder || null) || _lastRespSeen === undefined) {
+                    _lastRespSeen = nr;
+                    if (nr !== (window.__responder || null)) applyResponder(nr);
+                }
+                renderBanner();
+            } catch {}
+        }
+        setInterval(pollBannerState, 2000);
+        hub.on("ResponderChanged", name => applyResponder(name));
+        function applyResponder(name) {
             window.__responder = name || null;
             if (lockedForMe()) { enforceMute(); }
             else if (forcedMute && jitsiApi) {
@@ -814,7 +835,7 @@
                 } catch {}
             }
             renderBanner();
-        });
+        }
         hub.on("MaskAlert", names => {
             window.__maskNames = Array.isArray(names) ? names : [];
             if (window.__maskNames.includes(MY_NAME) && Date.now() - lastMaskToast > 30000) { lastMaskToast = Date.now(); showLockToast('偵測到您戴著口罩，請取下口罩，謝謝。', 6000); }
@@ -868,7 +889,7 @@
         }
         startHub();
         // 版本標記：左下角小字 + console，確認每個人跑的是同一版（測試前請每台都看到 v0245）
-        (function () { try { const d = document.createElement('div'); d.textContent = 'v0300'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
+        (function () { try { const d = document.createElement('div'); d.textContent = 'v0310'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
 
         // 🎯 保底輪詢：不管 SignalR 廣播這次有沒有送達（長時間閒置等待時 SignalR 群組可能悄悄失效），
         //    每 4 秒主動問一次伺服器「會議現在到底是什麼狀態」，用真實資料庫狀態校正畫面，
@@ -1990,6 +2011,8 @@
                     }
                 } catch {}
             }, 1000);
+            // 不是回答者：只要一按開麥，立刻再關掉並提示「現在是 xx 回答」
+            jitsiApi.addEventListener('audioMuteStatusChanged', e => { if (e && e.muted === false && lockedForMe()) { setTimeout(enforceMute, 0); } });
             jitsiApi.addEventListener('audioMuteStatusChanged', e => { window.__myMuted = !!(e && e.muted); console.log('[STT-live] 自己的麥克風' + (window.__myMuted ? '已閉麥，不再偵測講話' : '已開麥')); });
             jitsiApi.addEventListener('dominantSpeakerChanged', e => {
                 dominantId = e && e.id ? e.id : null;

@@ -301,6 +301,24 @@ namespace InterviewProject.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Name, DateTime At, DateTime? AnsweredAt)> _responder = new();
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime At, List<string> Names)> _nameCache = new();
 
+        // 最近一次有人出聲（誰）——給前端每 2 秒輪詢「橫幅狀態」用，不再只靠 SignalR 即時廣播（漏收就看不到）
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Who, DateTime At)> _lastSpeaker = new();
+
+        [HttpGet]
+        public IActionResult BannerState(string roomCode)
+        {
+            var code = (roomCode ?? "").Trim();
+            _responder.TryGetValue(code, out var r);
+            _lastSpeaker.TryGetValue(code, out var s);
+            return Json(new
+            {
+                responder = string.IsNullOrEmpty(r.Name) ? null : r.Name,
+                masks = FaceWatchService.CurrentAlert(code),
+                speaker = s.Who,
+                speakerAgeMs = s.Who == null ? (double?)null : (DateTime.UtcNow - s.At).TotalMilliseconds
+            });
+        }
+
         private async Task SetResponderAsync(string code, string? name)
         {
             if (string.IsNullOrWhiteSpace(code)) return;
@@ -1217,7 +1235,7 @@ namespace InterviewProject.Controllers
             var id = string.IsNullOrWhiteSpace(speaker) ? "?" : speaker.Trim();
             try
             {
-                if (pending == -1 || (pending == 1 && hold <= 5)) { _lastVoiceUtc[roomCode] = DateTime.UtcNow; MarkActivity(roomCode); }
+                if (pending == -1 || (pending == 1 && hold <= 5)) { _lastVoiceUtc[roomCode] = DateTime.UtcNow; MarkActivity(roomCode); if (id != "?") _lastSpeaker[roomCode] = (id, DateTime.UtcNow); }
                 if (pending == 1) _pendingUntil[roomCode + "|" + id] = DateTime.UtcNow.AddSeconds(Math.Min(Math.Max(hold, 1), 30));
                 else if (pending == 0) _pendingUntil.TryRemove(roomCode + "|" + id, out _);
                 if (empty == 1) _lastVoiceUtc.TryRemove(roomCode, out _); // 雜音：不要讓它擋住 AI

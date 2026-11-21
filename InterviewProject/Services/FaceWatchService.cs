@@ -112,6 +112,12 @@ namespace InterviewProject.Services
             catch { return null; }
         }
 
+        public static string[] CurrentAlert(string code)
+        {
+            _lastAlert.TryGetValue(code ?? "", out var k);
+            return string.IsNullOrEmpty(k) ? new string[0] : k.Split('|');
+        }
+
         public static void Clear(string code)
         {
             _samples.TryRemove(code, out _); _startedAt.TryRemove(code, out _); _maskStreak.TryRemove(code, out _); _lastAlert.TryRemove(code, out _);
