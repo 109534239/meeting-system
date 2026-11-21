@@ -1,1942 +1,800 @@
-﻿using Microsoft.Playwright;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text.Json;
-using System.Threading.Tasks;
+﻿@* 面試會議結果記錄和分析彈窗：逐字稿（預設）／每位求職者的 AI 分析／AI 分析比較總表／影音（直接播放）。
+   只讀取已存在的 txt 檔文字（走原本的 Room/ViewFile），不改任何檔案內容。
+   頁面上用 data-report-btn 的按鈕開啟，資料放在 data-files（JSON：label, kind, viewUrl, downloadUrl）。 *@
+<style>
+    .rpt-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 3000;
+        padding: 16px;
+    }
 
-namespace InterviewProject.Services
-{
-    public class JitsiBotService
-    {
-        private class BotInstance
-        {
-            public IPlaywright PlaywrightInstance { get; set; } = null!;
-            public IBrowser BrowserInstance { get; set; } = null!;
-            public IBrowserContext ContextInstance { get; set; } = null!;
-            public IPage PageInstance { get; set; } = null!;
+        .rpt-overlay.open {
+            display: flex;
         }
 
-        // 🐛 這輪新增（AI 面試官虛擬人畫面/嘴型，接 Simli）：
-        //    ⚠️ 這整段是這個專案目前風險最高、最需要實機除錯的一段程式碼——涉及 Simli 的 JS SDK 載入方式、
-        //    事件名稱、串流綁定方式，以及攔截 getUserMedia 的時機，全部都無法在這個環境離線驗證，
-        //    只能依照 Simli 官方文件跟現有程式的架構風格盡力寫，實際部署後很可能需要對照瀏覽器 console
-        //    的錯誤訊息再調整。
-        //
-        //    🐛 這輪重大修正：simli-client 的正式版本是 3.0.2，內部已經改用 livekit-client 重寫，
-        //    連線方式（要先換 session token）、建構子參數、事件名稱都跟舊版文件不一樣，
-        //    上一輪照舊版文件寫的完全對不上，這裡已經整個對照官方最新文件重寫。
-        //
-        //    做法：
-        //    1. 用動態 import() 從 esm.sh 載入 simli-client（不管原始套件是不是 ESM 格式，都能在瀏覽器直接 import）
-        //    2. 跟 Simli 換一個 session token，建立 SimliClient（livekit 傳輸模式），
-        //       把連線後拿到的視訊/音訊串流，包成一個假的 MediaStream
-        //    3. 攔截 navigator.mediaDevices.getUserMedia，Jitsi 跟它要攝影機/麥克風時，
-        //       就把 Simli 的即時串流冒充成「攝影機」還給它，取代原本 Chromium 的假攝影機檔案
-        //    4. 提供 window.__simliSpeak(base64Pcm24k)，之後由 C# 呼叫，把 Gemini TTS 產生的
-        //       24000Hz PCM16 音訊，在瀏覽器端降取樣成 Simli 要的 16000Hz 再送進去
-        //
-        //    這段一定要在 Jitsi 自己的程式碼開始跑「之前」就佈署好，所以用 Playwright 的
-        //    AddInitScriptAsync（在 GotoAsync 導航之前呼叫），保證每次載入新文件時最先執行，
-        //    搶在 Jitsi 呼叫 getUserMedia 之前把攔截裝好。
-        private const string SimliInitScript = @"
-(function () {
-    // 🐛 這輪修正（新發現的根因）：抓到 log 顯示 Jitsi 呼叫 getUserMedia 的時間點，
-    //    比 Simli 連線準備好早了非常多——document ready 之後不到 0.7 秒，Jitsi 內部
-    //    的 createInitialLocalTracks 就已經在呼叫 getUserMedia 了，但 Simli 那邊光是
-    //    載入 SDK bundle + 跟伺服器換 session token 這兩個網路來回，正常都要抓好幾秒。
-    //    原本 window.__simliReady 是先設成 null，要等到 initSimli() 這個 async 函式
-    //    執行到中段（等 bundle 載入、session token 換到）才會真的變成一個 Promise 物件。
-    //    如果 Jitsi 剛好在這個空窗期就呼叫了 getUserMedia，我們的攔截函式看到
-    //    window.__simliReady 還是 null（falsy），就會誤判成『Simli 還沒開始初始化』，
-    //    直接放棄、退回瀏覽器原生的 getUserMedia——但無頭伺服器根本沒有真正的麥克風/攝影機
-    //    裝置，原生呼叫必定失敗（NotFoundError: Requested device not found），
-    //    這就是『AI 面試官從一開始就看不到畫面』的真正原因，跟這台伺服器有沒有裝置、
-    //    跟環境設定都無關，純粹是這個時間差競爭條件（race condition）。
-    //    修正：window.__simliReady 改成在最一開始、還沒開始任何非同步工作之前，
-    //    就同步建立成一個『真正的』Promise 物件（此時還沒 resolve，但物件本身已經存在），
-    //    resolve/reject 的時機點完全不變，只是不再等到中途才把變數本身換成 Promise。
-    //    這樣不管 Jitsi 什麼時候呼叫 getUserMedia，看到的都會是這個一開始就存在的 Promise，
-    //    自然就會老實等到 Simli 真的連上（或真的失敗）才繼續，不會再提早誤判成『還沒開始』。
-    let __simliReadyResolve, __simliReadyReject;
-    window.__simliReady = new Promise((resolve, reject) => {
-        __simliReadyResolve = resolve;
-        __simliReadyReject = reject;
-    });
-    // 同上一輪就有的處理：避免瀏覽器把還沒被消費的 rejection 當成『未處理』噴出雜訊 log
-    window.__simliReady.catch(() => {});
+    .rpt-window {
+        background: #fff;
+        width: min(1000px, 100%);
+        max-height: 92vh;
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 60px rgba(0,0,0,.25);
+        overflow: hidden;
+    }
 
-    window.__simliClient = null;
-    window.__simliStatus = '初始化尚未開始';
-    window.__simliSpeak = null;   // function(base64Pcm24k) -> 把音訊送進 Simli 講出來
+    .rpt-head {
+        padding: 22px 28px 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 1px solid #e5e7eb;
+    }
 
-    async function initSimli() {
-        try {
-            // 🐛 這輪修正：問題不是 CDN 載入方式，是 API 版本整個換了。
-            //    simli-client 現在的正式版本是 3.0.2，內部改用 livekit-client 重寫，
-            //    連建立連線的方式都完全不一樣（要先跟 Simli 換一個 session token，
-            //    再用不同的建構子參數），這是照官方最新文件重新對過的版本。
-            window.__simliStatus = '正在載入 SDK 套件：' + window.__SIMLI_BUNDLE_URL__;
-            const mod = await import(window.__SIMLI_BUNDLE_URL__);
-            const SimliClient = mod.SimliClient;
-            const LogLevel = mod.LogLevel;
-            const generateSimliSessionToken = mod.generateSimliSessionToken;
-            if (!SimliClient || !generateSimliSessionToken) throw new Error('simli-client 模組載入了，但找不到需要的匯出（SimliClient / generateSimliSessionToken）');
+    .rpt-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: #1f2937;
+        margin: 0;
+    }
 
-            // 🐛 這個腳本是在頁面「還沒建好 body」時就開始跑的（AddInitScript）。如果套件載入得很快（有快取時），
-            //    下面的 document.body.appendChild 會在 body 還是 null 時執行，直接噴
-            //    「Cannot read properties of null (reading 'appendChild')」、整個 Simli 初始化失敗——
-            //    AI 就沒臉沒聲音。先等 body 存在再繼續。
-            if (!document.body) {
-                await new Promise(r => {
-                    if (document.readyState !== 'loading') { r(); return; }
-                    document.addEventListener('DOMContentLoaded', () => r(), { once: true });
+    .rpt-sub {
+        font-size: 13px;
+        color: #6b7280;
+        margin-top: 6px;
+    }
+
+    .rpt-close {
+        border: none;
+        background: none;
+        font-size: 28px;
+        line-height: 1;
+        color: #6b7280;
+        cursor: pointer;
+    }
+
+    .rpt-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+        gap: 2px 4px;
+        padding: 0 20px;
+        border-bottom: 1px solid #e5e7eb;
+        overflow: visible;
+    }
+
+    .rpt-tab {
+        flex-shrink: 0;
+        border: none;
+        background: none;
+        padding: 12px 12px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #6b7280;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        white-space: nowrap;
+    }
+
+        .rpt-tab.active {
+            color: #1f6b8a;
+            border-bottom-color: #1f6b8a;
+        }
+
+    .rpt-body {
+        padding: 22px 28px;
+        overflow-y: auto;
+        flex: 1;
+        color: #374151;
+        font-size: 15px;
+        line-height: 1.85;
+    }
+
+    .rpt-foot {
+        padding: 14px 28px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .rpt-note {
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .rpt-btn {
+        background: #1f6b8a;
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 24px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .rpt-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .rpt-dl {
+        display: none;
+        background: #fff;
+        color: #1f6b8a;
+        border: 1px solid #1f6b8a;
+        border-radius: 10px;
+        padding: 9px 20px;
+        font-weight: 600;
+        font-size: 14px;
+        text-decoration: none;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+        .rpt-dl:hover {
+            background: #eef6fa;
+        }
+
+    .rpt-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+        margin-bottom: 22px;
+    }
+
+    .rpt-card {
+        background: #f5f7fb;
+        border: 1px solid #e5e9f2;
+        border-radius: 14px;
+        padding: 16px 18px;
+    }
+
+        .rpt-card .k {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .rpt-card .v {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .rpt-card .s {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+    .rpt-h {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1f2937;
+        margin: 22px 0 8px;
+        padding-top: 14px;
+        border-top: 1px solid #eef0f4;
+    }
+
+        .rpt-h:first-child {
+            border-top: none;
+            margin-top: 0;
+            padding-top: 0;
+        }
+
+    .rpt-p {
+        margin: 4px 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .rpt-li {
+        margin: 4px 0 4px 14px;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .rpt-score {
+        display: inline-block;
+        background: #1f6b8a;
+        color: #fff;
+        border-radius: 10px;
+        padding: 6px 16px;
+        font-weight: 700;
+        margin: 8px 0;
+    }
+
+    .rpt-line {
+        display: flex;
+        gap: 12px;
+        padding: 6px 0;
+        border-bottom: 1px dashed #eef0f4;
+    }
+
+        .rpt-line .t {
+            color: #9ca3af;
+            font-size: 12px;
+            min-width: 76px;
+            padding-top: 3px;
+        }
+
+        .rpt-line .w {
+            font-weight: 700;
+            min-width: 120px;
+            color: #1f6b8a;
+        }
+
+        .rpt-line.ai .w {
+            color: #7c3aed;
+        }
+
+        .rpt-line .x {
+            flex: 1;
+            word-break: break-word;
+        }
+
+    .rpt-empty {
+        color: #9ca3af;
+        text-align: center;
+        padding: 40px 0;
+    }
+</style>
+<div id="rptOverlay" class="rpt-overlay">
+    <div class="rpt-window">
+        <div class="rpt-head">
+            <div><h2 class="rpt-title" id="rptTitle">面試會議結果記錄和分析</h2><div class="rpt-sub" id="rptSub"></div></div>
+            <button type="button" class="rpt-close" id="rptCloseX">&times;</button>
+        </div>
+        <div class="rpt-tabs" id="rptTabs"></div>
+        <div class="rpt-body" id="rptBody"></div>
+        <div class="rpt-foot">
+            <div><span class="rpt-note">AI 分析結果僅供面試參考，不代表最終錄取決定，實際結果仍由人資及用人主管決定。</span></div>
+            <div class="rpt-actions"><a class="rpt-dl" id="rptDl" href="#">下載</a><button type="button" class="rpt-btn" id="rptClose">關閉報告</button></div>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        const ov = document.getElementById('rptOverlay'), tabs = document.getElementById('rptTabs'), body = document.getElementById('rptBody');
+        const cache = {};
+        const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+        const clean = s => s.replace(/\*\*/g, '').replace(/^\s*[\*\-]\s+/, '').replace(/^\s*#+\s*/, '');
+
+        function renderTranscript(text) {
+            const wrap = document.createElement('div');
+            let n = 0;
+            text.split(/\r?\n/).forEach(raw => {
+                const line = raw.trim(); if (!line) return;
+                const m = line.match(/^\[([^\]]+)\]\s*([^：:]+)[：:]\s*(.*)$/);
+                if (m) {
+                    const row = el('div', 'rpt-line' + (m[2].indexOf('AI') === 0 ? ' ai' : ''));
+                    row.appendChild(el('div', 't', m[1])); row.appendChild(el('div', 'w', m[2])); row.appendChild(el('div', 'x', m[3]));
+                    wrap.appendChild(row); n++;
+                } else wrap.appendChild(el('div', 'rpt-p', line));
+            });
+            if (!wrap.childNodes.length) return el('div', 'rpt-empty', '這份逐字稿沒有內容');
+            return wrap;
+        }
+
+        function renderAnalysis(text, isCompare) {
+            const wrap = document.createElement('div');
+            if (isCompare) {
+                const cards = el('div', 'rpt-cards'); let any = false;
+                text.split(/\r?\n/).forEach(l => {
+                    const m = l.match(/^(\d+)\.\s*(.+?)\s*綜合\s*(\d+)\s*分/);
+                    if (m) { any = true; const c = el('div', 'rpt-card'); c.appendChild(el('div', 'k', '第 ' + m[1] + ' 名　' + m[2].trim())); c.appendChild(el('div', 'v', m[3])); c.appendChild(el('div', 's', '加權綜合分（滿分 100）')); cards.appendChild(c); }
                 });
+                if (any) wrap.appendChild(cards);
             }
-            const videoEl = document.createElement('video');
-            videoEl.autoplay = true; videoEl.playsInline = true; videoEl.muted = true;
-            videoEl.style.position = 'fixed'; videoEl.style.left = '-9999px'; videoEl.style.top = '-9999px';
-            const audioEl = document.createElement('audio');
-            audioEl.autoplay = true;
-            audioEl.style.position = 'fixed'; audioEl.style.left = '-9999px'; audioEl.style.top = '-9999px';
-            document.body.appendChild(videoEl);
-            document.body.appendChild(audioEl);
-
-            window.__simliStatus = '正在換取 session token（卡在這裡＝API Key/FaceId 有問題或 Simli 沒回應）';
-            console.log('[Simli] 正在跟 Simli 換取 session token...');
-            const tokenResp = await generateSimliSessionToken({
-                apiKey: window.__SIMLI_API_KEY__,
-                config: {
-                    faceId: window.__SIMLI_FACE_ID__,
-                    handleSilence: true,
-                    maxSessionLength: 3600,
-                    // 🐛 這輪修正：抓到明確證據——AI 面試官畫面變黑的時間點（5:30、更早幾輪回報的
-                    //    「4 分鐘左右消失」）都很接近這個 300 秒（5 分鐘）的門檻，不是巧合。
-                    //    冷場提問會不會準時觸發，這整個除錯過程一直沒有穩定驗證過，這幾次測試
-                    //    很可能 AI 真的整場沒開口說過話，Simli 判定「閒置超過 5 分鐘」，
-                    //    就不再繼續送畫面（或直接把連線關掉），導致格子變黑。
-                    //    改成跟 maxSessionLength 一樣長（一整場面試的量級），避免 AI 只是單純比較晚
-                    //    才被觸發講話、或這次剛好完全沒被觸發，就被 Simli 自己提早斷線。
-                    maxIdleTime: 3600
-                }
-            });
-            const sessionToken = tokenResp && tokenResp.session_token;
-            if (!sessionToken) throw new Error('拿不到 session_token，回應內容：' + JSON.stringify(tokenResp));
-            window.__simliStatus = '已取得 token，正在建立 WebRTC 連線（卡在這裡＝連線被擋或額度問題）';
-            console.log('[Simli] 已取得 session token');
-
-            // 用 livekit 傳輸模式（Simli 官方建議，對防火牆較嚴格的網路環境相容性比 p2p 模式好，
-            // 而且不需要另外準備 ICE servers）
-            const client = new SimliClient(
-                sessionToken,
-                videoEl,
-                audioEl,
-                null,
-                (LogLevel && LogLevel.DEBUG) || 'debug',
-                'livekit'
-            );
-            window.__simliClient = client;
-
-            client.on('start', () => {
-                console.log('[Simli] WebRTC 已連線（start 事件），等待畫面/聲音串流就緒...');
-                // 連上之後，Simli 會把畫面/聲音接到我們給的 video/audio 元素的 srcObject 上，
-                // 稍等一下讓 srcObject 真的被賦值，再從這兩個元素身上把 MediaStream 撈出來組成一個假串流
-                setTimeout(() => {
-                    try {
-                        const vStream = videoEl.srcObject;
-                        const aStream = audioEl.srcObject;
-                        const tracks = [];
-                        if (vStream) tracks.push(...vStream.getVideoTracks());
-                        if (aStream) tracks.push(...aStream.getAudioTracks());
-                        else if (vStream) tracks.push(...vStream.getAudioTracks());
-                        if (tracks.length === 0) { __simliReadyReject(new Error('Simli 已連線但抓不到 MediaStream track')); return; }
-                        console.log('[Simli] 成功組出虛擬人 MediaStream，共 ' + tracks.length + ' 條軌道');
-                        __simliReadyResolve(new MediaStream(tracks));
-                    } catch (e) { __simliReadyReject(e); }
-                }, 800);
-            });
-            client.on('error', (e) => __simliReadyReject(new Error('SimliClient 發生錯誤：' + e)));
-            client.on('startup_error', (msg) => __simliReadyReject(new Error('SimliClient 啟動失敗（常見原因：Face ID 無效、或 Simli 額度用完）：' + msg)));
-
-            await client.start();
-
-            window.__simliStatus = '已連線';
-            window.__simliGen = 0;
-            // 🎯 有人開口時立刻停止 AI 說話：清掉 Simli 還沒播完的音訊緩衝
-            window.__simliStop = function () {
-                window.__simliGen = (window.__simliGen || 0) + 1;
-                try {
-                    const c = window.__simliClient;
-                    if (c) {
-                        if (typeof c.ClearBuffer === 'function') c.ClearBuffer();
-                        else if (typeof c.clearBuffer === 'function') c.clearBuffer();
-                        else console.warn('[Simli] 找不到 ClearBuffer，無法清除緩衝');
-                    }
-                    return true;
-                } catch (e) { console.error('[Simli] 停止說話失敗：', e); return false; }
-            };
-            window.__simliSpeak = async function (base64Pcm24k) {
-                const gen = window.__simliGen || 0;
-                try {
-                    const raw = atob(base64Pcm24k);
-                    const bytes = new Uint8Array(raw.length);
-                    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-                    const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
-                    const float32 = new Float32Array(int16.length);
-                    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
-
-                    // Gemini TTS 出來的音訊是 24000Hz，Simli 要 16000Hz，這裡用離線 AudioContext 做降取樣
-                    const offlineCtx = new OfflineAudioContext(1, Math.ceil(float32.length * 16000 / 24000), 16000);
-                    const srcBuffer = offlineCtx.createBuffer(1, float32.length, 24000);
-                    srcBuffer.copyToChannel(float32, 0);
-                    const src = offlineCtx.createBufferSource();
-                    src.buffer = srcBuffer;
-                    src.connect(offlineCtx.destination);
-                    src.start();
-                    const rendered = await offlineCtx.startRendering();
-                    const resampled = rendered.getChannelData(0);
-
-                    const outInt16 = new Int16Array(resampled.length);
-                    for (let i = 0; i < resampled.length; i++) {
-                        const s = Math.max(-1, Math.min(1, resampled[i]));
-                        outInt16[i] = s < 0 ? s * 32768 : s * 32767;
-                    }
-                    const outBytes = new Uint8Array(outInt16.buffer);
-                    // 被打斷（有人開口）：降取樣期間若已經呼叫過停止，這段音訊就不要送出去了
-                    if ((window.__simliGen || 0) !== gen) { console.log('[Simli] 這段語音已被打斷，不送出'); return; }
-                    if (window.__simliClient) {
-                        // 🎯 不一次把整段送進 Simli（送出去就收不回來，有人開口也停不下來）：
-                        //    切成 0.25 秒一塊、領先播放時間約 0.5 秒，按實際播放速度送；
-                        //    被打斷（__simliGen 改變）就停止再送，最多只剩約 0.5 秒已送出的音訊。
-                        const CH = 8000;                 // 16kHz、16-bit → 32000 bytes/秒；8000 bytes = 0.25 秒
-                        const t0 = performance.now();
-                        (async () => {
-                            for (let off = 0, i = 0; off < outBytes.length; off += CH, i++) {
-                                if ((window.__simliGen || 0) !== gen) { console.log('[Simli] 說話被打斷，停止送出剩餘音訊（已送 ' + i + ' 塊）'); return; }
-                                const wait = (i * 250 - 500) - (performance.now() - t0);
-                                if (wait > 0) await new Promise(r => setTimeout(r, wait));
-                                if ((window.__simliGen || 0) !== gen) { console.log('[Simli] 說話被打斷，停止送出剩餘音訊（已送 ' + i + ' 塊）'); return; }
-                                try { window.__simliClient.sendAudioData(outBytes.slice(off, off + CH)); } catch (e) { console.error('[Simli] sendAudioData 失敗：', e); return; }
-                            }
-                        })();
-                    }
-                } catch (e) { console.error('[Simli] speak 失敗：', e); }
-            };
-        } catch (e) {
-            window.__simliStatus = '初始化失敗：' + (e && e.message ? e.message : e);
-            console.error('[Simli] 初始化失敗：', e);
-            __simliReadyReject(e);
-        }
-    }
-    initSimli();
-
-    // 🎯 攔截 getUserMedia：Jitsi 進會議時會呼叫這個要攝影機/麥克風，
-    //    把 Simli 產生的即時串流冒充成「攝影機畫面」還給它，取代原本 Chromium 的假攝影機檔案。
-    //    如果 Simli 連線還沒好、或整個失敗，就退回原本的假攝影機檔案（不要讓 AI 面試官完全連不進會議）。
-    try {
-        const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-
-        // 🎯 這裡要 clone 而不是直接回傳同一個 track 物件的原因：
-        //    很多程式（包括 lib-jitsi-meet 內部的裝置探測/權限檢查流程）會呼叫 getUserMedia
-        //    不只一次，而且常見寫法是「探測完就把拿到的臨時 stream 的 track .stop() 掉」。
-        //    如果每次都回傳同一個 track 物件，只要任何一次呼叫的消費端把它 stop 掉，後面真正
-        //    要送進會議室的那次呼叫拿到的也是同一個已經 ended 的 track，會安靜地連不上、
-        //    且不一定會有看得到的錯誤。
-        //    但同時「每次都 clone 一個全新的」也有問題（下面 getOrCloneTrack 那段修正的重點）：
-        //    如果 Jitsi 把好幾次呼叫拿到的好幾個不同 track 物件都當成合法來源加進會議室，
-        //    Jitsi 的會議物件本來就只允許存在一條本地音訊軌道，多出來的會直接被拒絕
-        //    （「Cannot add second audio track to the conference」），導致整場沒聲音。
-        //    折衷做法：clone 出來的 track 用快取重複使用，只有真的死掉（ended）才補生新的。
-        // 🐛 這輪修正（新症狀：整場會議 AI 面試官完全沒有聲音）：
-        //    瀏覽器主控台抓到明確的例外：「Cannot add second audio track to the conference」
-        //    （[app:base/conference] Failed to add local track to conference）。
-        //    根因：上一輪修正是「每次呼叫 getUserMedia 都 clone 出一個全新的 track」，這解決了
-        //    「同一個 track 物件被提早 stop 掉、後面的呼叫也遭殃」的問題，但矯枉過正——
-        //    如果 Jitsi 內部呼叫 getUserMedia 不只一次（例如先做裝置探測、後面才是真正要加入會議
-        //    那次），現在會回傳兩個「不同」的 track 物件，Jitsi 把兩個都當成合法的本地音訊來源
-        //    嘗試加進會議室，但 Jitsi 的會議物件本來就只允許存在一條本地音訊軌道，第二次
-        //    addTrack 就直接被拒絕、噴出這個例外——而且這個音訊軌道很可能就是這輪唯一真正
-        //    成功送出去的那個，被拒絕之後 AI 面試官就整場沒聲音。
-        //    修正：改成「快取」clone 出來的 track，同一種類（video/audio）在還活著（readyState
-        //    還是 live）的情況下，之後的呼叫都回傳同一個快取的 track 物件，不再每次都生一個新的；
-        //    只有在快取的那個真的結束了（ended），才會補生一個新的 clone。這樣不管 Jitsi
-        //    呼叫幾次，拿到的都是「同一個」track 物件（除非真的死掉才會換新的），
-        //    就不會再出現兩條「不同但都活著」的音訊軌道同時存在、互相打架的情況。
-        let cachedVideoClone = null;
-        let cachedAudioClone = null;
-
-        function getOrCloneTrack(sourceTrack, cachedRef, kindLabel) {
-            if (cachedRef.track && cachedRef.track.readyState === 'live') return cachedRef.track;
-            const c = sourceTrack.clone();
-            c.addEventListener('ended', () => {
-                console.warn('[Simli] 警告：快取的' + kindLabel + ' track 進入 ended 狀態（來源 track id=' + sourceTrack.id + '），下次呼叫會補生一個新的');
-                if (cachedRef.track === c) cachedRef.track = null;
-            });
-            cachedRef.track = c;
-            return c;
-        }
-        const videoCloneRef = { track: null };
-        const audioCloneRef = { track: null };
-
-        navigator.mediaDevices.getUserMedia = async function (constraints) {
-            console.log('[Simli] getUserMedia 被呼叫，constraints=' + JSON.stringify(constraints));
-            try {
-                if (window.__simliReady) {
-                    const simliStream = await window.__simliReady;
-                    if (simliStream) {
-                        const wantAudio = !!(constraints && constraints.audio);
-                        const wantVideo = !!(constraints && constraints.video);
-                        // 沒指定 audio/video 任何一項時（極少見），視同兩個都要，維持舊行為的相容性
-                        const includeAudio = wantAudio || (!wantAudio && !wantVideo);
-                        const includeVideo = wantVideo || (!wantAudio && !wantVideo);
-
-                        const clonedTracks = [];
-                        if (includeVideo) {
-                            const src = simliStream.getVideoTracks()[0];
-                            if (src) clonedTracks.push(getOrCloneTrack(src, videoCloneRef, '視訊'));
-                        }
-                        if (includeAudio) {
-                            const src = simliStream.getAudioTracks()[0];
-                            if (src) clonedTracks.push(getOrCloneTrack(src, audioCloneRef, '音訊'));
-                        }
-
-                        if (clonedTracks.length > 0) {
-                            const outStream = new MediaStream(clonedTracks);
-                            console.log('[Simli] 回傳虛擬人串流給 getUserMedia（快取 clone），視訊軌道數=' + outStream.getVideoTracks().length + '，音訊軌道數=' + outStream.getAudioTracks().length);
-                            return outStream;
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('[Simli] 拿不到虛擬人串流，退回原本的假攝影機檔案：', e);
-            }
-            const fallbackStream = await originalGetUserMedia(constraints);
-            console.log('[Simli] 退回原生假攝影機，視訊軌道數=' + fallbackStream.getVideoTracks().length + '，音訊軌道數=' + fallbackStream.getAudioTracks().length);
-            return fallbackStream;
-        };
-    } catch (e) { console.error('[Simli] 攔截 getUserMedia 失敗：', e); }
-})();
-";
-
-        // 🎯 注入到頁面裡的錄影機腳本：Canvas 畫格 + Web Audio API 混音，錄成一份有畫面又有聲音的 webm
-        // 🎯 錄音沒聲音的修正：掃 DOM 的 <audio> 元素 / 讀 Jitsi 內部物件這兩條路，從 log 看都接到「靜音」。
-        //    改成在頁面一載入就攔截 RTCPeerConnection，把每一條收到的遠端音軌直接收進 window.__rtcAudioTracks，
-        //    錄影腳本再把這些原始音軌接進混音。
-        private const string RtcAudioHookScript = @"
-(function () {
-    try {
-        window.__rtcAudioTracks = [];
-        const Orig = window.RTCPeerConnection || window.webkitRTCPeerConnection;
-        if (!Orig) return;
-        const Wrapped = function (...args) {
-            const pc = new Orig(...args);
-            try {
-                pc.addEventListener('track', (e) => {
-                    try { if (e.track && e.track.kind === 'audio') window.__rtcAudioTracks.push(e.track); } catch (_) {}
+            if (!isCompare) {
+                // 同一個維度在文中可能出現兩次（模型寫的「各維度評分」與系統附的「加權評分明細」），
+                // 卡片只顯示一次：以維度名稱（去掉前面的 A. B. 編號）為準，後出現的（系統明細）覆蓋前面的
+                const cards = el('div', 'rpt-cards'); const byTitle = new Map();
+                text.split(/\r?\n/).forEach(l => {
+                    const m = l.match(/^(.+?)（權重\s*(\d+)%）[：:]\s*(\d+)\s*分/);
+                    if (!m) return;
+                    const title = m[1].trim().replace(/^[A-Da-d][\.、．:：\s]+/, '');
+                    byTitle.set(title, { key: (m[1].trim().match(/^([A-Da-d])[\.、．:：\s]/) || [])[1], title: title, w: m[2], v: m[3] });
                 });
-            } catch (_) {}
-            return pc;
-        };
-        Wrapped.prototype = Orig.prototype;
-        Object.setPrototypeOf(Wrapped, Orig);
-        window.RTCPeerConnection = Wrapped;
-        if (window.webkitRTCPeerConnection) window.webkitRTCPeerConnection = Wrapped;
-    } catch (_) {}
-})();
-";
-
-        private const string RecorderInitScript = @"
-(function () {
-    window.__recChunks = [];
-    window.__recStartMs = Date.now();
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 1280; canvas.height = 720;
-    const ctx = canvas.getContext('2d');
-
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // 🐛 這輪修正（找到整份錄影音軌完全是純靜音的真正根因）：
-    //    量測過上傳的錄影檔案，音軌整整 10 分鐘全部是 -91dB（不是很小聲，是真正的數位靜音），
-    //    連已經確定有講話的主持人聲音都完全沒錄進去。查了整支腳本，從頭到尾沒有呼叫過
-    //    audioCtx.resume()——Chrome 的自動播放政策規定 AudioContext 建立出來預設是「暫停」狀態，
-    //    除非明確呼叫 .resume()（或由真人使用者實際點擊過頁面），不然它會永遠停在暫停狀態、
-    //    不做任何音訊處理，下游 createMediaStreamDestination() 產生的音訊軌道存在，
-    //    但內容永遠是純靜音。這在無頭瀏覽器（Playwright 自動化、沒有真人點擊任何東西）這種
-    //    環境下幾乎必然會發生。這解釋了「AI 面試官講話沒聲音」也解釋了「連主持人的聲音都
-    //    沒錄進去」——兩者其實是同一個根因，都是因為這整個混音圖從來沒有真的在跑。
-    audioCtx.resume().then(() => {
-        console.log('[Recorder] AudioContext.resume() 完成，目前狀態：' + audioCtx.state);
-    }).catch(e => console.error('[Recorder] AudioContext.resume() 失敗：', e));
-    console.log('[Recorder] AudioContext 建立完成，初始狀態：' + audioCtx.state);
-    const dest = audioCtx.createMediaStreamDestination();
-
-    // 🐛 這輪新增：光靠 audioCtx.state 顯示 'running' 不代表混音圖裡真的有聲音在流動——
-    //    這輪用 ffmpeg 逐段量測上傳的錄影檔案，發現幾乎整場 19 分鐘都是 -91dB 真正的數位靜音，
-    //    只有中間一小段 30 秒左右突然有真的聲音，其他時間完全沒有。這種「忽有忽無」的模式，
-    //    光看 audioCtx.state 或 resume() 有沒有成功完全看不出來（這兩個從頭到尾都可能一直顯示
-    //    正常）。加一個 AnalyserNode 接在 dest 前面，每 5 秒量一次目前這個混音圖裡的音量峰值，
-    //    直接印出來——下次測完，拿這幾行 log 對照當下會議裡實際發生什麼事（誰在講話、
-    //    AI 有沒有觸發說話），才能抓到音訊到底是在哪個時間點、哪種情況下斷掉的。
-    const diagAnalyser = audioCtx.createAnalyser();
-    diagAnalyser.fftSize = 2048;
-    dest.stream.getAudioTracks().length; // 只是確保 dest.stream 已經初始化
-    try {
-        audioCtx.createMediaStreamSource(dest.stream).connect(diagAnalyser);
-    } catch (e) { console.warn('[Recorder 音量診斷] 接上 AnalyserNode 失敗：' + e.message); }
-    const diagBuf = new Float32Array(diagAnalyser.fftSize);
-    // 🎯 伺服器端「會議裡真的聽得到人聲」偵測：直接量混音圖（＝會議裡每個人實際送出的聲音）的音量。
-    //    不依賴任何人的瀏覽器通知，也不受各人 Jitsi 閉麥狀態影響（閉麥的人送出來的是靜音）。
-    //    C# 端用 window.__lastAudibleMs 判斷「距離上一次有人聲多久了」。
-    window.__lastAudibleMs = 0;
-    try {
-        const lvAn = audioCtx.createAnalyser(); lvAn.fftSize = 1024;
-        audioCtx.createMediaStreamSource(dest.stream).connect(lvAn);
-        const lvBuf = new Float32Array(lvAn.fftSize); let lvRun = 0;
-        setInterval(() => {
-            try {
-                lvAn.getFloatTimeDomainData(lvBuf);
-                let p = 0; for (let i = 0; i < lvBuf.length; i++) { const a = Math.abs(lvBuf[i]); if (a > p) p = a; }
-                if (p > 0.02) { lvRun++; if (lvRun >= 2) window.__lastAudibleMs = Date.now(); } else lvRun = 0;
-            } catch (e) {}
-        }, 150);
-    } catch (e) { console.warn('[Recorder] 人聲偵測初始化失敗：' + e.message); }
-    window.__audioLevelInterval = setInterval(() => {
-        try {
-            diagAnalyser.getFloatTimeDomainData(diagBuf);
-            let peak = 0;
-            for (let i = 0; i < diagBuf.length; i++) { const a = Math.abs(diagBuf[i]); if (a > peak) peak = a; }
-            const peakDb = peak > 0 ? (20 * Math.log10(peak)).toFixed(1) : '-Infinity';
-            console.log('[Recorder 音量診斷] audioCtx.state=' + audioCtx.state + '，混音圖目前峰值=' + peakDb + 'dB，已接上的原始音軌數=' + connectedTrackIds.size);
-            // 🐛 這輪新增：逐條印出每一條已接上音軌「現在」的狀態——如果某條音軌的
-            //    readyState 從 'live' 變成 'ended'，或 muted 從 false 變成 true，就是這條軌道
-            //    中途斷線/被靜音的直接證據；如果某個人（例如職員）從頭到尾都沒有出現在這份清單裡，
-            //    代表他的音軌從來沒有被成功接上過，問題出在更前面的 connectJitsiTracks() 那一步。
-            connectedTracksById.forEach(({ track, participantId, label }, trackId) => {
-                console.log('[Recorder 音量診斷] 軌道 participantId=' + participantId + '，label=' + label + '，readyState=' + track.readyState + '，muted=' + track.muted + '，enabled=' + track.enabled);
-            });
-        } catch (e) {}
-    }, 5000);
-    const connected = new WeakSet();
-    const connectedTrackIds = new Set(); // 🎯 記錄「已經透過任何管道接上的原始音軌 id」，避免同一個人的聲音被接兩次造成疊音
-    // 🐛 這輪新增：上一輪加的「背景分頁節流」猜測（加那三個 Chromium 參數）沒有解決問題——
-    //    這次用 ffmpeg 逐段量測新的錄影，還是幾乎全程靜音，只有零星兩小段（開頭 aa 自我介紹、
-    //    大約 1:30 附近）有真的聲音，中間職員問問題那幾分鐘完全沒錄到。這代表問題不是「分頁被
-    //    整體降頻」（那樣應該是規律地變差，不會這樣忽有忽無、剛好只在特定人開口的瞬間有），
-    //    比較像是「某些人的原始音軌，根本沒有持續被接進混音圖裡，或者接上了又斷開」。
-    //    加一個 Map 記錄每一條已接上的軌道本身（不只是 id），下面的診斷 log 會逐條印出
-    //    每一條音軌目前的 readyState / muted / label，這樣才能看出「是連上之後又斷了」
-    //    還是「當時的某個人根本沒被接上過」。
-    const connectedTracksById = new Map(); // trackId -> { track, participantId, label }
-
-    function connectAudio(el) {
-        if (connected.has(el)) return;
-        // 🎯 如果這個 <video>/<audio> 元素背後的音軌，已經透過下面 connectJitsiTracks() 直接接過了，
-        //    這裡就不要再重複接一次，不然同一個人的聲音會疊兩層、錄出來音量異常/有回音
-        try {
-            const stream = el.srcObject;
-            if (stream && typeof stream.getAudioTracks === 'function') {
-                const tracks = stream.getAudioTracks();
-                if (tracks.length > 0 && tracks.every(t => connectedTrackIds.has(t.id))) {
-                    connected.add(el);
-                    return;
-                }
-            }
-        } catch (e) {}
-
-        connected.add(el);
-        try {
-            const src = audioCtx.createMediaElementSource(el);
-            src.connect(dest);
-            try {
-                const stream = el.srcObject;
-                if (stream && typeof stream.getAudioTracks === 'function') {
-                    stream.getAudioTracks().forEach(t => {
-                        connectedTrackIds.add(t.id);
-                        connectedTracksById.set(t.id, { track: t, participantId: null, label: '(DOM element)' });
-                    });
-                }
-            } catch (e) {}
-        } catch (e) { /* 某些元素可能不支援或已連過，忽略即可 */ }
-    }
-
-    function scanMedia() {
-        document.querySelectorAll('video, audio').forEach(connectAudio);
-    }
-
-    // 🎯 這輪新增：不要只靠掃描 DOM 上「看得到的」<video>/<audio> 元素接聲音——
-    //    使用者這輪回報「不確定有沒有錄到所有人的聲音」，根本原因可能是 Jitsi 某些版本/設定下，
-    //    遠端participant的聲音是透過內部的 Web Audio 混音處理、沒有對應到一個 DOM 上找得到的
-    //    <audio> 元素（或者對應的 <video> 元素被設成 muted，聲音改由我們抓不到的地方播放），
-    //    這種情況下單靠掃 DOM 會漏掉那個人的聲音。
-    //    改成「雙管齊下」：優先直接從 Jitsi 內部的會議物件（window.APP.conference）拿到每個人
-    //    最原始的音訊 MediaStreamTrack，直接接進我們的錄音圖裡，不管 DOM 上看不看得到、
-    //    有沒有被 muted，都能拿到真正的原始聲音。DOM 掃描機制still保留當作備援（萬一內部 API 抓不到)。
-    function connectJitsiTracks() {
-        try {
-            const room = window.APP && window.APP.conference && window.APP.conference._room;
-            if (!room || typeof room.getParticipants !== 'function') return;
-
-            const nativeTracks = [];
-            room.getParticipants().forEach(p => {
-                try {
-                    const tracks = typeof p.getTracks === 'function' ? p.getTracks() : [];
-                    tracks.forEach(t => {
-                        if (t && typeof t.isAudioTrack === 'function' && t.isAudioTrack() && typeof t.getTrack === 'function') {
-                            const nt = t.getTrack();
-                            if (nt) nativeTracks.push({ nt, participantId: p.getId ? p.getId() : (p.id || null), label: (p.getDisplayName ? p.getDisplayName() : (p.name || '')) });
-                        }
-                    });
-                } catch (e) {}
-            });
-            // 本地（AI 面試官自己）的音軌理論上是靜音狀態，但一起處理，不特別排除，反正靜音軌接了也不會有聲音
-            try {
-                const localAudio = window.APP.conference.localAudio;
-                if (localAudio && typeof localAudio.getTrack === 'function') {
-                    const nt = localAudio.getTrack();
-                    if (nt) nativeTracks.push({ nt, participantId: 'local', label: 'AI 面試官（自己）' });
-                }
-            } catch (e) {}
-
-            nativeTracks.forEach(({ nt: track, participantId, label }) => {
-                if (!track || connectedTrackIds.has(track.id)) return;
-                try {
-                    const stream = new MediaStream([track]);
-                    // Chromium 已知問題：遠端 WebRTC 音軌如果只接 createMediaStreamSource、沒有同時掛在
-                    // 某個 <audio> 元素上，Web Audio 會一直收到純靜音。掛一個靜音的隱藏 <audio> 讓資料真的流動。
-                    try {
-                        const keep = new Audio();
-                        keep.muted = true;
-                        keep.srcObject = stream;
-                        keep.play().catch(() => {});
-                        (window.__keepAudioEls = window.__keepAudioEls || []).push(keep);
-                    } catch (e) {}
-                    const src = audioCtx.createMediaStreamSource(stream);
-                    src.connect(dest);
-                    connectedTrackIds.add(track.id);
-                    connectedTracksById.set(track.id, { track, participantId, label });
-                    console.log('[Recorder 音量診斷] 新接上一條音軌：participantId=' + participantId + '，label=' + label + '，trackId=' + track.id + '，初始 readyState=' + track.readyState + '，muted=' + track.muted);
-                } catch (e) {}
-            });
-        } catch (e) {}
-    }
-
-    // 🐛 這輪新增：AI 面試官自己的畫面（男性面試官.y4m 那個假攝影機）在錄影裡永遠只顯示「未開啟鏡頭」佔位格，
-    //    從沒真的錄到內容——實測發現 Jitsi 對「自己本人」的鏡頭畫面，不一定會渲染出一個畫面上抓得到的
-    //    <video> 元素（不像遠端參與者一定看得到），單純掃 DOM 完全抓不到自己的畫面。
-    //    修正方式：比照上面 connectJitsiTracks() 抓聲音軌道的做法，直接從 Jitsi 內部的會議物件拿到
-    //    每個人（含 AI 面試官自己）最原始的視訊 MediaStreamTrack，自己動手建一個「藏起來、畫面外」的
-    //    <video> 元素把這條原始軌道接上去，不管 Jitsi 自己的畫面有沒有渲染出東西，我們都能拿到真正的畫面。
-    //    這些自己建的 video 元素會記錄對應的參與者 id 跟名字，畫格時直接用，不用再靠 DOM 去猜是誰。
-    // 🐛 這輪修正：AI 面試官自己的畫面在錄影裡重複出現 2~3 次、最後整個變黑。
-    //    根因：下面這個陣列原本只用 track.id 去重，從來沒有清除機制。如果 Simli 那條視訊軌道
-    //    中途因為任何原因重新建立（SDK 內部重連、網路狀況等），就會拿到全新的 track.id，
-    //    被當成「另一個人的另一格」重複加進來——但舊的那個隱藏 <video> 元素還留在 DOM 裡，
-    //    瀏覽器會一直凍結顯示它收到的最後一幀畫面，於是同一個人的臉，用不同時間點凍結的畫面
-    //    同時佔用好幾格，看起來像重複出現；等到全部軌道都斷線，才會整格變黑。
-    //    改成用 Map，key 是「參與者 id」而不是「track id」——同一個人的新軌道進來時，
-    //    直接覆蓋掉舊的那筆（連同移除舊的隱藏 <video> 元素），而不是並存疊加；
-    //    軌道本身結束時（track.onended）也主動從 Map 裡移除，畫面上就不會再留著一格凍結的死畫面。
-    const syntheticVideoTrackIds = new Set();
-    const syntheticVideoByParticipant = new Map(); // participantId -> { el, participantId, label, trackId }
-
-    function connectJitsiVideoTracks() {
-        try {
-            const room = window.APP && window.APP.conference && window.APP.conference._room;
-            if (!room || typeof room.getParticipants !== 'function') return;
-
-            const nameMap = getParticipantNameMap();
-            const candidates = []; // { track, participantId }
-
-            room.getParticipants().forEach(p => {
-                try {
-                    const tracks = typeof p.getTracks === 'function' ? p.getTracks() : [];
-                    tracks.forEach(t => {
-                        if (t && typeof t.isVideoTrack === 'function' && t.isVideoTrack() && typeof t.getTrack === 'function') {
-                            const nt = t.getTrack();
-                            if (nt) candidates.push({ track: nt, participantId: p.id || null });
-                        }
-                    });
-                } catch (e) {}
-            });
-            // 本地（AI 面試官自己）的視訊軌道——這個就是 Simli 虛擬人的畫面，這輪修正的重點就是它，一定要抓到
-            try {
-                const localVideo = window.APP.conference.localVideo;
-                if (localVideo && typeof localVideo.getTrack === 'function') {
-                    const nt = localVideo.getTrack();
-                    const localId = (window.APP.conference.getMyUserId && window.APP.conference.getMyUserId()) || 'local';
-                    if (nt) candidates.push({ track: nt, participantId: localId });
-                }
-            } catch (e) {}
-
-            candidates.forEach(({ track, participantId }) => {
-                if (!track || syntheticVideoTrackIds.has(track.id)) return;
-                if (!participantId) return; // 沒有參與者 id 就沒辦法用它來去重/覆蓋，寧可跳過也不要留下永遠洗不掉的幽靈格
-
-                try {
-                    // 🎯 同一個參與者如果已經有一筆舊的，先把舊的隱藏 <video> 元素從 DOM 移掉，
-                    //    不要讓它繼續凍結顯示最後一幀畫面
-                    const old = syntheticVideoByParticipant.get(participantId);
-                    if (old) {
-                        try { old.el.srcObject = null; old.el.remove(); } catch (e) {}
-                        syntheticVideoTrackIds.delete(old.trackId);
-                    }
-
-                    const v = document.createElement('video');
-                    v.autoplay = true; v.muted = true; v.playsInline = true;
-                    v.style.position = 'fixed'; v.style.left = '-9999px'; v.style.top = '-9999px'; // 藏起來，不用真的顯示在畫面上
-                    v.srcObject = new MediaStream([track]);
-                    document.body.appendChild(v);
-
-                    syntheticVideoTrackIds.add(track.id);
-                    const label = (participantId && nameMap[participantId]) ? nameMap[participantId] : '';
-                    const entry = { el: v, participantId, label, trackId: track.id };
-                    syntheticVideoByParticipant.set(participantId, entry);
-
-                    // 🎯 軌道自己結束時（不管什麼原因），主動把這筆從 Map 移除，
-                    //    這樣畫格時就不會再畫到一格凍結的死畫面，寧可讓這個人暫時變回「未開啟鏡頭」佔位格
-                    track.addEventListener('ended', () => {
-                        const cur = syntheticVideoByParticipant.get(participantId);
-                        if (cur && cur.trackId === track.id) {
-                            syntheticVideoByParticipant.delete(participantId);
-                            syntheticVideoTrackIds.delete(track.id);
-                            try { v.srcObject = null; v.remove(); } catch (e) {}
-                        }
-                    });
-                } catch (e) {}
-            });
-        } catch (e) {}
-    }
-
-    // 🎯 直接把攔截到的 WebRTC 遠端音軌接進混音（一定要排在 scanMedia 前面，才會先佔住這些音軌、避免重複接）
-    function connectRtcTracks() {
-        try {
-            (window.__rtcAudioTracks || []).forEach(track => {
-                if (!track || track.readyState === 'ended' || connectedTrackIds.has(track.id)) return;
-                try {
-                    const stream = new MediaStream([track]);
-                    try {
-                        const keep = new Audio();
-                        keep.muted = true;
-                        keep.srcObject = stream;
-                        keep.play().catch(() => {});
-                        (window.__keepAudioEls = window.__keepAudioEls || []).push(keep);
-                    } catch (e) {}
-                    audioCtx.createMediaStreamSource(stream).connect(dest);
-                    connectedTrackIds.add(track.id);
-                    connectedTracksById.set(track.id, { track, participantId: 'rtc', label: '(RTC 原始音軌)' });
-                    console.log('[Recorder 音量診斷] 以 RTC 攔截接上音軌 trackId=' + track.id + '，readyState=' + track.readyState + '，muted=' + track.muted);
-                } catch (e) {}
-            });
-        } catch (e) {}
-    }
-
-    connectRtcTracks();
-    scanMedia();
-    connectJitsiTracks();
-    connectJitsiVideoTracks();
-
-    const observer = new MutationObserver(() => { connectRtcTracks(); scanMedia(); connectJitsiTracks(); connectJitsiVideoTracks(); });
-    observer.observe(document.body, { childList: true, subtree: true });
-    window.__mediaObserver = observer;
-    // 🎯 DOM 變動事件不一定會在「新的音軌/視訊軌道加入會議」的當下觸發（軌道可能是動態加進已存在的元素，不算 DOM 變動），
-    //    保險起見每 2 秒也主動掃一次 Jitsi 內部的軌道清單，確保晚加入或晚開鏡頭/麥克風的人也不會被漏掉
-    window.__trackPollInterval = setInterval(() => { connectRtcTracks(); connectJitsiTracks(); connectJitsiVideoTracks(); }, 2000);
-
-    // 🎯 盡力而為：從 Jitsi 的畫面找出每個 video 對應的參與者名字，畫在左下角當標籤。
-    //    這輪修正的重點：上一輪只有「DOM 容器內找」+「DOM 全域用 id 找」+「靠順序用猜的」三層，
-    //    使用者這輪回報「其中一位職員的畫面被錯認成 AI 面試官」——很可能就是「靠順序猜」那層猜錯了
-    //    （AI 面試官剛好也叫王大明，跟其中一位人類職員同名，順序稍微對不齊就會猜到別人身上，
-    //    而且猜錯成「AI 面試官」這種特定角色又特別容易造成混淆，比完全沒標籤更糟）。
-    //    這輪把「靠順序猜」整個拿掉，改成最優先直接查 Jitsi 內部的參與者資料（window.APP 的 redux store），
-    //    這是最權威的資料來源——不管這個 video 現在是不是主畫面、DOM 結構長怎樣，都查得到正確的名字，
-    //    查不到才退回原本的 DOM 容器/全域搜尋這兩層；三層都查不到，寧可留空、不要用猜的。
-    function getParticipantNameMap() {
-        const map = {};
-        try {
-            const state = window.APP && window.APP.store && typeof window.APP.store.getState === 'function'
-                ? window.APP.store.getState() : null;
-            const participantsState = state && state['features/base/participants'];
-            if (!participantsState) return map;
-
-            const collect = (obj) => {
-                if (!obj) return;
-                // 🐛 這輪修正（終於抓到「nameMap 永遠只有 AI 自己一筆」這個持續好幾輪的謎團）：
-                //    這個 Jitsi 版本的 participantsState.remote 很可能是一個真正的 JavaScript
-                //    Map 物件，不是普通物件——對 Map 呼叫 Object.values() 會回傳空陣列
-                //    （Map 的內容不是存在一般物件屬性上的），導致這裡永遠抓不到任何遠端參與者的
-                //    名字，只有本地的 AI 自己（走下面 participantsState.local 那條路）撿得到。
-                //    這正是「沒開鏡頭的人會被誤判成 AI 面試官」的真正根因：佔位格邏輯只能用
-                //    nameMap 裡「有的」名字去補「沒畫面的人」，nameMap 裡永遠只有「AI 面試官」
-                //    這個名字可以用，任何沒開鏡頭的人自然就只能被貼上這個唯一能用的名字，
-                //    不是真的認錯人，是壓根沒有別的名字可以選。
-                //    改成同時處理 Map 物件、陣列、跟一般物件三種可能的資料型別。
-                let arr;
-                if (typeof Map !== 'undefined' && obj instanceof Map) arr = Array.from(obj.values());
-                else if (Array.isArray(obj)) arr = obj;
-                else arr = Object.values(obj);
-                arr.forEach(p => { if (p && p.id && p.name) map[p.id] = p.name; });
-            };
-            collect(participantsState.remote);
-            if (participantsState.local && participantsState.local.id) {
-                map[participantsState.local.id] = participantsState.local.name || map[participantsState.local.id] || '';
-            }
-        } catch (e) {}
-        return map;
-    }
-
-    function extractParticipantId(el) {
-        if (!el) return null;
-        const idAttr = el.id || '';
-        // 常見樣式：id=""participant_<id>""、id=""remoteVideo_<id>""、id=""video_<id>""、data-participant-id=""<id>""
-        let m = idAttr.match(/(?:participant|remoteVideo|video)_([A-Za-z0-9]+)/);
-        if (m) return m[1];
-        if (el.dataset && el.dataset.participantId) return el.dataset.participantId;
-        return null;
-    }
-
-    function findLabelForVideo(v, nameMap) {
-        // 第一層（最可信）：video 元素自己（或它的祖先，最多往上找 5 層）身上的參與者 id，
-        //    直接去 Jitsi 內部的權威資料（redux store）查名字——不依賴畫面上有沒有渲染出可見的文字標籤
-        try {
-            let idHolder = v;
-            let pid = extractParticipantId(idHolder);
-            let hops = 0;
-            while (!pid && idHolder && idHolder.parentElement && hops < 5) {
-                idHolder = idHolder.parentElement;
-                pid = extractParticipantId(idHolder);
-                hops++;
-            }
-            if (pid && nameMap[pid]) return nameMap[pid];
-        } catch (e) {}
-
-        // 第二層：這個 video 最近的容器裡面直接找看得到的名字標籤文字（範圍限定在同一個容器內，
-        //    不會誤配到別人身上）
-        try {
-            const container = v.closest('[id^=""participant_""]') || v.closest('.videocontainer') || v.parentElement;
-            if (container) {
-                const nameEl = container.querySelector('.displayname, [class*=""displayName""], [class*=""display-name""]');
-                if (nameEl && nameEl.textContent && nameEl.textContent.trim()) return nameEl.textContent.trim();
-            }
-        } catch (e) {}
-
-        // 🐛 這輪拿掉了原本的「第三層：用擷取到的 id 片段去整個文件範圍做子字串比對」——
-        //    這個做法用的是 `[id*=""...""]`（包含比對，不是完全比對），如果擷取到的 id 片段剛好很短、
-        //    或者跟別人的 id 有重疊部分，就會誤配到別的參與者身上，這正是「有位職員的畫面被誤標成
-        //    AI 面試官」的根本原因（兩人剛好都叫王大明，一旦誤配到彼此的 id，名字就直接連過去了）。
-        //    寧可查不到就留空，也不要用這種容易誤配的方式硬猜。
-        return '';
-    }
-
-    function drawFrame() {
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        const nameMap = getParticipantNameMap();
-        // 🐛 這輪新增：回報「3 個人卻硬塞出 4 格，角色重複」——目前的去重都是「找得到 id/名字才能
-        //    比對」，如果某一格畫面兩種身份都抓不到（既沒有 participantId，也沒有 label），
-        //    會直接跳過所有去重邏輯、被當成一個全新的人塞進 cells。先記下 nameMap 目前認定的
-        //    真實人數，等一下 rawVideos 那段掃到這種「完全沒有身份」的畫面時，如果格數已經夠了，
-        //    寧可不畫這一格，也不要多塞一個沒人知道是誰的重複格子。
-        const expectedParticipantCount = Object.keys(nameMap).length;
-
-        // 🐛 這輪修正的問題：
-        // 1. 「同一張臉出現兩次」：Jitsi 在 speaker/stage view 底下，同一位參與者的畫面常常會同時存在
-        //    兩份 DOM（主畫面的大 video + filmstrip 縮圖列的小 video），兩個 <video> 元素背後接的是
-        //    同一條 MediaStreamTrack。原本沒有去重，兩個都被畫進格子，看起來就像同一個人重複出現。
-        //    改成用 <video> 元素背後 srcObject 的視訊軌道 id 當唯一鍵去重，同一條軌道只畫一次。
-        // 2. 「沒開鏡頭的人完全看不到、也沒有名字標籤」：原本只掃「畫面上找得到的 <video> 元素」，
-        //    沒開鏡頭的人根本沒有 <video> 元素可抓，整個人就這樣從錄影裡消失，連名字都不會出現。
-        //    改成額外比對 Jitsi 內部權威的參與者名單（getParticipantNameMap()），
-        //    把「有名字、但沒有對應到任何一格畫面」的人，補一格灰底＋姓名的佔位格，
-        //    至少看得出這場面試「誰在場但沒開鏡頭」，不是憑空消失。
-        // 3. 「AI 面試官自己的畫面錄不到」：改用 connectJitsiVideoTracks() 直接接上的隱藏 video 元素
-        //    （syntheticVideoByParticipant），這些元素我們自己建立時就已經知道正確的參與者 id/名字，
-        //    優先信任這批、再補上畫面上原生找得到的 <video> 元素，兩邊一樣用軌道 id 去重避免重複。
-        const seenKeys = new Set();
-        // 🐛 這輪新增：光靠 track id 去重不夠——Jitsi 原生畫面上很可能也會用自己內部複製
-        //    （clone）出來的另一個 track 物件渲染「自己的畫面」縮圖，clone 出來的 track
-        //    會有全新的 .id，跟 connectJitsiVideoTracks() 抓到的原始 track id 完全不同，
-        //    導致同一個人的畫面在「synthetic 這條路徑」跟「rawVideos 這條路徑」各自被認成
-        //    不同的東西，兩邊都畫進去，變成重複。改成額外用 participantId 當第二層去重依據：
-        //    只要這個人已經被 synthetic 那批（比較可信，因為是我們自己主動接的，id/名字都確定）
-        //    畫過一次，rawVideos 這邊掃到同一個 participantId 就直接跳過，不管 track id 是否相同。
-        const seenParticipantIds = new Set();
-        const cells = []; // { type: 'video', el, label, participantId? } | { type: 'placeholder', label }
-
-        syntheticVideoByParticipant.forEach(sc => {
-            if (!sc.el || sc.el.videoWidth <= 0) return; // 軌道還沒真的有畫面（例如剛連上），這輪先跳過
-            const dedupeKey = 'track:' + sc.trackId;
-            if (seenKeys.has(dedupeKey)) return;
-            seenKeys.add(dedupeKey);
-            if (sc.participantId) seenParticipantIds.add(sc.participantId);
-            const label = sc.label || nameMap[sc.participantId] || '';
-            cells.push({ type: 'video', el: sc.el, label, participantId: sc.participantId });
-        });
-
-        const rawVideos = Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0);
-        rawVideos.forEach(v => {
-            // 🎯 先算出這個 video 元素對應的 participantId，跟 synthetic 那批比對——
-            //    這一步要放在 track id 去重「之前」，因為就是要抓「track id 不同、但其實是
-            //    同一個人」這種情況，用 track id 比對本來就抓不到，必須靠 participantId 才行
-            let participantId = null;
-            try {
-                let idHolder = v, pid = extractParticipantId(idHolder), hops = 0;
-                while (!pid && idHolder && idHolder.parentElement && hops < 5) {
-                    idHolder = idHolder.parentElement; pid = extractParticipantId(idHolder); hops++;
-                }
-                participantId = pid;
-            } catch (e) {}
-            if (participantId && seenParticipantIds.has(participantId)) return; // 這個人已經被畫過了，不管 track id 是否相同都跳過
-
-            let dedupeKey = null;
-            try {
-                const stream = v.srcObject;
-                if (stream && typeof stream.getVideoTracks === 'function') {
-                    const t = stream.getVideoTracks()[0];
-                    if (t) dedupeKey = 'track:' + t.id;
-                }
-            } catch (e) {}
-            if (!dedupeKey) {
-                // 拿不到底層軌道 id 的極少數情況，退回用這個 video 元素自己的身份當 key，
-                // 至少同一輪畫格不會被同一個元素重複疊加
-                if (!v.__aiRecorderCellKey) v.__aiRecorderCellKey = 'el:' + Math.random().toString(36).slice(2);
-                dedupeKey = v.__aiRecorderCellKey;
-            }
-            if (seenKeys.has(dedupeKey)) return; // 已經被上面的 syntheticVideoByParticipant 畫過同一條軌道了
-            seenKeys.add(dedupeKey);
-            if (participantId) seenParticipantIds.add(participantId);
-
-            const label = findLabelForVideo(v, nameMap);
-            // 🐛 這輪新增：這格畫面既沒有 participantId、也找不到任何 label——完全是個「不知道是誰」
-            //    的神秘畫面。如果目前已經湊到的格數已經 >= nameMap 認定的真實人數，代表這格很可能
-            //    只是別人的畫面被重複渲染出來（clone track / 縮圖），不是真的第 4 個人，這種情況
-            //    寧可不畫，也不要塞一個沒有名字、無法去重的重複格子進去。
-            if (!participantId && !label && cells.length >= expectedParticipantCount) {
-                console.log('[Recorder 診斷] 跳過一格找不到 participantId 也找不到 label 的神秘畫面（目前 ' + cells.length + ' 格 >= 已知 ' + expectedParticipantCount + ' 人），避免多塞一格重複');
-                return;
-            }
-            cells.push({ type: 'video', el: v, label, participantId });
-        });
-
-        // 🐛 這輪修正（抓到明確的 log 證據：AI 面試官自己的 video 格子 participantId 一直是 null，
-        //    導致下面的去重判斷永遠找不到「AI 已經顯示過了」，每一輪都多算出一格重複的
-        //    AI 面試官佔位格）：不管是走 synthetic 那條路（目前實測這條路一直沒有真的抓到任何東西，
-        //    syntheticVideo人數 始終是 0，這是另一個要繼續查的問題，但不影響這裡的修正）還是
-        //    rawVideos 那條 DOM 掃描備援路徑，只要抓不到真正的參與者 id，這一格的 participantId
-        //    就會是 null——但這格的「名字」（label）其實已經靠字幕文字備援機制正確找到了
-        //    （例如「AI 面試官」），只是沒有 id 可以拿去跟 nameMap 比對而已。
-        //    補一個反查：如果這一格沒有 participantId、但 label 已經確定了，就去 nameMap 裡
-        //    反查有沒有哪個 id 的名字剛好等於這個 label，找到就直接把那個 id 補回來，
-        //    這樣下面的去重判斷才抓得到「這個人已經顯示過了」，不會再重複多算一格。
-        const nameToId = {};
-        Object.keys(nameMap).forEach(pid => { if (nameMap[pid]) nameToId[nameMap[pid]] = pid; });
-        cells.forEach(c => {
-            if (!c.participantId && c.label && nameToId[c.label]) c.participantId = nameToId[c.label];
-        });
-
-        // 🐛 這輪修正（回報：補回 participantId 之後，AI 面試官／沒開鏡頭的人還是會出現兩次畫面）：
-        //    根因是上面這段補 id 的邏輯，只是把 participantId 「寫回」每一格，並沒有真的拿這個
-        //    補回來的 id 去移除已經重複塞進 cells 陣列的那一格——如果 synthetic 那條路徑跟
-        //    rawVideos 那條 DOM 掃描路徑，一開始因為抓不到 participantId（各自是 null／抓到不同的
-        //    id），沒有互相認出對方是同一個人，兩邊就已經各自把同一個人塞進 cells 陣列了；補 id
-        //    這段只會讓兩格「現在都有了同一個 participantId」，但陣列裡依然是兩個獨立的元素，
-        //    最後畫格子時兩格都還是會被畫出來，這才是「照理說 id 補回去了，畫面還是重複」的真正原因。
-        //    改成在這裡加一個收尾的去重：依 participantId（沒有 id 才退回用 label）當 key，
-        //    同一個 key 只留一格——有真的畫面（type === 'video'）優先於佔位格，
-        //    先出現的（signal 較新、通常是比較可信的 synthetic 那批）優先於後出現的。
-        const dedupedCells = [];
-        const seenCellKeys = new Map(); // key -> dedupedCells 裡的 index
-        cells.forEach(c => {
-            const key = c.participantId ? ('id:' + c.participantId) : (c.label ? ('label:' + c.label) : null);
-            if (!key) { dedupedCells.push(c); return; } // 完全沒有 id 也沒有 label，沒辦法判斷是不是同一個人，直接保留
-            if (!seenCellKeys.has(key)) {
-                seenCellKeys.set(key, dedupedCells.length);
-                dedupedCells.push(c);
-            } else {
-                const idx = seenCellKeys.get(key);
-                // 同一個人已經出現過：如果目前留著的是佔位格、這格是真的畫面，就換成這格
-                if (dedupedCells[idx].type === 'placeholder' && c.type === 'video') dedupedCells[idx] = c;
-            }
-        });
-        cells.length = 0;
-        cells.push(...dedupedCells);
-
-        // 🎯 同一個人被畫兩次的根因：真的視訊畫面找不到名字標籤、而「在場名單」裡這個人又沒有對到畫面，
-        //    結果補了一格黑色名字格——變成一格沒名字的真人、一格有名字的黑畫面，看起來像多了一個人。
-        //    這裡把「沒標籤的真畫面」和「在場名單中還沒對到畫面的人」配對：剛好 1 對 1 就直接認定；
-        //    對不上（多對多）就寧可畫面不標名字，也不再多補黑格、不亂猜是誰。
-        let placeholderSkip = 0;
-        {
-            const lblSet0 = new Set(cells.filter(c => c.label).map(c => c.label));
-            const idSet0 = new Set(cells.map(c => c.participantId).filter(Boolean));
-            const unl = cells.filter(c => c.type === 'video' && !c.label);
-            const missing0 = Object.keys(nameMap).filter(pid => nameMap[pid] && !idSet0.has(pid) && !lblSet0.has(nameMap[pid]));
-            // 從 Jitsi 內部狀態查「誰現在有開鏡頭」：沒開鏡頭的人不可能是那格真畫面的主人
-            let videoOn = null;
-            try {
-                const st0 = window.APP && window.APP.store && window.APP.store.getState();
-                const tr = st0 && st0['features/base/tracks'];
-                if (Array.isArray(tr) && tr.length > 0) {
-                    videoOn = new Set(tr.filter(t => t && t.mediaType === 'video' && t.videoType !== 'desktop' && !t.muted && t.participantId).map(t => t.participantId));
-                }
-            } catch (e) {}
-            const cand0 = videoOn ? missing0.filter(pid => videoOn.has(pid)) : missing0;
-            if (unl.length === 1 && cand0.length === 1) { unl[0].label = nameMap[cand0[0]]; unl[0].participantId = cand0[0]; }
-            else if (unl.length > 0 && missing0.length > 0) {
-                if (unl.length === 1 && missing0.length === 1) { unl[0].label = nameMap[missing0[0]]; unl[0].participantId = missing0[0]; }
-                else placeholderSkip = Math.min(unl.length, missing0.length);
-            }
-        }
-        const coveredIds = new Set(cells.map(c => c.participantId).filter(Boolean));
-        // 🐛 這輪修正（抓到明確的 log/畫面證據：求職者-aa 同時出現一格真的畫面、又出現一格
-        //    「未開啟鏡頭」佔位格，變成畫面上有兩個她）：根因是這裡原本只用 participantId 判斷
-        //    「這個人是不是已經有畫面了」——如果 aa 的 video 格子，即使 label 已經正確顯示
-        //    「求職者-aa」，但 participantId 這欄最終還是沒能對到任何一個 id（例如她的畫面來自
-        //    某種掃 DOM 也抓不到 id 的路徑），這格在 coveredIds 裡就不會被算進去。等一下這個
-        //    迴圈去比對 nameMap 時，會覺得「求職者-aa 這個 id 還沒有畫面」，於是又補了一格
-        //    佔位格——變成同一個人，一格是真的畫面、一格是佔位格，同時存在。
-        //    改成除了比對 id，也額外比對「名字是不是已經有一格真的畫面在用了」，只要名字對得上，
-        //    就不再需要靠 id 才能判斷「這個人已經有畫面了」。
-        const coveredLabels = new Set(cells.filter(c => c.type === 'video' && c.label).map(c => c.label));
-        Object.keys(nameMap).forEach(pid => {
-            if (coveredIds.has(pid)) return;
-            const name = nameMap[pid];
-            if (!name) return;
-            if (coveredLabels.has(name)) return;
-            if (placeholderSkip > 0) { placeholderSkip--; return; }
-            cells.push({ type: 'placeholder', label: name });
-        });
-
-        if (cells.length > 0) {
-            // 🐛 這輪新增（回報：影片角色區塊會一直跳動）：每一輪畫面的 cells 順序，是跟著
-            //    document.querySelectorAll('video') 掃到的 DOM 順序、以及 nameMap 當下的鍵值順序
-            //    走的——但 Jitsi 自己的畫面會依「目前誰在講話」動態把參與者的縮圖重新排列
-            //    （active speaker 會被排到比較前面），所以我們掃到的 DOM 順序每一輪都可能不一樣，
-            //    連帶讓我們畫出來的格子位置跟著一直重排、跳來跳去，即使畫面裡的人根本沒有變動。
-            //    改成：每個人第一次出現時，就用一個固定的「座位」記住他（以 participantId 優先，
-            //    沒有的話退回用 label），之後不管 DOM 掃描順序怎麼變，永遠依這個固定座位排序，
-            //    畫面位置就會穩定下來，只有真的有人離開/加入才會變動格數。
-            // 座位用「id 和名字」兩把鑰匙都登記：同一個人先用名字出現、之後才補到 id（或反過來）時，
-            // 要認得是同一個人、沿用原本的座位，不然會被當成新的人，位置就會在會議中途突然交換。
-            if (!window.__seatOrder) window.__seatOrder = new Map();
-            if (window.__nextSeat === undefined) window.__nextSeat = 0;
-            const keysOf = (cell) => {
-                const ks = [];
-                if (cell.participantId) ks.push('id:' + cell.participantId);
-                if (cell.label) ks.push('label:' + cell.label);
-                return ks;
-            };
-            const seatOfCell = (cell) => {
-                const ks = keysOf(cell);
-                let seat = null;
-                for (const k of ks) { if (window.__seatOrder.has(k)) { seat = window.__seatOrder.get(k); break; } }
-                if (seat === null && ks.length > 0) seat = window.__nextSeat++;
-                if (seat !== null) ks.forEach(k => { if (!window.__seatOrder.has(k)) window.__seatOrder.set(k, seat); });
-                return seat === null ? 9999 : seat;
-            };
-            cells.forEach(c => { c.__seat = seatOfCell(c); });
-            cells.sort((a, b) => a.__seat - b.__seat);
-
-            window.__lastCells = cells; // 給臉部觀察（口罩提醒、AI 分析）擷取每位求職者目前的畫面用
-            const cols = Math.ceil(Math.sqrt(cells.length));
-            const rows = Math.ceil(cells.length / cols);
-            const cellW = canvas.width / cols, cellH = canvas.height / rows;
-            cells.forEach((cell, i) => {
-                const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
-
-                if (cell.type === 'video') {
-                    try { ctx.drawImage(cell.el, x, y, cellW, cellH); } catch (e) {}
-                } else {
-                    // 佔位格（沒開鏡頭的人）：純黑畫面，不顯示「未開啟鏡頭」之類的提示文字
-                    ctx.fillStyle = '#000';
-                    ctx.fillRect(x, y, cellW, cellH);
-                }
-
-                // 每一格畫一圈細框線：有人的格子（含沒開鏡頭的黑畫面）都有框，
-                // 人數是奇數時多出來的空位沒有框、也沒有名字，一眼就看得出「這格是某個人」還是「單純是空位」。
-                try {
-                    ctx.strokeStyle = '#444';
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(x + 1, y + 1, cellW - 2, cellH - 2);
-                } catch (e) {}
-
-                // 沒開鏡頭的人：名字置中、放大顯示在他自己的格子正中央，不再貼在格子底部（底部會像是在標示下方的空位）
-                if (cell.type !== 'video' && cell.label) {
-                    try {
-                        ctx.font = 'bold 26px sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.fillStyle = '#fff';
-                        ctx.fillText(cell.label, x + cellW / 2, y + cellH / 2);
-                        ctx.textAlign = 'left';
-                    } catch (e) {}
-                    return;
-                }
-
-                // 這樣錄下來的檔案才看得出來哪一格是誰（不然每格都只是一個畫面，看不出角色）。
-                // 兩種格子（有畫面/佔位格）都要畫名字標籤，佔位格才不會只有「未開啟鏡頭」幾個字看不出是誰。
-                try {
-                    const label = cell.label;
-                    if (label) {
-                        ctx.font = 'bold 16px sans-serif';
-                        const textWidth = ctx.measureText(label).width;
-                        ctx.fillStyle = 'rgba(0,0,0,0.65)';
-                        ctx.fillRect(x + 6, y + cellH - 28, textWidth + 12, 22);
-                        ctx.fillStyle = '#fff';
-                        ctx.fillText(label, x + 12, y + cellH - 12);
-                    }
-                } catch (e) {}
-            });
-        }
-
-        // 🐛 這輪新增：這次回報「其中一格 AI 面試官的畫面/佔位格，其實應該是某個人類參與者
-        //    （沒開鏡頭）才對」——要分辨這是「nameMap 把那個人的 id 對應到錯的名字」，
-        //    還是「單純多出一個重複的 AI 面試官佔位格」，光看畫面猜不出來，必須把
-        //    nameMap 的完整內容、以及每一格 cell 實際用的 participantId+label 都印出來比對。
-        const nowTs = Date.now();
-        if (!window.__lastDiagLogTs || nowTs - window.__lastDiagLogTs > 10000) {
-            window.__lastDiagLogTs = nowTs;
-            try {
-                const room = window.APP && window.APP.conference && window.APP.conference._room;
-                const participantCount = room && typeof room.getParticipants === 'function' ? room.getParticipants().length : 'no-room';
-                console.log('[Recorder 診斷] nameMap人數=' + Object.keys(nameMap).length +
-                    '，room.getParticipants()人數=' + participantCount +
-                    '，syntheticVideo人數=' + syntheticVideoByParticipant.size +
-                    '，rawVideos找到=' + document.querySelectorAll('video').length + '個(videoWidth>0的有' + Array.from(document.querySelectorAll('video')).filter(v => v.videoWidth > 0).length + '個)' +
-                    '，這輪畫格cells數=' + cells.length);
-                console.log('[Recorder 診斷] nameMap 完整內容：' + JSON.stringify(nameMap));
-                console.log('[Recorder 診斷] 這輪每一格的 participantId/label：' + JSON.stringify(cells.map(c => ({ type: c.type, participantId: c.participantId || null, label: c.label || null }))));
-            } catch (e) {}
-        }
-
-        window.__rafId = requestAnimationFrame(drawFrame);
-    }
-    drawFrame();
-
-    // 目前會議室裡所有「求職者」的顯示名稱（含沒開鏡頭的），給回答者判斷用
-    window.__jsLabels = function () {
-        try { return (window.__lastCells || []).map(function (c) { return (c && c.label) || ''; }).filter(function (l) { return /^求職者-/.test(l); }); } catch (e) { return []; }
-    };
-
-    // 擷取每位「求職者」目前的視訊畫面（縮成寬 320 的 JPEG），給伺服器做臉部觀察用
-    window.__grabFaces = function () {
-        const out = [];
-        try {
-            (window.__lastCells || []).forEach(function (c) {
-                if (!c || c.type !== 'video' || !c.label || !/^求職者/.test(c.label)) return;
-                const v = c.el;
-                if (!v || !v.videoWidth || v.readyState < 2) return;
-                const cv = document.createElement('canvas');
-                cv.width = 320; cv.height = Math.max(1, Math.round(320 * v.videoHeight / v.videoWidth));
-                cv.getContext('2d').drawImage(v, 0, 0, cv.width, cv.height);
-                out.push({ label: c.label, jpeg: cv.toDataURL('image/jpeg', 0.7).split(',')[1] });
-            });
-        } catch (e) {}
-        return out;
-    };
-
-    const canvasStream = canvas.captureStream(15);
-    const combined = new MediaStream([
-        ...canvasStream.getVideoTracks(),
-        ...dest.stream.getAudioTracks()
-    ]);
-
-    // 🐛 這輪新增：追查「錄影會在會議進行到一半就停止」這個問題，已經排除是分頁當機
-    //    （沒有觸發 Playwright 的 page.Crash 事件）、也排除是伺服器中途重啟。剩下最大的嫌疑是
-    //    MediaRecorder 自己內部出錯、或它賴以運作的某條底層軌道中途結束——但這兩種情況原本完全
-    //    沒有任何 log，等於是全黑的盲區。這裡把 combined stream 裡每一條軌道的 ended 事件、
-    //    還有 MediaRecorder 自己的 onerror/onstop 都掛上 log，下次如果真的再發生，
-    //    至少能看到「是哪一條軌道先斷的」或「MediaRecorder 自己回報了什麼錯誤」。
-    combined.getTracks().forEach(t => {
-        t.addEventListener('ended', () => {
-            console.error('[Recorder] ⚠️⚠️ combined stream 裡有一條 ' + t.kind + ' 軌道結束了（ended），這很可能是錄影提早中斷的原因！readyState=' + t.readyState);
-        });
-    });
-
-    const mimeCandidates = ['video/webm;codecs=vp8,opus', 'video/webm'];
-    let mime = '';
-    for (const m of mimeCandidates) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
-
-    const rec = new MediaRecorder(combined, mime ? { mimeType: mime } : {});
-    rec.ondataavailable = e => { if (e.data && e.data.size > 0) window.__recChunks.push(e.data); };
-    rec.onerror = (e) => {
-        console.error('[Recorder] ⚠️⚠️⚠️ MediaRecorder 發生錯誤：' + (e.error ? (e.error.name + '：' + e.error.message) : JSON.stringify(e)) + '，目前狀態：' + rec.state + '，已經錄到的片段數：' + window.__recChunks.length);
-    };
-    rec.onstop = () => {
-        console.log('[Recorder] MediaRecorder 已停止（onstop 事件），已經錄到的片段數：' + window.__recChunks.length + '，距離開始錄影經過：' + Math.round((Date.now() - window.__recStartMs) / 1000) + ' 秒');
-    };
-    rec.start(1000);
-    window.__mediaRecorder = rec;
-
-    // 🎯 每 30 秒印一次記憶體用量（Chrome 專有的 performance.memory API，無頭環境也能用）——
-    //    如果這個數字隨時間一直漲不停，就代表真的是記憶體壓力太大，瀏覽器可能因此被系統強制回收資源，
-    //    這種情況不一定會觸發正式的 crash 事件，但一樣會讓分頁停止正常運作、錄影跟著中斷。
-    window.__memCheckInterval = setInterval(() => {
-        try {
-            if (performance.memory) {
-                console.log('[Recorder 記憶體診斷] 已用 JS heap=' + Math.round(performance.memory.usedJSHeapSize / 1024 / 1024) + 'MB' +
-                    '，heap 上限=' + Math.round(performance.memory.jsHeapSizeLimit / 1024 / 1024) + 'MB' +
-                    '，已錄片段數=' + window.__recChunks.length +
-                    '，MediaRecorder 狀態=' + (window.__mediaRecorder ? window.__mediaRecorder.state : 'N/A'));
-            }
-        } catch (e) {}
-    }, 30000);
-})();
-";
-
-        // 🎯 停止錄影機、把錄到的內容轉成 base64 字串回傳給 C# 端（頁面關閉前一定要呼叫，不然錄到的內容會直接消失）
-        private const string RecorderStopScript = @"
-(function () {
-    return new Promise((resolve) => {
-        if (window.__mediaObserver) { try { window.__mediaObserver.disconnect(); } catch (e) {} }
-        if (window.__rafId) { try { cancelAnimationFrame(window.__rafId); } catch (e) {} }
-        if (window.__trackPollInterval) { try { clearInterval(window.__trackPollInterval); } catch (e) {} }
-        if (window.__memCheckInterval) { try { clearInterval(window.__memCheckInterval); } catch (e) {} }
-        if (window.__audioLevelInterval) { try { clearInterval(window.__audioLevelInterval); } catch (e) {} }
-
-        if (!window.__mediaRecorder || window.__mediaRecorder.state === 'inactive') {
-            resolve(null);
-            return;
-        }
-        window.__mediaRecorder.onstop = () => {
-            const blob = new Blob(window.__recChunks, { type: 'video/webm' });
-            const durationMs = Date.now() - (window.__recStartMs || Date.now());
-
-            function toBase64(finalBlob) {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result); // data:video/webm;base64,....
-                reader.onerror = () => resolve(null);
-                reader.readAsDataURL(finalBlob);
-            }
-
-            // 🐛 MediaRecorder 產出的 webm 預設沒有寫入正確時長，播放器沒辦法拖拉進度條，
-            //    用 fix-webm-duration 把正確時長補進檔案標頭再輸出
-            if (window.ysFixWebmDuration) {
-                ysFixWebmDuration(blob, durationMs, (fixedBlob) => toBase64(fixedBlob || blob));
-            } else {
-                toBase64(blob);
-            }
-        };
-        window.__mediaRecorder.stop();
-    });
-})();
-";
-
-        private static readonly Dictionary<string, BotInstance> _activeBots = new();
-        // 🐛 這輪新增：搭配下面 JoinRoomAsync 的修正一起用——確保「檢查這個房間有沒有 AI 面試官」
-        //    跟「登記佔用這個房間」這兩件事是原子化的一個動作，不會被同一個房間幾乎同時進來的
-        //    第二次呼叫插隊，導致真的啟動兩個分身。
-        private static readonly object _activeBotsLock = new();
-        private readonly JaasJwtService _jaasJwt;
-        private readonly IConfiguration _config;
-        private readonly IServiceScopeFactory _scopeFactory;
-
-        // 🎯 這個服務是 Singleton（一個程序裡只有一份，見 Program.cs），但 GeminiService 是 Scoped，
-        //    不能直接建構子注入（會是所謂的 captive dependency，DI 容器啟動時會直接噴錯）——
-        //    改成注入 IServiceScopeFactory，要用的時候自己開一個新的 scope 去要 GeminiService，
-        //    跟 MeetingHub 背景工作那邊處理 AppDbContext 的做法是同一套模式
-        public JitsiBotService(JaasJwtService jaasJwt, IConfiguration config, IServiceScopeFactory scopeFactory)
-        {
-            _jaasJwt = jaasJwt;
-            _config = config;
-            _scopeFactory = scopeFactory;
-        }
-
-        public async Task JoinRoomAsync(string roomCode, string videoPath)
-        {
-            if (string.IsNullOrEmpty(roomCode)) return;
-            roomCode = roomCode.Trim();
-
-            // 🐛 這輪新增：這次測試錄影裡整段穩定看到「兩個 AI 面試官」，不是前面重複、
-            //    後面變黑那種殘影模式，比較像真的啟動了兩個獨立分身。根因：原本「檢查字典裡有沒有
-            //    這個房間」通過之後，要跑完一長串很花時間的非同步啟動流程（開瀏覽器、導航、
-            //    等加入、等錄影機，實測 30~60 秒以上）才會真的把這個房間登記進字典。如果同一個房間
-            //    在這段等待期間內被觸發第二次（按鈕連點兩下、SignalR 重連導致 StartMeeting 被重複
-            //    呼叫等），第二次呼叫進來檢查時字典還是空的，兩次呼叫都會覺得『這個房間還沒有 AI
-            //    面試官』，各自獨立啟動一個瀏覽器分身，兩個都成功加入——變成畫面上真的有兩個。
-            //    修正：檢查跟登記（先佔位）這兩件事包在同一個鎖裡原子化完成，只要通過檢查就立刻
-            //    佔位，不等真正啟動完成才登記，這樣幾乎同時進來的第二次呼叫一定會看到佔位、直接跳過。
-            lock (_activeBotsLock)
-            {
-                if (_activeBots.ContainsKey(roomCode))
-                {
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 內已有 AI 面試官（或正在啟動中），跳過，避免出現兩個分身。");
-                    return;
-                }
-                _activeBots[roomCode] = null; // 先佔位卡住這個房間，真正的 BotInstance 稍後才會補上
-            }
-
-            if (!File.Exists(videoPath))
-            {
-                Console.WriteLine($"[JitsiBot Error] 找不到 y4m 視訊檔案: {videoPath}");
-                lock (_activeBotsLock) { _activeBots.Remove(roomCode); } // 佔位登記了但根本沒真的啟動，清掉讓之後還能重試
-                return;
-            }
-
-            IPlaywright localPlaywright = null;
-            IBrowser localBrowser = null;
-            IBrowserContext localContext = null;
-
-            try
-            {
-                Console.WriteLine($"[JitsiBot] 正在為房間 {roomCode} 建立全隔離的 Playwright 驅動...");
-                localPlaywright = await Playwright.CreateAsync();
-
-                var launchOptions = new BrowserTypeLaunchOptions
-                {
-                    Headless = true, // Render 環境必須為 true
-                    Args = new[]
-                    {
-                        "--use-fake-ui-for-media-stream",
-                        "--use-fake-device-for-media-stream",
-                        $"--use-file-for-fake-video-capture={videoPath}",
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        // 🐛 修正：Docker 容器預設的共享記憶體（/dev/shm）只有 64MB，
-                        //    Chromium 不知道這件事，會照平常桌機的用法去用，馬上爆記憶體被系統強制關閉，
-                        //    症狀就是啟動幾秒後直接噴 "Target page, context or browser has been closed"，
-                        //    這個參數會讓 Chromium 改用 /tmp（吃主程式的記憶體額度）而不是 /dev/shm，避開這個問題
-                        "--disable-dev-shm-usage",
-                        "--disable-gpu",
-                        "--disable-software-rasterizer",
-                        "--disable-extensions",
-                        "--no-zygote",
-                        // 🐛 這輪新增：修正 Simli 資源載入被擋的問題。
-                        //    Chrome 的 Private Network Access（私有網路存取）機制會擋掉「公開網站
-                        //    （https://8x8.vc）要跟私有位址（本機測試時是 http://localhost:5216）要東西」
-                        //    這種請求，導致 AI 面試官的頁面連不到自己伺服器上的 simli-client.bundle.js。
-                        //    這個瀏覽器是我們自己完全控制的專用瀏覽器（不是給真人瀏覽的一般瀏覽器），
-                        //    關掉這個檢查沒有資安疑慮。
-                        //    ⚠️ 這個問題本質上只會在「本機測試」時發生（App:BaseUrl 是 localhost 這種私有位址）；
-                        //    部署到 Render 之後 App:BaseUrl 會是公開網址，理論上不會再踩到這個限制，
-                        //    但保留這個參數不影響正式環境運作，所以兩邊都留著。
-                        "--disable-features=BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults",
-                        // 🐛 這輪新增（回報：整份 19 分鐘的錄影，用 ffmpeg 逐段量測，幾乎全程都是
-                        //    -91dB 真正的數位靜音，只有中間某一小段 30 秒左右突然量到真的聲音，
-                        //    其他時間完全沒有）：懷疑是 Chromium 的「背景分頁節流」機制搞的鬼——
-                        //    無頭瀏覽器雖然沒有真人在看，但 Chromium 內部排程還是可能把這個分頁
-                        //    當成「被遮擋/背景中的視窗」，间歇性地降頻或暫停計時器、音訊處理等
-                        //    子系統，導致 AudioContext 的混音圖時跑時停，只有極少數時間點真的有
-                        //    在處理音訊，這正好符合「幾乎全程靜音、只有零星一小段有聲音」這種
-                        //    忽有忽無的模式（如果單純是沒呼叫 resume() 那種問題，應該是整場永遠
-                        //    靜音，不會有這種時有時無的情況）。加上這三個參數，明確告訴 Chromium
-                        //    不要對這個分頁做背景節流，這是 Playwright/Puppeteer 社群處理無頭瀏覽器
-                        //    音訊/計時器不穩定問題的標準做法。
-                        "--disable-backgrounding-occluded-windows",
-                        "--disable-renderer-backgrounding",
-                        "--disable-background-timer-throttling",
-                        // 🐛 這輪新增：Chrome 的自動播放政策會讓 AudioContext 預設卡在「暫停」狀態，
-                        //    這是造成整份錄影音軌完全靜音的根因之一（另一半是程式碼裡真的沒呼叫
-                        //    audioCtx.resume()，那個已經修正）。這裡多加這個參數當第二層保險——
-                        //    這個瀏覽器是我們自己完全控制的專用瀏覽器，不是給真人瀏覽的一般瀏覽器，
-                        //    放寬自動播放限制沒有資安疑慮。
-                        "--autoplay-policy=no-user-gesture-required"
-                    }
-                };
-
-                localBrowser = await localPlaywright.Chromium.LaunchAsync(launchOptions);
-
-                localContext = await localBrowser.NewContextAsync(new BrowserNewContextOptions
-                {
-                    ViewportSize = new ViewportSize { Width = 1280, Height = 720 }
-                    // 🐛 拿掉了 RecordVideoDir：Playwright 官方已知限制，這個內建錄影功能只錄「畫面」，
-                    //    完全沒有任何錄音能力（GitHub 上從 2021 年就有人要求加音訊支援，到現在還沒做），
-                    //    改成下面用頁面內部注入的自訂錄影機（Canvas 畫面 + Web Audio API 混音）取代
+                
+                Array.from(byTitle.values()).forEach((x, i) => { x.o = i; });
+                const order = ['答題內容與具體度', '邏輯結構', '與職缺及履歷相關度', '溝通清晰度'];
+                Array.from(byTitle.values()).sort((a, b) => {
+                    const ia = order.indexOf(a.title), ib = order.indexOf(b.title);
+                    return (ia < 0 ? 99 + a.o : ia) - (ib < 0 ? 99 + b.o : ib);
+                }).forEach(x => {
+                    const c = el('div', 'rpt-card'); c.appendChild(el('div', 'k', x.title)); c.appendChild(el('div', 'v', x.v)); c.appendChild(el('div', 's', '權重 ' + x.w + '%（滿分 100）')); cards.appendChild(c);
                 });
-                var page = await localContext.NewPageAsync();
-
-                // 🐛 這輪新增：這個瀏覽器是無頭（headless）在伺服器上跑的，沒有人能打開開發者工具看 console，
-                //    之前完全沒有轉發任何瀏覽器端的 log/錯誤到我們看得到的地方，等於在「盲測」——
-                //    尤其這輪剛接的 Simli 虛擬人牽涉一大段全新的 JS（動態載入 SDK、WebRTC 連線、
-                //    攔截 getUserMedia），任何一步出錯我們原本完全看不到。
-                //    把頁面的 console 訊息（含 [Simli] 開頭的、還有一般 JS 錯誤）全部轉發到伺服器自己的
-                //    Console.WriteLine，這樣下次測試只要看伺服器的 log 就能看到瀏覽器端實際發生了什麼。
-                page.Console += (_, msg) =>
-                {
-                    try
-                    {
-                        Console.WriteLine($"[JitsiBot Console:{roomCode}][{msg.Type}] {msg.Text}");
-                    }
-                    catch { /* log 轉發本身失敗就算了，不能讓這個影響到主流程 */ }
-                };
-                page.PageError += (_, err) =>
-                {
-                    Console.WriteLine($"[JitsiBot PageError:{roomCode}] {err}");
-                };
-                // 🐛 這輪新增：今天有具體證據顯示「錄影檔案會在會議進行到一半就被截斷」（量過音量/長度，
-                //    確認整份錄影只有前面幾分鐘，跟主持人自己那份透過別的管道錄到的完整內容對不起來）。
-                //    最可能的解釋是這個無頭分頁本身在會議中途當機了——當機之後這個分頁不會再有任何新的
-                //    畫面/聲音被錄進去，但記憶體裡已經錄到的部分還在，所以最後拿到的錄影檔案會被
-                //    「安靜地」截斷在當機的那個時間點，不會跳出任何看得到的錯誤訊息。
-                //    這裡加一個當機事件的監聽，下次如果真的當機，至少會在 log 裡留下明確的時間點跟證據，
-                //    不用再靠比對影片長度去反推。
-                page.Crash += (_, _) =>
-                {
-                    Console.WriteLine($"[JitsiBot PageCrash:{roomCode}] ⚠️⚠️⚠️ 無頭瀏覽器分頁當機了！" +
-                        "這很可能就是「錄影/AI 面試官畫面中途消失、內容被截斷」的直接原因——" +
-                        "當機之後這個分頁完全停止運作，不會再有任何新內容被錄進去。");
-                };
-
-                // 🎯 AI 面試官虛擬人（Simli）：這段一定要在 GotoAsync 導航「之前」用 AddInitScriptAsync 佈署，
-                //    才能保證搶在 Jitsi 自己呼叫 getUserMedia 之前，把攔截裝好。
-                //    如果沒設定 Simli:ApiKey / Simli:FaceId（例如還在測試、還沒申請），就跳過這段，
-                //    AI 面試官會照舊用原本的靜態 .y4m 假攝影機檔案，不影響其他功能。
-                //
-                //    🐛 這輪修正：simli-client 這個套件不再從任何第三方 CDN 動態載入（jsDelivr、esm.sh
-                //    都會因為套件本身的大小寫 bug 在 Linux 環境打包失敗），改成用本地 esbuild 預先打包好、
-                //    修過那個 bug 的版本。
-                //    🐛 這輪再修正：原本放在自己的 wwwroot/js/ 用 App:BaseUrl 組網址，但本機測試時
-                //    App:BaseUrl 是 localhost（私有位址），會被 Chrome 的 Private Network Access
-                //    安全機制擋下來（公開網站 https://8x8.vc 不能跟私有位址要東西）。改成放到 Cloudflare R2
-                //    一個獨立的公開 bucket（裡面只放這種不含機密資料的靜態檔案，不是存放面試資料那個 bucket），
-                //    用固定的公開網址（Simli:BundleUrl），不管本機測試或部署到 Render 都是同一個網址，
-                //    也不會再踩到 Private Network Access 這個限制。
-                await page.AddInitScriptAsync(RtcAudioHookScript); // 一定要在導航前，才攔得到第一個 PeerConnection
-                var simliApiKey = _config["Simli:ApiKey"];
-                var simliFaceId = _config["Simli:FaceId"];
-                if (!string.IsNullOrEmpty(simliApiKey) && !string.IsNullOrEmpty(simliFaceId))
-                {
-                    try
-                    {
-                        var simliBundleUrl = _config["Simli:BundleUrl"]
-                            ?? throw new InvalidOperationException("appsettings.json 缺少 Simli:BundleUrl 設定");
-                        var simliConfigScript =
-                            $"window.__SIMLI_API_KEY__ = {JsonSerializer.Serialize(simliApiKey)};\n" +
-                            $"window.__SIMLI_FACE_ID__ = {JsonSerializer.Serialize(simliFaceId)};\n" +
-                            $"window.__SIMLI_BUNDLE_URL__ = {JsonSerializer.Serialize(simliBundleUrl)};";
-                        await page.AddInitScriptAsync(simliConfigScript);
-                        await page.AddInitScriptAsync(SimliInitScript);
-                        Console.WriteLine($"[JitsiBot] 房間 {roomCode} 已佈署 Simli 虛擬人初始化腳本（套件檔案來源：{simliBundleUrl}）。");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[JitsiBot] 房間 {roomCode} 佈署 Simli 腳本失敗，AI 面試官將退回使用靜態假攝影機檔案：{ex.Message}");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 沒有設定 Simli:ApiKey / Simli:FaceId，AI 面試官使用原本的靜態假攝影機檔案。");
-                }
-
-                // 🐛 這輪修正：這裡原本也是寫死一組 JaaS AppID，跟 Join.cshtml 犯了同一個問題——
-                //    不管 appsettings.json 換成什麼新帳號，AI 面試官實際連過去的還是這組寫死的舊帳號，
-                //    導致「換新 JaaS 帳號，額度還是顯示用完」，因為根本沒真的連到新帳號。
-                //    改成統一從設定檔讀（跟 _jaasJwt 簽發 JWT 時讀的是同一個設定值），兩邊才會一致。
-                string jitsiDomain = "https://8x8.vc";
-                string tenantId = _config["JaaS:AppId"]
-                    ?? throw new InvalidOperationException("appsettings.json 缺少 JaaS:AppId 設定");
-
-                // 🎯 JaaS 需要 JWT 才能真的加入會議，AI 面試官不是主持人，moderator=false
-                string botJwt = _jaasJwt.GenerateToken(roomCode, "ai-interviewer", "AI 面試官", isModerator: false);
-
-                // 組合完整的 URL 並注入跳過確認畫面參數 + JWT
-                //   🎯 disableTileView：讓畫面固定用「目前誰在說話就放大顯示、其他人縮圖排在旁邊」的排版，
-                //      不要讓 Jitsi 切成棋盤格 tile view（新版 Jitsi 在人數少時有時會預設用 tile view）
-                //   🐛 之前試過兩種「跳過預備加入畫面」的設定，都有各自的問題，這輪確認兩個都不能留：
-                //      1. config.prejoinConfig.enabled=false（新版巢狀設定）：會讓 Jitsi 完全不去呼叫
-                //         getUserMedia（log 明確警告「implies starting without media」），連 Simli 的
-                //         getUserMedia 攔截都沒機會生效。
-                //      2. config.prejoinPageEnabled=false（舊版 flat 設定，上一輪改用這個）：這輪查出來
-                //         它也沒有真的讓 Jitsi 跳過預備加入畫面（log 顯示 prejoinVisible 一直是 true），
-                //         還會誘發 Jitsi 內部一個「想自動跳轉去正式會議室、但組網址失敗」的錯誤
-                //         （「didn't redirect to [undefined], reason: Failed to construct 'URL': Invalid URL」），
-                //         導致 AI 面試官卡在預備加入的本地預覽畫面，永遠沒有真的加入會議室——
-                //         這才是「Simli 連線正常、getUserMedia 也正常，但人類端完全看不到這個參與者」的真正原因。
-                //      兩個都拿掉之後，改成老實依賴下面「等預備加入畫面按鈕真的渲染出來再點」這條路，
-                //      不要再嘗試用 URL 參數走捷徑跳過這個畫面。
-                string targetUrl = $"{jitsiDomain}/{tenantId}/{roomCode}?jwt={botJwt}#config.startWithAudioMuted=true&config.startWithVideoMuted=false&config.lobby.enableLobby=false&config.disableTileView=true&config.channelLastN=-1";
-
-                Console.WriteLine($"[JitsiBot 導航] AI 面試官正在前往官方雲端會議室：{targetUrl}");
-
-
-                await page.GotoAsync(targetUrl, new PageGotoOptions { Timeout = 60000 });
-
-                // 🐛 這輪修正：原本這裡導航完立刻就去找「加入會議」按鈕，8 秒找不到就放棄、
-                //    當作「沒有預備加入畫面，已直接進入會議」。但實測 createInitialLocalTracks
-                //    （Jitsi 準備本地攝影機預覽，也就是預備加入畫面的按鈕真正可以點的前提）
-                //    要花超過 12 秒才會跑完，我們原本 8 秒就放棄，等於按鈕根本還沒渲染出來就已經
-                //    判定「沒看到」，導致 AI 面試官之後永遠卡在預備加入畫面沒人去點它。
-                //    改成把逾時拉長到 45 秒（足以涵蓋 local track 準備的時間，留一些餘裕），
-                //    而且不再需要那個「保險」的説法——這個按鈕現在是唯一真正會被觸發的路徑，
-                //    找不到才代表真的有問題，要看清楚 log。
-                try
-                {
-                    var joinButton = page.Locator(
-                        "[data-testid='prejoin.joinMeeting'], " +
-                        "button:has-text('加入會議'), button:has-text('Join Meeting'), button:has-text('Join meeting')"
-                    );
-                    await joinButton.First.ClickAsync(new LocatorClickOptions { Timeout = 45000 });
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 偵測到「預備加入」畫面，已自動點擊加入。");
-                    await page.WaitForTimeoutAsync(1500); // 給一點時間讓畫面真的切換進會議室
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[JitsiBot] ⚠️ 房間 {roomCode} 在 45 秒內沒有找到「加入會議」按鈕，這次不能再當作「正常直接進入會議」——" +
-                        $"根據這輪查到的狀況，AI 面試官很可能還是卡在預備加入畫面沒有真的進入會議室，請務必檢查除錯截圖跟後面的參與者驗證輪詢結果。錯誤：{ex.Message}");
-                }
-
-                // 🎯 除錯用：不管有沒有點到按鈕，都存一張目前畫面的截圖，
-                //    下次如果錄影內容還是不對，直接看這張截圖就知道機器人卡在哪個畫面，不用再靠猜的
-                try
-                {
-                    var debugDir = Path.Combine(Path.GetTempPath(), "jitsibot_debug");
-                    Directory.CreateDirectory(debugDir);
-                    var debugPath = Path.Combine(debugDir, $"{roomCode}_after_join.png");
-                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = debugPath });
-                    Console.WriteLine($"[JitsiBot] 除錯截圖已存到：{debugPath}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[JitsiBot] 存除錯截圖失敗：{ex.Message}");
-                }
-
-                // 🐛 這輪新增：找到「AI 面試官嘴型有動、但完全沒聲音」的真正根因——
-                //    上面導航網址裡的 config.startWithAudioMuted=true，讓 AI 面試官一進會議室
-                //    麥克風就是靜音狀態（Jitsi 層級的靜音，不是 Simli 本身的問題），而整支程式
-                //    從頭到尾都沒有任何地方把它解除靜音。Simli 的嘴型動畫是在 AI 面試官自己的
-                //    瀏覽器本地播放／算繪，不受這個靜音狀態影響，所以會看到嘴型動，但因為音訊軌道
-                //    被 Jitsi 擋著沒送出去，其他人完全聽不到聲音——這跟語音合成本身是否成功是
-                //    兩個獨立的問題，前面修好的 TTS 只是讓聲音「有產生」，這裡才是讓聲音「真的送得出去」。
-                //    加入會議之後，輪詢等待 window.APP.conference.muteAudio 這個 Jitsi 內部 API
-                //    準備好（最多等 10 秒），準備好就呼叫 muteAudio(false) 解除靜音。
-                try
-                {
-                    var unmuteResult = await page.EvaluateAsync<string>(@"
-                        (async () => {
-                            for (let i = 0; i < 20; i++) {
-                                if (window.APP && window.APP.conference && typeof window.APP.conference.muteAudio === 'function') {
-                                    try {
-                                        const wasMuted = typeof window.APP.conference.isLocalAudioMuted === 'function'
-                                            ? window.APP.conference.isLocalAudioMuted() : null;
-                                        window.APP.conference.muteAudio(false);
-                                        return '成功呼叫 muteAudio(false)，呼叫前 isLocalAudioMuted=' + wasMuted;
-                                    } catch (e) {
-                                        return '呼叫 muteAudio(false) 本身噴例外：' + e.message;
-                                    }
-                                }
-                                await new Promise(r => setTimeout(r, 500));
-                            }
-                            return '等了 10 秒，window.APP.conference.muteAudio 還是不存在，放棄解除靜音';
-                        })()
-                    ");
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 嘗試解除 AI 面試官麥克風靜音：{unmuteResult}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[JitsiBot] 解除 AI 面試官麥克風靜音時發生例外（房間 {roomCode}）：{ex.Message}");
-                }
-
-                // 🎯 注入自訂錄影機：用 Canvas 每禎把畫面上所有人的 <video> 畫格畫進去（簡單網格排版），
-                //    用 Web Audio API 把所有人的 <video>/<audio> 元素的聲音混在一起，
-                //    兩個一起餵進同一個 MediaRecorder，才會是「有畫面又有聲音」的完整檔案。
-                //    用 MutationObserver 持續偵測新加入的參與者（他們的 <video>/<audio> 元素是動態加進 DOM 的）。
-                try
-                {
-                    // 🐛 MediaRecorder 產出的 webm 預設沒有寫入正確時長中繼資料，播放器沒辦法拖拉進度條，
-                    //    跟舊版真人螢幕分享錄影當初踩過的坑一樣，這裡也要注入同一個函式庫來修正
-                    await page.AddScriptTagAsync(new PageAddScriptTagOptions
-                    {
-                        Url = "https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.js"
-                    });
-                    await page.EvaluateAsync(RecorderInitScript);
-                    RecordingStartTimes[roomCode] = DateTime.Now; // 影片 0 秒對應的時間，字幕對齊用
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 自訂錄影機（畫面+聲音）已啟動。");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[JitsiBot] 啟動自訂錄影機失敗：{ex.Message}（這場面試會沒有錄影）");
-                }
-
-                lock (_activeBotsLock)
-                {
-                    _activeBots[roomCode] = new BotInstance
-                    {
-                        PlaywrightInstance = localPlaywright,
-                        BrowserInstance = localBrowser,
-                        ContextInstance = localContext,
-                        PageInstance = page
-                    };
-                }
-
-                // 🐛 這輪修正：這行原本是「無條件」印成功，只代表上面這一大段 try 區塊沒有噴例外
-                //   （頁面有載入、截圖有存到、錄影腳本有啟動），完全沒有真的去確認 Jitsi 內部
-                //   是不是真的有把這個參與者算進會議室、其他人看不看得到。這是「AI 自己端顯示成功、
-                //   人類端卻整個看不到這個參與者」這個矛盾組合的另一半原因——這句話本來就不是
-                //   在驗證人類端看不看得到，只是在驗證我們自己的自動化腳本有沒有跑完。
-                //   改成直接問 Jitsi 內部的會議物件（window.APP.conference._room）自己認為
-                //   現在會議室裡有幾個人，這個數字才是跟人類端畫面實際同步的、可信的訊號。
-                // 🐛 這輪修正（上次的驗證下得太早）：實測發現這個時間點 Jitsi 內部甚至都還沒真正
-                //   呼叫 conference.init / createInitialLocalTracks（那個時間點通常在頁面導航完成後
-                //   還要再等 10 秒左右），所以在這裡查 room.getParticipants() 幾乎一定會拿到
-                //   'no-room-object'——不是加入失敗，是問得太早，room 物件根本還沒被建立。
-                //   改成輪詢：每 2 秒查一次，最多等 20 秒，等到 room 物件出現、參與者數字穩定下來
-                //   （或逾時）才停止，過程中每次都印出來，這樣才能看出真正的加入時間點跟結果，
-                //   而不是只憑「問一次剛好問到什麼」來下結論。
-                try
-                {
-                    const int maxAttempts = 10;
-                    for (int attempt = 1; attempt <= maxAttempts; attempt++)
-                    {
-                        await page.WaitForTimeoutAsync(1000);
-                        var participantCheck = await page.EvaluateAsync<string>(@"() => {
-                            try {
-                                const room = window.APP && window.APP.conference && window.APP.conference._room;
-                                if (!room || typeof room.getParticipants !== 'function') return 'no-room-object';
-                                const others = room.getParticipants().map(p => p.getDisplayName ? p.getDisplayName() : p.getId());
-                                const joined = typeof room.isJoined === 'function' ? room.isJoined() : 'unknown';
-                                return JSON.stringify({ isJoined: joined, othersCount: others.length, others: others });
-                            } catch (e) { return 'error:' + e.message; }
-                        }");
-                        Console.WriteLine($"[JitsiBot 驗證 第{attempt}次/共{maxAttempts}次，約{attempt * 2}秒後] 房間 {roomCode} 從 AI 面試官自己視角查到的會議室狀態：{participantCheck}");
-
-                        // room 物件出現、而且看得到至少一個其他參與者，就代表確認加入成功，不用再繼續等
-                        if (participantCheck.Contains("othersCount") && !participantCheck.Contains("\"othersCount\":0"))
-                        {
-                            Console.WriteLine($"[JitsiBot 驗證] 房間 {roomCode} 已確認 AI 面試官視角看得到其他參與者，停止輪詢。");
-                            break;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[JitsiBot 驗證] 房間 {roomCode} 查詢會議室參與者名單失敗（不影響主流程，但代表這次沒辦法交叉驗證）：{ex.Message}");
-                }
-
-                // 🐛 這輪新增：加入確認成功了，但畫面上這個參與者的格子卻只顯示大頭貼圓圈、不是真的畫面。
-                //    Jitsi 只有在認定「這條 video track 沒有真的在送畫面」時才會顯示大頭貼，所以直接去問
-                //    Jitsi 自己記錄的本地視訊 track 狀態（muted／enabled／readyState／實際解析度），
-                //    比用眼睛看畫面猜測準確很多——這幾個欄位任何一個不對勁，都能直接對應到根因：
-                //    muted=true 通常代表 Jitsi 自己判定沒收到畫面訊號而自動靜音；
-                //    readyState 不是 'live' 代表 track 中途死掉了；width/height 是 0 代表根本沒有真的產生畫面幀。
-                try
-                {
-                    var videoTrackState = await page.EvaluateAsync<string>(@"() => {
-                        try {
-                            const room = window.APP && window.APP.conference && window.APP.conference._room;
-                            if (!room) return 'no-room-object';
-                            const localTracks = typeof room.getLocalTracks === 'function' ? room.getLocalTracks() : [];
-                            const videoTrack = localTracks.find(t => t.getType && t.getType() === 'video');
-                            if (!videoTrack) return 'no-local-video-track';
-                            const rtcTrack = videoTrack.track || (videoTrack.stream && videoTrack.stream.getVideoTracks && videoTrack.stream.getVideoTracks()[0]);
-                            const settings = rtcTrack && rtcTrack.getSettings ? rtcTrack.getSettings() : null;
-                            return JSON.stringify({
-                                jitsiMuted: typeof videoTrack.isMuted === 'function' ? videoTrack.isMuted() : 'unknown',
-                                rtcEnabled: rtcTrack ? rtcTrack.enabled : 'no-rtc-track',
-                                rtcMuted: rtcTrack ? rtcTrack.muted : 'no-rtc-track',
-                                readyState: rtcTrack ? rtcTrack.readyState : 'no-rtc-track',
-                                width: settings ? settings.width : null,
-                                height: settings ? settings.height : null,
-                                frameRate: settings ? settings.frameRate : null
-                            });
-                        } catch (e) { return 'error:' + e.message; }
-                    }");
-                    Console.WriteLine($"[JitsiBot 視訊診斷] 房間 {roomCode} 的本地視訊 track 狀態：{videoTrackState}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[JitsiBot 視訊診斷] 房間 {roomCode} 查詢視訊 track 狀態失敗：{ex.Message}");
-                }
-
-                Console.WriteLine($"[JitsiBot Success] 房間 {roomCode} 的 AI 面試官瀏覽器自動化流程已跑完，並啟動錄影（⚠️ 這句話只代表我們自己的腳本沒出錯，不代表 Jitsi 端真的把這個參與者算進會議室——請看上面幾行「[JitsiBot 驗證]」的實際參與者數字才是可信的訊號）！");
-
-                // 🎯 這輪新增（使用者這輪明確要求）：AI 面試官一加入會議室、確認其他參與者也在場，
-                //    就主動開口打招呼，不用再乾等冷場計時器跑完才能知道整條「TTS→解除靜音→
-                //    Simli 播放」的鏈路到底通不通。這跟前面使用者否決掉的「手動按鈕」不一樣——
-                //    不是加一個新的操作介面，是讓 AI 面試官在「剛加入會議室」這個本來就存在的時間點，
-                //    多做一件在真實面試情境下也合理的事（主動開場白），跟冷場自動觸發（triggerAI）
-                //    是兩條獨立的路徑，不會互相影響，也不會改到既有的冷場偵測邏輯。
-                //    SpeakAsync 內部本來就有完整的錯誤處理（TTS 失敗、Simli 沒連上都只是安靜略過、
-                //    不會讓這整個加入流程出錯），所以這裡不用額外包 try/catch。
-                _ = Task.Run(async () =>
-                {
-                    await Task.Delay(1500); // 留一點緩衝，讓解除靜音、錄影機都先穩定下來
-                    // 🎯 開場時間：以「主持人進會議的時間 + 20 秒」為準；AI 比較晚進來、主持人早就在了，就馬上開場，不再另外多等。
-                    //    （沒有任何人進場時才等，最久 5 分鐘）
-                    try
-                    {
-                        var waitStart = DateTime.UtcNow;
-                        while ((DateTime.UtcNow - waitStart).TotalMinutes < 5)
-                        {
-                            using var wscope = _scopeFactory.CreateScope();
-                            var wdb = wscope.ServiceProvider.GetRequiredService<InterviewProject.Data.AppDbContext>();
-                            var wroom = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
-                                wdb.Rooms, r => r.JitsiRoomName == roomCode);
-                            if (wroom == null) break;
-                            var joinedList = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
-                                wdb.RoomParticipants.Where(p => p.RoomId == wroom.Id && p.Role != InterviewProject.Models.ParticipantRole.AI && p.JoinedAt != null));
-                            if (joinedList.Count > 0)
-                            {
-                                var hostRow = joinedList.FirstOrDefault(p => p.Role == InterviewProject.Models.ParticipantRole.Manager && p.EmployeeId == wroom.HostEmployeeId);
-                                var refJoined = (hostRow ?? joinedList.OrderBy(p => p.JoinedAt).First()).JoinedAt!.Value;
-                                double e1 = (DateTime.Now - refJoined).TotalSeconds, e2 = (DateTime.UtcNow - refJoined).TotalSeconds;
-                                double elapsed = e1 < 0 ? e2 : (e2 < 0 ? e1 : Math.Min(e1, e2)); // 不確定資料庫存的是本地還是 UTC 時間，取合理的那個
-                                double remain = Math.Max(0, Math.Min(20, 20 - elapsed));
-                                Console.WriteLine($"[JitsiBot] 房間 {roomCode}：進場者已在場 {elapsed:0} 秒，再等 {remain:0} 秒開場。");
-                                if (remain > 0) await Task.Delay(TimeSpan.FromSeconds(remain));
-                                break;
-                            }
-                            // 資料庫還沒記到有人進場（MarkJoined 沒成功等情況）：改看 AI 自己在會議室裡看得到幾個人，
-                            // 看得到別人就不用再等資料庫了，最多再等 5 秒就開場
-                            try
-                            {
-                                var others = await page.EvaluateAsync<int>(@"() => { try { const r = window.APP && window.APP.conference && window.APP.conference._room; return r && r.getParticipants ? r.getParticipants().length : 0; } catch (e) { return 0; } }");
-                                if (others > 0)
-                                {
-                                    Console.WriteLine($"[JitsiBot] 房間 {roomCode}：資料庫沒有進場記錄，但 AI 自己看得到 {others} 位其他人，5 秒後開場。");
-                                    await Task.Delay(5000);
-                                    break;
-                                }
-                            }
-                            catch { }
-                            if ((DateTime.UtcNow - waitStart).TotalSeconds > 20) { Console.WriteLine($"[JitsiBot] 房間 {roomCode}：等了 20 秒還是看不到任何人，先開場。"); break; }
-                            await Task.Delay(2000);
-                        }
-                    }
-                    catch (Exception ex) { Console.WriteLine($"[JitsiBot] 等主持人的檢查失敗，直接開場：{ex.Message}"); }
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} AI 面試官準備開口打招呼（一進會議室就講，方便單人測試時直接確認聲音有沒有通）。");
-                    const string greeting = "哈囉，大家好，我是今天的 AI 面試官，很高興加入這場面試，我們開始吧。";
-                    // 🎯 開場白是 AI 面試官自己直接講的，不會經過主持人瀏覽器的「AI 說話」廣播，
-                    //    所以要自己把這句話存進逐字稿暫存。⚠️ 一定要「真的講出去了」才存——
-                    //    之前是先存再講，結果語音失敗時逐字稿還是有這句話，造成「沒聲音但逐字稿有」。
-                    var greetStartedAt = DateTime.Now;
-                    var spoke = await SpeakAsync(roomCode, greeting);
-                    if (spoke)
-                    {
-                        try
-                        {
-                            using var scope = _scopeFactory.CreateScope();
-                            var db = scope.ServiceProvider.GetRequiredService<InterviewProject.Data.AppDbContext>();
-                            db.TranscriptChunks.Add(new InterviewProject.Models.TranscriptChunkRecord
-                            {
-                                RoomCode = roomCode,
-                                Speaker = "AI 面試官",
-                                Text = greeting,
-                                TimeLabel = greetStartedAt.ToString("tt h:mm:ss", new System.Globalization.CultureInfo("zh-TW")),
-                                ReceivedAt = greetStartedAt
-                            });
-                            await db.SaveChangesAsync();
-                        }
-                        catch (Exception ex) { Console.WriteLine($"[JitsiBot] 開場白寫入逐字稿失敗：“{ex.Message}”"); }
-                    }
-                    else Console.WriteLine($"[JitsiBot] 房間 {roomCode} 開場白沒有成功講出去，不寫入逐字稿。");
-                });
+                if (byTitle.size) wrap.appendChild(cards);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[JitsiBot Error] 啟動失敗: {ex.Message}");
-                if (localContext != null) { try { await localContext.CloseAsync(); } catch { } }
-                if (localBrowser != null) await localBrowser.CloseAsync();
-                localPlaywright?.Dispose();
-                lock (_activeBotsLock) { _activeBots.Remove(roomCode); } // 佔位或半成品都要清掉，不然這個房間會被卡死永遠不能重試
-                throw;
-            }
+            text.split(/\r?\n/).forEach(raw => {
+                let line = clean(raw.replace(/^\s+/, ' ')).trim(); if (!line) return;
+                if (/^[【\[]?[一二三四五六七八九十]+、/.test(line) || /^【.+】$/.test(line)) { wrap.appendChild(el('div', 'rpt-h', line.replace(/[【】]/g, ''))); return; }
+                if (/^═+/.test(line)) { wrap.appendChild(el('div', 'rpt-h', line.replace(/═+/g, '').trim())); return; }
+                const sc = line.match(/^AI\s*綜合評分[：:]\s*(\d+)\s*分/);
+                if (sc) { wrap.appendChild(el('div', 'rpt-score', 'AI 綜合評分　' + sc[1] + ' 分')); return; }
+                if (/^\[\[\/?SCORES\]\]/.test(line)) return;
+                if (/^(■|•|·|-)\s*/.test(line) || /^\d+\./.test(line)) { wrap.appendChild(el('div', 'rpt-li', line)); return; }
+                wrap.appendChild(el('div', 'rpt-p', line));
+            });
+            if (!wrap.childNodes.length) return el('div', 'rpt-empty', '這份報告沒有內容');
+            return wrap;
         }
 
-        // 🎯 離開會議室，並回傳這場會議的本機錄影檔路徑（呼叫端負責讀取、上傳到 R2，再自行刪除暫存檔）
-        //    拿不到錄影（例如根本沒成功加入過、或錄影機沒啟動成功）就回傳 null，呼叫端要自己處理「沒有錄影」的情況
-        public async Task<string?> LeaveRoomAsync(string roomCode)
-        {
-            if (string.IsNullOrEmpty(roomCode)) return null;
-            roomCode = roomCode.Trim();
-
-            // 🐛 這輪新增 instance == null 這個檢查：現在 _activeBots 裡的值在「已經佔位、
-            //    但真正的瀏覽器分身還沒啟動完成」這段短暫期間會是 null（見 JoinRoomAsync 的修正），
-            //    這裡沒有一起判斷的話，剛好在這個空窗期呼叫 LeaveRoomAsync 會直接對 null 的
-            //    instance.PageInstance 炸出 NullReferenceException。
-            if (!_activeBots.TryGetValue(roomCode, out var instance) || instance == null) return null;
-
-            string? videoPath = null;
-            try
-            {
-                // 🎯 一定要在頁面關閉「之前」呼叫，停止錄影機、把錄到的內容轉成 base64 拿出來，
-                //    不然頁面一關閉，錄到的內容（存在頁面自己的記憶體裡）就直接消失、什麼都拿不到
-                var dataUrl = await instance.PageInstance.EvaluateAsync<string?>(RecorderStopScript);
-
-                if (!string.IsNullOrEmpty(dataUrl) && dataUrl.Contains(","))
-                {
-                    var base64 = dataUrl.Substring(dataUrl.IndexOf(',') + 1);
-                    var bytes = Convert.FromBase64String(base64);
-
-                    var recordDir = Path.Combine(Path.GetTempPath(), "jitsibot_rec_" + roomCode);
-                    Directory.CreateDirectory(recordDir);
-                    videoPath = Path.Combine(recordDir, "recording.webm");
-                    await File.WriteAllBytesAsync(videoPath, bytes);
-
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 錄影已完成（{bytes.Length / 1024 / 1024}MB）：{videoPath}");
-                }
-                else
-                {
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} 沒有取得錄影內容（錄影機可能沒有成功啟動）。");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[JitsiBot] 取得錄影檔失敗: {ex.Message}");
-            }
-
-            try
-            {
-                await instance.PageInstance.CloseAsync();
-                await instance.ContextInstance.CloseAsync();
-                await instance.BrowserInstance.CloseAsync();
-                instance.PlaywrightInstance.Dispose();
-                Console.WriteLine($"[JitsiBot] 房間 {roomCode} 的 AI 面試官已成功離開並釋放資源。");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[JitsiBot] 釋放資源失敗: {ex.Message}");
-            }
-            finally
-            {
-                _activeBots.Remove(roomCode);
-            }
-
-            return videoPath;
+        function renderVideo(file) {
+            const wrap = document.createElement('div');
+            const v = document.createElement('video');
+            v.controls = true; v.preload = 'metadata'; v.src = file.viewUrl; v.style.cssText = 'width:100%;max-height:60vh;background:#000;border-radius:10px;';
+            if (file.vttUrl) { const tr = document.createElement('track'); tr.kind = 'captions'; tr.srclang = 'zh-Hant'; tr.label = '逐字稿字幕（估算時間，僅供參考）'; tr.src = file.vttUrl; tr.default = true; v.appendChild(tr); }
+            wrap.appendChild(v);
+            const bar = el('div', 'rpt-p'); bar.style.cssText = 'margin-top:10px;';
+            bar.appendChild(el('span', 'rpt-note', '字幕時間為估算值，僅供對照參考'));
+            wrap.appendChild(bar);
+            return wrap;
         }
 
-        // 🐛 這輪新增：讓 AI 面試官「真的開口說話」——把文字轉成語音（Gemini TTS），
-        //    再送進這個房間裡已經連好的 Simli 虛擬人，讓畫面嘴型跟著動。
-        //    這是給「冷場提問」那條邏輯呼叫的（偵測到冷場、Gemini 生成一句問句之後，改叫這個方法，
-        //    而不是像以前那樣只在某個工作人員自己的瀏覽器裡用 SpeechSynthesis 講給自己聽）。
-        //    ⚠️ 沒接 Simli（沒設定 ApiKey/FaceId）或 Simli 連線失敗時，這裡就只是安靜地不做事，
-        //    不會讓面試流程掛掉——冷場提問的文字內容還是會透過原本的邏輯顯示在畫面上給大家看。
-        // 🐛 這輪新增：AI 面試官「現在正在說話中」的狀態，房間代碼 → 是否正在講話。
-        //    用來避免多個地方（例如多個使用者的瀏覽器各自倒數冷場計時、剛好同時倒數到）
-        //    同時觸發 AI 講話，導致疊在一起搶話。RoomController 在真的呼叫 SpeakAsync 之前
-        //    會先檢查這個狀態，是 true 就直接略過這次觸發。
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _speakingRooms = new();
-
-        public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> RecordingStartTimes = new();
-
-        // 距離上一次「會議混音裡聽得到人聲」過了幾秒；null＝無法判斷（AI 不在房間、混音沒在跑、還沒聽到過）
-        public async Task<double?> GetAudibleSilenceSecondsAsync(string roomCode)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(roomCode) || !_activeBots.TryGetValue(roomCode.Trim(), out var inst) || inst == null) return null;
-                var ms = await inst.PageInstance.EvaluateAsync<double>("() => window.__lastAudibleMs ? (Date.now() - window.__lastAudibleMs) : -1");
-                if (ms < 0) return null;
-                return ms / 1000.0;
-            }
-            catch { return null; }
+        // 適性測驗結果：下拉選單切換求職者（內容由伺服器產生好放在 file.items）
+        function renderAptitude(file) {
+            const wrap = document.createElement('div');
+            const bar = el('div', 'rpt-p'); bar.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:16px;';
+            bar.appendChild(el('label', null, '求職者：'));
+            const sel = document.createElement('select'); sel.style.cssText = 'padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;';
+            (file.items || []).forEach((it, i) => { const op = document.createElement('option'); op.value = i; op.textContent = it.name; sel.appendChild(op); });
+            bar.appendChild(sel); wrap.appendChild(bar);
+            const box = document.createElement('div'); wrap.appendChild(box);
+            const draw = () => {
+                const it = (file.items || [])[sel.value]; box.innerHTML = it ? it.html : '';
+                const dl = document.getElementById('rptDl');
+                if (it) {
+                    const txt = it.name + ' 適性測驗結果（1~5 分）\r\n' + (it.text || '沒有適性測驗結果');
+                    if (dl._blobUrl) URL.revokeObjectURL(dl._blobUrl);
+                    dl._blobUrl = URL.createObjectURL(new Blob(['\ufeff' + txt], { type: 'text/plain;charset=utf-8' }));
+                    dl.href = dl._blobUrl; dl.setAttribute('download', it.name + '_適性測驗結果.txt'); dl.textContent = '下載此份 txt'; dl.style.display = 'inline-block';
+                }
+            };
+            sel.onchange = draw; draw();
+            return wrap;
         }
 
-        // 目前有 AI 面試官在場（會議進行中）的房間代碼
-        public List<string> ActiveRoomCodes()
-        {
-            lock (_activeBotsLock) return _activeBots.Where(kv => kv.Value != null).Select(kv => kv.Key).ToList();
+        async function show(file) {
+            const dl = document.getElementById('rptDl');
+            dl.removeAttribute('download');
+            if (file.downloadUrl) { dl.href = file.downloadUrl; dl.textContent = file.kind === 'video' ? '下載影片' : '下載此份 txt'; dl.style.display = 'inline-block'; } else dl.style.display = 'none';
+            if (file.kind === 'video') { body.replaceChildren(renderVideo(file)); body.scrollTop = 0; return; }
+            if (file.kind === 'aptitude') { body.replaceChildren(renderAptitude(file)); body.scrollTop = 0; return; }
+            body.replaceChildren(el('div', 'rpt-empty', '讀取中…'));
+            try {
+                if (!(file.viewUrl in cache)) { const r = await fetch(file.viewUrl); if (!r.ok) throw new Error('HTTP ' + r.status); cache[file.viewUrl] = await r.text(); }
+                const t = cache[file.viewUrl];
+                body.replaceChildren(file.kind === 'transcript' ? renderTranscript(t) : renderAnalysis(t, file.kind === 'compare'));
+                body.scrollTop = 0;
+            } catch (e) { body.replaceChildren(el('div', 'rpt-empty', '讀取失敗，請改用「下載此份 txt」查看')); }
         }
 
-        // 擷取房間裡每位求職者目前的視訊畫面（標籤是 Jitsi 顯示名稱，例如「求職者-aa」）
-        public async Task<List<(string Label, byte[] Jpeg)>> CaptureFacesAsync(string roomCode)
-        {
-            var res = new List<(string, byte[])>();
-            try
-            {
-                BotInstance? inst;
-                lock (_activeBotsLock) { if (!_activeBots.TryGetValue(roomCode.Trim(), out inst) || inst == null) return res; }
-                var el = await inst.PageInstance.EvaluateAsync<JsonElement>("() => (window.__grabFaces ? window.__grabFaces() : [])");
-                if (el.ValueKind != JsonValueKind.Array) return res;
-                foreach (var it in el.EnumerateArray())
-                {
-                    var label = it.TryGetProperty("label", out var l) ? l.GetString() : null;
-                    var b64 = it.TryGetProperty("jpeg", out var j) ? j.GetString() : null;
-                    if (string.IsNullOrEmpty(label) || string.IsNullOrEmpty(b64)) continue;
-                    res.Add((label!, Convert.FromBase64String(b64!)));
-                }
-            }
-            catch { }
-            return res;
+        function open(btn) {
+            let files = []; try { files = JSON.parse(btn.dataset.files || '[]'); } catch { }
+            document.getElementById('rptTitle').textContent = '面試會議結果記錄和分析';
+            document.getElementById('rptSub').textContent = btn.dataset.title || '';
+            tabs.replaceChildren();
+            if (!files.length) { body.replaceChildren(el('div', 'rpt-empty', '尚無檔案')); ov.classList.add('open'); return; }
+            files.forEach((f, i) => {
+                const b = el('button', 'rpt-tab' + (i === 0 ? ' active' : ''), f.label); b.type = 'button';
+                b.onclick = () => { tabs.querySelectorAll('.rpt-tab').forEach(x => x.classList.remove('active')); b.classList.add('active'); show(f); };
+                tabs.appendChild(b);
+            });
+            ov.classList.add('open'); show(files[0]);
         }
-
-        // 目前在會議室裡的求職者名字（Jitsi 顯示名稱去掉「求職者-」）
-        public async Task<List<string>> GetPresentJobseekerNamesAsync(string roomCode)
-        {
-            var res = new List<string>();
-            try
-            {
-                BotInstance? inst;
-                lock (_activeBotsLock) { if (!_activeBots.TryGetValue((roomCode ?? "").Trim(), out inst) || inst == null) return res; }
-                var el = await inst.PageInstance.EvaluateAsync<JsonElement>("() => (window.__jsLabels ? window.__jsLabels() : [])");
-                if (el.ValueKind != JsonValueKind.Array) return res;
-                foreach (var it in el.EnumerateArray())
-                {
-                    var l = it.GetString();
-                    if (!string.IsNullOrWhiteSpace(l) && l.StartsWith("求職者-")) res.Add(l.Substring(4).Trim());
-                }
-            }
-            catch { }
-            return res.Distinct().ToList();
-        }
-
-        public bool IsSpeaking(string roomCode)
-            => !string.IsNullOrEmpty(roomCode) && _speakingRooms.TryGetValue(roomCode.Trim(), out var v) && v;
-
-        // 🐛 這輪新增：這次測試「AI 面試官重複出現」的畫面模式（一開始就重複、整段穩定存在，
-        //    跟殘影/搶跑那兩種模式都不一樣）讓我懷疑是**上一場測試殘留的舊分身，根本沒被關掉，
-        //    一直卡在同一個 Jitsi 房間裡**。這通常發生在開發時直接把伺服器程序關掉（Ctrl+C、
-        //    Visual Studio 按停止、或當機）而不是走正常的結束流程——Playwright 開的無頭瀏覽器
-        //    是獨立的作業系統行程，.NET 這邊的記憶體字典（_activeBots）歸零了，不代表那個瀏覽器
-        //    行程真的被關掉，它會繼續留在會議室裡，變成一個沒人知道存在、但畫面上真實存在的
-        //    「AI 面試官」分身。
-        //    加這個方法，掛在伺服器正常關閉的生命週期事件上（見 Program.cs），
-        //    伺服器收到關閉信號時會先把所有還開著的瀏覽器分身乾淨地關掉，
-        //    降低這種「殘留分身跨測試留下來」的機率。
-        //    ⚠️ 這個只能處理「伺服器有機會走到正常關閉流程」的情況（例如 Ctrl+C、正常重啟）；
-        //    如果是当機、被工作管理員強制結束程序，還是會留下孤兒行程，那種情況目前只能請你
-        //    自己去工作管理員手動檢查有沒有殘留的 chrome.exe / headless_shell.exe 並關掉。
-        public async Task CloseAllBotsAsync()
-        {
-            List<BotInstance> instances;
-            lock (_activeBotsLock)
-            {
-                instances = _activeBots.Values.Where(v => v != null).ToList()!;
-                _activeBots.Clear();
-            }
-
-            foreach (var instance in instances)
-            {
-                try
-                {
-                    if (instance.ContextInstance != null) await instance.ContextInstance.CloseAsync();
-                    if (instance.BrowserInstance != null) await instance.BrowserInstance.CloseAsync();
-                    instance.PlaywrightInstance?.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[JitsiBot] CloseAllBotsAsync：關閉某個分身時發生例外（忽略，繼續關下一個）：{ex.Message}");
-                }
-            }
-            Console.WriteLine($"[JitsiBot] CloseAllBotsAsync：已嘗試關閉 {instances.Count} 個還在運作的 AI 面試官分身。");
-        }
-
-        // 🎯 打斷機制：有人開口時，馬上停止 AI 說話（不用等知道對方說了什麼）
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _speakCts = new();
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastStopUtc = new();
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _interrupted = new();
-
-        public bool ConsumeInterrupted(string roomCode)
-            => !string.IsNullOrEmpty(roomCode) && _interrupted.TryRemove(roomCode.Trim(), out var v) && v;
-
-        public async Task<bool> StopSpeakingAsync(string roomCode)
-        {
-            if (string.IsNullOrEmpty(roomCode)) return false;
-            roomCode = roomCode.Trim();
-            _lastStopUtc[roomCode] = DateTime.UtcNow;
-            if (!IsSpeaking(roomCode)) return false;
-            _interrupted[roomCode] = true;
-            try { if (_speakCts.TryGetValue(roomCode, out var cts)) cts.Cancel(); } catch { }
-            try
-            {
-                if (_activeBots.TryGetValue(roomCode, out var instance) && instance != null)
-                    await instance.PageInstance.EvaluateAsync<bool>("(() => window.__simliStop ? window.__simliStop() : false)()");
-            }
-            catch (Exception ex) { Console.WriteLine($"[JitsiBot] StopSpeakingAsync 失敗（房間 {roomCode}）：{ex.Message}"); }
-            Console.WriteLine($"[JitsiBot] 房間 {roomCode} 有人開口，AI 面試官已被打斷、停止說話。");
-            return true;
-        }
-
-        public async Task<bool> SpeakAsync(string roomCode, string text, Func<Task>? onAudioStart = null, Func<Task<bool>>? shouldAbort = null)
-        {
-            if (string.IsNullOrEmpty(roomCode) || string.IsNullOrWhiteSpace(text)) return false;
-            roomCode = roomCode.Trim();
-
-            // 🐛 這輪新增：防搶話保險——雖然 RoomController 那邊已經先擋過一次，這裡在真正
-            //    送出語音之前再擋一次（就算被某個地方繞過檢查直接呼叫這個方法，也不會疊講）。
-            if (_speakingRooms.GetOrAdd(roomCode, false))
-            {
-                Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 的 AI 面試官目前正在說話中，這次的內容略過（避免搶話）：「{text}」");
-                return false;
-            }
-            _speakingRooms[roomCode] = true;
-            var speakStartUtc = DateTime.UtcNow;
-            var speakCts = new CancellationTokenSource();
-            _speakCts[roomCode] = speakCts;
-            _interrupted.TryRemove(roomCode, out _);
-
-            try
-            {
-                // 🐛 這輪新增 instance == null 這個檢查，理由跟 LeaveRoomAsync 那邊一樣：
-                //    佔位期間 instance 會是 null，沒擋住的話下面用到 instance.PageInstance 會炸掉。
-                if (!_activeBots.TryGetValue(roomCode, out var instance) || instance == null)
-                {
-                    Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 沒有正在運作的 AI 面試官，略過。");
-                    return false;
-                }
-
-                using var scope = _scopeFactory.CreateScope();
-                var gemini = scope.ServiceProvider.GetRequiredService<GeminiService>();
-                // 🎯 語音改成可設定（appsettings 的 Gemini:TtsVoice），不用改程式碼就能換聲音試聽。
-                //    ⚠️ 我沒辦法實際聽聲音來確認哪個預設語音的音色、性別聽起來最自然，
-                //    Gemini TTS 的各個語音名稱在不同版本文件上的描述可能已經跟訓練資料不同步，
-                //    建議實際各生成一小段來聽過再決定，appsettings 沒設定時預設用 "Kore"。
-                var voiceName = _config["Gemini:TtsVoice"];
-                var audioBytes = string.IsNullOrWhiteSpace(voiceName)
-                    ? await gemini.SynthesizeSpeechAsync(text)
-                    : await gemini.SynthesizeSpeechAsync(text, voiceName);
-                if (audioBytes == null || audioBytes.Length == 0)
-                {
-                    Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 的語音合成失敗或沒有內容，略過。");
-                    return false;
-                }
-
-                // 語音合成期間如果有人已經開口（收到停止），就不要把這句送出去
-                if (speakCts.IsCancellationRequested || (_lastStopUtc.TryGetValue(roomCode, out var stopAt) && stopAt > speakStartUtc))
-                {
-                    _interrupted[roomCode] = true;
-                    Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 語音合成完成時已有人開口，這句話不送出：「{text}」");
-                    return false;
-                }
-
-                // 最後一道關卡：語音合成好了、要開口前，如果這一刻有人正在講話（或話還在轉文字），就不送出，絕不搶話
-                if (shouldAbort != null && await shouldAbort())
-                {
-                    _interrupted[roomCode] = true;
-                    Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 要開口時有人正在講話，這句話不送出：「{text}」");
-                    return false;
-                }
-
-                var base64Audio = Convert.ToBase64String(audioBytes);
-                var speakScript = "(async () => { if (window.__simliSpeak) { await window.__simliSpeak(" +
-                                   JsonSerializer.Serialize(base64Audio) +
-                                   "); return true; } else { console.error('[Simli] __simliSpeak 尚未就緒，目前狀態：' + window.__simliStatus); return false; } })();";
-
-                // 🎯 字幕要等「聲音真的要開始播」才顯示（之前一開始合成就顯示，合成要好幾秒、被打斷或失敗時字幕就和聲音對不上）
-                if (onAudioStart != null) { try { await onAudioStart(); } catch { } }
-                var delivered = await instance.PageInstance.EvaluateAsync<bool>(speakScript);
-                if (!delivered)
-                {
-                    Console.WriteLine($"[JitsiBot] 房間 {roomCode} Simli 還沒就緒，這句話沒有講出去：「{text}」");
-                    return false;
-                }
-                Console.WriteLine($"[JitsiBot] 房間 {roomCode} 的 AI 面試官已送出語音：「{text}」");
-
-                // 🐛 這輪新增：__simliSpeak 內部只是把音訊丟給 Simli 播放（sendAudioData），
-                //    不會等虛擬人真的講完才 resolve，所以呼叫完馬上 return 並不代表話已經講完。
-                //    這裡改成用送出去的 PCM16／24000Hz 音訊本身的長度，換算出實際要講幾秒鐘
-                //    （bytes ÷ 2 為取樣數，除以 24000 取樣率＝秒數），再多留一點緩衝時間才真的
-                //    把「正在說話」的狀態解除。這個時間點很重要——RoomController 會拿它來決定
-                //    什麼時候廣播「AI 說完了」給全場，讓大家的冷場計時器重新啟動的時機才會準。
-                var speechSeconds = (audioBytes.Length / 2.0) / 24000.0;
-                var waitMs = (int)(speechSeconds * 1000) + 700; // +700ms：涵蓋網路/Simli 端一點播放延遲的緩衝
-                await Task.Delay(Math.Max(waitMs, 0), speakCts.Token);
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                return false; // 被打斷
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[JitsiBot] SpeakAsync 失敗（房間 {roomCode}）：{ex.Message}");
-                return false;
-            }
-            finally
-            {
-                _speakingRooms[roomCode] = false;
-                _speakCts.TryRemove(roomCode, out _);
-                speakCts.Dispose();
-            }
-        }
+        const close = () => { ov.classList.remove('open'); body.replaceChildren(); }; // 關閉時一併移除影片，停止播放
+        document.getElementById('rptClose').onclick = close; document.getElementById('rptCloseX').onclick = close;
+        ov.addEventListener('click', e => { if (e.target === ov) close(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+        document.addEventListener('click', e => { const b = e.target.closest('[data-report-btn]'); if (b) open(b); });
+    })();
+</script>
+@* 面試會議結果記錄和分析彈窗：逐字稿（預設）／每位求職者的 AI 分析／AI 分析比較總表／影音（直接播放）。
+   只讀取已存在的 txt 檔文字（走原本的 Room/ViewFile），不改任何檔案內容。
+   頁面上用 data-report-btn 的按鈕開啟，資料放在 data-files（JSON：label, kind, viewUrl, downloadUrl）。 *@
+<style>
+    .rpt-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 3000;
+        padding: 16px;
     }
-}
+
+        .rpt-overlay.open {
+            display: flex;
+        }
+
+    .rpt-window {
+        background: #fff;
+        width: min(1000px, 100%);
+        max-height: 92vh;
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 60px rgba(0,0,0,.25);
+        overflow: hidden;
+    }
+
+    .rpt-head {
+        padding: 22px 28px 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .rpt-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: #1f2937;
+        margin: 0;
+    }
+
+    .rpt-sub {
+        font-size: 13px;
+        color: #6b7280;
+        margin-top: 6px;
+    }
+
+    .rpt-close {
+        border: none;
+        background: none;
+        font-size: 28px;
+        line-height: 1;
+        color: #6b7280;
+        cursor: pointer;
+    }
+
+    .rpt-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+        gap: 2px 4px;
+        padding: 0 20px;
+        border-bottom: 1px solid #e5e7eb;
+        overflow: visible;
+    }
+
+    .rpt-tab {
+        flex-shrink: 0;
+        border: none;
+        background: none;
+        padding: 12px 12px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #6b7280;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        white-space: nowrap;
+    }
+
+        .rpt-tab.active {
+            color: #1f6b8a;
+            border-bottom-color: #1f6b8a;
+        }
+
+    .rpt-body {
+        padding: 22px 28px;
+        overflow-y: auto;
+        flex: 1;
+        color: #374151;
+        font-size: 15px;
+        line-height: 1.85;
+    }
+
+    .rpt-foot {
+        padding: 14px 28px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .rpt-note {
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .rpt-btn {
+        background: #1f6b8a;
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 24px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .rpt-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .rpt-dl {
+        display: none;
+        background: #fff;
+        color: #1f6b8a;
+        border: 1px solid #1f6b8a;
+        border-radius: 10px;
+        padding: 9px 20px;
+        font-weight: 600;
+        font-size: 14px;
+        text-decoration: none;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+        .rpt-dl:hover {
+            background: #eef6fa;
+        }
+
+    .rpt-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+        margin-bottom: 22px;
+    }
+
+    .rpt-card {
+        background: #f5f7fb;
+        border: 1px solid #e5e9f2;
+        border-radius: 14px;
+        padding: 16px 18px;
+    }
+
+        .rpt-card .k {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .rpt-card .v {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .rpt-card .s {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+    .rpt-h {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1f2937;
+        margin: 22px 0 8px;
+        padding-top: 14px;
+        border-top: 1px solid #eef0f4;
+    }
+
+        .rpt-h:first-child {
+            border-top: none;
+            margin-top: 0;
+            padding-top: 0;
+        }
+
+    .rpt-p {
+        margin: 4px 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .rpt-li {
+        margin: 4px 0 4px 14px;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .rpt-score {
+        display: inline-block;
+        background: #1f6b8a;
+        color: #fff;
+        border-radius: 10px;
+        padding: 6px 16px;
+        font-weight: 700;
+        margin: 8px 0;
+    }
+
+    .rpt-line {
+        display: flex;
+        gap: 12px;
+        padding: 6px 0;
+        border-bottom: 1px dashed #eef0f4;
+    }
+
+        .rpt-line .t {
+            color: #9ca3af;
+            font-size: 12px;
+            min-width: 76px;
+            padding-top: 3px;
+        }
+
+        .rpt-line .w {
+            font-weight: 700;
+            min-width: 120px;
+            color: #1f6b8a;
+        }
+
+        .rpt-line.ai .w {
+            color: #7c3aed;
+        }
+
+        .rpt-line .x {
+            flex: 1;
+            word-break: break-word;
+        }
+
+    .rpt-empty {
+        color: #9ca3af;
+        text-align: center;
+        padding: 40px 0;
+    }
+</style>
+<div id="rptOverlay" class="rpt-overlay">
+    <div class="rpt-window">
+        <div class="rpt-head">
+            <div><h2 class="rpt-title" id="rptTitle">面試會議結果記錄和分析</h2><div class="rpt-sub" id="rptSub"></div></div>
+            <button type="button" class="rpt-close" id="rptCloseX">&times;</button>
+        </div>
+        <div class="rpt-tabs" id="rptTabs"></div>
+        <div class="rpt-body" id="rptBody"></div>
+        <div class="rpt-foot">
+            <div><span class="rpt-note">AI 分析結果僅供面試參考，不代表最終錄取決定，實際結果仍由人資及用人主管決定。</span></div>
+            <div class="rpt-actions"><a class="rpt-dl" id="rptDl" href="#">下載</a><button type="button" class="rpt-btn" id="rptClose">關閉報告</button></div>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        const ov = document.getElementById('rptOverlay'), tabs = document.getElementById('rptTabs'), body = document.getElementById('rptBody');
+        const cache = {};
+        const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+        const clean = s => s.replace(/\*\*/g, '').replace(/^\s*[\*\-]\s+/, '').replace(/^\s*#+\s*/, '');
+
+        function renderTranscript(text) {
+            const wrap = document.createElement('div');
+            let n = 0;
+            text.split(/\r?\n/).forEach(raw => {
+                const line = raw.trim(); if (!line) return;
+                const m = line.match(/^\[([^\]]+)\]\s*([^：:]+)[：:]\s*(.*)$/);
+                if (m) {
+                    const row = el('div', 'rpt-line' + (m[2].indexOf('AI') === 0 ? ' ai' : ''));
+                    row.appendChild(el('div', 't', m[1])); row.appendChild(el('div', 'w', m[2])); row.appendChild(el('div', 'x', m[3]));
+                    wrap.appendChild(row); n++;
+                } else wrap.appendChild(el('div', 'rpt-p', line));
+            });
+            if (!wrap.childNodes.length) return el('div', 'rpt-empty', '這份逐字稿沒有內容');
+            return wrap;
+        }
+
+        function renderAnalysis(text, isCompare) {
+            const wrap = document.createElement('div');
+            if (isCompare) {
+                const cards = el('div', 'rpt-cards'); let any = false;
+                text.split(/\r?\n/).forEach(l => {
+                    const m = l.match(/^(\d+)\.\s*(.+?)\s*綜合\s*(\d+)\s*分/);
+                    if (m) { any = true; const c = el('div', 'rpt-card'); c.appendChild(el('div', 'k', '第 ' + m[1] + ' 名　' + m[2].trim())); c.appendChild(el('div', 'v', m[3])); c.appendChild(el('div', 's', '加權綜合分（滿分 100）')); cards.appendChild(c); }
+                });
+                if (any) wrap.appendChild(cards);
+            }
+            if (!isCompare) {
+                // 同一個維度在文中可能出現兩次（模型寫的「各維度評分」與系統附的「加權評分明細」），
+                // 卡片只顯示一次：以維度名稱（去掉前面的 A. B. 編號）為準，後出現的（系統明細）覆蓋前面的
+                const cards = el('div', 'rpt-cards'); const byTitle = new Map();
+                text.split(/\r?\n/).forEach(l => {
+                    const m = l.match(/^(.+?)（權重\s*(\d+)%）[：:]\s*(\d+)\s*分/);
+                    if (!m) return;
+                    const title = m[1].trim().replace(/^[A-Da-d][\.、．:：\s]+/, '');
+                    byTitle.set(title, { key: (m[1].trim().match(/^([A-Da-d])[\.、．:：\s]/) || [])[1], title: title, w: m[2], v: m[3] });
+                });
+                
+                Array.from(byTitle.values()).forEach((x, i) => { x.o = i; });
+                const order = ['答題內容與具體度', '邏輯結構', '與職缺及履歷相關度', '溝通清晰度'];
+                Array.from(byTitle.values()).sort((a, b) => {
+                    const ia = order.indexOf(a.title), ib = order.indexOf(b.title);
+                    return (ia < 0 ? 99 + a.o : ia) - (ib < 0 ? 99 + b.o : ib);
+                }).forEach(x => {
+                    const c = el('div', 'rpt-card'); c.appendChild(el('div', 'k', x.title)); c.appendChild(el('div', 'v', x.v)); c.appendChild(el('div', 's', '權重 ' + x.w + '%（滿分 100）')); cards.appendChild(c);
+                });
+                if (byTitle.size) wrap.appendChild(cards);
+            }
+            text.split(/\r?\n/).forEach(raw => {
+                let line = clean(raw.replace(/^\s+/, ' ')).trim(); if (!line) return;
+                if (/^[【\[]?[一二三四五六七八九十]+、/.test(line) || /^【.+】$/.test(line)) { wrap.appendChild(el('div', 'rpt-h', line.replace(/[【】]/g, ''))); return; }
+                if (/^═+/.test(line)) { wrap.appendChild(el('div', 'rpt-h', line.replace(/═+/g, '').trim())); return; }
+                const sc = line.match(/^AI\s*綜合評分[：:]\s*(\d+)\s*分/);
+                if (sc) { wrap.appendChild(el('div', 'rpt-score', 'AI 綜合評分　' + sc[1] + ' 分')); return; }
+                if (/^\[\[\/?SCORES\]\]/.test(line)) return;
+                if (/^(■|•|·|-)\s*/.test(line) || /^\d+\./.test(line)) { wrap.appendChild(el('div', 'rpt-li', line)); return; }
+                wrap.appendChild(el('div', 'rpt-p', line));
+            });
+            if (!wrap.childNodes.length) return el('div', 'rpt-empty', '這份報告沒有內容');
+            return wrap;
+        }
+
+        function renderVideo(file) {
+            const wrap = document.createElement('div');
+            const v = document.createElement('video');
+            v.controls = true; v.preload = 'metadata'; v.src = file.viewUrl; v.style.cssText = 'width:100%;max-height:60vh;background:#000;border-radius:10px;';
+            if (file.vttUrl) { const tr = document.createElement('track'); tr.kind = 'captions'; tr.srclang = 'zh-Hant'; tr.label = '逐字稿字幕（估算時間，僅供參考）'; tr.src = file.vttUrl; tr.default = true; v.appendChild(tr); }
+            wrap.appendChild(v);
+            const bar = el('div', 'rpt-p'); bar.style.cssText = 'margin-top:10px;';
+            bar.appendChild(el('span', 'rpt-note', '字幕時間為估算值，僅供對照參考'));
+            wrap.appendChild(bar);
+            return wrap;
+        }
+
+        // 適性測驗結果：下拉選單切換求職者（內容由伺服器產生好放在 file.items）
+        function renderAptitude(file) {
+            const wrap = document.createElement('div');
+            const bar = el('div', 'rpt-p'); bar.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:16px;';
+            bar.appendChild(el('label', null, '求職者：'));
+            const sel = document.createElement('select'); sel.style.cssText = 'padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;';
+            (file.items || []).forEach((it, i) => { const op = document.createElement('option'); op.value = i; op.textContent = it.name; sel.appendChild(op); });
+            bar.appendChild(sel); wrap.appendChild(bar);
+            const box = document.createElement('div'); wrap.appendChild(box);
+            const draw = () => {
+                const it = (file.items || [])[sel.value]; box.innerHTML = it ? it.html : '';
+                const dl = document.getElementById('rptDl');
+                if (it) {
+                    const txt = it.name + ' 適性測驗結果（1~5 分）\r\n' + (it.text || '沒有適性測驗結果');
+                    if (dl._blobUrl) URL.revokeObjectURL(dl._blobUrl);
+                    dl._blobUrl = URL.createObjectURL(new Blob(['\ufeff' + txt], { type: 'text/plain;charset=utf-8' }));
+                    dl.href = dl._blobUrl; dl.setAttribute('download', it.name + '_適性測驗結果.txt'); dl.textContent = '下載此份 txt'; dl.style.display = 'inline-block';
+                }
+            };
+            sel.onchange = draw; draw();
+            return wrap;
+        }
+
+        async function show(file) {
+            const dl = document.getElementById('rptDl');
+            dl.removeAttribute('download');
+            if (file.downloadUrl) { dl.href = file.downloadUrl; dl.textContent = file.kind === 'video' ? '下載影片' : '下載此份 txt'; dl.style.display = 'inline-block'; } else dl.style.display = 'none';
+            if (file.kind === 'video') { body.replaceChildren(renderVideo(file)); body.scrollTop = 0; return; }
+            if (file.kind === 'aptitude') { body.replaceChildren(renderAptitude(file)); body.scrollTop = 0; return; }
+            body.replaceChildren(el('div', 'rpt-empty', '讀取中…'));
+            try {
+                if (!(file.viewUrl in cache)) { const r = await fetch(file.viewUrl); if (!r.ok) throw new Error('HTTP ' + r.status); cache[file.viewUrl] = await r.text(); }
+                const t = cache[file.viewUrl];
+                body.replaceChildren(file.kind === 'transcript' ? renderTranscript(t) : renderAnalysis(t, file.kind === 'compare'));
+                body.scrollTop = 0;
+            } catch (e) { body.replaceChildren(el('div', 'rpt-empty', '讀取失敗，請改用「下載此份 txt」查看')); }
+        }
+
+        function open(btn) {
+            let files = []; try { files = JSON.parse(btn.dataset.files || '[]'); } catch { }
+            document.getElementById('rptTitle').textContent = '面試會議結果記錄和分析';
+            document.getElementById('rptSub').textContent = btn.dataset.title || '';
+            tabs.replaceChildren();
+            if (!files.length) { body.replaceChildren(el('div', 'rpt-empty', '尚無檔案')); ov.classList.add('open'); return; }
+            files.forEach((f, i) => {
+                const b = el('button', 'rpt-tab' + (i === 0 ? ' active' : ''), f.label); b.type = 'button';
+                b.onclick = () => { tabs.querySelectorAll('.rpt-tab').forEach(x => x.classList.remove('active')); b.classList.add('active'); show(f); };
+                tabs.appendChild(b);
+            });
+            ov.classList.add('open'); show(files[0]);
+        }
+        const close = () => { ov.classList.remove('open'); body.replaceChildren(); }; // 關閉時一併移除影片，停止播放
+        document.getElementById('rptClose').onclick = close; document.getElementById('rptCloseX').onclick = close;
+        ov.addEventListener('click', e => { if (e.target === ov) close(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+        document.addEventListener('click', e => { const b = e.target.closest('[data-report-btn]'); if (b) open(b); });
+    })();
+</script>

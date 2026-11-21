@@ -572,7 +572,7 @@ namespace InterviewProject.Services
                 client.Timeout = TimeSpan.FromSeconds(20);
                 var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
                 var prompt = "這是視訊面試中一位求職者的畫面。只判斷畫面上看得到的事實，不要推測身分、情緒原因或個性。" +
-                    "只輸出一個 JSON，不要其他文字：{\"face\":看得到清楚的正臉(true/false),\"mask\":口罩遮住口鼻(true/false，只算醫療口罩或布口罩；手遮嘴、麥克風、看不到臉都算 false),\"expression\":\"微笑\"或\"平靜\"或\"皺眉\"或\"看不清\",\"gaze\":\"看向鏡頭\"或\"偏離鏡頭\"或\"看不清\"}";
+                    "只輸出一個 JSON，不要其他文字：{\"face\":看得到清楚的正臉(true/false),\"mask\":臉上有戴口罩(true/false。醫療口罩、布口罩、N95 只要還戴在臉上就算 true，包含只遮住嘴巴、鼻子露出來、拉到下巴、只掛在一邊耳朵的情況；完全沒有口罩、只是手遮嘴、麥克風擋住、看不到臉才算 false),\"expression\":\"微笑\"或\"平靜\"或\"皺眉\"或\"看不清\",\"gaze\":\"看向鏡頭\"或\"偏離鏡頭\"或\"看不清\"}";
                 var body = new
                 {
                     contents = new[] { new { parts = new object[] {

@@ -10,7 +10,7 @@ namespace InterviewProject.Services
     //    2. 會後 AI 分析：把取樣結果整理成「臉部觀察」段落附在每位求職者的報告後面（僅供參考，不計入評分）
     public class FaceWatchService : BackgroundService
     {
-        public const int IntervalSec = 10;
+        public const int IntervalSec = 6;
 
         public class FaceSample { public DateTime At; public string Label = ""; public bool Face; public bool Mask; public string Expr = "看不清"; public string Gaze = "看不清"; }
 
@@ -76,13 +76,27 @@ namespace InterviewProject.Services
                     if (r.Sample == null) continue;
                     if (list.Count < 3000) list.Add(r.Sample);
                     streak.TryGetValue(r.Label, out var n);
-                    if (r.Sample.Mask) n++;
-                    else if (r.Sample.Face) n = 0; // 看得到臉而且沒戴口罩才解除；看不到臉就維持原狀
+                    // 偵測到口罩 → 馬上提醒（計數設成 3）；之後要「連續 4 次看得到臉而且都沒口罩」才解除（提醒會一直顯示到對方真的拿掉），
+                    // 避免模型偶爾一次誤判就讓提醒閃掉；看不到臉就維持原狀
+                    if (r.Sample.Mask) n = 4;
+                    else if (r.Sample.Face) n = Math.Max(0, n - 1);
                     streak[r.Label] = n;
+                    Console.WriteLine($"[口罩偵測] 房間 {code}：{r.Label} 看到臉={r.Sample.Face} 口罩={r.Sample.Mask} → 提醒計數={n}");
                 }
             }
+            // 已經離開會議室的人，提醒要跟著消失
+            try
+            {
+                var here = await _bot.GetPresentJobseekerNamesAsync(code);
+                if (here.Count > 0)
+                {
+                    var labels = new HashSet<string>(here.Select(h => "求職者-" + h));
+                    lock (list) foreach (var k in streak.Keys.Where(k => !labels.Contains(k)).ToList()) streak.Remove(k);
+                }
+            }
+            catch { }
             List<string> alert;
-            lock (list) alert = streak.Where(kv => kv.Value >= 2).Select(kv => kv.Key).OrderBy(x => x).ToList();
+            lock (list) alert = streak.Where(kv => kv.Value >= 1).Select(kv => kv.Key).OrderBy(x => x).ToList();
             var key = string.Join("|", alert);
             _lastAlert.TryGetValue(code, out var prev);
             if (key != (prev ?? "") || alert.Count > 0)
