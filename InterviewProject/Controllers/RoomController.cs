@@ -305,17 +305,15 @@ namespace InterviewProject.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Who, DateTime At)> _lastSpeaker = new();
 
         [HttpGet]
-        public async Task<IActionResult> BannerState(string roomCode)
+        public IActionResult BannerState(string roomCode)
         {
             var code = (roomCode ?? "").Trim();
-            var jsNames = await GetJobseekerNamesAsync(code);
             _responder.TryGetValue(code, out var r);
             _lastSpeaker.TryGetValue(code, out var s);
             return Json(new
             {
                 responder = string.IsNullOrEmpty(r.Name) ? null : r.Name,
                 masks = FaceWatchService.CurrentAlert(code),
-                jobseekers = jsNames,
                 speaker = s.Who,
                 speakerAgeMs = s.Who == null ? (double?)null : (DateTime.UtcNow - s.At).TotalMilliseconds
             });
@@ -357,27 +355,62 @@ namespace InterviewProject.Controllers
 
         private async Task<List<string>> GetJobseekerNamesAsync(string code)
         {
-            if (_nameCache.TryGetValue(code, out var c) && (DateTime.UtcNow - c.At).TotalSeconds < 20) return c.Names;
+            if (_nameCache.TryGetValue(code, out var c) && (DateTime.UtcNow - c.At).TotalSeconds < 5) return c.Names;
             var names = new List<string>();
-            try
+            // 優先用「現在真的在會議室裡」的求職者（Jitsi 顯示名稱）；抓不到才退回報名名單
+            try { names = await _botService.GetPresentJobseekerNamesAsync(code); } catch { }
+            if (names.Count == 0)
             {
-                var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(r => r.JitsiRoomName == code);
-                if (room != null)
+                try
                 {
-                    var ps = await _context.RoomParticipants.AsNoTracking()
-                        .Where(p => p.RoomId == room.Id && p.Role == ParticipantRole.Jobseeker && p.ResumeId != null)
-                        .Include(p => p.Resume).ThenInclude(r => r!.Member).ToListAsync();
-                    var here = ps.Where(p => p.JoinedAt != null && p.LeftAt == null).ToList();
-                    if (here.Count == 0) here = ps;
-                    names = here.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!.Trim()).Distinct().ToList();
+                    var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(r => r.JitsiRoomName == code);
+                    if (room != null)
+                    {
+                        var ps = await _context.RoomParticipants.AsNoTracking()
+                            .Where(p => p.RoomId == room.Id && p.Role == ParticipantRole.Jobseeker && p.ResumeId != null)
+                            .Include(p => p.Resume).ThenInclude(r => r!.Member).ToListAsync();
+                        var here = ps.Where(p => p.JoinedAt != null && p.LeftAt == null).ToList();
+                        if (here.Count == 0) here = ps;
+                        names = here.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!.Trim()).Distinct().ToList();
+                    }
                 }
+                catch { }
             }
-            catch { }
             _nameCache[code] = (DateTime.UtcNow, names);
             return names;
         }
 
-        // 職員/主持人說的話裡，明確點名了「唯一一位」在場求職者，就鎖定那位為回答者
+        // 職員/主持人說的話裡，明確點名了「唯一一位」在場求職者，就鎖定那位為回答者（只針對這一題；答完就放開）
+        public static List<string> MatchAddressed(List<string> names, string text)
+        {
+            bool Has(string n)
+            {
+                if (n.All(ch => ch < 128)) return Regex.IsMatch(text, @"(?<![A-Za-z0-9])" + Regex.Escape(n) + @"(?![A-Za-z0-9])", RegexOptions.IgnoreCase);
+                return text.Contains(n, StringComparison.OrdinalIgnoreCase);
+            }
+            var hit = names.Where(Has).ToList();
+            // 語音辨識常把單一英文字母名字（a、b…）聽成同音中文字：只在「句首/標點後」且後面接請求語氣時才當作點名
+            if (hit.Count == 0)
+            {
+                var homo = new Dictionary<string, string> { ["a"] = "欸誒哎啊诶", ["b"] = "比逼必幣畢币毕", ["c"] = "西希", ["d"] = "滴地低迪" };
+                foreach (var n in names)
+                {
+                    if (n.Length != 1 || n[0] >= 128 || !homo.TryGetValue(n.ToLowerInvariant(), out var hs)) continue;
+                    if (Regex.IsMatch(text, @"(?:^|[，,。、：:\s])[" + hs + @"](?=\s?(?:請|同學|先生|小姐|做|來|說|講|回答|自我|可以|你|先|麻煩|[，,]))")) hit.Add(n);
+                }
+            }
+            hit = hit.Where(n => !hit.Any(m => m != n && m.Contains(n, StringComparison.OrdinalIgnoreCase))).ToList(); // 「a」被包在「aa」裡不算
+            if (hit.Count == 0)
+            {
+                // 語音辨識常把名字聽錯一個字：姓氏唯一，且姓氏後面緊接 1~2 個中文字再接停頓或請求語氣
+                var fz = names.Where(n => n.Length >= 2 && n[0] >= 0x4e00 && n[0] <= 0x9fff
+                    && names.Count(m => m.Length > 0 && m[0] == n[0]) == 1
+                    && Regex.IsMatch(text, Regex.Escape(n.Substring(0, 1)) + @"[\u4e00-\u9fff]{1,2}(?=[，,、：: 請你可先來說談回答幫跟]|$)")).ToList();
+                if (fz.Count == 1) hit = fz;
+            }
+            return hit;
+        }
+
         private async Task DetectAddressedAsync(string code, string role, string speaker, string text)
         {
             try
@@ -386,59 +419,11 @@ namespace InterviewProject.Controllers
                 if (string.Equals(role, "jobseeker", StringComparison.OrdinalIgnoreCase) || (speaker ?? "").StartsWith("求職者") || role == "ai" || (speaker ?? "").StartsWith("AI")) return;
                 var names = await GetJobseekerNamesAsync(code);
                 if (names.Count < 2) return; // 只有一位求職者時不需要鎖
-                bool Has(string n)
-                {
-                    if (n.All(ch => ch < 128)) return Regex.IsMatch(text, @"(?<![A-Za-z0-9])" + Regex.Escape(n) + @"(?![A-Za-z0-9])", RegexOptions.IgnoreCase);
-                    return text.Contains(n, StringComparison.OrdinalIgnoreCase);
-                }
-                var hit = names.Where(Has).ToList();
-                // 語音辨識常把單一英文字母名字（a、b…）聽成同音中文字：只在「句首/標點後」且後面接請求語氣時才當作點名
-                if (hit.Count == 0)
-                {
-                    var homo = new Dictionary<string, string> { ["a"] = "欸誒哎啊诶", ["b"] = "比逼必幣畢币毕", ["c"] = "西希", ["d"] = "滴地低迪" };
-                    foreach (var n in names)
-                    {
-                        if (n.Length != 1 || n[0] >= 128 || !homo.TryGetValue(n.ToLowerInvariant(), out var hs)) continue;
-                        if (Regex.IsMatch(text, @"(?:^|[，,。、：:\s])[" + hs + @"](?=\s?(?:請|同學|先生|小姐|做|來|說|講|回答|自我|可以|你|先|麻煩|[，,]))")) hit.Add(n);
-                    }
-                }
-                hit = hit.Where(n => !hit.Any(m => m != n && m.Contains(n, StringComparison.OrdinalIgnoreCase))).ToList(); // 「a」被包在「aa」裡不算
-                if (hit.Count == 0)
-                {
-                    // 語音辨識常把名字聽錯一個字：姓氏唯一，且姓氏後面緊接 1~2 個中文字再接停頓或請求語氣
-                    var fz = names.Where(n => n.Length >= 2 && n[0] >= 0x4e00 && n[0] <= 0x9fff
-                        && names.Count(m => m.Length > 0 && m[0] == n[0]) == 1
-                        && Regex.IsMatch(text, Regex.Escape(n.Substring(0, 1)) + @"[\u4e00-\u9fff]{1,2}(?=[，,、：: 請你可先來說談回答幫跟]|$)")).ToList();
-                    if (fz.Count == 1) hit = fz;
-                }
+                var hit = MatchAddressed(names, text);
                 Console.WriteLine($"[點名偵測] 房間 {code}：{speaker} 說「{(text.Length > 40 ? text.Substring(0, 40) : text)}」→ 在場求職者=[{string.Join(",", names)}] → 命中=[{string.Join(",", hit)}]");
                 if (hit.Count == 1) await SetResponderAsync(code, hit[0]);
             }
             catch { }
-        }
-
-        // 主持人/職員手動指定回答者（不靠語音辨識，一定鎖得住）
-        [HttpPost]
-        public async Task<IActionResult> SetResponder([FromForm] string roomCode, [FromForm] string name)
-        {
-            var role = (HttpContext.Session.GetString("MemberRole") ?? "").ToLower();
-            if (role != "hr" && role != "manager") return Forbid();
-            var code = (roomCode ?? "").Trim();
-            var names = await GetJobseekerNamesAsync(code);
-            var hit = names.FirstOrDefault(n => string.Equals(n, (name ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
-            if (hit == null) return BadRequest();
-            await SetResponderAsync(code, hit);
-            return Ok();
-        }
-
-        // 主持人手動解除回答者鎖定（只開放職員帳號）
-        [HttpPost]
-        public async Task<IActionResult> ReleaseResponder([FromForm] string roomCode)
-        {
-            var role = (HttpContext.Session.GetString("MemberRole") ?? "").ToLower();
-            if (role != "hr" && role != "manager") return Forbid();
-            await SetResponderAsync((roomCode ?? "").Trim(), null);
-            return Ok();
         }
 
         // 🎯 伺服器自己也記「現在有沒有人在講話」：AI 語音合成好、真的要開口前最後再確認一次，有人在講就不送出（不打斷）

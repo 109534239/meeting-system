@@ -1013,6 +1013,11 @@ namespace InterviewProject.Services
     }
     drawFrame();
 
+    // 目前會議室裡所有「求職者」的顯示名稱（含沒開鏡頭的），給回答者判斷用
+    window.__jsLabels = function () {
+        try { return (window.__lastCells || []).map(function (c) { return (c && c.label) || ''; }).filter(function (l) { return /^求職者-/.test(l); }); } catch (e) { return []; }
+    };
+
     // 擷取每位「求職者」目前的視訊畫面（縮成寬 320 的 JPEG），給伺服器做臉部觀察用
     window.__grabFaces = function () {
         const out = [];
@@ -1742,6 +1747,26 @@ namespace InterviewProject.Services
             }
             catch { }
             return res;
+        }
+
+        // 目前在會議室裡的求職者名字（Jitsi 顯示名稱去掉「求職者-」）
+        public async Task<List<string>> GetPresentJobseekerNamesAsync(string roomCode)
+        {
+            var res = new List<string>();
+            try
+            {
+                BotInstance? inst;
+                lock (_activeBotsLock) { if (!_activeBots.TryGetValue((roomCode ?? "").Trim(), out inst) || inst == null) return res; }
+                var el = await inst.PageInstance.EvaluateAsync<JsonElement>("() => (window.__jsLabels ? window.__jsLabels() : [])");
+                if (el.ValueKind != JsonValueKind.Array) return res;
+                foreach (var it in el.EnumerateArray())
+                {
+                    var l = it.GetString();
+                    if (!string.IsNullOrWhiteSpace(l) && l.StartsWith("求職者-")) res.Add(l.Substring(4).Trim());
+                }
+            }
+            catch { }
+            return res.Distinct().ToList();
         }
 
         public bool IsSpeaking(string roomCode)
