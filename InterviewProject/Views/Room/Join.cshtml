@@ -178,10 +178,53 @@
                 color: #f85149
             }
 
-        .bn-seg { margin-left: 10px; }
-        .bn-warn { background: #f85149; color: #fff; padding: 1px 10px; border-radius: 10px; }
-        .bn-rel { margin-left: 10px; color: #ffd33d; cursor: pointer; text-decoration: underline; font-weight: 400; }
-        #lockToast { display: none; position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 99999; background: #161b22; color: #fff; border: 2px solid #f0883e; border-radius: 12px; padding: 14px 26px; font-size: 16px; font-weight: 700; box-shadow: 0 8px 28px rgba(0,0,0,.55); max-width: 80vw; text-align: center; }
+        .bn-seg {
+            margin-left: 10px;
+        }
+
+        .bn-warn {
+            background: #f85149;
+            color: #fff;
+            padding: 1px 10px;
+            border-radius: 10px;
+        }
+
+        .bn-pick {
+            margin-left: 10px;
+            background: #0d1117;
+            color: #e6edf3;
+            border: 1px solid #3fb950;
+            border-radius: 6px;
+            font-size: 12px;
+            padding: 1px 4px;
+        }
+
+        .bn-rel {
+            margin-left: 10px;
+            color: #ffd33d;
+            cursor: pointer;
+            text-decoration: underline;
+            font-weight: 400;
+        }
+
+        #lockToast {
+            display: none;
+            position: fixed;
+            top: 64px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 99999;
+            background: #161b22;
+            color: #fff;
+            border: 2px solid #f0883e;
+            border-radius: 12px;
+            padding: 14px 26px;
+            font-size: 16px;
+            font-weight: 700;
+            box-shadow: 0 8px 28px rgba(0,0,0,.55);
+            max-width: 80vw;
+            text-align: center;
+        }
 
         .main {
             flex: 1;
@@ -777,6 +820,20 @@
             if (rl) rl.style.display = (window.__responder && AM_STAFF) ? '' : 'none';
         }
         setInterval(renderBanner, 500);
+        function pickResponder(sel) {
+            const v = sel.value; if (!v) return;
+            try { fetch('/Room/SetResponder', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&name=' + encodeURIComponent(v) }); } catch {}
+            sel.value = '';
+        }
+        function fillPick(list) {
+            const sel = document.getElementById('bnPick'); if (!sel || !AM_STAFF) return;
+            const key = (list || []).join('|');
+            if (sel.dataset.k !== key) {
+                sel.dataset.k = key;
+                sel.innerHTML = '<option value="">🎯 指定回答者…</option>' + (list || []).map(n => '<option value="' + n.replace(/"/g, '&quot;') + '">求職者-' + n + '</option>').join('');
+            }
+            sel.style.display = (list && list.length) ? '' : 'none';
+        }
         function releaseResponder() {
             try { fetch('/Room/ReleaseResponder', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'roomCode=' + encodeURIComponent(ROOM_CODE) }); } catch {}
         }
@@ -807,9 +864,11 @@
             if (!started || ended) return;
             try {
                 const r = await fetch('/Room/BannerState?roomCode=' + encodeURIComponent(ROOM_CODE), { cache: 'no-store' });
-                if (!r.ok) return;
+                if (!r.ok) { dbgPoll('輪詢失敗 HTTP ' + r.status); return; }
                 const d = await r.json();
+                dbgPoll('輪詢OK 口罩=[' + (d.masks || []).join(',') + '] 回答者=' + (d.responder || '無') + ' 角色=' + MY_ROLE);
                 window.__maskNames = Array.isArray(d.masks) ? d.masks : [];
+                fillPick(d.jobseekers);
                 if (window.__maskNames.includes(MY_NAME) && Date.now() - lastMaskToast > 30000) { lastMaskToast = Date.now(); showLockToast('偵測到您戴著口罩，請取下口罩，謝謝。', 6000); }
                 if (d.speaker && d.speakerAgeMs != null && d.speakerAgeMs < 3000 && !/^AI/.test(d.speaker)) noteSpeaker(d.speaker);
                 const nr = d.responder || null;
@@ -818,7 +877,12 @@
                     if (nr !== (window.__responder || null)) applyResponder(nr);
                 }
                 renderBanner();
-            } catch {}
+            } catch (e) { dbgPoll('輪詢錯誤 ' + (e && e.message)); }
+        }
+        function dbgPoll(t) {
+            let el = document.getElementById('pollDbg');
+            if (!el) { el = document.createElement('div'); el.id = 'pollDbg'; el.style.cssText = 'position:fixed;left:60px;bottom:2px;font-size:10px;color:#8b949e;z-index:99999;pointer-events:none'; document.body.appendChild(el); }
+            el.textContent = t + ' ' + new Date().toLocaleTimeString('zh-TW');
         }
         setInterval(pollBannerState, 2000);
         hub.on("ResponderChanged", name => applyResponder(name));
@@ -889,7 +953,7 @@
         }
         startHub();
         // 版本標記：左下角小字 + console，確認每個人跑的是同一版（測試前請每台都看到 v0245）
-        (function () { try { const d = document.createElement('div'); d.textContent = 'v0310'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
+        (function () { try { const d = document.createElement('div'); d.textContent = 'v0320'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
 
         // 🎯 保底輪詢：不管 SignalR 廣播這次有沒有送達（長時間閒置等待時 SignalR 群組可能悄悄失效），
         //    每 4 秒主動問一次伺服器「會議現在到底是什麼狀態」，用真實資料庫狀態校正畫面，
@@ -1014,7 +1078,7 @@
 
             const b = document.getElementById('banner');
             b.className = 'banner live';
-            b.innerHTML = '<span id="bnBase">🔴 會議進行中</span><span id="bnStatus" class="bn-seg"></span><span id="bnMask" class="bn-seg bn-warn" style="display:none"></span><span id="bnRel" class="bn-rel" style="display:none" onclick="releaseResponder()">解除回答限制</span>';
+            b.innerHTML = '<span id="bnBase">🔴 會議進行中</span><span id="bnStatus" class="bn-seg"></span><span id="bnMask" class="bn-seg bn-warn" style="display:none"></span><select id="bnPick" class="bn-pick" style="display:none" onchange="pickResponder(this)"></select><span id="bnRel" class="bn-rel" style="display:none" onclick="releaseResponder()">解除回答限制</span>';
 
             if (IS_HOST) {
                 document.getElementById('startBtn').style.display = 'none';
