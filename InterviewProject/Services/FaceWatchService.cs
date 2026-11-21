@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using InterviewProject.Controllers;
 using InterviewProject.Hubs;
 using Microsoft.AspNetCore.SignalR;
 
@@ -12,7 +11,6 @@ namespace InterviewProject.Services
     public class FaceWatchService : BackgroundService
     {
         public const int IntervalSec = 6;
-        private const int ReminderIntervalSec = 15;
 
         public class FaceSample { public DateTime At; public string Label = ""; public bool Face; public bool Mask; public string Expr = "看不清"; public string Gaze = "看不清"; }
 
@@ -31,46 +29,30 @@ namespace InterviewProject.Services
         }
 
         private readonly Dictionary<string, DateTime> _lastCycle = new();
-        private readonly ConcurrentDictionary<string, DateTime> _lastRemind = new();
-        private readonly Dictionary<string, Task> _pendingReminders = new();
+        private readonly Dictionary<string, DateTime> _lastRemind = new();
 
-        // 每輪只在確認安靜時準備提醒，並在語音合成後再確認一次。
-        private async Task RemindAsync(string code, List<string> labels, CancellationToken ct)
+        // AI 面試官口頭提醒：等 AI 沒在講話、現場安靜一下（最多 10 秒）再開口，不搶話；這句不計入面試對話紀錄
+        private async Task RemindAsync(string code, List<string> names, CancellationToken ct)
         {
-            var started = false;
             try
             {
-                if (_bot.IsSpeaking(code) || await ShouldWaitAsync()) return;
-
-                var names = labels.Select(label => label.StartsWith("求職者-") ? label.Substring(4) : label);
-                var text = $"{string.Join("、", names)}同學您好，請您取下口罩，謝謝。";
-                var group = _hub.Clients.Group(code);
-                try
+                for (int i = 0; i < 20 && !ct.IsCancellationRequested; i++)
                 {
-                    await _bot.SpeakAsync(code, text, async () =>
+                    if (!_bot.IsSpeaking(code))
                     {
-                        started = true;
-                        _lastRemind[code] = DateTime.UtcNow;
-                        await group.SendAsync("AiSpeakingStateChanged", true, text);
-                        await group.SendAsync("AiSubtitle", text);
-                    }, ShouldWaitAsync);
+                        var sil = await _bot.GetAudibleSilenceSecondsAsync(code);
+                        if (!sil.HasValue || sil.Value >= 1.5) break;
+                    }
+                    await Task.Delay(500, ct);
                 }
-                finally
-                {
-                    if (started)
-                        await group.SendAsync("AiSpeakingStateChanged", false, text, _bot.ConsumeInterrupted(code));
-                }
+                if (_bot.IsSpeaking(code)) return;
+                var text = $"{string.Join("、", names)}同學您好，請您取下口罩，謝謝。";
+                Console.WriteLine($"[口罩偵測] 房間 {code}：AI 面試官口頭提醒「{text}」");
+                await _hub.Clients.Group(code).SendAsync("AiSpeakingStateChanged", true, text);
+                try { await _bot.SpeakAsync(code, text, async () => { await _hub.Clients.Group(code).SendAsync("AiSubtitle", text); }); }
+                finally { await _hub.Clients.Group(code).SendAsync("AiSpeakingStateChanged", false, text, false); }
             }
             catch (Exception ex) { Console.WriteLine($"[口罩偵測] 口頭提醒失敗：{ex.Message}"); }
-
-            async Task<bool> ShouldWaitAsync()
-            {
-                if (ct.IsCancellationRequested || RoomController.PersonSpeaking(code)) return true;
-                var silence = await _bot.GetAudibleSilenceSecondsAsync(code);
-                if (silence is not double seconds || seconds < 1.5 || RoomController.PersonSpeaking(code)) return true;
-                var current = CurrentAlert(code);
-                return labels.Any(label => !current.Contains(label));
-            }
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -84,7 +66,7 @@ namespace InterviewProject.Services
                     var codes = _bot.ActiveRoomCodes();
                     foreach (var gone in _maskStreak.Keys.Where(k => !codes.Contains(k)).ToList())
                     {
-                        _maskStreak.TryRemove(gone, out _); _lastAlert.TryRemove(gone, out _); _lastCycle.Remove(gone); _lastRemind.TryRemove(gone, out _); _pendingReminders.Remove(gone);
+                        _maskStreak.TryRemove(gone, out _); _lastAlert.TryRemove(gone, out _); _lastCycle.Remove(gone); _lastRemind.Remove(gone);
                     }
                     foreach (var code in codes)
                     {
@@ -148,24 +130,19 @@ namespace InterviewProject.Services
                 _lastAlert[code] = key;
                 try { await _hub.Clients.Group(code).SendAsync("MaskAlert", alert.ToArray(), ct); } catch { }
             }
-            // 持續偵測到口罩時，達到提醒間隔後在下一輪重新提醒。
+            // 🎙️ 讓 AI 面試官直接開口提醒：有人「剛開始」被偵測到戴口罩就說一次；之後只要還沒拿掉，每 20 秒再提醒一次
             if (alert.Count > 0)
             {
                 var added = alert.Any(a => !prevSet.Contains(a));
                 _lastRemind.TryGetValue(code, out var lastRem);
-                var confirmedMasks = results
-                    .Where(r => r.Sample?.Mask == true && alert.Contains(r.Label))
-                    .Select(r => r.Label)
-                    .Distinct()
-                    .ToList();
-                var reminderPending = _pendingReminders.TryGetValue(code, out var reminder) && !reminder.IsCompleted;
-                if (!reminderPending && confirmedMasks.Count > 0 &&
-                    (added || (DateTime.UtcNow - lastRem).TotalSeconds >= ReminderIntervalSec))
+                if (added || (DateTime.UtcNow - lastRem).TotalSeconds >= 20)
                 {
-                    _pendingReminders[code] = RemindAsync(code, confirmedMasks, ct);
+                    _lastRemind[code] = DateTime.UtcNow;
+                    var names = alert.Select(a => a.StartsWith("求職者-") ? a.Substring(4) : a).ToList();
+                    _ = Task.Run(() => RemindAsync(code, names, ct));
                 }
             }
-            else _lastRemind.TryRemove(code, out _);
+            else _lastRemind.Remove(code);
         }
 
         private static FaceSample? Parse(string? json, string label, DateTime at)

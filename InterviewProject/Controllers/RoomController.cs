@@ -340,7 +340,7 @@ namespace InterviewProject.Controllers
                     if (!_responder.TryGetValue(code, out var r) || r.At != stamp) return; // 已換人或已解除
                     if (PersonSpeaking(code)) continue;
                     var now = DateTime.UtcNow;
-                    bool done = r.AnsweredAt.HasValue ? (now - r.AnsweredAt.Value).TotalSeconds > 8 : (now - r.At).TotalSeconds > 45;
+                    bool done = r.AnsweredAt.HasValue ? (now - r.AnsweredAt.Value).TotalSeconds > 8 : (now - r.At).TotalSeconds > 90;
                     if (done) { await SetResponderAsync(code, null); return; }
                 }
             });
@@ -434,7 +434,7 @@ namespace InterviewProject.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastActivityUtc = new();
         private static void MarkActivity(string code) { if (!string.IsNullOrEmpty(code)) _lastActivityUtc[code.Trim()] = DateTime.UtcNow; }
 
-        internal static bool PersonSpeaking(string code)
+        private static bool PersonSpeaking(string code)
         {
             var now = DateTime.UtcNow;
             if (_lastVoiceUtc.TryGetValue(code, out var t) && (now - t).TotalMilliseconds < 1800) return true;
@@ -1680,7 +1680,12 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             try
             {
                 await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", true, text);
-                await _botService.SpeakAsync(roomCode, text, async () => { AddConvo(roomCode, "AI 面試官", "ai", text); await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); if (_aiLast.TryGetValue(roomCode, out var al) && al.Text == text) await SetResponderAsync(roomCode, string.IsNullOrEmpty(al.Name) ? null : al.Name); }, async () => PersonSpeaking(roomCode) || ((await _botService.GetAudibleSilenceSecondsAsync(roomCode)) is double aq && aq < 1.2)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
+                await _botService.SpeakAsync(roomCode, text, async () => {
+                    AddConvo(roomCode, "AI 面試官", "ai", text); await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); string? who = null; if (_aiLast.TryGetValue(roomCode, out var al) && (al.Text ?? "").Trim() == (text ?? "").Trim()) who = string.IsNullOrEmpty(al.Name) ? null : al.Name;
+                    if (who == null) { try { var nm = await GetJobseekerNamesAsync(roomCode); if (nm.Count >= 2) { var hh = MatchAddressed(nm, text ?? ""); if (hh.Count == 1) who = hh[0]; } } catch { } } // 備援：直接從 AI 這句話裡找被點名的人
+                    Console.WriteLine($"[回答者] 房間 {roomCode}：AI 提問「{(text.Length > 30 ? text.Substring(0, 30) : text)}」→ 鎖定回答者={who ?? "無（不鎖）"}");
+                    await SetResponderAsync(roomCode, who);
+                }, async () => PersonSpeaking(roomCode) || ((await _botService.GetAudibleSilenceSecondsAsync(roomCode)) is double aq && aq < 1.2)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
             }
             finally
             {

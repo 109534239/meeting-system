@@ -1843,11 +1843,12 @@ namespace InterviewProject.Services
 
             // 🐛 這輪新增：防搶話保險——雖然 RoomController 那邊已經先擋過一次，這裡在真正
             //    送出語音之前再擋一次（就算被某個地方繞過檢查直接呼叫這個方法，也不會疊講）。
-            if (!_speakingRooms.TryAdd(roomCode, true))
+            if (_speakingRooms.GetOrAdd(roomCode, false))
             {
                 Console.WriteLine($"[JitsiBot] SpeakAsync：房間 {roomCode} 的 AI 面試官目前正在說話中，這次的內容略過（避免搶話）：「{text}」");
                 return false;
             }
+            _speakingRooms[roomCode] = true;
             var speakStartUtc = DateTime.UtcNow;
             var speakCts = new CancellationTokenSource();
             _speakCts[roomCode] = speakCts;
@@ -1932,9 +1933,9 @@ namespace InterviewProject.Services
             }
             finally
             {
+                _speakingRooms[roomCode] = false;
                 _speakCts.TryRemove(roomCode, out _);
                 speakCts.Dispose();
-                _speakingRooms.TryRemove(roomCode, out _);
             }
         }
     }
