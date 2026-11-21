@@ -301,6 +301,8 @@ namespace InterviewProject.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Name, DateTime At, DateTime? AnsweredAt)> _responder = new();
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime At, List<string> Names)> _nameCache = new();
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastQuestionUtc = new();
+
         // 前端回報（目前用來查「非回答者閉麥」在各人瀏覽器上實際發生了什麼）
         [HttpPost]
         public IActionResult ClientLog([FromForm] string roomCode, [FromForm] string msg)
@@ -425,6 +427,7 @@ namespace InterviewProject.Controllers
             try
             {
                 if (string.IsNullOrWhiteSpace(text)) return;
+                if (!string.Equals(role, "jobseeker", StringComparison.OrdinalIgnoreCase) && !(speaker ?? "").StartsWith("求職者")) _lastQuestionUtc[code] = DateTime.UtcNow; // 職員/主持人剛說話＝可能剛問了問題
                 if (string.Equals(role, "jobseeker", StringComparison.OrdinalIgnoreCase) || (speaker ?? "").StartsWith("求職者") || role == "ai" || (speaker ?? "").StartsWith("AI")) return;
                 var names = await GetJobseekerNamesAsync(code);
                 if (names.Count < 2) return; // 只有一位求職者時不需要鎖
@@ -1033,7 +1036,9 @@ namespace InterviewProject.Controllers
                 return Ok(new { text = "" });
             }
             string? text;
-            try { text = await _gemini.TranscribeLiveAsync(bytes, mime); }
+            List<string>? hintNames = null;
+            try { if (!(speaker ?? "").StartsWith("求職者")) { var hn = await GetJobseekerNamesAsync(roomCode.Trim()); if (hn.Count >= 2) hintNames = hn; } } catch { }
+            try { text = await _gemini.TranscribeLiveAsync(bytes, mime, hintNames); }
             finally { System.Threading.Interlocked.Decrement(ref _liveInFlight); }
             // 雜音常被 Gemini 瞎猜成韓文/日文：面試是中文（或夾英文），這類結果一律當雜音丟掉
             if (!string.IsNullOrWhiteSpace(text))
@@ -1257,6 +1262,28 @@ namespace InterviewProject.Controllers
             try
             {
                 if (pending == -1 || (pending == 1 && hold <= 5)) { _lastVoiceUtc[roomCode] = DateTime.UtcNow; MarkActivity(roomCode); if (id != "?") _lastSpeaker[roomCode] = (id, DateTime.UtcNow); }
+                // 🎯 備援：問題裡沒聽出被點名的人時，「問完之後第一個開口回答的求職者」就是這題的回答者，鎖住其他人；
+                //    回答者還在講話就一直延長鎖定，停下來約 8 秒後放開（一題一次，不是全場）
+                if ((pending == -1 || (pending == 1 && hold <= 5)) && id.StartsWith("求職者-"))
+                {
+                    var plain = id.Substring(4).Trim();
+                    if (_responder.TryGetValue(roomCode, out var rsp)) MarkResponderAnswered(roomCode, id);
+                    else if (_lastQuestionUtc.TryGetValue(roomCode, out var lq) && (DateTime.UtcNow - lq).TotalSeconds < 90)
+                    {
+                        _lastQuestionUtc.TryRemove(roomCode, out _);
+                        var nm = await GetJobseekerNamesAsync(roomCode);
+                        if (nm.Count >= 2)
+                        {
+                            var who = nm.FirstOrDefault(n => string.Equals(n, plain, StringComparison.OrdinalIgnoreCase));
+                            if (who != null)
+                            {
+                                Console.WriteLine($"[回答者] 房間 {roomCode}：問題沒點名，最先開口回答的是「{who}」→ 鎖定其他人");
+                                await SetResponderAsync(roomCode, who);
+                                MarkResponderAnswered(roomCode, id);
+                            }
+                        }
+                    }
+                }
                 if (pending == 1) _pendingUntil[roomCode + "|" + id] = DateTime.UtcNow.AddSeconds(Math.Min(Math.Max(hold, 1), 30));
                 else if (pending == 0) _pendingUntil.TryRemove(roomCode + "|" + id, out _);
                 if (empty == 1) _lastVoiceUtc.TryRemove(roomCode, out _); // 雜音：不要讓它擋住 AI
@@ -1692,7 +1719,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 await _botService.SpeakAsync(roomCode, text, async () => {
                     AddConvo(roomCode, "AI 面試官", "ai", text); await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); string? who = null; if (_aiLast.TryGetValue(roomCode, out var al) && (al.Text ?? "").Trim() == (text ?? "").Trim()) who = string.IsNullOrEmpty(al.Name) ? null : al.Name;
                     if (who == null) { try { var nm = await GetJobseekerNamesAsync(roomCode); if (nm.Count >= 2) { var hh = MatchAddressed(nm, text ?? ""); if (hh.Count == 1) who = hh[0]; } } catch { } } // 備援：直接從 AI 這句話裡找被點名的人
-                    Console.WriteLine($"[回答者] 房間 {roomCode}：AI 提問「{(text.Length > 30 ? text.Substring(0, 30) : text)}」→ 鎖定回答者={who ?? "無（不鎖）"}");
+                    _lastQuestionUtc[roomCode] = DateTime.UtcNow; Console.WriteLine($"[回答者] 房間 {roomCode}：AI 提問「{(text.Length > 30 ? text.Substring(0, 30) : text)}」→ 鎖定回答者={who ?? "無（不鎖）"}");
                     await SetResponderAsync(roomCode, who);
                 }, async () => PersonSpeaking(roomCode) || ((await _botService.GetAudibleSilenceSecondsAsync(roomCode)) is double aq && aq < 1.2)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
             }
