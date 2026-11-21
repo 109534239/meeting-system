@@ -416,7 +416,7 @@ namespace InterviewProject.Controllers
                 // 語音辨識常把名字聽錯一個字：姓氏唯一，且姓氏後面緊接 1~2 個中文字再接停頓或請求語氣
                 var fz = names.Where(n => n.Length >= 2 && n[0] >= 0x4e00 && n[0] <= 0x9fff
                     && names.Count(m => m.Length > 0 && m[0] == n[0]) == 1
-                    && Regex.IsMatch(text, Regex.Escape(n.Substring(0, 1)) + @"[\u4e00-\u9fff]{1,2}(?=[，,、：: 請你可先來說談回答幫跟]|$)")).ToList();
+                    && Regex.IsMatch(text, Regex.Escape(n.Substring(0, 1)) + @"[\u4e00-\u9fff]{1,2}(?=[，,、：: 請你可先來說談回答幫跟做自介簡]|$)")).ToList();
                 if (fz.Count == 1) hit = fz;
             }
             return hit;
@@ -434,6 +434,13 @@ namespace InterviewProject.Controllers
                 var hit = MatchAddressed(names, text);
                 Console.WriteLine($"[點名偵測] 房間 {code}：{speaker} 說「{(text.Length > 40 ? text.Substring(0, 40) : text)}」→ 在場求職者=[{string.Join(",", names)}] → 命中=[{string.Join(",", hit)}]");
                 if (hit.Count == 1) await SetResponderAsync(code, hit[0]);
+                else if (hit.Count == 0 && _responder.ContainsKey(code) && Regex.IsMatch(text, @"請|介紹|說說|談談|分享|回答|嗎|呢|什麼|為什麼|如何|怎麼"))
+                {
+                    // 新的一題但沒聽出點名誰：舊的鎖不能留著（不然上一題的回答者會一直被當成「這題的回答者」，
+                    // 反而把這題真正要回答的人鎖住）。先全部放開，之後由「第一個開口回答的人」或下一次點名重新鎖定。
+                    Console.WriteLine($"[點名偵測] 房間 {code}：新問題沒有點名，放開上一題的鎖定");
+                    await SetResponderAsync(code, null);
+                }
             }
             catch { }
         }
