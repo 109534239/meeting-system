@@ -10,7 +10,7 @@ namespace InterviewProject.Services
     //    2. 會後 AI 分析：把取樣結果整理成「臉部觀察」段落附在每位求職者的報告後面（僅供參考，不計入評分）
     public class FaceWatchService : BackgroundService
     {
-        public const int IntervalSec = 15;
+        public const int IntervalSec = 10;
 
         public class FaceSample { public DateTime At; public string Label = ""; public bool Face; public bool Mask; public string Expr = "看不清"; public string Gaze = "看不清"; }
 
@@ -28,19 +28,27 @@ namespace InterviewProject.Services
             _bot = bot; _scopes = scopes; _hub = hub;
         }
 
+        private readonly Dictionary<string, DateTime> _lastCycle = new();
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            // 每 3 秒巡一次：新開始的會議 AI 一進場就先偵測一次（會議最開始就檢查），之後全程每 IntervalSec 秒一輪
             while (!stoppingToken.IsCancellationRequested)
             {
-                try { await Task.Delay(TimeSpan.FromSeconds(IntervalSec), stoppingToken); } catch { break; }
+                try { await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken); } catch { break; }
                 try
                 {
                     var codes = _bot.ActiveRoomCodes();
                     foreach (var gone in _maskStreak.Keys.Where(k => !codes.Contains(k)).ToList())
                     {
-                        _maskStreak.TryRemove(gone, out _); _lastAlert.TryRemove(gone, out _);
+                        _maskStreak.TryRemove(gone, out _); _lastAlert.TryRemove(gone, out _); _lastCycle.Remove(gone);
                     }
-                    foreach (var code in codes) await CycleAsync(code, stoppingToken);
+                    foreach (var code in codes)
+                    {
+                        if (_lastCycle.TryGetValue(code, out var last) && (DateTime.UtcNow - last).TotalSeconds < IntervalSec) continue;
+                        _lastCycle[code] = DateTime.UtcNow;
+                        await CycleAsync(code, stoppingToken);
+                    }
                 }
                 catch (Exception ex) { Console.WriteLine("[FaceWatch] 例外：" + ex.Message); }
             }
