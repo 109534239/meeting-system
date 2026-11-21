@@ -434,7 +434,7 @@ namespace InterviewProject.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastActivityUtc = new();
         private static void MarkActivity(string code) { if (!string.IsNullOrEmpty(code)) _lastActivityUtc[code.Trim()] = DateTime.UtcNow; }
 
-        private static bool PersonSpeaking(string code)
+        internal static bool PersonSpeaking(string code)
         {
             var now = DateTime.UtcNow;
             if (_lastVoiceUtc.TryGetValue(code, out var t) && (now - t).TotalMilliseconds < 1800) return true;

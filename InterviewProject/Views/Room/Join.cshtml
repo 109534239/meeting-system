@@ -782,7 +782,8 @@
         // ══════════════════════════════════
         const MY_PLAIN = MY_NAME.replace(/^求職者-/, '');
         const AM_STAFF = (MY_ROLE === 'hr' || MY_ROLE === 'manager');
-        let spkNow = null, forcedMute = false, lastLockToast = 0, lastMaskToast = 0;
+        let spkNow = null, lastLockToast = 0, lastMaskToast = 0;
+        let audioTogglePending = false, audioToggleTimer, responderRevision = 0, bannerRequestPending = false;
         window.__maskNames = []; window.__responder = null;
         function noteSpeaker(who) {
             if (!who || /^AI/.test(who)) return;
@@ -815,22 +816,43 @@
             const r = window.__responder;
             return !!r && !AM_STAFF && r.toLowerCase() !== MY_PLAIN.toLowerCase();
         }
-        function enforceMute() {
-            if (!lockedForMe() || !jitsiApi) return;
+        function showMicLocked() {
+            const now = Date.now();
+            if (now - lastLockToast < 1500) return;
+            lastLockToast = now;
+            showLockToast('現在是「' + window.__responder + '」回答，您的麥克風暫時鎖定。', 5000);
+        }
+        function clearAudioToggle() {
+            clearTimeout(audioToggleTimer);
+            audioTogglePending = false;
+        }
+        async function requestAudioToggle(muteOnly) {
+            if (!jitsiApi || audioTogglePending) return;
+            if (!muteOnly && lockedForMe()) { showMicLocked(); return; }
+            audioTogglePending = true;
             try {
-                jitsiApi.isAudioMuted().then(m => {
-                    if (m) return;
-                    forcedMute = true; jitsiApi.executeCommand('toggleAudio'); window.__myMuted = true;
-                    const now = Date.now();
-                    if (now - lastLockToast > 1500) { lastLockToast = now; showLockToast('現在是「' + window.__responder + '」回答，您的麥克風已被關閉，請稍候，輪到您時會自動開啟。', 5000); }
-                }).catch(() => {});
-            } catch {}
+                const muted = await jitsiApi.isAudioMuted();
+                const locked = lockedForMe();
+                if (muteOnly ? !locked || muted : locked) {
+                    clearAudioToggle();
+                    if (locked && !muteOnly) { showMicLocked(); enforceMute(); }
+                    return;
+                }
+                audioToggleTimer = setTimeout(clearAudioToggle, 1000);
+                jitsiApi.executeCommand('toggleAudio');
+            } catch {
+                clearAudioToggle();
+            }
+        }
+        function enforceMute() {
+            if (lockedForMe()) void requestAudioToggle(true);
         }
         setInterval(enforceMute, 1000);
-        // 保險：每 2 秒向伺服器要一次「誰在回答／誰戴口罩／誰在講話」，不管哪個角色、有沒有漏收 SignalR 廣播都看得到
-        let _lastRespSeen;
+        // 補同步漏收的輪次狀態，避免較舊的輪詢回應覆蓋即時通知。
         async function pollBannerState() {
-            if (!started || ended) { dbgPoll('等待中 started=' + started + ' ended=' + ended); return; }
+            if (!started || ended || bannerRequestPending) return;
+            bannerRequestPending = true;
+            const revision = responderRevision;
             try {
                 const r = await fetch('/Room/BannerState?roomCode=' + encodeURIComponent(ROOM_CODE), { cache: 'no-store' });
                 if (!r.ok) { dbgPoll('輪詢失敗 HTTP ' + r.status); return; }
@@ -840,23 +862,24 @@
                 if (window.__maskNames.includes(MY_NAME) && Date.now() - lastMaskToast > 30000) { lastMaskToast = Date.now(); showLockToast('偵測到您戴著口罩，請取下口罩，謝謝。', 6000); }
                 if (d.speaker && d.speakerAgeMs != null && d.speakerAgeMs < 3000 && !/^AI/.test(d.speaker)) noteSpeaker(d.speaker);
                 const nr = d.responder || null;
-                if (nr !== (window.__responder || null) || _lastRespSeen === undefined) {
-                    _lastRespSeen = nr;
-                    if (nr !== (window.__responder || null)) applyResponder(nr);
-                }
+                if (revision === responderRevision && nr !== window.__responder) applyResponder(nr);
                 renderBanner();
             } catch (e) { dbgPoll('輪詢錯誤 ' + (e && e.message)); }
+            finally { bannerRequestPending = false; }
         }
         function dbgPoll() { } // 診斷文字已移除
         window.addEventListener('error', e => { window.__lastErr = (e && e.message) || 'error'; });
         window.addEventListener('unhandledrejection', e => { window.__lastErr = String((e && e.reason && e.reason.message) || (e && e.reason) || 'rejection').slice(0, 60); });
         setInterval(pollBannerState, 2000);
-        hub.on("ResponderChanged", name => applyResponder(name));
+        hub.on("ResponderChanged", name => {
+            responderRevision++;
+            applyResponder(name);
+        });
         function applyResponder(name) {
+            const wasLocked = lockedForMe();
             window.__responder = name || null;
-            if (lockedForMe()) { enforceMute(); }
-            else if (forcedMute) {
-                forcedMute = false;
+            if (lockedForMe()) { enforceMute(); showMicLocked(); }
+            else if (wasLocked) {
                 showLockToast(name ? '輪到您回答，請自行開啟麥克風。' : '現在可以發言了，請自行開啟麥克風。', 4000);
             }
             renderBanner();
@@ -1967,7 +1990,12 @@
                 configOverwrite: {
                     prejoinPageEnabled:           false,
                     readOnlyName:                 true,
-                    startWithAudioMuted:          false,
+                    startWithAudioMuted:          lockedForMe(),
+                    ...(!AM_STAFF && {
+                        disableShortcuts: true,
+                        enablePushToTalk: false,
+                        buttonsWithNotifyClick: ['microphone']
+                    }),
                     startWithVideoMuted:          false,
                     disableDeepLinking:           true,
                     enableNoAudioDetection:       false,
@@ -2022,6 +2050,7 @@
                 inMeeting = true; everJoined = true;
                 ensureLiveTranscribe();
                 myJitsiId = e && e.id ? e.id : null;
+                enforceMute();
                 markJoinedWithRetry(3);
             });
             // 保險：萬一 videoConferenceJoined 事件沒收到，改用「房內人數 >= 1」判斷已進入會議
@@ -2036,9 +2065,16 @@
                     }
                 } catch {}
             }, 1000);
-            // 不是回答者：只要一按開麥，立刻再關掉並提示「現在是 xx 回答」
-            jitsiApi.addEventListener('audioMuteStatusChanged', e => { if (e && e.muted === false && lockedForMe()) { setTimeout(enforceMute, 0); } });
-            jitsiApi.addEventListener('audioMuteStatusChanged', e => { window.__myMuted = !!(e && e.muted); console.log('[STT-live] 自己的麥克風' + (window.__myMuted ? '已閉麥，不再偵測講話' : '已開麥')); });
+            if (!AM_STAFF) {
+                jitsiApi.addEventListener('toolbarButtonClicked', e => {
+                    if (e?.key === 'microphone') void requestAudioToggle(false);
+                });
+            }
+            jitsiApi.addEventListener('audioMuteStatusChanged', e => {
+                clearAudioToggle();
+                window.__myMuted = !!e?.muted;
+                if (!window.__myMuted) enforceMute();
+            });
             jitsiApi.addEventListener('dominantSpeakerChanged', e => {
                 dominantId = e && e.id ? e.id : null;
                 dominantSince = Date.now();
