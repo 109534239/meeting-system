@@ -29,6 +29,31 @@ namespace InterviewProject.Services
         }
 
         private readonly Dictionary<string, DateTime> _lastCycle = new();
+        private readonly Dictionary<string, DateTime> _lastRemind = new();
+
+        // AI 面試官口頭提醒：等 AI 沒在講話、現場安靜一下（最多 10 秒）再開口，不搶話；這句不計入面試對話紀錄
+        private async Task RemindAsync(string code, List<string> names, CancellationToken ct)
+        {
+            try
+            {
+                for (int i = 0; i < 20 && !ct.IsCancellationRequested; i++)
+                {
+                    if (!_bot.IsSpeaking(code))
+                    {
+                        var sil = await _bot.GetAudibleSilenceSecondsAsync(code);
+                        if (!sil.HasValue || sil.Value >= 1.5) break;
+                    }
+                    await Task.Delay(500, ct);
+                }
+                if (_bot.IsSpeaking(code)) return;
+                var text = $"{string.Join("、", names)}同學您好，請您取下口罩，謝謝。";
+                Console.WriteLine($"[口罩偵測] 房間 {code}：AI 面試官口頭提醒「{text}」");
+                await _hub.Clients.Group(code).SendAsync("AiSpeakingStateChanged", true, text);
+                try { await _bot.SpeakAsync(code, text, async () => { await _hub.Clients.Group(code).SendAsync("AiSubtitle", text); }); }
+                finally { await _hub.Clients.Group(code).SendAsync("AiSpeakingStateChanged", false, text, false); }
+            }
+            catch (Exception ex) { Console.WriteLine($"[口罩偵測] 口頭提醒失敗：{ex.Message}"); }
+        }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -41,7 +66,7 @@ namespace InterviewProject.Services
                     var codes = _bot.ActiveRoomCodes();
                     foreach (var gone in _maskStreak.Keys.Where(k => !codes.Contains(k)).ToList())
                     {
-                        _maskStreak.TryRemove(gone, out _); _lastAlert.TryRemove(gone, out _); _lastCycle.Remove(gone);
+                        _maskStreak.TryRemove(gone, out _); _lastAlert.TryRemove(gone, out _); _lastCycle.Remove(gone); _lastRemind.Remove(gone);
                     }
                     foreach (var code in codes)
                     {
@@ -99,11 +124,25 @@ namespace InterviewProject.Services
             lock (list) alert = streak.Where(kv => kv.Value >= 1).Select(kv => kv.Key).OrderBy(x => x).ToList();
             var key = string.Join("|", alert);
             _lastAlert.TryGetValue(code, out var prev);
+            var prevSet = new HashSet<string>((prev ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries));
             if (key != (prev ?? "") || alert.Count > 0)
             {
                 _lastAlert[code] = key;
                 try { await _hub.Clients.Group(code).SendAsync("MaskAlert", alert.ToArray(), ct); } catch { }
             }
+            // 🎙️ 讓 AI 面試官直接開口提醒：有人「剛開始」被偵測到戴口罩就說一次；之後只要還沒拿掉，每 60 秒再提醒一次
+            if (alert.Count > 0)
+            {
+                var added = alert.Any(a => !prevSet.Contains(a));
+                _lastRemind.TryGetValue(code, out var lastRem);
+                if (added || (DateTime.UtcNow - lastRem).TotalSeconds >= 60)
+                {
+                    _lastRemind[code] = DateTime.UtcNow;
+                    var names = alert.Select(a => a.StartsWith("求職者-") ? a.Substring(4) : a).ToList();
+                    _ = Task.Run(() => RemindAsync(code, names, ct));
+                }
+            }
+            else _lastRemind.Remove(code);
         }
 
         private static FaceSample? Parse(string? json, string label, DateTime at)

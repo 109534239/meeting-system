@@ -847,11 +847,7 @@
                 renderBanner();
             } catch (e) { dbgPoll('輪詢錯誤 ' + (e && e.message)); }
         }
-        function dbgPoll(t) {
-            let el = document.getElementById('pollDbg');
-            if (!el) { el = document.createElement('div'); el.id = 'pollDbg'; el.style.cssText = 'position:fixed;left:60px;bottom:2px;font-size:10px;color:#8b949e;z-index:99999;pointer-events:none'; document.body.appendChild(el); }
-            el.textContent = t + ' ' + new Date().toLocaleTimeString('zh-TW');
-        }
+        function dbgPoll() { } // 診斷文字已移除
         window.addEventListener('error', e => { window.__lastErr = (e && e.message) || 'error'; });
         window.addEventListener('unhandledrejection', e => { window.__lastErr = String((e && e.reason && e.reason.message) || (e && e.reason) || 'rejection').slice(0, 60); });
         setInterval(pollBannerState, 2000);
