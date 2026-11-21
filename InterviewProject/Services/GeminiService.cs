@@ -561,6 +561,38 @@ namespace InterviewProject.Services
             catch (Exception ex) { LastLiveError = "例外：" + ex.Message; Console.WriteLine($"[GeminiService] TranscribeLiveAsync 例外：{ex.Message}"); return null; }
         }
 
+        // 🎯 臉部觀察：判讀一張視訊畫面（只回報畫面上看得到的事實，輸出 JSON 文字）
+        public async Task<string?> AnalyzeFaceAsync(byte[] jpeg)
+        {
+            var apiKey = _config["Gemini:ApiKey"] ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? "";
+            if (string.IsNullOrEmpty(apiKey) || jpeg == null || jpeg.Length == 0) return null;
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                client.Timeout = TimeSpan.FromSeconds(20);
+                var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+                var prompt = "這是視訊面試中一位求職者的畫面。只判斷畫面上看得到的事實，不要推測身分、情緒原因或個性。" +
+                    "只輸出一個 JSON，不要其他文字：{\"face\":看得到清楚的正臉(true/false),\"mask\":口罩遮住口鼻(true/false，只算醫療口罩或布口罩；手遮嘴、麥克風、看不到臉都算 false),\"expression\":\"微笑\"或\"平靜\"或\"皺眉\"或\"看不清\",\"gaze\":\"看向鏡頭\"或\"偏離鏡頭\"或\"看不清\"}";
+                var body = new
+                {
+                    contents = new[] { new { parts = new object[] {
+                        new { text = prompt },
+                        new { inline_data = new { mime_type = "image/jpeg", data = Convert.ToBase64String(jpeg) } }
+                    } } },
+                    generationConfig = new { maxOutputTokens = 200, temperature = 0.0, responseMimeType = "application/json", thinkingConfig = new { thinkingBudget = 0 } }
+                };
+                var resp = await client.PostAsync(url, new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
+                var respBody = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode) { Console.WriteLine($"[GeminiService] AnalyzeFaceAsync HTTP {(int)resp.StatusCode}"); return null; }
+                using var doc = JsonDocument.Parse(respBody);
+                if (!doc.RootElement.TryGetProperty("candidates", out var cands) || cands.GetArrayLength() == 0) return null;
+                foreach (var part in cands[0].GetProperty("content").GetProperty("parts").EnumerateArray())
+                    if (part.TryGetProperty("text", out var t) && !(part.TryGetProperty("thought", out var th) && th.ValueKind == JsonValueKind.True)) return t.GetString();
+                return null;
+            }
+            catch (Exception ex) { Console.WriteLine($"[GeminiService] AnalyzeFaceAsync 例外：{ex.Message}"); return null; }
+        }
+
         // 🎯 分析用完的暫存影片檔，主動刪掉比較乾淨（非必要——Google 那邊 48 小時後也會自動清掉）
         public async Task DeleteFileAsync(string fileName)
         {

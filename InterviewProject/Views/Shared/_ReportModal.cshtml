@@ -294,12 +294,25 @@
                 if (any) wrap.appendChild(cards);
             }
             if (!isCompare) {
-                const cards = el('div', 'rpt-cards'); let any = false;
+                // 同一個維度在文中可能出現兩次（模型寫的「各維度評分」與系統附的「加權評分明細」），
+                // 卡片只顯示一次：以維度名稱（去掉前面的 A. B. 編號）為準，後出現的（系統明細）覆蓋前面的
+                const cards = el('div', 'rpt-cards'); const byTitle = new Map();
                 text.split(/\r?\n/).forEach(l => {
                     const m = l.match(/^(.+?)（權重\s*(\d+)%）[：:]\s*(\d+)\s*分/);
-                    if (m) { any = true; const c = el('div', 'rpt-card'); c.appendChild(el('div', 'k', m[1].trim())); c.appendChild(el('div', 'v', m[3])); c.appendChild(el('div', 's', '權重 ' + m[2] + '%（滿分 100）')); cards.appendChild(c); }
+                    if (!m) return;
+                    const title = m[1].trim().replace(/^[A-Da-d][\.、．:：\s]+/, '');
+                    byTitle.set(title, { key: (m[1].trim().match(/^([A-Da-d])[\.、．:：\s]/) || [])[1], title: title, w: m[2], v: m[3] });
                 });
-                if (any) wrap.appendChild(cards);
+
+                Array.from(byTitle.values()).forEach((x, i) => { x.o = i; });
+                const order = ['答題內容與具體度', '邏輯結構', '與職缺及履歷相關度', '溝通清晰度'];
+                Array.from(byTitle.values()).sort((a, b) => {
+                    const ia = order.indexOf(a.title), ib = order.indexOf(b.title);
+                    return (ia < 0 ? 99 + a.o : ia) - (ib < 0 ? 99 + b.o : ib);
+                }).forEach(x => {
+                    const c = el('div', 'rpt-card'); c.appendChild(el('div', 'k', x.title)); c.appendChild(el('div', 'v', x.v)); c.appendChild(el('div', 's', '權重 ' + x.w + '%（滿分 100）')); cards.appendChild(c);
+                });
+                if (byTitle.size) wrap.appendChild(cards);
             }
             text.split(/\r?\n/).forEach(raw => {
                 let line = clean(raw.replace(/^\s+/, ' ')).trim(); if (!line) return;

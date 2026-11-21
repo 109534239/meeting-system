@@ -938,6 +938,7 @@ namespace InterviewProject.Services
             cells.forEach(c => { c.__seat = seatOfCell(c); });
             cells.sort((a, b) => a.__seat - b.__seat);
 
+            window.__lastCells = cells; // 給臉部觀察（口罩提醒、AI 分析）擷取每位求職者目前的畫面用
             const cols = Math.ceil(Math.sqrt(cells.length));
             const rows = Math.ceil(cells.length / cols);
             const cellW = canvas.width / cols, cellH = canvas.height / rows;
@@ -1011,6 +1012,23 @@ namespace InterviewProject.Services
         window.__rafId = requestAnimationFrame(drawFrame);
     }
     drawFrame();
+
+    // 擷取每位「求職者」目前的視訊畫面（縮成寬 320 的 JPEG），給伺服器做臉部觀察用
+    window.__grabFaces = function () {
+        const out = [];
+        try {
+            (window.__lastCells || []).forEach(function (c) {
+                if (!c || c.type !== 'video' || !c.label || !/^求職者/.test(c.label)) return;
+                const v = c.el;
+                if (!v || !v.videoWidth || v.readyState < 2) return;
+                const cv = document.createElement('canvas');
+                cv.width = 320; cv.height = Math.max(1, Math.round(320 * v.videoHeight / v.videoWidth));
+                cv.getContext('2d').drawImage(v, 0, 0, cv.width, cv.height);
+                out.push({ label: c.label, jpeg: cv.toDataURL('image/jpeg', 0.7).split(',')[1] });
+            });
+        } catch (e) {}
+        return out;
+    };
 
     const canvasStream = canvas.captureStream(15);
     const combined = new MediaStream([
@@ -1527,7 +1545,7 @@ namespace InterviewProject.Services
                 _ = Task.Run(async () =>
                 {
                     await Task.Delay(1500); // 留一點緩衝，讓解除靜音、錄影機都先穩定下來
-                    // 🎯 開場時間：以「主持人進會議的時間 + 30 秒」為準；AI 比較晚進來、主持人早就在了，就馬上開場，不再另外多等。
+                    // 🎯 開場時間：以「主持人進會議的時間 + 20 秒」為準；AI 比較晚進來、主持人早就在了，就馬上開場，不再另外多等。
                     //    （沒有任何人進場時才等，最久 5 分鐘）
                     try
                     {
@@ -1547,7 +1565,7 @@ namespace InterviewProject.Services
                                 var refJoined = (hostRow ?? joinedList.OrderBy(p => p.JoinedAt).First()).JoinedAt!.Value;
                                 double e1 = (DateTime.Now - refJoined).TotalSeconds, e2 = (DateTime.UtcNow - refJoined).TotalSeconds;
                                 double elapsed = e1 < 0 ? e2 : (e2 < 0 ? e1 : Math.Min(e1, e2)); // 不確定資料庫存的是本地還是 UTC 時間，取合理的那個
-                                double remain = Math.Max(0, Math.Min(30, 30 - elapsed));
+                                double remain = Math.Max(0, Math.Min(20, 20 - elapsed));
                                 Console.WriteLine($"[JitsiBot] 房間 {roomCode}：進場者已在場 {elapsed:0} 秒，再等 {remain:0} 秒開場。");
                                 if (remain > 0) await Task.Delay(TimeSpan.FromSeconds(remain));
                                 break;
@@ -1696,6 +1714,34 @@ namespace InterviewProject.Services
                 return ms / 1000.0;
             }
             catch { return null; }
+        }
+
+        // 目前有 AI 面試官在場（會議進行中）的房間代碼
+        public List<string> ActiveRoomCodes()
+        {
+            lock (_activeBotsLock) return _activeBots.Where(kv => kv.Value != null).Select(kv => kv.Key).ToList();
+        }
+
+        // 擷取房間裡每位求職者目前的視訊畫面（標籤是 Jitsi 顯示名稱，例如「求職者-aa」）
+        public async Task<List<(string Label, byte[] Jpeg)>> CaptureFacesAsync(string roomCode)
+        {
+            var res = new List<(string, byte[])>();
+            try
+            {
+                BotInstance? inst;
+                lock (_activeBotsLock) { if (!_activeBots.TryGetValue(roomCode.Trim(), out inst) || inst == null) return res; }
+                var el = await inst.PageInstance.EvaluateAsync<JsonElement>("() => (window.__grabFaces ? window.__grabFaces() : [])");
+                if (el.ValueKind != JsonValueKind.Array) return res;
+                foreach (var it in el.EnumerateArray())
+                {
+                    var label = it.TryGetProperty("label", out var l) ? l.GetString() : null;
+                    var b64 = it.TryGetProperty("jpeg", out var j) ? j.GetString() : null;
+                    if (string.IsNullOrEmpty(label) || string.IsNullOrEmpty(b64)) continue;
+                    res.Add((label!, Convert.FromBase64String(b64!)));
+                }
+            }
+            catch { }
+            return res;
         }
 
         public bool IsSpeaking(string roomCode)

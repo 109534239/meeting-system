@@ -178,6 +178,44 @@
                 color: #f85149
             }
 
+        .bn-seg {
+            margin-left: 10px;
+        }
+
+        .bn-warn {
+            background: #f85149;
+            color: #fff;
+            padding: 1px 10px;
+            border-radius: 10px;
+        }
+
+        .bn-rel {
+            margin-left: 10px;
+            color: #ffd33d;
+            cursor: pointer;
+            text-decoration: underline;
+            font-weight: 400;
+        }
+
+        #lockToast {
+            display: none;
+            position: fixed;
+            top: 64px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 99999;
+            background: #161b22;
+            color: #fff;
+            border: 2px solid #f0883e;
+            border-radius: 12px;
+            padding: 14px 26px;
+            font-size: 16px;
+            font-weight: 700;
+            box-shadow: 0 8px 28px rgba(0,0,0,.55);
+            max-width: 80vw;
+            text-align: center;
+        }
+
         .main {
             flex: 1;
             display: flex;
@@ -505,6 +543,7 @@
     </div>
 
     <div class="banner wait" id="banner">⏳ 等待主持人開始會議...</div>
+    <div id="lockToast"></div>
 
     @if (isHost)
     {
@@ -570,7 +609,7 @@
         const JITSI_ROOM = "@jitsiRoom";
         const JITSI_DOMAIN = "@jitsiDomain";
         const JITSI_JWT = "@jitsiJwt";
-        const SIL_SEC    = 30;  // 冷場觸發秒數
+        const SIL_SEC    = 20;  // 冷場觸發秒數（安靜滿 20 秒 AI 才提問）
 
         // ══════════════════════════════════
         //  狀態
@@ -716,7 +755,7 @@
             if (base > 0 && lastSpeechMs > base) { lastSpeechMs = base; console.log('[冷場診斷] 剛剛的聲音轉不出文字（雜音），冷場計時還原'); }
         });
         hub.on("SpeechDetected", (who, role) => {
-            if (who) voiceBy[who] = Date.now();
+            if (who) { voiceBy[who] = Date.now(); noteSpeaker(who); }
             // 職員/主持人開口了（不必等轉出文字）：AI 之後才可以做冷場判斷
             if (role && role !== 'jobseeker' && role !== 'ai') staffSpokeAfterAi = true;
             if (IS_HOST && (aiSpeakingRemote || Date.now() < aiRequestedUntil)) requestAiStop('收到有人出聲的通知');
@@ -745,6 +784,76 @@
         // 🐛 這輪新增：AI 面試官現在開始/結束講話的全場廣播（取代原本只有觸發者自己聽得到的
         //    瀏覽器內建語音合成）。收到 true：全場一起暫停冷場計時、顯示字幕、暫停自己的語音辨識
         //    （避免收到 AI 自己的聲音、被當成有人在講話混進逐字稿）。收到 false：全場一起恢復。
+
+        // ══════════════════════════════════
+        //  頂端橫幅提醒（誰在提問/回答、口罩提醒）＋ 回答者鎖定（非回答者自動閉麥）
+        // ══════════════════════════════════
+        const MY_PLAIN = MY_NAME.replace(/^求職者-/, '');
+        const AM_STAFF = (MY_ROLE === 'hr' || MY_ROLE === 'manager');
+        let spkNow = null, forcedMute = false, lastLockToast = 0, lastMaskToast = 0;
+        window.__maskNames = []; window.__responder = null;
+        function noteSpeaker(who) {
+            if (!who || /^AI/.test(who)) return;
+            spkNow = { text: (/^求職者/.test(who) ? '🗣️ ' + who + ' 回答中' : '🎤 ' + who + ' 提問中'), until: Date.now() + 3500 };
+        }
+        function renderBanner() {
+            const st = document.getElementById('bnStatus'), mk = document.getElementById('bnMask'), rl = document.getElementById('bnRel');
+            if (!st || !mk) return;
+            let t = '';
+            if (aiSpeakingRemote) t = '🤖 AI 面試官 提問中';
+            else if (spkNow && Date.now() < spkNow.until) t = spkNow.text;
+            else if (window.__responder) t = '👉 請 求職者-' + window.__responder + ' 回答';
+            st.textContent = t ? '｜ ' + t : '';
+            const mn = window.__maskNames || [];
+            mk.textContent = mn.length ? '😷 ' + mn.map(n => n + ' 請不要戴口罩').join('、') : '';
+            mk.style.display = mn.length ? '' : 'none';
+            if (rl) rl.style.display = (window.__responder && AM_STAFF) ? '' : 'none';
+        }
+        setInterval(renderBanner, 500);
+        function releaseResponder() {
+            try { fetch('/Room/ReleaseResponder', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'roomCode=' + encodeURIComponent(ROOM_CODE) }); } catch {}
+        }
+        function showLockToast(msg, ms) {
+            const el = document.getElementById('lockToast'); if (!el) return;
+            el.textContent = msg; el.style.display = 'block';
+            clearTimeout(window.__lockToastT); window.__lockToastT = setTimeout(() => { el.style.display = 'none'; }, ms || 5000);
+        }
+        function lockedForMe() {
+            const r = window.__responder;
+            return !!r && !AM_STAFF && r.toLowerCase() !== MY_PLAIN.toLowerCase();
+        }
+        function enforceMute() {
+            if (!lockedForMe() || !jitsiApi) return;
+            try {
+                jitsiApi.isAudioMuted().then(m => {
+                    if (m) return;
+                    forcedMute = true; jitsiApi.executeCommand('toggleAudio'); window.__myMuted = true;
+                    const now = Date.now();
+                    if (now - lastLockToast > 2500) { lastLockToast = now; showLockToast('目前請「' + window.__responder + '」回答，您的麥克風已暫時關閉，輪到您時會自動開啟。', 5000); }
+                }).catch(() => {});
+            } catch {}
+        }
+        setInterval(enforceMute, 1000);
+        hub.on("ResponderChanged", name => {
+            window.__responder = name || null;
+            if (lockedForMe()) { enforceMute(); }
+            else if (forcedMute && jitsiApi) {
+                forcedMute = false;
+                try {
+                    jitsiApi.isAudioMuted().then(m => {
+                        if (m) { jitsiApi.executeCommand('toggleAudio'); window.__myMuted = false; }
+                        showLockToast(name ? '輪到您回答，已為您開啟麥克風。' : '現在可以發言了，已為您開啟麥克風。', 4000);
+                    }).catch(() => {});
+                } catch {}
+            }
+            renderBanner();
+        });
+        hub.on("MaskAlert", names => {
+            window.__maskNames = Array.isArray(names) ? names : [];
+            if (window.__maskNames.includes(MY_NAME) && Date.now() - lastMaskToast > 30000) { lastMaskToast = Date.now(); showLockToast('偵測到您戴著口罩，請取下口罩，謝謝。', 6000); }
+            renderBanner();
+        });
+
         hub.on("AiSubtitle", text => {
             if (!text) return;
             pushConvo('AI 面試官', 'ai', text);
@@ -792,7 +901,7 @@
         }
         startHub();
         // 版本標記：左下角小字 + console，確認每個人跑的是同一版（測試前請每台都看到 v0245）
-        (function () { try { const d = document.createElement('div'); d.textContent = 'v0290'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
+        (function () { try { const d = document.createElement('div'); d.textContent = 'v0300'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
 
         // 🎯 保底輪詢：不管 SignalR 廣播這次有沒有送達（長時間閒置等待時 SignalR 群組可能悄悄失效），
         //    每 4 秒主動問一次伺服器「會議現在到底是什麼狀態」，用真實資料庫狀態校正畫面，
@@ -917,7 +1026,7 @@
 
             const b = document.getElementById('banner');
             b.className = 'banner live';
-            b.textContent = '🔴 會議進行中';
+            b.innerHTML = '<span id="bnBase">🔴 會議進行中</span><span id="bnStatus" class="bn-seg"></span><span id="bnMask" class="bn-seg bn-warn" style="display:none"></span><span id="bnRel" class="bn-rel" style="display:none" onclick="releaseResponder()">解除回答限制</span>';
 
             if (IS_HOST) {
                 document.getElementById('startBtn').style.display = 'none';
@@ -1132,7 +1241,7 @@
                 busy = true;
                 const dur = Date.now() - utterStart, pk = peak, overlapped = aiOverlap, stMs = utterStart;
                 speaking = false; peak = 0; loudRun = 0;
-                voicePing(1, 5); // 這句話「講完」的時間點：冷場 30 秒從這裡開始算
+                voicePing(1, 5); // 這句話「講完」的時間點：冷場 20 秒從這裡開始算
                 const blob = await stopRec();
                 startRec();
                 busy = false;
@@ -1348,12 +1457,12 @@
         //    不要在單純「換人講話」的空檔就被誤判成冷場；求職者剛講完、可能還在組織下一句時，
         //    也多留一點餘裕，避免打斷正在思考的人。
         function getSilenceThresholdSec() {
-            if (lastSpeakerRole === 'ai') return 30; // 一律 30 秒：從前一位「聲音停止」那一刻開始算
+            if (lastSpeakerRole === 'ai') return 20; // 一律 20 秒：從前一位「聲音停止」那一刻開始算
             if (lastWasQuestion && lastSpeakerRole && lastSpeakerRole !== 'jobseeker') {
-                return 30;
+                return 20;
             }
             if (lastSpeakerRole === 'jobseeker') {
-                return 30;
+                return 20;
             }
             return SIL_SEC; // 預設值（例如會議剛開始、還沒人真的講過話）
         }
@@ -1448,7 +1557,7 @@
         //    各自觸發，多人同時倒數到同一時間點時會一起打去伺服器，AI 可能被要求同時講兩句話疊在一起。
         //    改成只有一個權威來源做這個決定；其他人的瀏覽器還是繼續跑倒數計時（給自己畫面上的
         //    冷場偵測進度條用），但不會真的呼叫伺服器。
-        // ── 預先想題目：沉默到約 16 秒時，先向伺服器要好下一題，30 秒一到只剩語音合成的時間 ──
+        // ── 預先想題目：沉默到第 10 秒時，先向伺服器要好下一題，20 秒一到只剩語音合成的時間 ──
         let aiPre = null, aiPreBusy = false;
         async function fetchAiQuestion(unans, pre) {
             try {
@@ -1471,7 +1580,7 @@
         }
         async function maybePrefetch(secSince, threshold) {
             if (!IS_HOST || !staffSpokeAfterAi || aiPreBusy || ended || !started || isSp || aiSpeakingRemote) return;
-            if (secSince < threshold - 14) return;
+            if (secSince < threshold - 10) return; // 安靜到第 10 秒就先想題目
             if (aiPre && aiPre.ls === lastSpeechMs && aiPre.seq === humanSeq) return; // 這段沉默已經準備過了
             if (anyUtterancePending()) return;
             aiPreBusy = true;
@@ -1522,10 +1631,10 @@
                 setSt('th','💭 思考中...');
                 const aiUnanswered = (humanSeq === aiAtSeq && !humanVoiceSinceAi); // AI 上次問完後，一直沒人出聲/發言
                 let q = null; window.__aiWaitSec = 0;
-                // 🎯 冷場到 30 秒前（約 16 秒起）就先把題目想好；等的時候如果預先想的還在跑，最多等 8 秒
+                // 🎯 冷場到 20 秒前（第 10 秒起）就先把題目想好；等的時候如果預先想的還在跑，最多等 8 秒
                 for (let w = 0; aiPreBusy && w < 40; w++) await new Promise(res => setTimeout(res, 200));
                 if (aiPre && aiPre.q && aiPre.ls === lastSpeechMs && aiPre.seq === humanSeq && aiPre.un === aiUnanswered) {
-                    q = aiPre.q; console.log('[冷場診斷-triggerAI] 使用事先想好的題目（30 秒一到就能立刻開口）');
+                    q = aiPre.q; console.log('[冷場診斷-triggerAI] 使用事先想好的題目（20 秒一到就能立刻開口）');
                 } else {
                     q = await fetchAiQuestion(aiUnanswered);
                 }
@@ -1537,7 +1646,7 @@
                     if (ws > 0) {
                         // 伺服器聽到會議裡剛才還有人聲（前端的計時算早了）：把計時校正成「還要再等 ws 秒」
                         console.log('[冷場診斷-triggerAI] 伺服器說會議裡剛才還有人聲，再等 ' + ws + ' 秒');
-                        lastSpeechMs = Date.now() - Math.max(0, 30 - ws) * 1000;
+                        lastSpeechMs = Date.now() - Math.max(0, 20 - ws) * 1000;
                         setSt('li', '👂 聆聽中');
                         return;
                     }
@@ -1578,9 +1687,9 @@
                 body: 'roomCode=' + encodeURIComponent(ROOM_CODE) + '&text=' + encodeURIComponent(text)
             }).then(r => r.json()).then(d => {
                 if (d && d.refused) {
-                    // 伺服器說距離上次有人出聲還不到 30 秒（前端計時算早了）：校正成「還要再等 waitSec 秒」，這次不講
+                    // 伺服器說距離上次有人出聲還不到 20 秒（前端計時算早了）：校正成「還要再等 waitSec 秒」，這次不講
                     const ws = d.waitSec || 5;
-                    aiRequestedUntil = 0; lastSpeechMs = Date.now() - Math.max(0, 30 - ws) * 1000;
+                    aiRequestedUntil = 0; lastSpeechMs = Date.now() - Math.max(0, 20 - ws) * 1000;
                     console.log('[冷場診斷-aiSpeak] 伺服器拒絕開口（還有人聲），再等 ' + ws + ' 秒');
                     setSt('li', '👂 聆聽中');
                 }

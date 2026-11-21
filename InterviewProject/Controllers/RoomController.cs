@@ -288,7 +288,111 @@ namespace InterviewProject.Controllers
             var code = roomCode.Trim();
             AddConvo(code, speaker.Trim(), role ?? "", text);
             QueueLiveNote(code, speaker.Trim(), role ?? "", text);
+            MarkResponderAnswered(code, speaker.Trim());
+            await DetectAddressedAsync(code, role ?? "", speaker.Trim(), text);
             try { await _hub.Clients.Group(code).SendAsync("SpeechTurnInfo", speaker.Trim(), isQuestion, role ?? "", text.Trim()); } catch { }
+            return Ok();
+        }
+
+
+        // ═════════ 回答者鎖定：問誰、誰回答，其他求職者的麥克風暫時關閉 ═════════
+        //   觸發：AI 面試官實際說出口的題目有指定對象、或職員/主持人的發言點名了某位求職者（只在能明確判斷是哪一位時才鎖）
+        //   解除：該求職者答完後約 8 秒、被點名後 45 秒仍沒回答、換人被點名、或主持人按「解除」
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Name, DateTime At, DateTime? AnsweredAt)> _responder = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime At, List<string> Names)> _nameCache = new();
+
+        private async Task SetResponderAsync(string code, string? name)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                if (_responder.TryRemove(code, out _)) { try { await _hub.Clients.Group(code).SendAsync("ResponderChanged", (string?)null); } catch { } }
+                return;
+            }
+            if (_responder.TryGetValue(code, out var cur) && cur.Name == name && (DateTime.UtcNow - cur.At).TotalSeconds < 3) return;
+            var stamp = DateTime.UtcNow;
+            _responder[code] = (name, stamp, null);
+            Console.WriteLine($"[RoomController] 回答者鎖定：房間 {code} 現在請「{name}」回答，其他求職者暫時閉麥。");
+            try { await _hub.Clients.Group(code).SendAsync("ResponderChanged", name); } catch { }
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    await Task.Delay(3000);
+                    if (!_responder.TryGetValue(code, out var r) || r.At != stamp) return; // 已換人或已解除
+                    if (PersonSpeaking(code)) continue;
+                    var now = DateTime.UtcNow;
+                    bool done = r.AnsweredAt.HasValue ? (now - r.AnsweredAt.Value).TotalSeconds > 8 : (now - r.At).TotalSeconds > 45;
+                    if (done) { await SetResponderAsync(code, null); return; }
+                }
+            });
+        }
+
+        private void MarkResponderAnswered(string code, string speakerLabel)
+        {
+            if (!_responder.TryGetValue(code, out var r)) return;
+            var plain = (speakerLabel ?? "").Replace("求職者-", "").Trim();
+            if (string.Equals(plain, r.Name, StringComparison.OrdinalIgnoreCase)) _responder[code] = (r.Name, r.At, DateTime.UtcNow);
+        }
+
+        private async Task<List<string>> GetJobseekerNamesAsync(string code)
+        {
+            if (_nameCache.TryGetValue(code, out var c) && (DateTime.UtcNow - c.At).TotalSeconds < 20) return c.Names;
+            var names = new List<string>();
+            try
+            {
+                var room = await _context.Rooms.AsNoTracking().FirstOrDefaultAsync(r => r.JitsiRoomName == code);
+                if (room != null)
+                {
+                    var ps = await _context.RoomParticipants.AsNoTracking()
+                        .Where(p => p.RoomId == room.Id && p.Role == ParticipantRole.Jobseeker && p.ResumeId != null)
+                        .Include(p => p.Resume).ThenInclude(r => r!.Member).ToListAsync();
+                    var here = ps.Where(p => p.JoinedAt != null && p.LeftAt == null).ToList();
+                    if (here.Count == 0) here = ps;
+                    names = here.Select(p => p.Resume?.Member?.Name).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!.Trim()).Distinct().ToList();
+                }
+            }
+            catch { }
+            _nameCache[code] = (DateTime.UtcNow, names);
+            return names;
+        }
+
+        // 職員/主持人說的話裡，明確點名了「唯一一位」在場求職者，就鎖定那位為回答者
+        private async Task DetectAddressedAsync(string code, string role, string speaker, string text)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(text)) return;
+                if (string.Equals(role, "jobseeker", StringComparison.OrdinalIgnoreCase) || (speaker ?? "").StartsWith("求職者") || role == "ai" || (speaker ?? "").StartsWith("AI")) return;
+                var names = await GetJobseekerNamesAsync(code);
+                if (names.Count < 2) return; // 只有一位求職者時不需要鎖
+                bool Has(string n)
+                {
+                    if (n.All(ch => ch < 128)) return Regex.IsMatch(text, @"(?<![A-Za-z0-9])" + Regex.Escape(n) + @"(?![A-Za-z0-9])", RegexOptions.IgnoreCase);
+                    return text.Contains(n, StringComparison.OrdinalIgnoreCase);
+                }
+                var hit = names.Where(Has).ToList();
+                hit = hit.Where(n => !hit.Any(m => m != n && m.Contains(n, StringComparison.OrdinalIgnoreCase))).ToList(); // 「a」被包在「aa」裡不算
+                if (hit.Count == 0)
+                {
+                    // 語音辨識常把名字聽錯一個字：姓氏唯一，且姓氏後面緊接 1~2 個中文字再接停頓或請求語氣
+                    var fz = names.Where(n => n.Length >= 2 && n[0] >= 0x4e00 && n[0] <= 0x9fff
+                        && names.Count(m => m.Length > 0 && m[0] == n[0]) == 1
+                        && Regex.IsMatch(text, Regex.Escape(n.Substring(0, 1)) + @"[\u4e00-\u9fff]{1,2}(?=[，,、：: 請你可先來說談回答幫跟]|$)")).ToList();
+                    if (fz.Count == 1) hit = fz;
+                }
+                if (hit.Count == 1) await SetResponderAsync(code, hit[0]);
+            }
+            catch { }
+        }
+
+        // 主持人手動解除回答者鎖定（只開放職員帳號）
+        [HttpPost]
+        public async Task<IActionResult> ReleaseResponder([FromForm] string roomCode)
+        {
+            var role = (HttpContext.Session.GetString("MemberRole") ?? "").ToLower();
+            if (role != "hr" && role != "manager") return Forbid();
+            await SetResponderAsync((roomCode ?? "").Trim(), null);
             return Ok();
         }
 
@@ -939,6 +1043,8 @@ namespace InterviewProject.Controllers
                 var tt = text.Trim();
                 AddConvo(roomCode.Trim(), speaker.Trim(), role ?? "", tt);
                 QueueLiveNote(roomCode.Trim(), speaker.Trim(), role ?? "", tt);
+                MarkResponderAnswered(roomCode.Trim(), speaker.Trim());
+                await DetectAddressedAsync(roomCode.Trim(), role ?? "", speaker.Trim(), tt);
                 bool isQ = System.Text.RegularExpressions.Regex.IsMatch(tt, @"[?？]\s*$") ||
                            System.Text.RegularExpressions.Regex.IsMatch(tt, @"(嗎|呢\s*$|為什麼|怎麼|如何|能不能|可不可以|有沒有|是不是|多少|哪裡|哪個|什麼時候|可以.*嗎)");
                 try { await _hub.Clients.Group(roomCode.Trim()).SendAsync("SpeechTurnInfo", speaker.Trim(), isQ, role ?? "", tt); } catch { }
@@ -1060,7 +1166,7 @@ namespace InterviewProject.Controllers
             roomCode = roomCode.Trim();
 
             // 🎯 真正開口前的最後一道伺服器端把關（預先準備好的題目是直接走這裡的，不會經過 AiNextQuestion 的檢查）：
-            //    距離上次有人出聲／AI 講完不到 27 秒、或有人正在講話，一律不准開口，回覆「再等幾秒」。
+            //    距離上次有人出聲／AI 講完不到 17 秒、或有人正在講話，一律不准開口，回覆「再等幾秒」。
             {
                 double? aud0 = await _botService.GetAudibleSilenceSecondsAsync(roomCode);
                 double? q0 = null;
@@ -1068,10 +1174,10 @@ namespace InterviewProject.Controllers
                 // 機器人混音聽到的聲音只在「真的剛剛才有聲音（3 秒內）」才算，避免背景雜音讓 AI 永遠不能開口
                 if (aud0.HasValue && aud0.Value < 3 && (!q0.HasValue || aud0.Value < q0.Value)) q0 = aud0;
                 if (PersonSpeaking(roomCode)) q0 = 0;
-                if (q0.HasValue && q0.Value < 27)
+                if (q0.HasValue && q0.Value < 17)
                 {
-                    var w0 = Math.Max(1, (int)Math.Ceiling(30 - q0.Value));
-                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口（活動計時={(q0 ?? -1):0.0}，混音靜音={(aud0 ?? -1):0.0}），請前端再等 {w0} 秒。[伺服器版本 v0291]");
+                    var w0 = Math.Max(1, (int)Math.Ceiling(20 - q0.Value));
+                    Console.WriteLine($"[RoomController] AiSpeak：房間 {roomCode} 距離上次有人出聲只有 {q0.Value:0.0} 秒，不准開口（活動計時={(q0 ?? -1):0.0}，混音靜音={(aud0 ?? -1):0.0}），請前端再等 {w0} 秒。[伺服器版本 v0300]");
                     return Ok(new { success = true, refused = true, waitSec = w0 });
                 }
             }
@@ -1142,10 +1248,10 @@ namespace InterviewProject.Controllers
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RoomCode)) return Ok(new { text = (string?)null });
             var code = req.RoomCode.Trim();
-            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0291]");
+            Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 收到冷場提問請求（對話 {(req.Lines?.Count ?? 0)} 句）。[伺服器版本 v0300]");
             if (_botService.IsSpeaking(code)) return Ok(new { text = (string?)null });
 
-            // 🎯 最後的保險（不管前端計時有沒有算錯）：會議的混音裡不到 27 秒前還聽得到人聲，就還不能因為冷場而開口。
+            // 🎯 最後的保險（不管前端計時有沒有算錯）：會議的混音裡不到 17 秒前還聽得到人聲，就還不能因為冷場而開口。
             //    這個量測在伺服器端的 AI 面試官自己身上，直接聽會議裡實際送出的聲音。
             if (!req.Prefetch)
             {
@@ -1157,9 +1263,9 @@ namespace InterviewProject.Controllers
                     if (!quiet.HasValue || srvQuiet < quiet.Value) { quiet = srvQuiet; quietSrc = "伺服器收到的說話/出聲記錄"; }
                 }
                 if (PersonSpeaking(code)) { quiet = 0; quietSrc = "有人正在講話或話還在轉文字"; }
-                if (quiet.HasValue && quiet.Value < 28)
+                if (quiet.HasValue && quiet.Value < 18)
                 {
-                    var wait = Math.Max(1, (int)Math.Ceiling(30 - quiet.Value));
+                    var wait = Math.Max(1, (int)Math.Ceiling(20 - quiet.Value));
                     Console.WriteLine($"[RoomController] AiNextQuestion：房間 {code} 依「{quietSrc}」，距離上次有人出聲只有 {quiet.Value:0.0} 秒，還不能開口，請前端再等 {wait} 秒。");
                     return Ok(new { text = (string?)null, waitSec = wait });
                 }
@@ -1544,7 +1650,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
             try
             {
                 await _hub.Clients.Group(roomCode).SendAsync("AiSpeakingStateChanged", true, text);
-                await _botService.SpeakAsync(roomCode, text, async () => { AddConvo(roomCode, "AI 面試官", "ai", text); await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); }, async () => PersonSpeaking(roomCode) || ((await _botService.GetAudibleSilenceSecondsAsync(roomCode)) is double aq && aq < 1.2)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
+                await _botService.SpeakAsync(roomCode, text, async () => { AddConvo(roomCode, "AI 面試官", "ai", text); await _hub.Clients.Group(roomCode).SendAsync("AiSubtitle", text); if (_aiLast.TryGetValue(roomCode, out var al) && al.Text == text) await SetResponderAsync(roomCode, string.IsNullOrEmpty(al.Name) ? null : al.Name); }, async () => PersonSpeaking(roomCode) || ((await _botService.GetAudibleSilenceSecondsAsync(roomCode)) is double aq && aq < 1.2)); // 這裡面會等到真的講完（依音訊長度換算）才回傳
             }
             finally
             {
@@ -2116,7 +2222,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                     if (cscore != null) finalText = AppendScoreDetail(finalText, cscore, "依會議中即時記錄估算（參考用）");
                 }
                 if (cscore != null) scoreBag.Add(cscore);
-                analysis = finalText;
+                analysis = finalText.TrimEnd() + "\n\n" + FaceWatchService.BuildReport(roomCode, candidateName); // 臉部觀察（不計入評分）
                 var fileName = BuildFileName(room, "txt", candidateName);
                 try
                 {
@@ -2143,6 +2249,7 @@ $@"你是這場面試的 AI 面試官，與在場的職員（面試官）一起�
                 catch (Exception ex) { Console.WriteLine("[SaveAiAnalysis] 比較總表產生失敗：" + ex.Message); }
             }
             _liveNotes.TryRemove(roomCode, out _);
+            FaceWatchService.Clear(roomCode);
 
             // 🎯 這場分析用的暫存影片檔在 Gemini 端可以清掉了，不用等 48 小時自動過期
             if (!string.IsNullOrEmpty(geminiFileName))

@@ -48,6 +48,7 @@ builder.Services.AddControllersWithViews();
 
 // 🚀 2. 註冊 AI 機器人服務（解決 Unable to resolve service 錯誤）
 builder.Services.AddSingleton<JitsiBotService>();
+builder.Services.AddHostedService<FaceWatchService>(); // 臉部觀察：口罩提醒、會後 AI 分析的臉部段落
 
 // 🚀 JaaS (8x8.vc) JWT 簽發服務
 builder.Services.AddSingleton<JaasJwtService>();
