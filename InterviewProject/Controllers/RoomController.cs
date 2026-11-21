@@ -301,6 +301,15 @@ namespace InterviewProject.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Name, DateTime At, DateTime? AnsweredAt)> _responder = new();
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime At, List<string> Names)> _nameCache = new();
 
+        // 前端回報（目前用來查「非回答者閉麥」在各人瀏覽器上實際發生了什麼）
+        [HttpPost]
+        public IActionResult ClientLog([FromForm] string roomCode, [FromForm] string msg)
+        {
+            var m = (msg ?? "").Replace("\n", " ");
+            Console.WriteLine($"[前端] 房間 {roomCode}：{(m.Length > 200 ? m.Substring(0, 200) : m)}");
+            return Ok();
+        }
+
         // 最近一次有人出聲（誰）——給前端每 2 秒輪詢「橫幅狀態」用，不再只靠 SignalR 即時廣播（漏收就看不到）
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Who, DateTime At)> _lastSpeaker = new();
 

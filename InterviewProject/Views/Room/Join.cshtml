@@ -815,16 +815,33 @@
             const r = window.__responder;
             return !!r && !AM_STAFF && r.toLowerCase() !== MY_PLAIN.toLowerCase();
         }
-        function enforceMute() {
-            if (!lockedForMe() || !jitsiApi) return;
+        // 回報到伺服器日誌，方便查「鎖麥」在這個人的瀏覽器上實際發生了什麼
+        function clog(msg) {
+            try { navigator.sendBeacon('/Room/ClientLog', new URLSearchParams({ roomCode: ROOM_CODE, msg: MY_NAME + '：' + msg })); } catch {}
+        }
+        let enfBusy = false;
+        async function enforceMute() {
+            if (!lockedForMe()) return;
+            if (!jitsiApi) { clog('鎖麥：jitsiApi 還沒準備好'); return; }
+            if (enfBusy) return;
+            enfBusy = true;
             try {
-                jitsiApi.isAudioMuted().then(m => {
-                    if (m) return;
+                for (let i = 0; i < 3; i++) {
+                    const m = await Promise.race([jitsiApi.isAudioMuted(), new Promise(r => setTimeout(() => r('timeout'), 1500))]);
+                    if (m === 'timeout') {
+                        clog('鎖麥：isAudioMuted 沒有回應，改用事件記錄的狀態 myMuted=' + window.__myMuted);
+                        if (window.__myMuted === false) { forcedMute = true; jitsiApi.executeCommand('toggleAudio'); }
+                        break;
+                    }
+                    if (m) { if (i > 0) clog('鎖麥：確認已關麥'); return; }
                     forcedMute = true; jitsiApi.executeCommand('toggleAudio'); window.__myMuted = true;
+                    clog('鎖麥：偵測到麥克風是開的，已送出關麥指令（第' + (i + 1) + '次），回答者=' + window.__responder);
                     const now = Date.now();
-                    if (now - lastLockToast > 1500) { lastLockToast = now; showLockToast('現在是「' + window.__responder + '」回答，您的麥克風已被關閉，請稍候，輪到您時會自動開啟。', 5000); }
-                }).catch(() => {});
-            } catch {}
+                    if (now - lastLockToast > 1500) { lastLockToast = now; showLockToast('現在是「' + window.__responder + '」回答，您的麥克風已被關閉，請稍候，輪到您時再自行開啟。', 5000); }
+                    await new Promise(r => setTimeout(r, 700));
+                }
+            } catch (e) { clog('鎖麥錯誤：' + (e && e.message)); }
+            finally { enfBusy = false; }
         }
         setInterval(enforceMute, 1000);
         // 保險：每 2 秒向伺服器要一次「誰在回答／誰戴口罩／誰在講話」，不管哪個角色、有沒有漏收 SignalR 廣播都看得到
@@ -854,6 +871,7 @@
         hub.on("ResponderChanged", name => applyResponder(name));
         function applyResponder(name) {
             window.__responder = name || null;
+            clog('收到回答者=' + (name || '無') + '，我是「' + MY_PLAIN + '」，是否被鎖=' + lockedForMe() + '，職員=' + AM_STAFF);
             if (lockedForMe()) { enforceMute(); }
             else if (forcedMute) {
                 forcedMute = false;
@@ -914,7 +932,7 @@
         }
         startHub();
         // 版本標記：左下角小字 + console，確認每個人跑的是同一版（測試前請每台都看到 v0245）
-        (function () { try { const d = document.createElement('div'); d.textContent = 'v0331'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
+        (function () { try { const d = document.createElement('div'); d.textContent = 'v0340'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
 
         // 🎯 保底輪詢：不管 SignalR 廣播這次有沒有送達（長時間閒置等待時 SignalR 群組可能悄悄失效），
         //    每 4 秒主動問一次伺服器「會議現在到底是什麼狀態」，用真實資料庫狀態校正畫面，
