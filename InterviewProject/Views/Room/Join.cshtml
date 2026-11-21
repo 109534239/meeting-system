@@ -788,7 +788,12 @@
             if (!who || /^AI/.test(who)) return;
             spkNow = { text: (/^求職者/.test(who) ? '🗣️ ' + who + ' 回答中' : '🎤 ' + who + ' 提問中'), until: Date.now() + 3500 };
         }
+        const BANNER_LIVE_HTML = '<span id="bnBase">🔴 會議進行中</span><span id="bnStatus" class="bn-seg"></span><span id="bnMask" class="bn-seg bn-warn" style="display:none"></span>';
         function renderBanner() {
+            try {
+                const bb = document.getElementById('banner');
+                if (bb && started && !ended && !document.getElementById('bnMask')) { bb.className = 'banner live'; bb.innerHTML = BANNER_LIVE_HTML; }
+            } catch {}
             const st = document.getElementById('bnStatus'), mk = document.getElementById('bnMask');
             if (!st || !mk) return;
             let t = '';
@@ -825,12 +830,12 @@
         // 保險：每 2 秒向伺服器要一次「誰在回答／誰戴口罩／誰在講話」，不管哪個角色、有沒有漏收 SignalR 廣播都看得到
         let _lastRespSeen;
         async function pollBannerState() {
-            if (!started || ended) return;
+            if (!started || ended) { dbgPoll('等待中 started=' + started + ' ended=' + ended); return; }
             try {
                 const r = await fetch('/Room/BannerState?roomCode=' + encodeURIComponent(ROOM_CODE), { cache: 'no-store' });
                 if (!r.ok) { dbgPoll('輪詢失敗 HTTP ' + r.status); return; }
                 const d = await r.json();
-                dbgPoll('輪詢OK 口罩=[' + (d.masks || []).join(',') + '] 回答者=' + (d.responder || '無') + ' 角色=' + MY_ROLE);
+                dbgPoll('輪詢OK 口罩=[' + (d.masks || []).join(',') + '] 回答者=' + (d.responder || '無') + ' 角色=' + MY_ROLE + ' 橫幅欄位=' + (document.getElementById('bnMask') ? '有' : '無') + (window.__lastErr ? ' 錯誤=' + window.__lastErr : ''));
                 window.__maskNames = Array.isArray(d.masks) ? d.masks : [];
                 if (window.__maskNames.includes(MY_NAME) && Date.now() - lastMaskToast > 30000) { lastMaskToast = Date.now(); showLockToast('偵測到您戴著口罩，請取下口罩，謝謝。', 6000); }
                 if (d.speaker && d.speakerAgeMs != null && d.speakerAgeMs < 3000 && !/^AI/.test(d.speaker)) noteSpeaker(d.speaker);
@@ -843,11 +848,12 @@
             } catch (e) { dbgPoll('輪詢錯誤 ' + (e && e.message)); }
         }
         function dbgPoll(t) {
-            if (!/[?&]dbg=1/.test(location.search)) return;
             let el = document.getElementById('pollDbg');
             if (!el) { el = document.createElement('div'); el.id = 'pollDbg'; el.style.cssText = 'position:fixed;left:60px;bottom:2px;font-size:10px;color:#8b949e;z-index:99999;pointer-events:none'; document.body.appendChild(el); }
             el.textContent = t + ' ' + new Date().toLocaleTimeString('zh-TW');
         }
+        window.addEventListener('error', e => { window.__lastErr = (e && e.message) || 'error'; });
+        window.addEventListener('unhandledrejection', e => { window.__lastErr = String((e && e.reason && e.reason.message) || (e && e.reason) || 'rejection').slice(0, 60); });
         setInterval(pollBannerState, 2000);
         hub.on("ResponderChanged", name => applyResponder(name));
         function applyResponder(name) {
@@ -912,7 +918,7 @@
         }
         startHub();
         // 版本標記：左下角小字 + console，確認每個人跑的是同一版（測試前請每台都看到 v0245）
-        (function () { try { const d = document.createElement('div'); d.textContent = 'v0330'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
+        (function () { try { const d = document.createElement('div'); d.textContent = 'v0331'; d.style.cssText = 'position:fixed;left:6px;bottom:2px;font-size:10px;color:#aaa;z-index:99999;pointer-events:none'; document.body.appendChild(d); console.log('[版本] v0245（20261117-0245）'); } catch {} })();
 
         // 🎯 保底輪詢：不管 SignalR 廣播這次有沒有送達（長時間閒置等待時 SignalR 群組可能悄悄失效），
         //    每 4 秒主動問一次伺服器「會議現在到底是什麼狀態」，用真實資料庫狀態校正畫面，
@@ -1037,7 +1043,7 @@
 
             const b = document.getElementById('banner');
             b.className = 'banner live';
-            b.innerHTML = '<span id="bnBase">🔴 會議進行中</span><span id="bnStatus" class="bn-seg"></span><span id="bnMask" class="bn-seg bn-warn" style="display:none"></span>';
+            b.innerHTML = BANNER_LIVE_HTML;
 
             if (IS_HOST) {
                 document.getElementById('startBtn').style.display = 'none';
